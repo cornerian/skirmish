@@ -52,7 +52,7 @@ pub trait Hittable {
 
 impl Hittable for Agent {
     fn hit_by_agent(&self, other: Agent) -> Option<Attack> {
-        return other.state;
+        return ATTACKS.get(other.character)?.get(&other.state.action.state).cloned();
     }
 
     fn hit_by_item(&self, item: Item) -> Option<Attack> {
