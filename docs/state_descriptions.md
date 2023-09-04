@@ -30,7 +30,7 @@ States that are not possible in a tournament setting are crossed out.
 | 013  | TURN_RUN                   | Turn while running |
 | 014  | DASH                       | Beginning of run? |
 | 015  | RUN                        | Running after dash? |
-| 016  | RUN_DIRECT                 | ? |
+| 016  | ~~RUN_DIRECT~~             | ? |
 | 017  | RUN_BRAKE                  | Braking from running |
 | 018  | KNEE_BEND                  | Jumpsquat |
 | 019  | JUMP_F                     | Forward jump from ground |
@@ -52,12 +52,12 @@ States that are not possible in a tournament setting are crossed out.
 | 029  | SQUAT_RV                   | Going from crouch to stand |
 | 02A  | LANDING                    | Landing state, can be cancelled |
 | 02B  | LANDING_FALL_SPECIAL       | Landing from freefall |
-| 02C  | ATTACK_11                  | Standard attack 1 (?) |
-| 02D  | ATTACK_12                  | Standard attack 2 (?) |
-| 02E  | ATTACK_13                  | Standard attack 3 (?) |
-| 02F  | ATTACK_100_START           | Start of a looping standard attack (multi-jabs?) |
-| 030  | ATTACK_100_LOOP            | Middle of a looping standard attack (multi-jabs?) |
-| 031  | ATTACK_100_END             | End of a looping standard attack (multi-jabs?) |
+| 02C  | ATTACK_11                  | First jab |
+| 02D  | ATTACK_12                  | Second jab |
+| 02E  | ATTACK_13                  | Third jab |
+| 02F  | ATTACK_100_START           | Start of a multi-jab loop |
+| 030  | ATTACK_100_LOOP            | Middle of a multi-jab loop |
+| 031  | ATTACK_100_END             | End of a multi-jab loop |
 | 032  | ATTACK_DASH                | Dash attack |
 | 033  | ATTACK_S_3_HI              | High Ftilt |
 | 034  | ATTACK_S_3_HI_S            | High-mid Ftilt |
@@ -182,10 +182,10 @@ States that are not possible in a tournament setting are crossed out.
 | 0AB  | ~~ITEM_SCOPE_AIR_RAPID_EMPTY~~ | Item scope rapid empty in air |
 | 0AC  | ~~ITEM_SCOPE_AIR_FIRE_EMPTY~~ | Item scope fire empty in air |
 | 0AD  | ~~ITEM_SCOPE_AIR_END_EMPTY~~ | Item scope end empty in air |
-| 0AE  | LIFT_WAIT                  | ? |
-| 0AF  | LIFT_WALK_1                | ? |
-| 0B0  | LIFT_WALK_2                | ? |
-| 0B1  | LIFT_TURN                  | ? |
+| 0AE  | ~~LIFT_WAIT                | ? |
+| 0AF  | ~~LIFT_WALK_1              | ? |
+| 0B0  | ~~LIFT_WALK_2              | ? |
+| 0B1  | ~~LIFT_TURN                | ? |
 | 0B2  | GUARD_ON                   | Shield startup |
 | 0B3  | GUARD                      | Holding shield |
 | 0B4  | GUARD_OFF                  | Dropping shield |
@@ -213,13 +213,13 @@ States that are not possible in a tournament setting are crossed out.
 | 0CA  | PASSIVE_WALL               | Wall tech |
 | 0CB  | PASSIVE_WALL_JUMP          | Walljump tech |
 | 0CC  | PASSIVE_CEIL               | Ceiling tech (I would strike but I remembered the dreamland Tech De Jesus. Inordinately rare but still possible) |
-| 0CD  | SHIELD_BREAK_FLY           | Shield break? |
-| 0CE  | SHIELD_BREAK_FALL          | Shield break? |
-| 0CF  | SHIELD_BREAK_DOWN_U        | Shield break? |
-| 0D0  | SHIELD_BREAK_DOWN_D        | Shield break? |
-| 0D1  | SHIELD_BREAK_STAND_U       | Shield break? |
-| 0D2  | SHIELD_BREAK_STAND_D       | Shield break? |
-| 0D3  | FURA_FURA                  | Shield-break, dazed |
+| 0CD  | SHIELD_BREAK_FLY           | Beginning of shield break, when going up into the air |
+| 0CE  | SHIELD_BREAK_FALL          | Beginning of shield break, when falling from the air |
+| 0CF  | SHIELD_BREAK_DOWN_U        | Falling on ground face up |
+| 0D0  | SHIELD_BREAK_DOWN_D        | Falling on ground face down |
+| 0D1  | SHIELD_BREAK_STAND_U       | Standing up to enter dazed when face up |
+| 0D2  | SHIELD_BREAK_STAND_D       | Standing up to enter dazed when face down |
+| 0D3  | FURA_FURA                  | Shield break, dazed |
 | 0D4  | CATCH                      | Grab |
 | 0D5  | CATCH_PULL                 | Grab success, pulling them in |
 | 0D6  | CATCH_DASH                 | Dash grab |
@@ -231,12 +231,12 @@ States that are not possible in a tournament setting are crossed out.
 | 0DC  | THROW_B                    | Grab back throw |
 | 0DD  | THROW_HI                   | Grab upthrow |
 | 0DE  | THROW_LW                   | Grab downthrow |
-| 0DF  | CAPTURE_PULLED_HI          | Getting grabbed by a tall/same height opponent |
-| 0E0  | CAPTURE_WAIT_HI            | Tall/same height oppenent who has grabbed you is idling |
-| 0E1  | CAPTURE_DAMAGE_HI          | Getting grab pummeled by a tall/same height opponent |
-| 0E2  | CAPTURE_PULLED_LW          | Getting grabbed by a short opponent |
-| 0E3  | CAPTURE_WAIT_LW            | Short oppenent who has grabbed you is idling |
-| 0E4  | CAPTURE_DAMAGE_LW          | Getting grab pummeled by a short opponent |
+| 0DF  | CAPTURE_PULLED_HI          | Getting grabbed by a taller opponent or off an edge |
+| 0E0  | CAPTURE_WAIT_HI            | Taller opponent (or if you're off an edge) who has grabbed you is idling |
+| 0E1  | CAPTURE_DAMAGE_HI          | Getting grab pummeled by a taller opponent (or if you're off an edge) |
+| 0E2  | CAPTURE_PULLED_LW          | Getting grabbed by a shorter/same height opponent |
+| 0E3  | CAPTURE_WAIT_LW            | Shorter/same height oppenent who has grabbed you is idling |
+| 0E4  | CAPTURE_DAMAGE_LW          | Getting grab pummeled by a shorter/same height opponent |
 | 0E5  | CAPTURE_CUT                | Mashing out of grab and being released |
 | 0E6  | CAPTURE_JUMP               | Mashing out of grab while holding jump? |
 | 0E7  | CAPTURE_NECK               | Hit in the neck by another player while grabbed? |
@@ -255,10 +255,10 @@ States that are not possible in a tournament setting are crossed out.
 | 0F4  | PASS                       | Drop through platform |
 | 0F5  | OTTOTTO                    | Beginning of ledge teeter |
 | 0F6  | OTTOTTO_WAIT               | Ledge teeter |
-| 0F7  | FLY_REFLECT_WALL           | Bouncing off of wall while in hitstun? |
-| 0F8  | FLY_REFLECT_CEIL           | Bouncing off ceiling while in hitstun? |
-| 0F9  | STOP_WALL                  | Bump into wall? |
-| 0FA  | STOP_CEIL                  | Bump into ceiling? |
+| 0F7  | FLY_REFLECT_WALL           | Bouncing off of wall while in hitstun |
+| 0F8  | FLY_REFLECT_CEIL           | Bouncing off ceiling while in hitstun |
+| 0F9  | STOP_WALL                  | Bump into wall |
+| 0FA  | ~~STOP_CEIL~~              | Bump into ceiling |
 | 0FB  | MISS_FOOT                  | Bumped off edge while shielding, before teetering? |
 | 0FC  | CLIFF_CATCH                | Ledge grab |
 | 0FD  | CLIFF_WAIT                 | Hanging on ledge |
@@ -342,7 +342,7 @@ States that are not possible in a tournament setting are crossed out.
 | 14B  | CAPTURE_KIRBY_YOSHI        | Caught by Kirby's copied ability Egg Lay |
 | 14C  | KIRBY_YOSHI_EGG            | Within Kirby's copied ability Egg? |
 | 14D  | ~~CAPTURE_REDEAD~~         | Grabbed while dead in stamina mode? |
-| 14E  | CAPTURE_LIKE_LIKE          | Grabbed by the same character? |
+| 14E  | ~~CAPTURE_LIKE_LIKE~~      | ? |
 | 14F  | DOWN_REFLECT               | Reflection state of Shine? |
 | 150  | ~~CAPTURE_CRAZY_HAND~~     | Grabbed by Crazy Hand |
 | 151  | ~~CAPTURE_DAMAGE_CRAZY_HAND~~ | Pummeled by Crazy Hand |

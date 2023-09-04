@@ -63,7 +63,6 @@ flowchart LR
 
         subgraph bumping
             STOP_WALL
-            STOP_CEIL
         end
     end
 
@@ -311,12 +310,12 @@ flowchart LR
     end
 
     subgraph grabbed
-        subgraph grabbed by tall or same height opponent
+        subgraph grabbed by taller opponent or off edge
             CAPTURE_PULLED_HI
             CAPTURE_WAIT_HI
             CAPTURE_DAMAGE_HI
         end
-        subgraph grabbed by short opponent
+        subgraph grabbed by shorter/same height opponent
             CAPTURE_PULLED_LW
             CAPTURE_WAIT_LW
             CAPTURE_DAMAGE_LW
@@ -486,7 +485,6 @@ flowchart LR
                 HUB::GROUNDED_ACTIONABLE --> WALK_FAST
 
                 HUB::GROUNDED_ACTIONABLE --> TURN
-                %% ? can we go from WAIT to TURN?
 
                 HUB::GROUNDED_ACTIONABLE --> DASH
 
@@ -497,9 +495,6 @@ flowchart LR
                 HUB::GROUNDED_ACTIONABLE -->|ONLY if on platform| PASS
 
                 HUB::GROUNDED_ACTIONABLE --> OTTOTTO
-
-                HUB::GROUNDED_ACTIONABLE --> STOP_WALL
-                %% ? can OTTOTTO and STOP_WALL be acheived from any grounded actionable state or just walking/dashing?
             %% ------
             %% --- to attacks ---
                 %% --- to jabs ---
@@ -513,9 +508,6 @@ flowchart LR
                     HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_LW
 
                     HUB::GROUNDED_ACTIONABLE --> ATTACK_HI_3
-
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_LW_3
-                    %% ? can we go from WAIT to ATTACK_LW_4 without passing any SQUAT states?
                 %% ------
                 %% --- to smashes ---
                     HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_HI
@@ -641,6 +633,8 @@ flowchart LR
                 HUB::DASH::ATTACKS -->|ONLY if has item| LIGHT_THROW_DASH
 
                 HUB::DASH::ATTACKS -->|ONLY if has beam sword item| SWORD_SWING_DASH
+            %% ------
+            %% side bs can be performed from dash
         %% ------
 
         HUB::GRAB::THROWS(["Grab throws"])
@@ -732,9 +726,19 @@ flowchart LR
             RUN --> RUN_BRAKE
             RUN --> TURN_RUN
 
-            RUN_BRAKE --> HUB::GROUNDED_ACTIONABLE
+            DASH -->|counter over and not holding dash direction| HUB::GROUNDED_ACTIONABLE
+            RUN_BRAKE -->|counter over| HUB::GROUNDED_ACTIONABLE
+            TURN_RUN -->|counter over and not holding opposite direction| HUB::GROUNDED_ACTIONABLE
 
             DASH --> KNEE_BEND
+            RUN --> KNEE_BEND
+            RUN_BRAKE --> KNEE_BEND
+            TURN_RUN --> KNEE_BEND
+
+            %% --- Bumping ---
+                DASH --> STOP_WALL
+                RUN --> STOP_WALL
+            %% ------
 
             %% --- to attacking ---
                 DASH --> HUB::DASH::ATTACKS
@@ -742,8 +746,8 @@ flowchart LR
             %% ------
         %% ------
 
-        KNEE_BEND --> HUB::GROUNDED_ACTIONABLE
-        %% ? can you DASH (or spotdodge, for that matter) out of KNEE_BEND? is jumpsquat fully actionable?
+        KNEE_BEND --> JUMP_F
+        KNEE_BEND --> JUMP_B
 
         %% --- Squat cycle ---
             SQUAT --> HUB::GROUNDED_ACTIONABLE
@@ -753,6 +757,11 @@ flowchart LR
             SQUAT_WAIT --> SQUAT_RV
 
             SQUAT_RV --> HUB::GROUNDED_ACTIONABLE
+
+            %% --- to attacking ---
+                SQUAT --> ATTACK_LW_3
+                SQUAT_WAIT --> ATTACK_LW_3
+            %% ------
         %% ------
 
         PASS --> HUB::AERIAL_ACTIONABLE
@@ -766,7 +775,6 @@ flowchart LR
 
         %% --- Bumping ---
             STOP_WALL --> HUB::GROUNDED_ACTIONABLE
-            STOP_CEIL --> HUB::AERIAL_ACTIONABLE
         %% ------
     %% ------
 
@@ -800,7 +808,7 @@ flowchart LR
         %% --- Freefalling to freefalling (drifts) ---
             FALL_SPECIAL --> FALL_SPECIAL_F
             FALL_SPECIAL --> FALL_SPECIAL_B
-
+SQUAT
             FALL_SPECIAL_F --> FALL_SPECIAL
             FALL_SPECIAL_F --> FALL_SPECIAL_B
 
@@ -838,15 +846,15 @@ flowchart LR
     %% --- Attack transfers ---
         %% --- Jab transfers ---
             ATTACK_11 --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_11 --> ATTACK_12
+            ATTACK_11 -->|ONLY if >1 jab| ATTACK_12
+            ATTACK_11 -->|ONLY if 1 jab and has multijab| ATTACK_100_START
 
             ATTACK_12 --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_12 --> ATTACK_13
-            ATTACK_12 --> ATTACK_100_START
-            %% ? I believe some characters (falcon) start multijab after 2?
+            ATTACK_12 -->|ONLY if >2 jabs| ATTACK_13
+            ATTACK_12 -->|ONLY if 2 jabs and has multijab| ATTACK_100_START
 
             ATTACK_13 --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_13 --> ATTACK_100_START
+            ATTACK_13 -->|ONLY if has multijab| ATTACK_100_START
             %% --- Multijabs ---
                 ATTACK_100_START --> ATTACK_100_LOOP
                 ATTACK_100_LOOP --> ATTACK_100_END
@@ -939,6 +947,9 @@ flowchart LR
 
         GUARD --> GUARD_OFF
         GUARD --> GUARD_SET_OFF
+
+        GUARD --> SHIELD_BREAK_FLY
+
         GUARD --> MISS_FOOT
 
         GUARD_OFF --> HUB::GROUNDED_ACTIONABLE
@@ -946,6 +957,18 @@ flowchart LR
         GUARD_SET_OFF --> MISS_FOOT
         GUARD_REFLECT --> HUB::GROUNDED_ACTIONABLE
         GUARD_REFLECT --> MISS_FOOT
+
+        SHIELD_BREAK_FLY --> SHIELD_BREAK_FALL
+
+        SHIELD_BREAK_FALL --> SHIELD_BREAK_DOWN_U
+        SHIELD_BREAK_FALL --> SHIELD_BREAK_DOWN_D
+
+        SHIELD_BREAK_DOWN_U --> SHIELD_BREAK_STAND_U
+        
+        SHIELD_BREAK_DOWN_D --> SHIELD_BREAK_STAND_D
+
+        SHIELD_BREAK_STAND_U --> FURA_FURA
+        SHIELD_BREAK_STAND_D --> FURA_FURA
 
         MISS_FOOT --> OTTOTTO
     %% ------
@@ -1000,7 +1023,6 @@ flowchart LR
 
         CATCH_PULL --> CATCH_WAIT
         CATCH_PULL --> CATCH_ATTACK
-        %% ? can opponent break out (CATCH_CUT) during CATCH_PULL?
 
         CATCH_DASH_PULL --> CATCH_WAIT
         CATCH_DASH_PULL --> CATCH_ATTACK
@@ -1010,8 +1032,9 @@ flowchart LR
         CATCH_WAIT --> HUB::GRAB::THROWS
 
         CATCH_ATTACK --> CATCH_WAIT
+        CATCH_ATTACK --> CATCH_CUT
         CATCH_ATTACK --> HUB::GRAB::THROWS
-        %% ? can opponent break out (CATCH_CUT) during CATCH_ATTACK?
+        %% if the opponent has sufficiently mashed then they're released at the end of the CATCH_ATTACK state
 
         CATCH_CUT --> HUB::GROUNDED_ACTIONABLE
 
@@ -1022,7 +1045,7 @@ flowchart LR
     %% ------
 
     %% --- Grabbed transfers ---
-        %% --- Tall/same height opponent ---
+        %% --- Tall opponent or off edge ---
             CAPTURE_PULLED_HI --> CAPTURE_WAIT_HI
             CAPTURE_PULLED_HI --> CAPTURE_DAMAGE_HI
 
@@ -1036,7 +1059,7 @@ flowchart LR
             CAPTURE_DAMAGE_HI --> CAPTURE_JUMP
             CAPTURE_DAMAGE_HI --> HUB::GRABBED::THROWNS
         %% ------
-        %% --- Short opponent ---
+        %% --- Shorter/same height opponent ---
             CAPTURE_PULLED_LW --> CAPTURE_WAIT_LW
             CAPTURE_PULLED_LW --> CAPTURE_DAMAGE_LW
 
@@ -1049,11 +1072,6 @@ flowchart LR
             CAPTURE_DAMAGE_LW --> CAPTURE_CUT
             CAPTURE_DAMAGE_LW --> CAPTURE_JUMP
             CAPTURE_DAMAGE_LW --> HUB::GRABBED::THROWNS
-        %% ------
-        %% --- Same character opponent ---
-            CAPTURE_LIKE_LIKE --> CAPTURE_WAIT_HI
-            CAPTURE_LIKE_LIKE --> CAPTURE_DAMAGE_HI
-            %% ? is this correct?
         %% ------
 
         CAPTURE_CUT --> HUB::GROUNDED_ACTIONABLE
