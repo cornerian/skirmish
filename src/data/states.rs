@@ -7,7 +7,7 @@ use crate::math::Sphere;
 pub struct StateData {
 	pub effect: Box<dyn Fn(Agent) -> Agent>,
 	pub counter: Option<usize>,
-	pub spheres: Vec<Box<(Sphere, Position)>>,
+	pub spheres: Vec<Box<Sphere>>,
 }
 
 pub trait Statable {

@@ -40,7 +40,6 @@ flowchart LR
         subgraph running
             DASH
             RUN
-            RUN_DIRECT
             RUN_BRAKE
             subgraph run turn
                 TURN_RUN
@@ -653,6 +652,7 @@ flowchart LR
             HUB::GRAB::THROWS --> THROW_LW
         %% ------
 
+        %% !! NOTE: in the future we're gonna consider all of these as a hit event, as it is in the code
         HUB::GRABBED::THROWNS(["Thrown by opponent"])
 
         %% --- Grabbed throwns transfers ---
@@ -729,17 +729,16 @@ flowchart LR
 
         %% --- Run cycle ---
             DASH --> RUN
-            RUN --> RUN_DIRECT
-            RUN_DIRECT --> RUN_BRAKE
-            RUN_DIRECT --> TURN_RUN
+            RUN --> RUN_BRAKE
+            RUN --> TURN_RUN
 
             RUN_BRAKE --> HUB::GROUNDED_ACTIONABLE
-            %% ? is RUN_BRAKE in grounded actionable state? can you dash attack out of it?
+
+            DASH --> KNEE_BEND
 
             %% --- to attacking ---
                 DASH --> HUB::DASH::ATTACKS
                 RUN --> HUB::DASH::ATTACKS
-                RUN_DIRECT --> HUB::DASH::ATTACKS
             %% ------
         %% ------
 

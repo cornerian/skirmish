@@ -2,13 +2,14 @@ pub mod data {
     pub mod attacks;
     pub mod stages;
     pub mod states;
+    pub mod transfers;
 }
 
 pub mod hits;
 use hits::Hittable;
 
 pub mod snapshot;
-use snapshot::{Inputs, Snapshot, Agent};
+use snapshot::{Input, Snapshot, Agent};
 
 pub mod math;
 

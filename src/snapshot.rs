@@ -1,4 +1,5 @@
 use peppi::model::{
+	buttons::Physical,
 	enums::{action_state, character, ground, stage},
 	frame::{
 		self,
@@ -44,8 +45,12 @@ impl<T: Clone, const N: usize> Transposable<T, N> for History<T, N> {
 pub struct Input { // input from one player on one frame
 	pub joystick: Position,
 	pub cstick: Position,
-	pub triggers: Triggers,
-	pub buttons: Buttons,
+	pub trigger: f32, // 0 to 1 if analog, MAX if digital
+	pub jump: bool,
+	pub a: bool,
+	pub b: bool,
+	pub z: bool,
+	pub taunt: bool,
 }
 
 impl From<PortData> for Input {
@@ -55,8 +60,12 @@ impl From<PortData> for Input {
 		Self {
 			joystick: pre.joystick,
 			cstick: pre.cstick,
-			triggers: pre.triggers,
-			buttons: pre.buttons,
+			trigger: f32::max(pre.triggers.physical.l, pre.triggers.physical.r),
+			jump: (pre.buttons.physical.0 & (Physical::X.0 | Physical::Y.0)) != 0,
+			a: (pre.buttons.physical.0 & Physical::A.0) != 0,
+			b: (pre.buttons.physical.0 & Physical::B.0) != 0,
+			z: (pre.buttons.physical.0 & Physical::Z.0) != 0,
+			taunt: (pre.buttons.physical.0 & Physical::DPAD_UP.0) != 0,
 		}
 	}
 }
@@ -190,7 +199,7 @@ impl From<Vec<PortData>> for Agent {
 	}
 }
 
-/// A single frame of the simulator. `N` is the number of players in the game.
+/// A single frame of the simulator. `N` is the number of agents in the game.
 // This differs from a normal peppi Frame by adding extra history that allows
 // the simulator continue from any given snapshot.
 #[derive(PartialEq, Debug)]
