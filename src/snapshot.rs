@@ -1,6 +1,6 @@
 use peppi::model::{
 	buttons::Physical,
-	enums::{action_state, character, ground, stage},
+	enums::{character, ground, stage},
 	frame::{
 		self,
 		Buttons,
@@ -78,16 +78,18 @@ impl<const N: usize> From<Frame<N>> for Inputs<N> {
 	}
 }
 
+pub type ActionState = peppi::model::enums::action_state::State;
+
 #[derive(Clone, Debug, PartialEq)]
-pub struct ActionState {
-	pub state: action_state::State,
+pub struct ActionContext {
+	pub state: ActionState,
 	pub age: usize,
 	pub counter: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterState {
-	pub action: ActionState,
+	pub action: ActionContext,
 
 	pub hurtbox_state: Option<HurtboxState>,
 	pub hurtbox_state_counter: Option<usize>,
@@ -140,7 +142,7 @@ pub struct Agent {
 
 	pub velocities: Velocities,
 
-	pub attacks: [action_state::State; 9], // used for calculating stale moves
+	pub attacks: [ActionState; 9], // used for calculating stale moves
 
 	pub follows: Option<usize>, // nana is her own agent (not supported at the moment)
 }

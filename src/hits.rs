@@ -3,12 +3,12 @@ use peppi::model::{enums::action_state, item::Item, primitives::Velocity};
 use crate::data::attacks::ATTACKS;
 use crate::data::states::Statable;
 
-use crate::snapshot::{ActionState, Agent};
+use crate::snapshot::{ActionContext, ActionState, Agent};
 use crate::math::Vector;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Attack {
-	pub code: action_state::State,
+	pub code: ActionState,
 
 	pub damage: f32,
 
@@ -22,7 +22,7 @@ pub struct Attack {
 	pub blockable: bool,
 	pub shield_damage: f32,
 
-	pub induces: ActionState // not all attacks induce DAMAGE_FALL
+	pub induces: ActionContext // not all attacks induce DAMAGE_FALL
 }
 
 pub trait Hittable {

@@ -474,151 +474,151 @@ flowchart LR
     end
 
     %% ////// HUBS //////
-        HUB::GROUNDED_ACTIONABLE{"Grounded actionable"}
+        HUB::ACTIONABLE::GROUNDED{"Grounded actionable"}
 
         %% --- Grounded actionable transfers ---
             %% --- to ambulations ---
-                HUB::GROUNDED_ACTIONABLE --> WAIT
+                HUB::ACTIONABLE::GROUNDED --> WAIT
 
-                HUB::GROUNDED_ACTIONABLE --> WALK_SLOW
-                HUB::GROUNDED_ACTIONABLE --> WALK_MIDDLE
-                HUB::GROUNDED_ACTIONABLE --> WALK_FAST
+                HUB::ACTIONABLE::GROUNDED --> WALK_SLOW
+                HUB::ACTIONABLE::GROUNDED --> WALK_MIDDLE
+                HUB::ACTIONABLE::GROUNDED --> WALK_FAST
 
-                HUB::GROUNDED_ACTIONABLE --> TURN
+                HUB::ACTIONABLE::GROUNDED --> TURN
 
-                HUB::GROUNDED_ACTIONABLE --> DASH
+                HUB::ACTIONABLE::GROUNDED --> DASH
 
-                HUB::GROUNDED_ACTIONABLE --> KNEE_BEND
+                HUB::ACTIONABLE::GROUNDED --> KNEE_BEND
 
-                HUB::GROUNDED_ACTIONABLE --> SQUAT
+                HUB::ACTIONABLE::GROUNDED --> SQUAT
 
-                HUB::GROUNDED_ACTIONABLE -->|ONLY if on platform| PASS
+                HUB::ACTIONABLE::GROUNDED -->|ONLY if on platform| PASS
 
-                HUB::GROUNDED_ACTIONABLE --> OTTOTTO
+                HUB::ACTIONABLE::GROUNDED --> OTTOTTO
             %% ------
             %% --- to attacks ---
                 %% --- to jabs ---
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_11
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_11
                 %% ------
                 %% --- to tilts ---
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_HI
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_HI_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_LW_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_3_LW
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_3_HI
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_3_HI_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_3_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_3_LW_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_3_LW
 
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_HI_3
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_HI_3
                 %% ------
                 %% --- to smashes ---
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_HI
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_HI_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_LW_S
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_S_4_LW
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_4_HI
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_4_HI_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_4_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_4_LW_S
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_S_4_LW
 
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_HI_4
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_HI_4
 
-                    HUB::GROUNDED_ACTIONABLE --> ATTACK_LW_4
+                    HUB::ACTIONABLE::GROUNDED --> ATTACK_LW_4
                 %% ------
             %% ------
             %% --- to item interactions ---
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_GET
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_GET
 
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_F
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_B
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_HI
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_LW
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_F
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_B
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_HI
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_LW
 
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_F_4
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_B_4
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_HI_4
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_LW_4
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_F_4
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_B_4
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_HI_4
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_LW_4
 
-                HUB::GROUNDED_ACTIONABLE --> LIGHT_THROW_DROP
+                HUB::ACTIONABLE::GROUNDED --> LIGHT_THROW_DROP
 
-                HUB::GROUNDED_ACTIONABLE --> SWORD_SWING_1
-                HUB::GROUNDED_ACTIONABLE --> SWORD_SWING_3
-                HUB::GROUNDED_ACTIONABLE --> SWORD_SWING_4
+                HUB::ACTIONABLE::GROUNDED --> SWORD_SWING_1
+                HUB::ACTIONABLE::GROUNDED --> SWORD_SWING_3
+                HUB::ACTIONABLE::GROUNDED --> SWORD_SWING_4
             %% ------
             %% --- to shielding ---
-                HUB::GROUNDED_ACTIONABLE --> GUARD_ON
+                HUB::ACTIONABLE::GROUNDED --> GUARD_ON
             %% ------
             %% --- to grabbing ---
-                HUB::GROUNDED_ACTIONABLE --> CATCH
+                HUB::ACTIONABLE::GROUNDED --> CATCH
             %% ------
             %% --- to escapes ---
                 %% --- to rolls ---
-                    HUB::GROUNDED_ACTIONABLE --> ESCAPE_F
-                    HUB::GROUNDED_ACTIONABLE --> ESCAPE_B
+                    HUB::ACTIONABLE::GROUNDED --> ESCAPE_F
+                    HUB::ACTIONABLE::GROUNDED --> ESCAPE_B
                 %% ------
-                HUB::GROUNDED_ACTIONABLE --> ESCAPE
+                HUB::ACTIONABLE::GROUNDED --> ESCAPE
             %% ------
             %% --- to taunts ---
-                HUB::GROUNDED_ACTIONABLE --> APPEAL_R
-                HUB::GROUNDED_ACTIONABLE --> APPEAL_L
+                HUB::ACTIONABLE::GROUNDED --> APPEAL_R
+                HUB::ACTIONABLE::GROUNDED --> APPEAL_L
             %% ------
         %% ------
 
-        HUB::AERIAL_ACTIONABLE{"Aerial actionable"}
+        HUB::ACTIONABLE::AERIAL{"Aerial actionable"}
 
         %% --- Aerial actionable transfers ---
             %% --- to ambulations ---
-                HUB::AERIAL_ACTIONABLE --> STOP_CEIL
+                HUB::ACTIONABLE::AERIAL --> STOP_CEIL
             %% ------
             %% --- ONLY with remaining jump ---
                 %% --- to jumping ---
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITH remaining jump| JUMP_AERIAL_F
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITH remaining jump| JUMP_AERIAL_B
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITH remaining jump| JUMP_AERIAL_F
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITH remaining jump| JUMP_AERIAL_B
                 %% ------
                 %% --- to falling ---
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITH remaining jump| FALL
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITH remaining jump| FALL
 
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITH remaining jump| FALL_F
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITH remaining jump| FALL_B
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITH remaining jump| FALL_F
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITH remaining jump| FALL_B
                 %% ------
             %% ------
             %% --- ONLY without remaining jump ---
                 %% --- to falling ---
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITHOUT remaining jump| FALL_AERIAL
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITHOUT remaining jump| FALL_AERIAL
 
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITHOUT remaining jump| FALL_AERIAL_F
-                    HUB::AERIAL_ACTIONABLE -->|ONLY WITHOUT remaining jump| FALL_AERIAL_B
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITHOUT remaining jump| FALL_AERIAL_F
+                    HUB::ACTIONABLE::AERIAL -->|ONLY WITHOUT remaining jump| FALL_AERIAL_B
                 %% ------
             %% ------
             %% --- to landing ---
-                HUB::AERIAL_ACTIONABLE --> LANDING
+                HUB::ACTIONABLE::AERIAL --> LANDING
             %% ------
             %% --- to attacking ---
-                HUB::AERIAL_ACTIONABLE --> ATTACK_AIR_N
-                HUB::AERIAL_ACTIONABLE --> ATTACK_AIR_F
-                HUB::AERIAL_ACTIONABLE --> ATTACK_AIR_B
-                HUB::AERIAL_ACTIONABLE --> ATTACK_AIR_HI
-                HUB::AERIAL_ACTIONABLE --> ATTACK_AIR_LW
+                HUB::ACTIONABLE::AERIAL --> ATTACK_AIR_N
+                HUB::ACTIONABLE::AERIAL --> ATTACK_AIR_F
+                HUB::ACTIONABLE::AERIAL --> ATTACK_AIR_B
+                HUB::ACTIONABLE::AERIAL --> ATTACK_AIR_HI
+                HUB::ACTIONABLE::AERIAL --> ATTACK_AIR_LW
             %% ------
             %% --- to item interactions ---
-                HUB::AERIAL_ACTIONABLE --> LIGHT_GET
+                HUB::ACTIONABLE::AERIAL --> LIGHT_GET
 
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_F
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_B
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_HI
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_LW
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_F
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_B
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_HI
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_LW
 
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_F_4
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_B_4
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_HI_4
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_LW_4
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_F_4
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_B_4
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_HI_4
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_LW_4
 
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has item| LIGHT_THROW_DROP
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has item| LIGHT_THROW_DROP
 
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has beam sword item| SWORD_SWING_1
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has beam sword item| SWORD_SWING_3
-                HUB::AERIAL_ACTIONABLE -->|ONLY if has beam sword item| SWORD_SWING_4
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has beam sword item| SWORD_SWING_1
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has beam sword item| SWORD_SWING_3
+                HUB::ACTIONABLE::AERIAL -->|ONLY if has beam sword item| SWORD_SWING_4
             %% ------
             %% --- to escapes ---
-                HUB::AERIAL_ACTIONABLE --> ESCAPE_AIR
+                HUB::ACTIONABLE::AERIAL --> ESCAPE_AIR
             %% ------
             %% --- to ledge ---
-                HUB::AERIAL_ACTIONABLE --> CLIFF_CATCH
+                HUB::ACTIONABLE::AERIAL --> CLIFF_CATCH
             %% ------
         %% ------
 
@@ -705,20 +705,18 @@ flowchart LR
     %% --- Respawn transfers ---
         REBIRTH --> REBIRTH_WAIT
 
-        REBIRTH_WAIT --> FALL
-        REBIRTH_WAIT --> FALL_F
-        REBIRTH_WAIT --> FALL_B
+        REBIRTH_WAIT --> HUB::ACTIONABLE::AERIAL 
     %% ------
 
     %% --- Ambulation transfers ---
-        WAIT --> HUB::GROUNDED_ACTIONABLE
+        WAIT --> HUB::ACTIONABLE::GROUNDED
 
         %% --- Walking ---
-            WALK_SLOW --> HUB::GROUNDED_ACTIONABLE
-            WALK_MIDDLE --> HUB::GROUNDED_ACTIONABLE
-            WALK_FAST --> HUB::GROUNDED_ACTIONABLE
+            WALK_SLOW --> HUB::ACTIONABLE::GROUNDED
+            WALK_MIDDLE --> HUB::ACTIONABLE::GROUNDED
+            WALK_FAST --> HUB::ACTIONABLE::GROUNDED
 
-            TURN --> HUB::GROUNDED_ACTIONABLE
+            TURN --> HUB::ACTIONABLE::GROUNDED
         %% ------
 
         %% --- Run cycle ---
@@ -726,9 +724,9 @@ flowchart LR
             RUN --> RUN_BRAKE
             RUN --> TURN_RUN
 
-            DASH -->|counter over and not holding dash direction| HUB::GROUNDED_ACTIONABLE
-            RUN_BRAKE -->|counter over| HUB::GROUNDED_ACTIONABLE
-            TURN_RUN -->|counter over and not holding opposite direction| HUB::GROUNDED_ACTIONABLE
+            DASH -->|counter over and not holding dash direction| HUB::ACTIONABLE::GROUNDED
+            RUN_BRAKE -->|counter over| HUB::ACTIONABLE::GROUNDED
+            TURN_RUN -->|counter over and not holding opposite direction| HUB::ACTIONABLE::GROUNDED
 
             DASH --> KNEE_BEND
             RUN --> KNEE_BEND
@@ -750,13 +748,13 @@ flowchart LR
         KNEE_BEND --> JUMP_B
 
         %% --- Squat cycle ---
-            SQUAT --> HUB::GROUNDED_ACTIONABLE
+            SQUAT --> HUB::ACTIONABLE::GROUNDED
             SQUAT --> SQUAT_WAIT
 
-            SQUAT_WAIT --> HUB::GROUNDED_ACTIONABLE
+            SQUAT_WAIT --> HUB::ACTIONABLE::GROUNDED
             SQUAT_WAIT --> SQUAT_RV
 
-            SQUAT_RV --> HUB::GROUNDED_ACTIONABLE
+            SQUAT_RV --> HUB::ACTIONABLE::GROUNDED
 
             %% --- to attacking ---
                 SQUAT --> ATTACK_LW_3
@@ -764,45 +762,45 @@ flowchart LR
             %% ------
         %% ------
 
-        PASS --> HUB::AERIAL_ACTIONABLE
+        PASS --> HUB::ACTIONABLE::AERIAL
 
         %% --- Ledge teeter cycle ---
-            OTTOTTO --> HUB::GROUNDED_ACTIONABLE
+            OTTOTTO --> HUB::ACTIONABLE::GROUNDED
             OTTOTTO --> OTTOTTO_WAIT
 
-            OTTOTTO_WAIT --> HUB::GROUNDED_ACTIONABLE
+            OTTOTTO_WAIT --> HUB::ACTIONABLE::GROUNDED
         %% ------
 
         %% --- Bumping ---
-            STOP_WALL --> HUB::GROUNDED_ACTIONABLE
+            STOP_WALL --> HUB::ACTIONABLE::GROUNDED
         %% ------
     %% ------
 
     %% --- Jump transfers ---
         %% --- Grounded ---
-            JUMP_F --> HUB::AERIAL_ACTIONABLE
-            JUMP_B --> HUB::AERIAL_ACTIONABLE
+            JUMP_F --> HUB::ACTIONABLE::AERIAL
+            JUMP_B --> HUB::ACTIONABLE::AERIAL
         %% ------
 
         %% --- Airborne ---
-            JUMP_AERIAL_F --> HUB::AERIAL_ACTIONABLE
-            JUMP_AERIAL_B --> HUB::AERIAL_ACTIONABLE
+            JUMP_AERIAL_F --> HUB::ACTIONABLE::AERIAL
+            JUMP_AERIAL_B --> HUB::ACTIONABLE::AERIAL
         %% ------
     %% ------
 
     %% --- Falling transfers ---
         %% --- Before jumping ---
-            FALL --> HUB::AERIAL_ACTIONABLE
+            FALL --> HUB::ACTIONABLE::AERIAL
 
-            FALL_F --> HUB::AERIAL_ACTIONABLE
-            FALL_B --> HUB::AERIAL_ACTIONABLE
+            FALL_F --> HUB::ACTIONABLE::AERIAL
+            FALL_B --> HUB::ACTIONABLE::AERIAL
         %% ------
 
         %% --- After jumping ---
-            FALL_AERIAL --> HUB::AERIAL_ACTIONABLE
+            FALL_AERIAL --> HUB::ACTIONABLE::AERIAL
 
-            FALL_AERIAL_F --> HUB::AERIAL_ACTIONABLE
-            FALL_AERIAL_B --> HUB::AERIAL_ACTIONABLE
+            FALL_AERIAL_F --> HUB::ACTIONABLE::AERIAL
+            FALL_AERIAL_B --> HUB::ACTIONABLE::AERIAL
         %% ------
 
         %% --- Freefalling to freefalling (drifts) ---
@@ -825,7 +823,7 @@ SQUAT
 
     %% --- Tumbling/freefall transfers ---
         %% if hitstun frames run out
-        DAMAGE_FALL -->|NO ECB collision interrupt| HUB::AERIAL_ACTIONABLE
+        DAMAGE_FALL -->|NO ECB collision interrupt| HUB::ACTIONABLE::AERIAL
         %% --- Missed tech ---
             DAMAGE_FALL --> DOWN_BOUND_U
             DAMAGE_FALL --> DOWN_BOUND_D
@@ -845,45 +843,45 @@ SQUAT
 
     %% --- Attack transfers ---
         %% --- Jab transfers ---
-            ATTACK_11 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_11 --> HUB::ACTIONABLE::GROUNDED
             ATTACK_11 -->|ONLY if >1 jab| ATTACK_12
             ATTACK_11 -->|ONLY if 1 jab and has multijab| ATTACK_100_START
 
-            ATTACK_12 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_12 --> HUB::ACTIONABLE::GROUNDED
             ATTACK_12 -->|ONLY if >2 jabs| ATTACK_13
             ATTACK_12 -->|ONLY if 2 jabs and has multijab| ATTACK_100_START
 
-            ATTACK_13 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_13 --> HUB::ACTIONABLE::GROUNDED
             ATTACK_13 -->|ONLY if has multijab| ATTACK_100_START
             %% --- Multijabs ---
                 ATTACK_100_START --> ATTACK_100_LOOP
                 ATTACK_100_LOOP --> ATTACK_100_END
-                ATTACK_100_END --> HUB::GROUNDED_ACTIONABLE
+                ATTACK_100_END --> HUB::ACTIONABLE::GROUNDED
             %% ------
         %% ------
 
-        ATTACK_DASH --> HUB::GROUNDED_ACTIONABLE
+        ATTACK_DASH --> HUB::ACTIONABLE::GROUNDED
 
         %% --- Grounded transfers ---
-            ATTACK_S_3_HI --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_3_HI_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_3_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_3_LW_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_3_LW --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_S_3_HI --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_3_HI_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_3_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_3_LW_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_3_LW --> HUB::ACTIONABLE::GROUNDED
 
-            ATTACK_HI_3 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_HI_3 --> HUB::ACTIONABLE::GROUNDED
 
-            ATTACK_LW_3 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_LW_3 --> HUB::ACTIONABLE::GROUNDED
 
-            ATTACK_S_4_HI --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_4_HI_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_4_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_4_LW_S --> HUB::GROUNDED_ACTIONABLE
-            ATTACK_S_4_LW --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_S_4_HI --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_4_HI_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_4_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_4_LW_S --> HUB::ACTIONABLE::GROUNDED
+            ATTACK_S_4_LW --> HUB::ACTIONABLE::GROUNDED
 
-            ATTACK_HI_4 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_HI_4 --> HUB::ACTIONABLE::GROUNDED
 
-            ATTACK_LW_4 --> HUB::GROUNDED_ACTIONABLE
+            ATTACK_LW_4 --> HUB::ACTIONABLE::GROUNDED
         %% ------
         %% --- Aerial transfers ---
             %% --- Aerial landings ---
@@ -897,47 +895,47 @@ SQUAT
     %% ------
 
     %% --- Item interaction transfers ---  
-        LIGHT_GET -->|ONLY while grounded| HUB::GROUNDED_ACTIONABLE
-        LIGHT_GET -->|ONLY while airborne| HUB::AERIAL_ACTIONABLE
+        LIGHT_GET -->|ONLY while grounded| HUB::ACTIONABLE::GROUNDED
+        LIGHT_GET -->|ONLY while airborne| HUB::ACTIONABLE::AERIAL
 
         %% --- While grounded ---
-            LIGHT_THROW_F --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_B --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_HI --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_LW --> HUB::GROUNDED_ACTIONABLE
+            LIGHT_THROW_F --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_B --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_HI --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_LW --> HUB::ACTIONABLE::GROUNDED
             
-            LIGHT_THROW_DASH --> HUB::GROUNDED_ACTIONABLE
+            LIGHT_THROW_DASH --> HUB::ACTIONABLE::GROUNDED
 
-            LIGHT_THROW_F_4 --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_B_4 --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_HI_4 --> HUB::GROUNDED_ACTIONABLE
-            LIGHT_THROW_LW_4 --> HUB::GROUNDED_ACTIONABLE
+            LIGHT_THROW_F_4 --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_B_4 --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_HI_4 --> HUB::ACTIONABLE::GROUNDED
+            LIGHT_THROW_LW_4 --> HUB::ACTIONABLE::GROUNDED
         %% ------
         %% --- While airborne ---
-            LIGHT_THROW_AIR_F --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_B --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_HI --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_LW --> HUB::AERIAL_ACTIONABLE
+            LIGHT_THROW_AIR_F --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_B --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_HI --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_LW --> HUB::ACTIONABLE::AERIAL
 
-            LIGHT_THROW_AIR_F_4 --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_B_4 --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_HI_4 --> HUB::AERIAL_ACTIONABLE
-            LIGHT_THROW_AIR_LW_4 --> HUB::AERIAL_ACTIONABLE
+            LIGHT_THROW_AIR_F_4 --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_B_4 --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_HI_4 --> HUB::ACTIONABLE::AERIAL
+            LIGHT_THROW_AIR_LW_4 --> HUB::ACTIONABLE::AERIAL
         %% ------
         
-        LIGHT_THROW_DROP -->|ONLY while grounded| HUB::GROUNDED_ACTIONABLE
-        LIGHT_THROW_DROP -->|ONLY while airborne| HUB::AERIAL_ACTIONABLE
+        LIGHT_THROW_DROP -->|ONLY while grounded| HUB::ACTIONABLE::GROUNDED
+        LIGHT_THROW_DROP -->|ONLY while airborne| HUB::ACTIONABLE::AERIAL
                     
         %% --- Using beam sword ---
-            SWORD_SWING_1 -->|ONLY while grounded| HUB::GROUNDED_ACTIONABLE
-            SWORD_SWING_3 -->|ONLY while grounded| HUB::GROUNDED_ACTIONABLE
-            SWORD_SWING_4 -->|ONLY while grounded| HUB::GROUNDED_ACTIONABLE
+            SWORD_SWING_1 -->|ONLY while grounded| HUB::ACTIONABLE::GROUNDED
+            SWORD_SWING_3 -->|ONLY while grounded| HUB::ACTIONABLE::GROUNDED
+            SWORD_SWING_4 -->|ONLY while grounded| HUB::ACTIONABLE::GROUNDED
 
-            SWORD_SWING_1 -->|ONLY while airborne| HUB::AERIAL_ACTIONABLE
-            SWORD_SWING_3 -->|ONLY while airborne| HUB::AERIAL_ACTIONABLE
-            SWORD_SWING_4 -->|ONLY while airborne| HUB::AERIAL_ACTIONABLE
+            SWORD_SWING_1 -->|ONLY while airborne| HUB::ACTIONABLE::AERIAL
+            SWORD_SWING_3 -->|ONLY while airborne| HUB::ACTIONABLE::AERIAL
+            SWORD_SWING_4 -->|ONLY while airborne| HUB::ACTIONABLE::AERIAL
 
-            SWORD_SWING_DASH --> HUB::GROUNDED_ACTIONABLE
+            SWORD_SWING_DASH --> HUB::ACTIONABLE::GROUNDED
         %% ------
     %% ------
 
@@ -952,10 +950,10 @@ SQUAT
 
         GUARD --> MISS_FOOT
 
-        GUARD_OFF --> HUB::GROUNDED_ACTIONABLE
-        GUARD_SET_OFF --> HUB::GROUNDED_ACTIONABLE
+        GUARD_OFF --> HUB::ACTIONABLE::GROUNDED
+        GUARD_SET_OFF --> HUB::ACTIONABLE::GROUNDED
         GUARD_SET_OFF --> MISS_FOOT
-        GUARD_REFLECT --> HUB::GROUNDED_ACTIONABLE
+        GUARD_REFLECT --> HUB::ACTIONABLE::GROUNDED
         GUARD_REFLECT --> MISS_FOOT
 
         SHIELD_BREAK_FLY --> SHIELD_BREAK_FALL
@@ -984,10 +982,10 @@ SQUAT
             DOWN_BOUND_U --> DOWN_FOWARD_U
             DOWN_BOUND_U --> DOWN_BACK_U
 
-            DOWN_STAND_U --> HUB::GROUNDED_ACTIONABLE
-            DOWN_ATTACK_U --> HUB::GROUNDED_ACTIONABLE
-            DOWN_FOWARD_U --> HUB::GROUNDED_ACTIONABLE
-            DOWN_BACK_U --> HUB::GROUNDED_ACTIONABLE
+            DOWN_STAND_U --> HUB::ACTIONABLE::GROUNDED
+            DOWN_ATTACK_U --> HUB::ACTIONABLE::GROUNDED
+            DOWN_FOWARD_U --> HUB::ACTIONABLE::GROUNDED
+            DOWN_BACK_U --> HUB::ACTIONABLE::GROUNDED
         %% ------
         %% --- Face down ---
             DOWN_BOUND_D --> DOWN_WAIT_D
@@ -999,24 +997,24 @@ SQUAT
             DOWN_BOUND_D --> DOWN_FOWARD_D
             DOWN_BOUND_D --> DOWN_BACK_D
 
-            DOWN_STAND_D --> HUB::GROUNDED_ACTIONABLE
-            DOWN_ATTACK_D --> HUB::GROUNDED_ACTIONABLE
-            DOWN_FOWARD_D --> HUB::GROUNDED_ACTIONABLE
-            DOWN_BACK_D --> HUB::GROUNDED_ACTIONABLE
+            DOWN_STAND_D --> HUB::ACTIONABLE::GROUNDED
+            DOWN_ATTACK_D --> HUB::ACTIONABLE::GROUNDED
+            DOWN_FOWARD_D --> HUB::ACTIONABLE::GROUNDED
+            DOWN_BACK_D --> HUB::ACTIONABLE::GROUNDED
         %% ------
     %% ------
 
     %% --- Sucessful tech transfers ---
-        PASSIVE --> HUB::GROUNDED_ACTIONABLE
-        PASSIVE_STAND_F --> HUB::GROUNDED_ACTIONABLE
-        PASSIVE_STAND_B --> HUB::GROUNDED_ACTIONABLE
-        PASSIVE_WALL --> HUB::GROUNDED_ACTIONABLE
-        PASSIVE_WALL_JUMP --> HUB::GROUNDED_ACTIONABLE
-        PASSIVE_CEIL --> HUB::GROUNDED_ACTIONABLE
+        PASSIVE --> HUB::ACTIONABLE::GROUNDED
+        PASSIVE_STAND_F --> HUB::ACTIONABLE::GROUNDED
+        PASSIVE_STAND_B --> HUB::ACTIONABLE::GROUNDED
+        PASSIVE_WALL --> HUB::ACTIONABLE::GROUNDED
+        PASSIVE_WALL_JUMP --> HUB::ACTIONABLE::GROUNDED
+        PASSIVE_CEIL --> HUB::ACTIONABLE::GROUNDED
     %% ------
 
     %% --- Grab transfers ---
-        CATCH --> HUB::GROUNDED_ACTIONABLE
+        CATCH --> HUB::ACTIONABLE::GROUNDED
         CATCH --> CATCH_PULL
 
         CATCH_DASH --> CATCH_DASH_PULL
@@ -1036,12 +1034,12 @@ SQUAT
         CATCH_ATTACK --> HUB::GRAB::THROWS
         %% if the opponent has sufficiently mashed then they're released at the end of the CATCH_ATTACK state
 
-        CATCH_CUT --> HUB::GROUNDED_ACTIONABLE
+        CATCH_CUT --> HUB::ACTIONABLE::GROUNDED
 
-        THROW_F --> HUB::GROUNDED_ACTIONABLE
-        THROW_B --> HUB::GROUNDED_ACTIONABLE
-        THROW_HI --> HUB::GROUNDED_ACTIONABLE
-        THROW_LW --> HUB::GROUNDED_ACTIONABLE
+        THROW_F --> HUB::ACTIONABLE::GROUNDED
+        THROW_B --> HUB::ACTIONABLE::GROUNDED
+        THROW_HI --> HUB::ACTIONABLE::GROUNDED
+        THROW_LW --> HUB::ACTIONABLE::GROUNDED
     %% ------
 
     %% --- Grabbed transfers ---
@@ -1074,8 +1072,8 @@ SQUAT
             CAPTURE_DAMAGE_LW --> HUB::GRABBED::THROWNS
         %% ------
 
-        CAPTURE_CUT --> HUB::GROUNDED_ACTIONABLE
-        CAPTURE_JUMP --> HUB::AERIAL_ACTIONABLE
+        CAPTURE_CUT --> HUB::ACTIONABLE::GROUNDED
+        CAPTURE_JUMP --> HUB::ACTIONABLE::AERIAL
 
         CAPTURE_NECK --> CAPTURE_WAIT_LW
         CAPTURE_FOOT --> CAPTURE_WAIT_LW
@@ -1106,10 +1104,10 @@ SQUAT
 
     %% --- Escape transfers ---
         %% --- Rolls ---
-            ESCAPE_F --> HUB::GROUNDED_ACTIONABLE
-            ESCAPE_B --> HUB::GROUNDED_ACTIONABLE
+            ESCAPE_F --> HUB::ACTIONABLE::GROUNDED
+            ESCAPE_B --> HUB::ACTIONABLE::GROUNDED
         %% ------
-        ESCAPE --> HUB::GROUNDED_ACTIONABLE
+        ESCAPE --> HUB::ACTIONABLE::GROUNDED
 
         ESCAPE_AIR --> FALL_SPECIAL
         ESCAPE_AIR --> FALL_SPECIAL_F
@@ -1124,8 +1122,8 @@ SQUAT
     %% ------
 
     %% --- Taunt transfers ---
-        APPEAL_R --> HUB::GROUNDED_ACTIONABLE
-        APPEAL_L --> HUB::GROUNDED_ACTIONABLE
+        APPEAL_R --> HUB::ACTIONABLE::GROUNDED
+        APPEAL_L --> HUB::ACTIONABLE::GROUNDED
     %% ------
 
     %% --- Caught transfers ---
@@ -1137,7 +1135,7 @@ SQUAT
         %% ------
         %% --- egg lay ---
             CAPTURE_YOSHI --> YOSHI_EGG
-            YOSHI_EGG --> HUB::AERIAL_ACTIONABLE
+            YOSHI_EGG --> HUB::ACTIONABLE::AERIAL
         %% ------
         %% --- koopa klaw ---
             %% --- grounded ---
@@ -1184,16 +1182,16 @@ SQUAT
         %% --- buried ---
             BURY --> BURY_WAIT
             BURY_WAIT --> BURY_JUMP
-            BURY_JUMP --> HUB::AERIAL_ACTIONABLE
+            BURY_JUMP --> HUB::ACTIONABLE::AERIAL
         %% ------
         %% --- sing ---
             DAMAGE_SONG --> DAMAGE_SONG_WAIT
             DAMAGE_SONG_WAIT --> DAMAGE_SONG_RV
-            DAMAGE_SONG_RV --> HUB::GROUNDED_ACTIONABLE
+            DAMAGE_SONG_RV --> HUB::ACTIONABLE::GROUNDED
         %% ------
         %% --- disable ---
-            DAMAGE_BIND --> HUB::GROUNDED_ACTIONABLE
-            DAMAGE_BIND --> HUB::GROUNDED_ACTIONABLE
+            DAMAGE_BIND --> HUB::ACTIONABLE::GROUNDED
+            DAMAGE_BIND --> HUB::ACTIONABLE::GROUNDED
 
 			%% ? i don't really know what THROWN_MEWTWO actually is?
 
@@ -1212,18 +1210,18 @@ SQUAT
         %% --- ice ---
             DAMAGE_ICE --> DAMAGE_ICE_JUMP
 
-            DAMAGE_ICE_JUMP --> HUB::AERIAL_ACTIONABLE
+            DAMAGE_ICE_JUMP --> HUB::ACTIONABLE::AERIAL
         %% ------
         %% --- copied egg lay ---
             CAPTURE_KIRBY_YOSHI --> KIRBY_YOSHI_EGG
-            KIRBY_YOSHI_EGG --> HUB::AERIAL_ACTIONABLE
+            KIRBY_YOSHI_EGG --> HUB::ACTIONABLE::AERIAL
         %% ------
     %% ------
 
     %% --- Entry transfers ---
         ENTRY_START --> ENTRY
         ENTRY --> ENTRY_END
-        ENTRY_END --> HUB::AERIAL_ACTIONABLE
+        ENTRY_END --> HUB::ACTIONABLE::AERIAL
     %% ------
 
     %% ////// EVENTS //////
