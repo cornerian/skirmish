@@ -15,13 +15,14 @@ use peppi::{
 
 use skirmish;
 
+type SnapshotCheck = fn(state: skirmish::Snapshot, next: skirmish::Snapshot, previous: skirmish::Snapshot, index: usize);
+
 pub struct Context<const N: usize> {
 	pub snapshot: skirmish::Snapshot<N>,
 	pub inputs: skirmish::Inputs<N>, // inputs that create the next snapshot
 }
 
-#[test]
-fn has_parity() {
+fn parity(check: Fn) {
 	let mut buf = io::BufReader::new(fs::File::open("game.slp").unwrap());
 		
 	let collect_opts = Opts { rollback: Rollback::First };
@@ -48,6 +49,42 @@ fn has_parity() {
 			return assert_eq!(end, game.end, "Game end fails parity")
 		}
 
-		assert_eq!(simulator.snapshot, next.snapshot, "Frame {} fails parity", index);
+		check(simulator.snapshot, next.snapshot, context.snapshot, index);
 	}
+}
+
+#[test]
+fn full_parity() {
+	fn full_check(state: skirmish::Snapshot, next: skirmish::Snapshot, previous: skirmish::Snapshot, index: usize) {
+		assert_eq!(state, next, "Frame {} fails full parity", index);
+	}
+
+	parity(full_check);
+}
+
+#[test]
+fn action_state_parity() {
+	fn action_state_check(state: skirmish::Snapshot, next: skirmish::Snapshot, previous: skirmish::Snapshot, index: usize) {
+		assert_eq!(state, next, "Frame {}, agent {} fails action state parity. Action state {} actually transferred to {} but simulated {}", index);
+	}
+
+	parity(action_state_check);
+}
+
+#[test]
+fn collision_parity() {
+	fn collision_check(state: skirmish::Snapshot, next: skirmish::Snapshot, previous: skirmish::Snapshot, index: usize) {
+		assert_eq!(state, next, "Frame {}, agent {} fails collision parity. Agent actually had collision {} but simulated {}", index);
+	}
+
+	parity(collision_check);
+}
+
+#[test]
+fn physics_parity() {
+	fn physics_check(state: skirmish::Snapshot, next: skirmish::Snapshot, previous: skirmish::Snapshot, index: usize) {
+		assert_eq!(state, next, "Frame {}, agent {} fails physics parity. Agent actually had position {} but simulated {}", index);
+	}
+
+	parity(physics_check);
 }
