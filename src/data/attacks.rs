@@ -2,7 +2,7 @@ use phf;
 
 use peppi::model::enums::{action_state::State, character};
 
-use crate::snapshot::Attack;
+use crate::hits::Attack;
 
 type CharacterAttacks = phf::Map<&'static State, Attack>;
 

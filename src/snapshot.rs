@@ -87,6 +87,15 @@ pub struct ActionContext {
 	pub counter: Option<usize>,
 }
 
+impl ActionContext {
+	pub fn over(&self) -> bool {
+		match self.counter {
+			Some(counter) => self.age >= counter,
+			None => false,
+		}
+	}
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterState {
 	pub action: ActionContext,
