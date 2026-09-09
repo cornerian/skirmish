@@ -23,8 +23,10 @@ previous batch. Samples outside their open lifetime interval are invisible.
 Six GPU-generated vertices form each camera-facing quad. One 56-byte record per
 live particle is uploaded into a persistent 448 KiB instance buffer. CPU staging
 vectors reserve the capacity once. Sorting is allocation-free and back to front
-by view depth with an input-index tiebreaker. Smoke uses one instanced draw,
-premultiplied alpha and depth comparison without depth writes. There are no
+by cached view depth with an input-index tiebreaker. Mixed effects use one
+instanced draw, premultiplied alpha and depth comparison without depth writes.
+Emissive effects supply additive RGB with zero source alpha, preserving the
+destination through the same blend state. There are no
 textures, compute dispatches, geometry shaders, baked frames or per-particle GPU
 allocations. Noise is capped at three bands and attenuated above the pixel
 footprint. Transparent scene meshes currently draw before particles: their
@@ -66,8 +68,9 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Leaf | files/GrGr.dat offset 0x57b00; full aliases in particle_sources.jsonl | Analytic leaf appearance and lifetime fade | Implemented visual redesign |
 | Feather | files/GrOt.dat offset 0x4c7c0; full aliases in particle_sources.jsonl | Analytic feather appearance and lifetime fade | Implemented visual redesign |
 | Dark Flare | files/GrZe.dat offset 0x5cfa0; full aliases in particle_sources.jsonl | Analytic dark flare appearance and lifetime fade | Implemented visual redesign |
+| Dark Fire | files/EfGnData.dat offset 0xcf60; full aliases in particle_sources.jsonl | Analytic dark fire appearance and lifetime fade | Implemented visual redesign |
 
-The source texture SHA-256 values for those two aliases are
+The source texture SHA-256 values for the two smoke references are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
 `41dc2940848018561251f720e446e5d10af3cd64203f978125c59f85f72088b3`.
 The asset catalog identifies these visually as smoke-like; it does not identify
@@ -76,12 +79,17 @@ project's original approximation metrics do not validate this new shader.
 
 The source catalog `crates/renderer/particle_sources.jsonl` retains 337 unique
 frames and all 593 aliases from the existing decoded export, visually classified
-into 28 families. `particle_catalog::effect_for_texture` resolves a decoded RGBA
-hash to an implemented shader family at material-load time. An unimplemented
-family or unknown texture returns `None`. The catalog contains source identities
+into 29 implemented families. `particle_catalog::effect_for_texture` resolves a
+decoded RGBA hash to a shader family at material-load time. Unknown textures
+return `None`. The catalog contains source identities
 and visual classifications, not copied textures or original runtime names.
 
-Remaining families are pending. Melee's source distinguishes
+All exported particle candidates have a redesigned shader family. This is
+coverage of the available export, not proof that its structural decoder found
+every runtime resource. Individual sprite poses are replaced by each family's
+procedural lifetime animation; these are deliberate visual redesigns, not
+pixel-faithful reconstructions. Source frame selection, emitter timing and
+caller tint/scale remain integration inputs. Melee's source distinguishes
 generator effects, animated mesh effects and composite spawns. Direct generator
 ranges alone are not a verified inventory of actual bank entries. Do not label a
 generic shader or unknown ID as a completed reconstruction. The native runtime

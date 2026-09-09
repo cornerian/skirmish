@@ -23,7 +23,7 @@ pub struct ParticleTextureAlias {
 }
 
 impl ParticleTextureRecipe {
-    /// A pending family returns None rather than silently using a generic puff.
+    /// Unknown families return None rather than silently using a generic puff.
     pub fn effect(&self) -> Option<ParticleEffect> {
         ParticleEffect::from_str(&self.visual_family.replace('_', "-"), false).ok()
     }
@@ -62,6 +62,11 @@ mod tests {
             assert_eq!(recipe.frame_sha256.len(), 64);
             assert!(recipe.reference_size.iter().all(|&n| n > 0));
             assert!(!recipe.aliases.is_empty());
+            assert!(
+                recipe.effect().is_some(),
+                "unimplemented family {}",
+                recipe.visual_family
+            );
             for alias in &recipe.aliases {
                 assert_eq!(alias.source_sha256.len(), 64);
                 assert!(alias.source.starts_with("files/"));
