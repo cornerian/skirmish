@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
-use skirmish::{inventory, match_trace, runner, slippi, trace};
+use skirmish::{inventory, match_trace, menu_cli, menus::Unlocks, runner, slippi, trace};
 use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter},
@@ -21,6 +21,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Browse the translated game menu branches in a line-oriented terminal.
+    Menus {
+        #[arg(long)]
+        all_star: bool,
+        #[arg(long)]
+        sound_test: bool,
+    },
+    /// Run menu controller frames from JSONL and emit a semantic trace.
+    RunMenus {
+        /// Read from this file; otherwise read stdin. See docs/menus.md.
+        #[arg(long)]
+        inputs: Option<PathBuf>,
+        #[arg(long)]
+        all_star: bool,
+        #[arg(long)]
+        sound_test: bool,
+    },
     /// Compare native match frames with Slippi observations from explicit initialization.
     ValidateReplay {
         path: PathBuf,
@@ -77,6 +94,37 @@ enum Commands {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Commands::Menus {
+            all_star,
+            sound_test,
+        } => {
+            menu_cli::interactive(
+                Unlocks {
+                    all_star,
+                    sound_test,
+                },
+                io::stdin().lock(),
+                io::stdout().lock(),
+            )?;
+        }
+        Commands::RunMenus {
+            inputs,
+            all_star,
+            sound_test,
+        } => {
+            let input: Box<dyn BufRead> = match inputs {
+                Some(path) => Box::new(BufReader::new(File::open(path)?)),
+                None => Box::new(BufReader::new(io::stdin())),
+            };
+            menu_cli::run(
+                Unlocks {
+                    all_star,
+                    sound_test,
+                },
+                input,
+                BufWriter::new(io::stdout().lock()),
+            )?;
+        }
         Commands::ValidateReplay {
             path,
             initialization,

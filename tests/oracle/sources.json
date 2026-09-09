@@ -148,5 +148,35 @@
     "fixture": "tests/oracle/original/clank_rebound.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Rebound.c",
     "sha256": "040104daf2aa67ff7bb8a8207df217cc2e91eeafe97223aef5a9d9adb013003c"
+  },
+  {
+    "fixture": "tests/oracle/original/mnmain.c",
+    "upstream": "src/melee/mn/mnmain.c",
+    "sha256": "cbce53b1c0d06c1eb851cc203b17237c0fef827cb024ba6f6a0544761850b7c2"
+  },
+  {
+    "fixture": "tests/oracle/original/mn_forward.h",
+    "upstream": "src/melee/mn/forward.h",
+    "sha256": "f61ba58af8cbed9b89e13126e6b17b4fa8dd62c4b765bb0b2ab3df84bb9abb1a"
+  },
+  {
+    "fixture": "tests/oracle/original/mn_inlines.h",
+    "upstream": "src/melee/mn/inlines.h",
+    "sha256": "0cdc22a029093747943ca3089ab3031aa3c2d9701b075f4254c48c62974cb1d4"
+  },
+  {
+    "fixture": "tests/oracle/original/gm_controller.c",
+    "upstream": "src/melee/gm/gm_1A36.c",
+    "sha256": "3964234a0a3dc1dccb39824c6f78c88b9a59a301f8fec4078120efa4b7aa9d7d"
+  },
+  {
+    "fixture": "tests/oracle/original/gm_controller.static.h",
+    "upstream": "src/melee/gm/gm_1A36.static.h",
+    "sha256": "d262ea2b3ea52a62c191ce1daf3ade80c880955776c8721da8538aa8baee1923"
+  },
+  {
+    "fixture": "tests/oracle/original/dolphin_pad.h",
+    "upstream": "extern/dolphin/include/dolphin/pad.h",
+    "sha256": "d5fec142b1165aea3764fffe7e66c241ede2c2c31b16cbed05b5c0bccacdd947"
   }
 ]

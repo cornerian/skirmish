@@ -80,3 +80,12 @@ are unchanged. Tests cover ordered lists, eligibility asymmetries, follower
 depth bias and the original depth recenter/cap order. The safe kernel rejects
 invalid physical inputs/references and nonfinite effective positions/results.
 These comparisons do not include the outer scheduler or GameCube data layout.
+
+The menu adapter compiles `mnmain.c` input decoding, confirming-port arbitration,
+availability/count predicates, navigation helpers, and all ten branch callbacks.
+It retains the accessed integer widths and copies the original menu enums from
+`mn_forward.h`. Tests check the timer helper and input enum against the pristine
+`mn_inlines.h`, and PAD masks against the pristine `dolphin_pad.h`. Rendering,
+audio, object allocation, and scene scheduling are no-ops; external submenu
+initializers record their identity. Callback comparisons therefore stop at the
+delegation boundary, before the submenu's own initialization side effects.

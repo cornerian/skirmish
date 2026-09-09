@@ -13,7 +13,9 @@ Game-specific arithmetic is retained when a library would change its results.
 ## Development
 
 Use stable Rust and a C compiler (Peppi's compression dependencies and the
-optional differential tests use native C). In xonsh:
+optional differential tests use native C).
+The renderer workspace member needs SDL3, plus ALSA development files and
+`pkg-config` on Linux; see its [setup notes](crates/renderer/README.md). In xonsh:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
@@ -45,10 +47,20 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
 | `fighter` | Movement, locomotion, knockback, DI and hitlag mechanics |
 | `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries and swept capsules |
-| `controller` | Original controller stick/trigger clamping and four-port processing with owned calibration |
+| `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
+| `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
 | `game` | Experimental native two-player match: stage/ECB collision, animated swept jab, damage and DI, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
+| `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
+
+Start the native graphics preview with
+`cargo run --locked -p renderer --bin skirmish-renderer`. It includes a procedural
+demo; `--scene /path/to/scene.json` loads a `skirmish-visual-v1` asset export.
+Add `--menus` to start in the interactive menu; F1 switches menus and scene on
+the same graphics surface. The [renderer crate](crates/renderer/README.md) documents controls,
+offscreen capture, requirements, and material approximation limits. It does not
+yet present live matches or implement original game rendering.
 
 Most game, engine, SDK and platform code remains unported. Transcendental
 tests allow a documented host-library tolerance; integer and
@@ -62,6 +74,12 @@ of a scripted jab sequence through stock loss, respawn and a winner. Bones and
 collision run in the headless `collision` and `fighter` modules; there is no rendering dependency. See the
 [match API, native-data format and coverage limits](docs/match.md). Real Fox and
 stage data subsets are preserved with [provenance and missing fields](docs/native-data.md).
+
+Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
+This terminal preview supports navigation and confirm/back. The renderer adds
+graphical navigation; original menu artwork and destination screens remain
+unported. `run-menus` accepts controller frames and
+emits reproducible traces. See [menu controls and coverage](docs/menus.md).
 
 Inspect a completed Slippi replay with
 `cargo run --locked --bin skirmish -- inspect-replay /path/to/game.slp`.

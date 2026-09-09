@@ -1,4 +1,9 @@
 //! Dolphin `PadClamp.c`: exact integer input conditioning without device access.
+
+/// Native hot-plug gamepad input backed by SDL3.
+#[cfg(feature = "controller-input")]
+pub mod host;
+
 /// Scalar layout of Dolphin PADStatus. Error zero denotes a successful sample.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]

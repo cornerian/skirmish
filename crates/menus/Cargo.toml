@@ -1,0 +1,15 @@
+[package]
+name = "menus"
+version = "0.1.0"
+edition = "2024"
+description = "Headless native Melee menu input and navigation"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
