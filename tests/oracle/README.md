@@ -71,3 +71,12 @@ audio outputs are omitted. ftColl_800784B4's Slash-vs-Slash branch would consume
 HSD_Randi(3); that branch must preserve its shared RNG consumption before it is
 supported, even in a headless match. These scalar tests do not establish global
 RNG parity of the effect engine. See `docs/clanks.md` for caller responsibilities.
+
+`nudge` selects the complete ftCommon_8007E0E4, 8007DD7C, 8007DFD0 and 8007F8B4
+functions from the existing ftcommon.c snapshot. Thread-local host entities
+provide player ownership, an explicit follower-to-leader mapping and the
+already-resolved mpLineGetPrev/Next results. The nudge calculations themselves
+are unchanged. Tests cover ordered lists, eligibility asymmetries, follower
+depth bias and the original depth recenter/cap order. The safe kernel rejects
+invalid physical inputs/references and nonfinite effective positions/results.
+These comparisons do not include the outer scheduler or GameCube data layout.

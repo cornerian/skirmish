@@ -193,8 +193,9 @@ history. Grabs, specials, ledge actions, running turns and character
 multijumps remain unported. Some accepted stick/button combinations consequently
 have no action in this experimental profile.
 
-Ledge actions, moving stages/remapping, full ECB corner/squeeze response and
-fighter push/nudge remain unported. Respawn delay/invincibility are configured integration
+Ledge actions, moving stages/remapping and full ECB corner/squeeze response
+remain unported. The [nudge kernel](nudge.md) is available separately; fighter
+push/nudge is not yet integrated into matches. Respawn delay/invincibility are configured integration
 policies, without the original rebirth platform. Damage landing does not yet
 implement techs, bounces or knockdown.
 
