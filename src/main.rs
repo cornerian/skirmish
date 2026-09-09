@@ -127,7 +127,7 @@ fn main() -> Result<()> {
         }
         Commands::DemoMatch { seed } => {
             let data = serde_json::from_str(include_str!(
-                "../crates/arena/tests/fixtures/integration-match.json"
+                "../tests/fixtures/game/integration-match.json"
             ))?;
             match_trace::run(
                 data,

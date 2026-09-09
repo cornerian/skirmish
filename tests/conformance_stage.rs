@@ -6,8 +6,8 @@ mod reference;
 mod support;
 
 use skirmish::{
+    collision::stage,
     game::{BUTTON_X, Event, Match, data::StageGeometry},
-    physics::stage,
 };
 use support::*;
 

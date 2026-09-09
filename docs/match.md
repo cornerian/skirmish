@@ -96,7 +96,7 @@ Pass remembers and skips only its supporting line during every movement substep;
 other platforms remain collidable. The next action transition clears that skip.
 The drop also applies the source ten-map-callback ECB bottom lock. Full corner
 resolution and squeeze response are unported,
-although reusable squeeze arithmetic is available in `physics::ecb`.
+although reusable squeeze arithmetic is available in `collision::ecb`.
 
 An active hitbox carries its previous and current world centers. New activation,
 a disabled slot or a changed group resets its sweep. Hitlag still updates these
@@ -131,7 +131,7 @@ jump multipliers and platform-drop parameters. No authentic common-data values
 are implied. With that data, the scheduler supports Dash/Run/RunBrake, standing
 Turn, Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. Jump
 button history, tilt ages, consumed jumps and transition timers are checkpointed.
-`crates/arena/tests/fixtures/locomotion.json` contains invented values used by
+`tests/fixtures/game/locomotion.json` contains invented values used by
 the conformance and movement integration tests. These actions still use the
 supplied static non-jab pose; action-specific animation resources are needed
 for authentic collision shapes and timing.

@@ -66,10 +66,8 @@ const CASE: &str = "synthetic_loader_regression";
 
 fn synthetic_fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
-    let data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
-        "../crates/arena/tests/fixtures/integration-match.json"
-    ))
-    .unwrap();
+    let data: skirmish::game::data::MatchData =
+        serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap();
     let mut inputs = vec![[Controller::default(); 2]; 4];
     inputs[2][0].stick[0] = 0.5;
     let input_bytes = inputs

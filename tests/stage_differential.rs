@@ -3,8 +3,8 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use physics::stage::*;
 use proptest::prelude::*;
+use skirmish::collision::stage::*;
 
 #[repr(C)]
 struct OracleLine {

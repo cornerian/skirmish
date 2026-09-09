@@ -3,8 +3,8 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use physics::combat::*;
 use proptest::prelude::*;
+use skirmish::fighter::combat::*;
 use std::sync::Mutex;
 
 static RULES_LOCK: Mutex<()> = Mutex::new(());

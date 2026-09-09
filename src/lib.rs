@@ -2,15 +2,22 @@
 //!
 //! This crate does not yet implement the complete game.
 
+pub mod bytecode;
+pub mod collision;
+pub mod controller;
+pub mod ctype;
+pub mod fighter;
+pub mod game;
+pub mod id;
 pub mod inventory;
 pub mod match_trace;
+pub mod mbstring;
+pub mod quaternion;
+pub mod random;
 pub mod replay_match;
 pub mod replay_observation;
 pub mod runner;
+pub mod spline;
 pub mod trace;
-pub use arena as game;
-pub use input;
 pub use peppi_adapter as slippi;
-pub use physics;
 pub use replay;
-pub use runtime::{bytecode, ctype, id, mbstring, quaternion, random, spline};

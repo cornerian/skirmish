@@ -3,8 +3,8 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use input::{ClampRegion, DEFAULT_REGION, PadStatus, StickRegion, clamp};
 use proptest::prelude::*;
+use skirmish::controller::{ClampRegion, DEFAULT_REGION, PadStatus, StickRegion, clamp};
 use std::sync::Mutex;
 
 #[link(name = "skirmish_oracle", kind = "static")]

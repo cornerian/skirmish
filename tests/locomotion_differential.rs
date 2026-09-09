@@ -4,11 +4,11 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use physics::{
+use proptest::prelude::*;
+use skirmish::fighter::{
     Attributes, Movement,
     locomotion::{JumpAttributes, WalkParameters, jump_velocity, walk},
 };
-use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {

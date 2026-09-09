@@ -210,6 +210,3 @@ pub fn compare_f64_bits(expected: &f64, actual: &f64) -> Option<BitDifference<u6
     let (expected, actual) = (expected.to_bits(), actual.to_bits());
     (expected != actual).then_some(BitDifference { expected, actual })
 }
-
-#[cfg(test)]
-mod tests;

@@ -16,21 +16,20 @@ work; it does not own that project's directory layout. The
 [resource integration contract](resources.md) separates exact gameplay data
 from vector artwork and procedural presentation effects.
 
-`crates/runtime` is an independent library project for the translated HAL
-and Metrowerks algorithms. `crates/physics` contains scalar movement,
-walking/jump launch, bone hierarchy transforms, environmental collision boxes,
-static stage queries, swept contacts and damage arithmetic. Bone poses
-and bone-attached hitboxes/hurtboxes are physics data, available headless.
-`crates/arena` composes an experimental match slice and owns gameplay
-state and frame scheduling. Cargo workspace packages keep builds and
-tests reproducible while giving each library a separate dependency boundary.
-They can later move to separate Git repositories without changing their APIs.
+The main crate groups native code by responsibility. Focused top-level modules
+hold translated HSD and Metrowerks algorithms. `fighter` contains scalar
+movement, walking/jump launch, and damage arithmetic; `collision` contains bone
+hierarchy transforms, environmental collision boxes, static stage queries, and
+swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
+headless. `game` composes the experimental match slice and owns gameplay state
+and frame scheduling. Separate workspace crates remain only where a real
+dependency boundary exists, such as replay parsing or presentation.
 
 `crates/peppi-adapter` uses Peppi for parsing and columnar replay storage,
 reusing its port, version, pre/post-frame and vector types. This keeps replay
-formats and Arrow dependencies outside `arena`, `physics` and the
-generic `replay` validator. Runtime vectors retain their existing
-arithmetic and `no_std` boundary; replay vectors carry recorded observations.
+formats and Arrow dependencies outside the headless game and the generic
+`replay` validator. Native vectors retain their existing arithmetic; replay
+vectors carry recorded observations.
 The application-level `replay_match` coordinator connects these boundaries: it
 restores an explicit native checkpoint, maps supported recorded inputs, calls
 `Match::step` and compares a named subset of post-frame fields. The `validate-replay`

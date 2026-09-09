@@ -16,15 +16,14 @@ c-oracle = ["dep:cc"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-runtime = { path = "crates/runtime" }
-physics = { path = "crates/physics" }
-input = { path = "crates/input" }
+glam = { version = "0.33", default-features = false, features = ["scalar-math", "libm"] }
+libm = "0.2"
 replay = { path = "crates/replay" }
-arena = { path = "crates/arena" }
 peppi-adapter = { path = "crates/peppi-adapter" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+thiserror = "2"
 
 [build-dependencies]
 cc = { version = "1", optional = true }

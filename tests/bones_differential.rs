@@ -3,11 +3,11 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use physics::bones::{
+use proptest::prelude::*;
+use skirmish::collision::bones::{
     Bone, BoneCapsule, IDENTITY, LocalTransform, Matrix, Pose, Vector, concat, srt,
     transform_point, transform_vector,
 };
-use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {

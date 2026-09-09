@@ -42,18 +42,13 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 
 | Library | Translated behavior |
 | --- | --- |
-| `runtime::random` | HSD and MSL random sequences, explicit seeds and HSD seed-storage forgetting |
-| `runtime::ctype` | ASCII classification masks and case conversion, including upstream EOF/byte behavior |
-| `runtime::mbstring` | MSL wide-to-byte conversion and low-byte terminators |
-| `runtime::bytecode` | All implemented HSD bytecode opcodes, stack operations, branching, arithmetic and RNG |
-| `runtime::spline` | Hermite, linear/Bezier/B-spline/cardinal points and arc-length inversion |
-| `runtime::id` | Object-ID lookup, replacement, removal and default-table reset using `HashMap` |
-| `runtime::quaternion` | Six matrix, axis/Euler rotation, multiplication and interpolation routines, using scalar `glam` plus compatibility wrappers |
-| `physics` | Movement, skeletal poses, environmental collision boxes and substeps, directed stage queries, swept capsules, knockback, DI and hitlag in a standalone `no_std` library (poses use `alloc`) |
-| `input` | Original controller stick/trigger clamping and four-port processing with owned calibration in a `no_std` library |
+| `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
+| `fighter` | Movement, locomotion, knockback, DI and hitlag mechanics |
+| `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries and swept capsules |
+| `controller` | Original controller stick/trigger clamping and four-port processing with owned calibration |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
-| `arena` | Experimental native two-player match: stage/ECB collision, animated swept jab, damage and DI, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
+| `game` | Experimental native two-player match: stage/ECB collision, animated swept jab, damage and DI, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
 
 Most game, engine, SDK and platform code remains unported. Transcendental
 tests allow a documented host-library tolerance; integer and
@@ -64,7 +59,7 @@ are not implemented yet.
 Run a complete native headless demonstration with
 `cargo run --locked --bin skirmish -- demo-match`. It emits a semantic JSONL trace
 of a scripted jab sequence through stock loss, respawn and a winner. Bones and
-collision run in physics; there is no rendering dependency. See the
+collision run in the headless `collision` and `fighter` modules; there is no rendering dependency. See the
 [match API, native-data format and coverage limits](docs/match.md). Real Fox and
 stage data subsets are preserved with [provenance and missing fields](docs/native-data.md).
 

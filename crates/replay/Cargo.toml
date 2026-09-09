@@ -8,10 +8,6 @@ publish = false
 [dependencies]
 thiserror = "2"
 
-[dev-dependencies]
-physics = { path = "../physics" }
-runtime = { path = "../runtime" }
-
 [lints.rust]
 unsafe_code = "forbid"
 

@@ -9,7 +9,7 @@ an exact original-C counterpart or arithmetic compatibility boundary. Existing
 documented in `tests/oracle`; they do not establish whole-game equivalence.
 
 `tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
-files, and advances `arena::Match` using their controller inputs. It exercises
+files, and advances `game::Match` using their controller inputs. It exercises
 movement, jumps, landing, a jab, damage, explicit checkpoint restoration, and
 the command-line executable. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
@@ -49,7 +49,7 @@ cargo test --locked --test conformance_resources -- --ignored
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
-in `crates/arena/tests` extend these beyond the original single gap scenario:
+in the root `tests/game_*.rs` suite extend these beyond the original single gap scenario:
 
 | Passing target | Additional contracts |
 | --- | --- |

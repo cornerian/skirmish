@@ -4,20 +4,16 @@
 use skirmish::game::{Controller, Match, State, data::MatchData};
 
 pub fn data() -> MatchData {
-    let mut data: MatchData = serde_json::from_str(include_str!(
-        "../../crates/arena/tests/fixtures/integration-match.json"
-    ))
-    .unwrap();
+    let mut data: MatchData =
+        serde_json::from_str(include_str!("../fixtures/game/integration-match.json")).unwrap();
     data.rules.stocks = 4;
     data.rules.countdown_frames = 0;
     data.rules.time_limit_frames = 9_999;
     data.rules.top_ko_min_knockback = Some(0.5);
     // Explicit invented values, like integration-match.json; these are not
     // extracted Melee common data or authentic character timings.
-    let locomotion = serde_json::from_str(include_str!(
-        "../../crates/arena/tests/fixtures/locomotion.json"
-    ))
-    .unwrap();
+    let locomotion =
+        serde_json::from_str(include_str!("../fixtures/game/locomotion.json")).unwrap();
     for fighter in &mut data.fighters {
         fighter.locomotion = Some(locomotion);
     }

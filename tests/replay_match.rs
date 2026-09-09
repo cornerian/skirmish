@@ -28,10 +28,8 @@ struct Recording {
 
 impl Recording {
     fn new() -> Self {
-        let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
-            "../crates/arena/tests/fixtures/integration-match.json"
-        ))
-        .unwrap();
+        let mut data: skirmish::game::data::MatchData =
+            serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap();
         data.rules.countdown_frames = 0;
         data.stage.floor.left = -100.0;
         data.stage.floor.right = 100.0;

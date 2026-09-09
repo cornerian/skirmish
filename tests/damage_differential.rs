@@ -3,8 +3,8 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use physics::damage::*;
 use proptest::prelude::*;
+use skirmish::fighter::damage::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
