@@ -55,7 +55,7 @@ fn angle(p: vec2f) -> f32 {
 }
 
 fn star_distance(p: vec2f) -> f32 {
-    let a = angle(p) + 1.5707963;
+    let a = angle(p) - 1.5707963;
     let sector = floor(a / 1.2566371 + 0.5);
     // Signed polar boundary of a five-point star; avoids loops over edges.
     let t = abs(a - sector * 1.2566371);
