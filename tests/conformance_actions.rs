@@ -35,18 +35,20 @@ fn airborne_game() -> Match {
 
 // src/melee/ft/kinds/ftCommon/ftCo_Dash.c: ftCo_Dash_CheckInput/Enter.
 #[test]
-#[ignore = "unimplemented: dash dispatch, initial dash velocity and smash-input window"]
 fn forward_flick_enters_dash_and_moves_forward() {
     let mut game = game();
     let x = game.state().fighters[0].position[0];
     let state = step(&mut game, input(0, [1.0, 0.0]));
     assert_eq!(action(&state, 0), "dash");
+    assert!(state.fighters[0].ground_velocity > 0.0);
+    // Dash Enter changes gr_accel2, integrated after this frame's ground
+    // projection; the new speed displaces the fighter on the next callback.
+    let state = step(&mut game, input(0, [1.0, 0.0]));
     assert!(state.fighters[0].position[0] > x);
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_Turn.c: ftCo_Turn_Enter_Basic/Anim_Inner.
 #[test]
-#[ignore = "unimplemented: standing turn action and delayed facing change"]
 fn backward_tilt_enters_turn_before_reversing_facing() {
     let mut game = game();
     let facing = game.state().fighters[0].facing;
@@ -61,7 +63,6 @@ fn backward_tilt_enters_turn_before_reversing_facing() {
 
 // src/melee/ft/kinds/ftCommon/{ftCo_Squat,ftCo_SquatWait,ftCo_SquatRv}.c.
 #[test]
-#[ignore = "unimplemented: squat, squat-wait and squat-reverse action chain"]
 fn down_stick_crouches_and_release_returns_to_wait() {
     let mut game = game();
     let state = step(&mut game, input(0, [0.0, -1.0]));
@@ -75,11 +76,14 @@ fn down_stick_crouches_and_release_returns_to_wait() {
 
 // src/melee/ft/kinds/ftCommon/ftCo_JumpAerial.c: ft_did_jump and jump entry.
 #[test]
-#[ignore = "unimplemented: aerial jump count and second-jump launch"]
 fn fresh_jump_press_in_air_restores_upward_velocity() {
     let mut game = airborne_game();
+    // Let gravity lower the first jump beneath the aerial jump's launch speed;
+    // JumpAerial itself applies gravity on its entry callback.
+    step(&mut game, idle());
     let before = step(&mut game, idle());
     let after = step(&mut game, input(BUTTON_X, [0.0; 2]));
+    assert_eq!(action(&after, 0), "jump_aerial");
     assert!(!after.fighters[0].grounded);
     assert!(after.fighters[0].velocity[1] > before.fighters[0].velocity[1]);
 }
@@ -280,7 +284,6 @@ fn down_stick_releases_the_ledge_and_starts_falling() {
 // src/melee/ft/kinds/ftCommon/{ftCo_Jump,ftCo_KneeBend}.c: tap-jump input
 // uses a stick threshold/window and remembers its distinct short-hop source.
 #[test]
-#[ignore = "unimplemented: tap-jump input windows and stick-origin jump squat"]
 fn upward_stick_flick_without_buttons_starts_jump_squat_and_launches() {
     let mut game = game();
     let startup = game.data().fighters[0].movement.jump_startup_frames;
@@ -296,7 +299,6 @@ fn upward_stick_flick_without_buttons_starts_jump_squat_and_launches() {
 // src/melee/ft/kinds/ftCommon/ftCo_Dash.c: timer_lstick_tilt_x prevents a
 // gradual tilt from being treated as a fresh smash, even at the same final XY.
 #[test]
-#[ignore = "unimplemented: stick-age windows distinguish walking from a fresh dash flick"]
 fn gradual_tilt_walks_but_a_fresh_flick_dashes_at_the_same_stick_value() {
     let mut gradual = game();
     for amount in 1..=20 {

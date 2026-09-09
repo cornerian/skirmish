@@ -2,7 +2,7 @@
 //! against Melee's complete GObj/action pipeline. Unsupported rules are listed
 //! in docs/match.md, and every input resource carries an experimental profile.
 use crate::{data::*, *};
-use physics::{Movement, bones, combat, locomotion, sweep};
+use physics::{Movement, bones, combat, locomotion as movement_math, sweep};
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
     Ok(State {
@@ -39,9 +39,12 @@ fn spawn(
         facing: if player == 0 { 1.0 } else { -1.0 },
         grounded: false,
         ground_line: None,
+        skip_floor: None,
         floor_normal: [0.0, 1.0, 0.0],
         contacts: [None; 4],
         ecb: physics::ecb::State::default(),
+        ecb_lock: 0,
+        locomotion: locomotion::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -60,12 +63,17 @@ fn spawn(
         previous_input: Controller::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], &data.stage)?;
+    if !fighter.grounded {
+        fighter.locomotion.jumps_used = 1;
+    }
     Ok(fighter)
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.action = action;
     fighter.action_frame = 0;
+    // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
+    fighter.skip_floor = None;
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
@@ -118,21 +126,49 @@ pub(crate) fn advance(
             frozen[player] = true;
             continue;
         }
+        sample_input_history(fighter, &data.fighters[player], &data.rules, input);
         if fighter.hitlag > 0.0 {
+            let previous_position = fighter.position;
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
             if fighter.hitlag == 0.0 {
                 damage::exit_hitlag(fighter, input.stick, &data.rules.damage)?;
+            } else {
+                damage::during_hitlag(fighter, input.stick, &data.rules.damage)?;
+            }
+            advance_ecb_lock(fighter);
+            collision::sample(
+                fighter,
+                &data.fighters[player],
+                &pose(fighter, &data.fighters[player])?,
+            )?;
+            if fighter.position != previous_position || fighter.ecb.current != fighter.ecb.desired {
+                collision::resolve(
+                    fighter,
+                    previous_position,
+                    &stage,
+                    player,
+                    &mut state.events,
+                )?;
             }
             fighter.previous_input = input;
             frozen[player] = true;
             continue;
         }
         update_action(fighter, &data.fighters[player], input);
+        if let Some(velocity_y) = locomotion::pass_request(
+            fighter,
+            &data.fighters[player],
+            input,
+            collision::on_platform(fighter, &data.stage),
+        ) {
+            collision::begin_pass(fighter, &data.fighters[player], &data.stage, velocity_y);
+        }
         if fighter.damage_elapsed >= 0 {
             fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
         }
         let previous_position = fighter.position;
         move_fighter(fighter, &data.fighters[player], &data.rules, input);
+        advance_ecb_lock(fighter);
         collision::sample(
             fighter,
             &data.fighters[player],
@@ -230,7 +266,13 @@ pub(crate) fn advance(
         if !matches!(fighter.action, Action::Respawn | Action::Eliminated) {
             let [left, right, bottom, top] = data.stage.blast;
             let [x, y] = fighter.position;
-            if x < left || x > right || y < bottom || y > top {
+            // Ordinary supported branch of ftCo_800D3158. Scripted death
+            // overrides and star/screen animation selection remain unported.
+            let top_eligible = data
+                .rules
+                .top_ko_min_knockback
+                .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
+            if x < left || x > right || y < bottom || (y > top && top_eligible) {
                 fighter.stocks -= 1;
                 fighter.velocity = [0.0; 2];
                 fighter.knockback = [0.0; 2];
@@ -290,6 +332,48 @@ fn finish(state: &mut State, winner: Option<usize>, reason: FinishReason) {
     state.events.push(Event::Finished { winner, reason });
 }
 
+// Fighter_procMap releases the bottom lock before sampling, including during
+// hitlag. One map callback is one tick, regardless of collision substep count.
+fn advance_ecb_lock(fighter: &mut Fighter) {
+    if fighter.ecb_lock > 0 {
+        fighter.ecb_lock -= 1;
+        if fighter.ecb_lock == 0 {
+            fighter.ecb.bottom_locked = false;
+        }
+    }
+}
+
+// The original x670/x671 timers are shared by movement and damage callbacks.
+// Input sampling continues during hitlag; SDI/jump transitions consume the
+// same history, so old held inputs cannot become fresh after a state change.
+fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+    let thresholds = data
+        .locomotion
+        .as_ref()
+        .map(|p| [p.horizontal_smash_deadzone, p.vertical_smash_deadzone])
+        .or_else(|| {
+            rules
+                .damage
+                .displacement
+                .as_ref()
+                .map(|p| p.axis_thresholds)
+        });
+    if let Some([x, y]) = thresholds {
+        f.locomotion.tilt_x_age = physics::damage::tilt_timer(
+            f.locomotion.tilt_x_age,
+            input.stick[0],
+            f.previous_input.stick[0],
+            x,
+        );
+        f.locomotion.tilt_y_age = physics::damage::tilt_timer(
+            f.locomotion.tilt_y_age,
+            input.stick[1],
+            f.previous_input.stick[1],
+            y,
+        );
+    }
+}
+
 fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
     let attrs = &data.movement;
     match f.action {
@@ -310,13 +394,15 @@ fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
                 Action::Fall
             },
         ),
-        Action::JumpSquat if f.action_frame >= attrs.jump_startup_frames => {
-            let velocity = locomotion::jump_velocity(
+        Action::JumpSquat
+            if data.locomotion.is_none() && f.action_frame >= attrs.jump_startup_frames =>
+        {
+            let velocity = movement_math::jump_velocity(
                 [f.velocity[0], f.velocity[1], 0.0],
                 input.stick[0],
                 f.short_hop,
                 1.0,
-                &locomotion::JumpAttributes {
+                &movement_math::JumpAttributes {
                     momentum_multiplier: attrs.jump_momentum_multiplier,
                     horizontal_initial_velocity: attrs.jump_horizontal_velocity,
                     horizontal_max_velocity: attrs.jump_horizontal_max,
@@ -332,6 +418,10 @@ fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
             enter(f, Action::Jump);
         }
         _ => {}
+    }
+    if data.locomotion.is_some() {
+        locomotion::update_actions(f, data, input);
+        return;
     }
     let pressed = input.buttons & !f.previous_input.buttons;
     if matches!(f.action, Action::Wait | Action::Walk) {
@@ -366,10 +456,12 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         ..Movement::default()
     };
     if f.grounded {
-        if f.action == Action::Walk {
-            locomotion::walk(
+        if locomotion::ground_motion(f, data, &mut movement, input) {
+            // Explicit locomotion parameters supply dash/run acceleration.
+        } else if f.action == Action::Walk {
+            movement_math::walk(
                 &mut movement,
-                &locomotion::WalkParameters {
+                &movement_math::WalkParameters {
                     accel_mul: 1.0,
                     acceleration_mul: attrs.walk_acceleration_mul,
                     acceleration_base: attrs.walk_acceleration_base,

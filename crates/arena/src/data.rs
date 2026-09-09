@@ -30,7 +30,7 @@ pub struct Stage {
     pub floor: Floor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<StageGeometry>,
-    /// Left, right, bottom, top. Crossing any boundary kills in this slice.
+    /// Left, right, bottom, top. Top eligibility is configured in `Rules`.
     pub blast: [f32; 4],
     pub spawns: [[f32; 2]; 2],
 }
@@ -78,6 +78,10 @@ pub struct Rules {
     pub knockback_decay: f32,
     pub knockback_speed: f32,
     pub hitstun_scale: f32,
+    /// Common-data x4F0: airborne top KOs require upward knockback strictly
+    /// above this value. None retains the original synthetic fixture's rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_ko_min_knockback: Option<f32>,
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
     pub damage: crate::damage::CombatRules,
@@ -134,6 +138,10 @@ impl HitlagData {
 pub struct FighterData {
     pub name: String,
     pub movement: MovementData,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locomotion: Option<crate::locomotion::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armor: Option<crate::damage::Armor>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,

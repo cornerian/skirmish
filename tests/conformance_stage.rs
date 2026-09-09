@@ -13,7 +13,6 @@ use support::*;
 
 // ftCo_Pass.c / ftCo_Squat.c: downward stick enters Pass on a passable floor.
 #[test]
-#[ignore = "unimplemented: platform-drop action transition"]
 fn downward_input_drops_through_a_passable_platform() {
     let mut data = data();
     data.stage.spawns = [[0.0, 6.0], [20.0, 6.0]];
@@ -72,7 +71,6 @@ fn grounded_opponents_push_apart_instead_of_crossing_through_each_other() {
 // src/melee/ft/ft_0D31.c: crossing the upper boundary in an ordinary jump does not
 // satisfy the damaged-upward-launch death condition.
 #[test]
-#[ignore = "unimplemented: conditional top blast-zone KO"]
 fn ordinary_jump_above_the_upper_blast_line_preserves_the_stock() {
     let mut data = data();
     data.stage.blast[3] = 5.0;

@@ -142,6 +142,83 @@ pub fn decay_air_knockback(velocity: [f32; 2], decay: f32) -> [f32; 2] {
     }
 }
 
+/// The per-axis x670/x671 input-timer branches in Fighter's input callback.
+/// A new excursion or a sign reversal resets the timer. Holding increments its
+/// original byte storage before clamping to 254; a corrupt 255 wraps to zero.
+pub fn tilt_timer(timer: u8, current: f32, previous: f32, threshold: f32) -> u8 {
+    let held = if current >= threshold {
+        previous >= threshold
+    } else if current <= -threshold {
+        previous <= -threshold
+    } else {
+        return 254;
+    };
+    if held {
+        timer.wrapping_add(1).min(254)
+    } else {
+        0
+    }
+}
+
+/// ftCo_Damage_OnEveryHitlag. The magnitude threshold is inclusive, the timer
+/// window is exclusive, and a displacement consumes both axis timers. Ground
+/// response belongs to the caller; the callback itself adds both coordinates.
+pub fn smash_displacement(
+    position: &mut [f32; 2],
+    stick: [f32; 2],
+    timers: &mut [u8; 2],
+    allowed: bool,
+    minimum_magnitude: f32,
+    window: i32,
+    distance: f32,
+) -> bool {
+    if allowed
+        && stick[0] * stick[0] + stick[1] * stick[1] >= minimum_magnitude * minimum_magnitude
+        && (i32::from(timers[0]) < window || i32::from(timers[1]) < window)
+    {
+        position[0] += stick[0] * distance;
+        position[1] += stick[1] * distance;
+        *timers = [254; 2];
+        true
+    } else {
+        false
+    }
+}
+
+/// The main-stick branch of ftCo_Damage_OnExitHitlag, before DI. C-stick
+/// priority, the collision flag callback and LR scaling are outside this helper.
+/// Unlike SDI, this branch does not inspect or consume fresh-tilt timers.
+pub fn automatic_displacement(
+    position: &mut [f32; 2],
+    stick: [f32; 2],
+    minimum_magnitude: f32,
+    distance: f32,
+) -> bool {
+    if stick[0] * stick[0] + stick[1] * stick[1] >= minimum_magnitude * minimum_magnitude {
+        position[0] += stick[0] * distance;
+        position[1] += stick[1] * distance;
+        true
+    } else {
+        false
+    }
+}
+
+/// Ordinary ftCo_Damage_CalcKnockback: no squat, ice, charging, scale or metal
+/// modifiers. Nonzero knockback loses the greater armor channel then clamps to
+/// the explicit minimum. The source's early return preserves either zero sign.
+pub fn subtract_armor(knockback: f32, armor: [f32; 2], minimum: f32) -> f32 {
+    if knockback == 0.0 {
+        return knockback;
+    }
+    let armor = if armor[0] > armor[1] {
+        armor[0]
+    } else {
+        armor[1]
+    };
+    let reduced = knockback - armor;
+    if reduced < minimum { minimum } else { reduced }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

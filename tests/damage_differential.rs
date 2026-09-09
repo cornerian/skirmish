@@ -20,6 +20,16 @@ unsafe extern "C" {
     fn oracle_damage_merge(values: *const f32, since_hit: i32, window: i32, output: *mut f32);
     fn oracle_damage_di(values: *const f32, max_degrees: f32, output: *mut f32);
     fn oracle_damage_decay(velocity: *const f32, decay: f32, output: *mut f32);
+    fn oracle_damage_armor(knockback: f32, armor: *const f32, minimum: f32) -> f32;
+    fn oracle_damage_tilt_timer(timer: u8, current: f32, previous: f32, threshold: f32) -> u8;
+    fn oracle_damage_displacement(
+        values: *const f32,
+        timers: *mut u8,
+        allowed: i32,
+        window: i32,
+        exit: i32,
+        output: *mut f32,
+    ) -> i32;
 }
 
 fn exact(actual: f32, expected: f32) {
@@ -94,6 +104,118 @@ fn merge_case(values: [f32; 4], since_hit: i32, window: i32) {
     for (a, e) in actual.into_iter().zip(expected) {
         exact(a, e);
     }
+}
+
+fn displacement_case(values: [f32; 6], initial: [u8; 2], allowed: bool, window: i32) {
+    for exit in [false, true] {
+        let mut expected = [0.0; 2];
+        let mut expected_timers = initial;
+        // SAFETY: six input floats, two mutable timer bytes, two output floats;
+        // bounded callback adapter excludes C-stick, LR and collision callbacks.
+        let calls = unsafe {
+            oracle_damage_displacement(
+                values.as_ptr(),
+                expected_timers.as_mut_ptr(),
+                i32::from(allowed),
+                window,
+                i32::from(exit),
+                expected.as_mut_ptr(),
+            )
+        };
+        let mut actual = [values[0], values[1]];
+        let mut timers = initial;
+        let moved = if exit {
+            automatic_displacement(&mut actual, [values[2], values[3]], values[4], values[5])
+        } else {
+            smash_displacement(
+                &mut actual,
+                [values[2], values[3]],
+                &mut timers,
+                allowed,
+                values[4],
+                window,
+                values[5],
+            )
+        };
+        assert_eq!(i32::from(moved), calls);
+        assert_eq!(timers, expected_timers);
+        for (a, e) in actual.into_iter().zip(expected) {
+            exact(a, e);
+        }
+    }
+}
+
+#[test]
+fn sdi_asdi_thresholds_consumed_windows_and_both_coordinates_match_source() {
+    for stick in [
+        [0.0, -0.0],
+        [0.5, 0.0],
+        [0.49999997, 0.0],
+        [0.3, 0.4],
+        [-1.0, -1.0],
+    ] {
+        for timers in [[0, 254], [254, 0], [2, 254], [3, 3], [254, 254], [255, 0]] {
+            for allowed in [false, true] {
+                displacement_case(
+                    [-0.0, -0.0, stick[0], stick[1], 0.5, 2.0],
+                    timers,
+                    allowed,
+                    3,
+                );
+            }
+        }
+    }
+    for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.0] {
+        for index in 0..6 {
+            let mut values = [1.0, 2.0, 0.5, 0.5, 0.5, 2.0];
+            values[index] = value;
+            displacement_case(values, [0, 254], true, 3);
+        }
+    }
+}
+
+#[test]
+fn armor_max_channel_clamp_and_zero_early_return_match_source() {
+    for kb in [0.0, -0.0, 0.5, 5.0, 10.0, f32::NAN, f32::INFINITY] {
+        for armor in [
+            [0.0, 0.0],
+            [8.0, 2.0],
+            [2.0, 8.0],
+            [8.0, 8.0],
+            [f32::NAN, 2.0],
+            [2.0, f32::NAN],
+        ] {
+            for minimum in [0.0, 1.0, 20.0] {
+                // SAFETY: two readable float armor channels; adapter sets every
+                // excluded modifier to its ordinary inactive state.
+                let expected = unsafe { oracle_damage_armor(kb, armor.as_ptr(), minimum) };
+                exact(subtract_armor(kb, armor, minimum), expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn tilt_timer_original_byte_wrap_and_inclusive_excursions_match() {
+    for timer in [0, 1, 253, 254, 255] {
+        for current in [-1.0, -0.5, -0.49999997, 0.0, 0.49999997, 0.5, 1.0, f32::NAN] {
+            for previous in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+                // SAFETY: scalar arguments and return, no shared state.
+                let expected = unsafe { oracle_damage_tilt_timer(timer, current, previous, 0.5) };
+                assert_eq!(tilt_timer(timer, current, previous, 0.5), expected);
+            }
+        }
+    }
+    let wrapper = include_str!("oracle/damage_fighter.c");
+    let block = wrapper
+        .split("/* BEGIN VERBATIM TILT TIMER */\n")
+        .nth(1)
+        .unwrap()
+        .split("\n/* END VERBATIM TILT TIMER */")
+        .next()
+        .unwrap();
+    assert!(include_str!("oracle/original/damage_fighter.c").contains(block));
+    assert!(block.contains("x670_timer_lstick_tilt_x"));
 }
 
 #[test]
@@ -211,6 +333,21 @@ fn decay_oracle_contains_the_unchanged_selected_upstream_block() {
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
+
+    #[test]
+    fn generated_displacement_and_armor_match(
+        values in prop::array::uniform6(-20_f32..20_f32), timers in any::<[u8;2]>(),
+        allowed in any::<bool>(), window in -1_i32..257_i32,
+    ) {
+        displacement_case(values,timers,allowed,window);
+        let armor=[values[1],values[2]];
+        // SAFETY: two readable float channels, thread-local common data.
+        let expected=unsafe { oracle_damage_armor(values[0],armor.as_ptr(),values[3]) };
+        exact(subtract_armor(values[0],armor,values[3]),expected);
+        // SAFETY: scalar ABI, no global mutation.
+        let expected=unsafe { oracle_damage_tilt_timer(timers[0],values[0],values[1],values[2]) };
+        assert_eq!(tilt_timer(timers[0],values[0],values[1],values[2]),expected);
+    }
 
     #[test]
     fn generated_angles_match(

@@ -25,3 +25,12 @@ The generated includes are build artifacts and are never checked into Git.
 
 The adapters document their supported scalar/environment inputs. Native C
 agreement does not establish equivalence of the unported full game scheduler.
+
+The damage adapters also select the original armor, every-hitlag and exit-hitlag
+callbacks. Armor checks cover the ordinary two-channel subtraction/minimum path;
+metal, squat knockback, ice, charge and model-scale modifiers are disabled in the
+host environment. Displacement checks cover main-stick SDI and ASDI with explicit
+coefficients. C-stick override, LR callbacks and collision-flag side effects are
+disabled; static collision response is tested through the native match instead.
+The horizontal stick-age branch is an exact excerpt of `Fighter_procInput`,
+verified against the preserved source before host compilation.

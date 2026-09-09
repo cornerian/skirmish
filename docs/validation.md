@@ -1,5 +1,26 @@
 # Local validation provenance
 
+The 2026-09-09 movement/combat coverage milestone is recorded at:
+
+`/mnt/archive/runs/skirmish-gameplay-20260909-v6b`
+
+It checks the isolated gameplay snapshot with formatting, strict Clippy, native
+workspace tests and original-C differential tests in debug and release modes.
+Native trace comparisons exercise both the original demo and explicit movement,
+combat/displacement/armor and stacked-platform profiles. The run preserves its
+commands, input resources, scripts, output traces and source hashes. Synthetic
+debug/release agreement checks determinism, not original-game equivalence.
+
+Eleven previously ignored scenarios are now active, accompanied by focused
+integration regressions for input history, movement/action timing, displacement,
+armor, platform collision and blast boundaries. The remaining audit contains
+21 executable unimplemented scenarios and 13 independent-reference-blocked
+cases; all 34 are invoked explicitly and remain failures rather than passing
+coverage. Authentic movement poses, special-character callbacks and the full
+game scheduling order are still outside this milestone.
+The earlier `v6` run caught inconsistent synthetic movement/displacement
+thresholds after input-history consolidation; `v6b` uses corrected explicit data.
+
 The 2026-09-09 Peppi Slippi importer validation run is stored outside Git at:
 
 `/mnt/archive/runs/skirmish-slippi-20260909-v5c`

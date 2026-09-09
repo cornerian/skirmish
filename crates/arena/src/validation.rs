@@ -74,6 +74,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     let rules = &data.rules;
     damage::validate_rules(&rules.damage)?;
     require(
+        rules
+            .top_ko_min_knockback
+            .is_none_or(|minimum| nonnegative([minimum])),
+        "invalid top KO knockback threshold",
+    )?;
+    require(
         rules.stocks > 0
             && rules.time_limit_frames > 0
             && rules.time_limit_frames < i32::MAX as u32
@@ -117,6 +123,26 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        if let Some(parameters) = &fighter.locomotion {
+            locomotion::validate(parameters)?;
+            require(
+                rules
+                    .damage
+                    .displacement
+                    .as_ref()
+                    .is_none_or(|displacement| {
+                        displacement.axis_thresholds
+                            == [
+                                parameters.horizontal_smash_deadzone,
+                                parameters.vertical_smash_deadzone,
+                            ]
+                    }),
+                "locomotion and displacement must use the same shared stick-age thresholds",
+            )?;
+        }
+        if let Some(armor) = &fighter.armor {
+            damage::validate_armor(armor)?;
+        }
         let m = &fighter.movement;
         require(
             nonnegative([
@@ -305,6 +331,12 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 }),
             )
             .chain([f.percent, f.ground_velocity, f.hitlag, f.facing])
+            .chain([
+                f.locomotion.turn_frames,
+                f.locomotion.run_brake_frames,
+                f.locomotion.dash_initial_delta,
+            ])
+            .chain(f.locomotion.pass_delay)
             .any(|v| !v.is_finite())
         {
             return Err(Error::NonFinite);

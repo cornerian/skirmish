@@ -11,6 +11,16 @@ pub fn data() -> MatchData {
     data.rules.stocks = 4;
     data.rules.countdown_frames = 0;
     data.rules.time_limit_frames = 9_999;
+    data.rules.top_ko_min_knockback = Some(0.5);
+    // Explicit invented values, like integration-match.json; these are not
+    // extracted Melee common data or authentic character timings.
+    let locomotion = serde_json::from_str(include_str!(
+        "../../crates/arena/tests/fixtures/locomotion.json"
+    ))
+    .unwrap();
+    for fighter in &mut data.fighters {
+        fighter.locomotion = Some(locomotion);
+    }
     data.stage.floor.left = -100.0;
     data.stage.floor.right = 100.0;
     data.stage.floor.y = 0.0;

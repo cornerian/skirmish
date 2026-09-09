@@ -35,7 +35,8 @@ established; two copies of this simulator agreeing is a determinism test.
 `Match::step([Controller; 2])` advances one frame. `state()` exposes privileged
 simulator state; it is not a player-information observation policy. `reset(seed)`
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
-positions, velocities, action clocks, hitlag/hitstun, pending DI, elapsed damage
+positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
+ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
 time, swept hitbox centers, ECB interpolation history, stage contacts, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
 random events and consumes no RNG draws. Checkpoints are opaque in-memory
@@ -89,9 +90,12 @@ growth checks: exactly twelve units takes three substeps. Grounded fighters
 project onto adjacent floor segments and use their normals for ground motion.
 Projection preserves the source's small separation bias. Side and ceiling
 contacts project the final collision point onto the contacted surface and stop
-inward velocity in this experimental profile. Platforms permit
-upward passage and descending landings; intentional platform dropping has no
-input transition yet. Full corner resolution and squeeze response are unported,
+inward velocity in this experimental profile. Platforms permit upward passage,
+descending landings and intentional drops with the explicit locomotion profile.
+Pass remembers and skips only its supporting line during every movement substep;
+other platforms remain collidable. The next action transition clears that skip.
+The drop also applies the source ten-map-callback ECB bottom lock. Full corner
+resolution and squeeze response are unported,
 although reusable squeeze arithmetic is available in `physics::ecb`.
 
 An active hitbox carries its previous and current world centers. New activation,
@@ -101,31 +105,68 @@ isotropic capsule solver, including its unusual near-parallel endpoint choice;
 the full matrix-dependent hurt/shield narrow phase remains unported.
 
 Damage rules explicitly supply DI limits, angle-361 coefficients and the
-knockback replacement window. Hits merge launch velocity before resetting the
-elapsed-damage counter. Pending DI runs once when positive hitlag expires, using
-that frame's stick; zero hitlag creates no expiry callback. Remaining movement
-stays frozen on the expiry frame in this scheduler. These rules do not include
-SDI, ASDI, grounded launch projection or the complete damage callback sequence.
+knockback replacement window. Optional `rules.damage.displacement` supplies
+main-stick SDI thresholds, timing and distances, and the ASDI distance. Fresh
+stick motions can displace a victim during positive hitlag; held input produces
+one ASDI displacement at expiry, before DI. Static collision response constrains
+that displacement while ordinary motion stays frozen. Attacker hitlag does not
+install those damage callbacks. Zero hitlag creates no expiry callback. Optional
+fighter `armor` supplies two subtraction channels and a minimum knockback;
+ordinary armor subtracts the larger channel without changing percent damage.
+Grounded launch projection, C-stick ASDI and the complete damage callback
+sequence remain unported.
+
+Movement and displacement share the source stick-age timers, sampled once per
+active frame including hitlag. When both optional profiles are supplied, their
+axis thresholds must agree; inconsistent resources are rejected at load time.
+The current damage floor response grounds the fighter and clears knockback;
+source tech/down callbacks remain outside this collision-clamped displacement
+behavior.
+
+## Explicit movement data
+
+`fighters[].locomotion` supplies thresholds, stick-age windows, dash/run
+coefficients, animation/event durations, crouch/turn timing, ordinary aerial
+jump multipliers and platform-drop parameters. No authentic common-data values
+are implied. With that data, the scheduler supports Dash/Run/RunBrake, standing
+Turn, Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. Jump
+button history, tilt ages, consumed jumps and transition timers are checkpointed.
+`crates/arena/tests/fixtures/locomotion.json` contains invented values used by
+the conformance and movement integration tests. These actions still use the
+supplied static non-jab pose; action-specific animation resources are needed
+for authentic collision shapes and timing.
+
+The older synthetic demo omits the optional locomotion, displacement and armor
+data and retains its original limited behavior. The conformance scenarios
+explicitly enable the parameters needed for each behavior. Omitting a profile
+does not select Melee defaults or certify compatibility.
+
+`rules.top_ko_min_knockback` supplies the common-data upward-knockback threshold.
+Airborne fighters crossing the top survive when their knockback is at or below
+it, even if self velocity carries them higher. Grounded fighters crossing the
+top still lose a stock. Side and bottom crossings remain unconditional in the
+ordinary supported branch. Omission retains the older demo's synthetic rule
+that every boundary crossing loses a stock. Scripted death exemptions/overrides
+and star/screen death selection are separate, unported behavior.
+The complete KO callback order is also unported: this scheduler checks after
+contacts, while the original eligibility callback runs earlier in fighter update.
 
 ## Explicit coverage limits
 
-The current match profile supports walking directly in either direction, button
-jumps/full and short hops, airborne drift/fast fall, a single jab, unarmored
-damage, integral fixed-angle launch and angle 361. Its inputs do not yet reproduce the
-full PAD-to-fighter input history: tap-jump, tilt windows, crouch, dash/turn,
-shield, grabs, specials, aerial attacks, double jumps and ledge actions are
-unported. Some accepted stick/button combinations consequently have no action
-in this experimental profile.
+The match supports the supplied movement profiles, airborne drift/fast fall,
+a single jab, ordinary damage/armor, integral fixed-angle launch and angle 361.
+Its inputs do not yet reproduce the full PAD-to-fighter input history. Shield,
+grabs, specials, aerial attacks, ledge actions, running turns and character
+multijumps remain unported. Some accepted stick/button combinations consequently
+have no action in this experimental profile.
 
 Ledge actions, moving stages/remapping, full ECB corner/squeeze response and
-fighter push/nudge remain unported. Crossing any blast boundary
-kills here, including the top; this does not implement Melee's conditional top
-KOs or star/screen deaths. Respawn delay/invincibility are configured integration
+fighter push/nudge remain unported. Respawn delay/invincibility are configured integration
 policies, without the original rebirth platform. Damage landing does not yet
 implement techs, bounces or knockdown.
 
-Combat omits stale moves, priority/clanks, armor, vulnerability/target flags,
-shield responses, throws, SDI/ASDI and other special launch-angle behaviors. Outside jab,
+Combat omits stale moves, priority/clanks, dynamic metal/state knockback modifiers,
+vulnerability/target flags, shield responses, throws and other special launch-angle behaviors. Outside jab,
 fighters currently use a static supplied pose; authentic walking, jumping and
 damage collision require those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

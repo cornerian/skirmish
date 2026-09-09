@@ -10,6 +10,50 @@ use physics::{
 };
 use std::borrow::Cow;
 
+/// `mpColl_IsOnPlatform`: passability belongs to the supporting source line.
+pub(crate) fn on_platform(f: &Fighter, map: &Stage) -> bool {
+    f.grounded
+        && f.ground_line.is_some_and(|id| {
+            map.geometry
+                .as_ref()
+                .and_then(|geometry| geometry.lines.get(id))
+                .is_some_and(|line| u32::from(line.material_flags) & stage::PLATFORM != 0)
+        })
+}
+
+/// Geometric/state portion of `ftCo_8009A228` (`ftCo_Pass.c`). Input-window and
+/// squat-delay checks belong to locomotion. The source clears floor_skip during
+/// ChangeMotionState, then assigns the old supporting line; no timed/global
+/// platform exclusion is used. Later action changes clear it again.
+pub(crate) fn begin_pass(
+    f: &mut Fighter,
+    data: &FighterData,
+    map: &Stage,
+    velocity_y: f32,
+) -> bool {
+    if !on_platform(f, map) {
+        return false;
+    }
+    let support = f.ground_line;
+    let mut movement = physics::Movement {
+        attributes: data.movement.physics(),
+        self_velocity: [f.velocity[0], f.velocity[1], 0.0],
+        ..Default::default()
+    };
+    movement.clamp_air_drift();
+    f.velocity = [movement.self_velocity[0], velocity_y];
+    f.ground_velocity = 0.0;
+    f.grounded = false;
+    f.ground_line = None;
+    f.contacts[0] = None;
+    simulation::enter(f, Action::Pass);
+    f.skip_floor = support;
+    // ftCommon_8007D5D4 locks the old ECB bottom for ten map callbacks.
+    f.ecb_lock = 10;
+    f.ecb.bottom_locked = true;
+    true
+}
+
 pub(crate) fn geometry(data: &Stage) -> Cow<'_, StageGeometry> {
     if let Some(geometry) = &data.geometry {
         return Cow::Borrowed(geometry);
@@ -73,6 +117,7 @@ pub(crate) fn initialize(f: &mut Fighter, data: &FighterData, map: &Stage) -> Re
         f.ground_line = Some(contact.line_id);
         f.floor_normal = contact.normal;
         f.action = Action::Wait;
+        crate::locomotion::landed(f);
     } else {
         f.grounded = false;
         f.ground_line = None;
@@ -185,6 +230,9 @@ pub(crate) fn resolve(
             f.ground_line = None;
             f.ground_velocity = 0.0;
             f.fast_fall = false;
+            // Ground-to-air conversion consumes the grounded jump slot, even
+            // when walking off an edge instead of pressing jump.
+            f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
             if f.action != Action::Damage {
                 simulation::enter(f, Action::Fall);
             }
@@ -195,6 +243,7 @@ pub(crate) fn resolve(
                 Query {
                     from: add(previous, f.ecb.previous.bottom),
                     to: add(f.position, f.ecb.current.bottom),
+                    skip_line: f.skip_floor,
                     ..Default::default()
                 },
             )
@@ -222,6 +271,10 @@ pub(crate) fn resolve(
             f.ground_velocity = f.velocity[0];
             f.grounded = true;
             f.fast_fall = false;
+            crate::locomotion::landed(f);
+            f.ecb_lock = 0;
+            f.ecb.bottom_locked = false;
+            f.skip_floor = None;
             if f.action != Action::Damage {
                 simulation::enter(f, Action::Landing);
             }

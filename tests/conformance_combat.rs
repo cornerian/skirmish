@@ -17,6 +17,13 @@ fn close_data() -> MatchData {
     let mut data = support::data();
     data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
     data.rules.knockback_speed = 0.0;
+    data.rules.damage.displacement = Some(skirmish::game::damage::HitlagDisplacementRules {
+        axis_thresholds: [0.3; 2],
+        minimum_stick_magnitude: 0.5,
+        sdi_window: 3,
+        sdi_distance: 1.0,
+        asdi_distance: 0.5,
+    });
     data
 }
 
@@ -96,7 +103,6 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
 }
 
 #[test]
-#[ignore = "unimplemented: armor resource/state and knockback subtraction"]
 fn armor_reduces_launch_without_erasing_damage() {
     // ft/kinds/ftCommon/ftCo_Damage.c::ftCo_Damage_CalcKnockback subtracts
     // max(armor0, armor1) before the minimum clamp; percent damage remains.
@@ -104,10 +110,10 @@ fn armor_reduces_launch_without_erasing_damage() {
     data.rules.knockback_speed = 0.15;
     let mut plain = Match::new(data.clone(), 0).unwrap();
     let baseline = jab(&mut plain);
-    // Proposed explicit native resource fields for the two source armor channels.
-    // The missing schema must fail visibly instead of silently disabling armor.
+    // Explicit synthetic armor channels and common-data minimum.
     let mut resource = serde_json::to_value(data).unwrap();
-    resource["fighters"][1]["armor"] = serde_json::json!({"armor0": 30.0, "armor1": 0.0});
+    resource["fighters"][1]["armor"] =
+        serde_json::json!({"armor0": 30.0, "armor1": 0.0, "minimum_knockback": 0.0});
     let armored: MatchData =
         serde_json::from_value(resource).expect("native armor0/armor1 resources must be supported");
     let armored = jab(&mut Match::new(armored, 0).unwrap());
@@ -176,7 +182,6 @@ fn grab_then_forward_throw_damages_and_launches_the_captured_victim() {
 }
 
 #[test]
-#[ignore = "unimplemented: smash DI position displacement during hitlag"]
 fn a_fresh_stick_tilt_moves_the_victim_while_hitlag_remains() {
     // ft/kinds/ftCommon/ftCo_Damage.c::ftCo_Damage_OnEveryHitlag adds a
     // stick-scaled displacement for a fresh tilt and consumes its input window.
@@ -193,7 +198,6 @@ fn a_fresh_stick_tilt_moves_the_victim_while_hitlag_remains() {
 }
 
 #[test]
-#[ignore = "unimplemented: automatic DI position displacement on hitlag exit"]
 fn held_stick_adds_exit_displacement_without_a_new_tilt() {
     // ft/kinds/ftCommon/ftCo_Damage.c::ftCo_Damage_OnExitHitlag applies
     // its position displacement before DI, even without a fresh-stick window.

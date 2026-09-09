@@ -46,6 +46,26 @@ cargo test --locked --test conformance_resources -- --ignored
 
 ## Coverage map
 
+The movement/combat milestone activates the source-backed dash, standing turn,
+crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
+platform-drop and ordinary top-KO scenarios. Focused match integration targets
+in `crates/arena/tests` extend these beyond the original single gap scenario:
+
+| Passing target | Additional contracts |
+| --- | --- |
+| `locomotion` | Input age, launch timing, turn/crouch lifecycle, jump exhaustion and restoration |
+| `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
+| `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
+| `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |
+| `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
+
+These scenarios use supplied synthetic coefficients and poses. Passing them
+establishes those behavioral contracts; authentic animation, full callback order
+and unported character/state branches still need independent validation.
+`damage_differential` additionally compares the retained armor arithmetic,
+stick-age branch and displacement callbacks with pinned original C. Adapters
+explicitly disable unrelated state/environment branches.
+
 | Required behavior | Integration cases |
 | --- | --- |
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |

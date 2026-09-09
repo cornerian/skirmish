@@ -7,6 +7,7 @@ mod collision;
 pub mod damage;
 pub mod data;
 pub mod hitboxes;
+pub mod locomotion;
 mod simulation;
 mod validation;
 
@@ -34,8 +35,17 @@ pub struct Controller {
 pub enum Action {
     Wait,
     Walk,
+    Dash,
+    Run,
+    RunBrake,
+    Turn,
+    Squat,
+    SquatWait,
+    SquatRv,
     JumpSquat,
     Jump,
+    JumpAerial,
+    Pass,
     Fall,
     Jab,
     Damage,
@@ -53,11 +63,15 @@ pub struct Fighter {
     pub facing: f32,
     pub grounded: bool,
     pub ground_line: Option<usize>,
+    /// Pass skips its supporting line until the next action transition.
+    pub skip_floor: Option<usize>,
     pub floor_normal: [f32; 3],
     /// Last collision pass's floor, ceiling, left/right-facing wall IDs.
     pub contacts: [Option<usize>; 4],
     /// All interpolation history is included in checkpoints and trace output.
     pub ecb: physics::ecb::State,
+    pub ecb_lock: u8,
+    pub locomotion: locomotion::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
