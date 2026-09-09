@@ -51,6 +51,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Energy Burst | files/EfCoData.dat offset 0x48da0; full aliases in particle_sources.jsonl | Analytic energy burst appearance and lifetime fade | Implemented visual redesign |
 | Glint | files/EfCoData.dat offset 0x511e0; full aliases in particle_sources.jsonl | Analytic glint appearance and lifetime fade | Implemented visual redesign |
 | Arc | files/EfCoData.dat offset 0x521e0; full aliases in particle_sources.jsonl | Analytic arc appearance and lifetime fade | Implemented visual redesign |
+| Star | files/EfCoData.dat offset 0x531e0; full aliases in particle_sources.jsonl | Analytic star appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and

@@ -22,6 +22,7 @@ pub enum ParticleEffect {
     EnergyBurst,
     Glint,
     Arc,
+    Star,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
