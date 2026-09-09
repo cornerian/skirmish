@@ -1,0 +1,10 @@
+/target/
+*.dol
+*.iso
+*.gcm
+*.rvz
+*.slp
+*.dtm
+*.raw
+*.log
+*.proptest-regressions

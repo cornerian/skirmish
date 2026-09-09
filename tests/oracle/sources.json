@@ -1,0 +1,37 @@
+[
+  {
+    "fixture": "tests/oracle/original/random_hsd.c",
+    "upstream": "src/sysdolphin/baselib/random.c",
+    "sha256": "c1ee9c4317a48b59021c23b901e97fe7ad794f148d6ab98783ecfcadcdd566e6"
+  },
+  {
+    "fixture": "tests/oracle/original/random_msl.c",
+    "upstream": "src/MSL/rand.c",
+    "sha256": "49e38ee5f365851d21136fd500f865b6e9813aaeaaa5ea14f8b5108a029cbb92"
+  },
+  {
+    "fixture": "tests/oracle/original/ctype.c",
+    "upstream": "src/MSL/ctype.c",
+    "sha256": "65ddfaa1db335e4297c949b23bdcb30f57b1d09021085edcdaa9145997bb2069"
+  },
+  {
+    "fixture": "tests/oracle/original/ctype.h",
+    "upstream": "src/MSL/ctype.h",
+    "sha256": "c7bd4ffa7cc9843eede42aed336a7f0ff51422edf0aaafa5ad2f73e6f99783fd"
+  },
+  {
+    "fixture": "tests/oracle/original/mbstring.c",
+    "upstream": "src/MSL/mbstring.c",
+    "sha256": "329846f1a99ee1bf1c4d87ed87a25fa70dce76f7ab8dd6c255fdf56ced37f212"
+  },
+  {
+    "fixture": "tests/oracle/original/bytecode.c",
+    "upstream": "src/sysdolphin/baselib/bytecode.c",
+    "sha256": "f8aeb58df6729e39ed38a8523ba3d0768368b7a15e302f96892af4155ffe285b"
+  },
+  {
+    "fixture": "tests/oracle/original/spline.c",
+    "upstream": "src/sysdolphin/baselib/spline.c",
+    "sha256": "736ab29868437a263bcdbdaefdf973c75e9fa4ff3d86a3baf548f3396d415c50"
+  }
+]

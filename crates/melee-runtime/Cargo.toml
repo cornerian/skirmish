@@ -1,0 +1,13 @@
+[package]
+name = "melee-runtime"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic headless Melee runtime primitives"
+publish = false
+
+[dependencies]
+libm = "0.2"
+thiserror = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
