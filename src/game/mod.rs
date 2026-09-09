@@ -8,6 +8,7 @@ pub mod clank;
 mod collision;
 pub mod damage;
 pub mod data;
+pub mod death;
 pub mod grab;
 pub mod hitboxes;
 pub mod ledge;
@@ -132,6 +133,17 @@ pub enum Action {
     ReboundStop,
     Rebound,
     Landing,
+    DeadDown,
+    DeadLeft,
+    DeadRight,
+    DeadUp,
+    DeadUpStar,
+    DeadUpStarIce,
+    DeadUpFall,
+    DeadUpFallHitCamera,
+    DeadUpFallHitCameraFlat,
+    DeadUpFallIce,
+    DeadUpFallHitCameraIce,
     Respawn,
     Eliminated,
 }
@@ -166,6 +178,7 @@ pub struct Fighter {
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,
     pub ledge: ledge::State,
+    pub death: death::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -245,6 +258,10 @@ pub enum Event {
     Knockout {
         player: usize,
         stocks: u8,
+    },
+    DeathStarted {
+        player: usize,
+        death: death::Kind,
     },
     Respawned {
         player: usize,

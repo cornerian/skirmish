@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 blast-death batch is recorded at:
+
+`/mnt/archive/runs/skirmish-deaths-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage runs every normal blast direction,
+forced top death, star and screen phases, delayed/final stock loss, input
+suppression, checkpoint replay and invalid resources. The complete original
+blast selector is compared across generated states, including exact HSD RNG
+consumption. Thirteen fidelity cases remain blocked on independent reference
+fixtures, including the separate star/screen trace comparison.
+
 The 2026-09-09 neutral-special batch is recorded at:
 
 `/mnt/archive/runs/skirmish-specials-20260909`

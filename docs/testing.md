@@ -152,6 +152,14 @@ physics, landing conversion, checkpoints and malformed resources.
 `special_differential` compares the complete source neutral-input predicate over
 generated button, stick and threshold values.
 
+The [blast-death profile](deaths.md) adds `game_death` coverage for all four
+normal directions, forced top deaths, exact timers, star ascent, screen
+approach/hold/fall phases, delayed and final-stock loss, ignored input,
+checkpoint replay and malformed resources. `death_differential` compares the
+complete original blast selector and post-call HSD seed over generated states.
+The independent star/screen conformance fixture remains blocked until a trace
+from an independent producer exists.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -164,6 +172,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |
 | `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
+| `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -185,7 +194,7 @@ explicitly disable unrelated state/environment branches.
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
 | Moving platforms/remapping, ECB corner and squeeze response | `conformance_stage`: independent reference cases |
 | Conditional top KOs and rebirth platform | `conformance_stage`: ordinary upper-boundary jump and stock-loss lifecycle |
-| Star/screen deaths | `conformance_stage`: independent death lifecycle reference |
+| Star/screen deaths | `game_death` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
 | Authentic skeletons/bind parents, animation tracks, hurtbox/ECB attachments | `conformance_resources`: independent native-resource scenarios |
 | Complete action scripts and stage topology | `conformance_resources`: independent command/topology scenarios |
 | Nana simulation | `conformance_resources`: independent follower scenario; parser follower regressions already run normally |

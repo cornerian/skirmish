@@ -94,6 +94,13 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     if let Some(rebirth) = &rules.rebirth {
         super::rebirth::validate(rebirth, rules.respawn_invincibility_frames)?;
     }
+    if let Some(death) = &rules.death {
+        super::death::validate(death)?;
+        require(
+            rules.top_ko_min_knockback.is_some(),
+            "blast-death rules require an explicit top KO threshold",
+        )?;
+    }
     require(
         rules
             .top_ko_min_knockback
@@ -537,6 +544,8 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.shield.dizzy_timer,
             ])
             .chain(f.shield.attacker_push)
+            .chain(f.death.camera_offset)
+            .chain([f.death.depth_velocity])
             .any(|v| !v.is_finite())
         {
             return Err(Error::NonFinite);

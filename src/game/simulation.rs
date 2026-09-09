@@ -62,6 +62,7 @@ fn spawn(
         clank: clank::State::default(),
         grab: grab::State::default(),
         ledge: ledge::State::default(),
+        death: death::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -174,6 +175,26 @@ pub(crate) fn advance(
             }
             fighter.previous_input = input;
             frozen[player] = true;
+            continue;
+        }
+        if death::owns_action(fighter.action) {
+            let rules = data
+                .rules
+                .death
+                .as_ref()
+                .ok_or_else(|| Error::Data("death action requires explicit rules".into()))?;
+            let update = death::update(fighter, rules);
+            if update == death::Update::Complete {
+                fighter.death = death::State::default();
+                enter(fighter, Action::Respawn);
+            } else {
+                death::move_fighter(fighter, rules);
+            }
+            fighter.previous_input = input;
+            frozen[player] = true;
+            if update == death::Update::LoseStock {
+                lose_stock(data, state, player, true)?;
+            }
             continue;
         }
         sample_input_history(fighter, &data.fighters[player], &data.rules, input);
@@ -400,6 +421,7 @@ pub(crate) fn advance(
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
             || rebirth::invulnerable(target.action)
+            || death::owns_action(target.action)
         {
             continue;
         }
@@ -496,19 +518,55 @@ pub(crate) fn advance(
 
     clank::finish(data, state, newly_hit)?;
 
-    let blast_knockouts: [bool; 2] = core::array::from_fn(|player| {
-        let fighter = &state.fighters[player];
-        let [left, right, bottom, top] = data.stage.blast;
-        let [x, y] = fighter.position;
-        let top_eligible = data
-            .rules
-            .top_ko_min_knockback
-            .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
-        !matches!(
-            fighter.action,
-            Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
-        ) && (x < left || x > right || y < bottom || y > top && top_eligible)
-    });
+    let mut blast_deaths = [None; 2];
+    let mut blast_knockouts = [false; 2];
+    if let Some(rules) = &data.rules.death {
+        let mut rng = crate::random::HsdRng::new(state.rng_seed);
+        for player in 0..2 {
+            let fighter = &state.fighters[player];
+            blast_deaths[player] = crate::fighter::death::select(
+                crate::fighter::death::Query {
+                    excluded: [
+                        death::owns_action(fighter.action),
+                        fighter.action == Action::Respawn,
+                        fighter.action == Action::Eliminated,
+                        fighter.action == Action::Rebirth,
+                        fighter.action == Action::RebirthWait,
+                    ],
+                    position: fighter.position,
+                    blast: data.stage.blast,
+                    grounded: fighter.grounded,
+                    forced_top_eligible: false,
+                    knockback_y: fighter.knockback[1],
+                    top_knockback_threshold: data
+                        .rules
+                        .top_ko_min_knockback
+                        .expect("validated death rules require a top threshold"),
+                    force_normal_top: rules.force_normal_top[player],
+                    camera_disables_screen: rules.camera_disables_screen,
+                    screen_chance_percent: rules.screen_chance_percent,
+                    ice: false,
+                },
+                &mut rng,
+            );
+            blast_knockouts[player] = blast_deaths[player].is_some();
+        }
+        state.rng_seed = rng.seed();
+    } else {
+        blast_knockouts = core::array::from_fn(|player| {
+            let fighter = &state.fighters[player];
+            let [left, right, bottom, top] = data.stage.blast;
+            let [x, y] = fighter.position;
+            let top_eligible = data
+                .rules
+                .top_ko_min_knockback
+                .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
+            !matches!(
+                fighter.action,
+                Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
+            ) && (x < left || x > right || y < bottom || y > top && top_eligible)
+        });
+    }
     for (player, &knocked_out) in blast_knockouts.iter().enumerate() {
         if knocked_out {
             grab::break_for_player(state, player);
@@ -523,41 +581,49 @@ pub(crate) fn advance(
         )?;
     }
 
-    for (player, fighter) in state.fighters.iter_mut().enumerate() {
-        if !matches!(fighter.action, Action::Respawn | Action::Eliminated) {
-            shield::finish_frame(fighter, data.rules.shield.as_ref(), shield_contact[player]);
-            // Ordinary supported branch of ftCo_800D3158. Scripted death
-            // overrides and star/screen animation selection remain unported.
-            if blast_knockouts[player] {
-                // ftCo_800D34E0 resets only the deceased player's queue.
-                fighter.staling.queue.reset();
-                fighter.stocks -= 1;
-                fighter.velocity = [0.0; 2];
-                fighter.knockback = [0.0; 2];
-                fighter.hitlag = 0.0;
-                fighter.hitstun = 0;
-                fighter.di_pending = false;
-                fighter.ledge = ledge::State::default();
-                enter(
-                    fighter,
-                    if fighter.stocks == 0 {
-                        Action::Eliminated
-                    } else {
-                        Action::Respawn
-                    },
+    for player in 0..2 {
+        if !matches!(
+            state.fighters[player].action,
+            Action::Respawn | Action::Eliminated
+        ) {
+            shield::finish_frame(
+                &mut state.fighters[player],
+                data.rules.shield.as_ref(),
+                shield_contact[player],
+            );
+            if let Some(kind) = blast_deaths[player] {
+                death::begin(
+                    &mut state.fighters[player],
+                    kind,
+                    data.rules.death.as_ref().unwrap(),
                 );
-                state.events.push(Event::Knockout {
+                state.events.push(Event::DeathStarted {
                     player,
-                    stocks: fighter.stocks,
+                    death: kind,
                 });
-                staling::flush(
-                    fighter,
-                    &data.fighters[player],
-                    data.rules.staling.as_ref(),
-                    &mut state.attack_instances,
-                )?;
+                if !matches!(
+                    kind,
+                    crate::fighter::death::Kind::UpStar
+                        | crate::fighter::death::Kind::UpStarIce
+                        | crate::fighter::death::Kind::UpScreen
+                        | crate::fighter::death::Kind::UpScreenIce
+                ) {
+                    lose_stock(data, state, player, true)?;
+                } else {
+                    staling::flush(
+                        &mut state.fighters[player],
+                        &data.fighters[player],
+                        data.rules.staling.as_ref(),
+                        &mut state.attack_instances,
+                    )?;
+                }
                 continue;
             }
+            if blast_knockouts[player] {
+                lose_stock(data, state, player, false)?;
+                continue;
+            }
+            let fighter = &mut state.fighters[player];
             if !frozen[player] {
                 // The last invincible frame still protects this frame's contacts.
                 fighter.invincibility = fighter.invincibility.saturating_sub(1);
@@ -592,6 +658,40 @@ pub(crate) fn advance(
     Ok(())
 }
 
+fn lose_stock(
+    data: &MatchData,
+    state: &mut State,
+    player: usize,
+    preserve_death: bool,
+) -> Result<(), Error> {
+    let fighter = &mut state.fighters[player];
+    // ftCo_800D34E0 resets only the deceased player's queue.
+    fighter.staling.queue.reset();
+    fighter.stocks -= 1;
+    fighter.velocity = [0.0; 2];
+    fighter.knockback = [0.0; 2];
+    fighter.hitlag = 0.0;
+    fighter.hitstun = 0;
+    fighter.di_pending = false;
+    fighter.ledge = ledge::State::default();
+    if fighter.stocks == 0 {
+        enter(fighter, Action::Eliminated);
+    } else if !preserve_death {
+        enter(fighter, Action::Respawn);
+    }
+    state.events.push(Event::Knockout {
+        player,
+        stocks: fighter.stocks,
+    });
+    staling::flush(
+        fighter,
+        &data.fighters[player],
+        data.rules.staling.as_ref(),
+        &mut state.attack_instances,
+    )?;
+    Ok(())
+}
+
 fn finish(state: &mut State, winner: Option<usize>, reason: FinishReason) {
     state.phase = Phase::Finished { winner, reason };
     state.events.push(Event::Finished { winner, reason });
@@ -620,7 +720,8 @@ fn update_nudge(
     if matches!(
         state.fighters[subject].action,
         Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
-    ) {
+    ) || death::owns_action(state.fighters[subject].action)
+    {
         return Ok(());
     }
     let attributes = [
@@ -646,7 +747,8 @@ fn update_nudge(
             inactive: matches!(
                 fighter.action,
                 Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
-            ) || fighter.grab.captor.is_some()
+            ) || death::owns_action(fighter.action)
+                || fighter.grab.captor.is_some()
                 || ledge::attached(fighter),
             holds_victim: fighter.grab.victim.is_some(),
             nudge_disabled: attributes.nudge_disabled,
@@ -942,9 +1044,24 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     let bones = local.iter().map(Bone::physics).collect::<Vec<_>>();
     // Native match coordinates: local +X faces forward, +Y up, +Z depth.
     let root = [
-        [fighter.facing, 0.0, 0.0, fighter.position[0]],
-        [0.0, 1.0, 0.0, fighter.position[1]],
-        [0.0, 0.0, fighter.facing, fighter.depth],
+        [
+            fighter.facing,
+            0.0,
+            0.0,
+            fighter.position[0] + fighter.death.camera_offset[0],
+        ],
+        [
+            0.0,
+            1.0,
+            0.0,
+            fighter.position[1] + fighter.death.camera_offset[1],
+        ],
+        [
+            0.0,
+            0.0,
+            fighter.facing,
+            fighter.depth + fighter.death.camera_offset[2],
+        ],
     ];
     bones::Pose::evaluate_with_root(&bones, &root).map_err(physics)
 }

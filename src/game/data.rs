@@ -89,6 +89,8 @@ pub struct Rules {
     /// above this value. None retains the original synthetic fixture's rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_ko_min_knockback: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub death: Option<super::death::Rules>,
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
     pub damage: super::damage::CombatRules,

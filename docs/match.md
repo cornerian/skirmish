@@ -216,10 +216,12 @@ Airborne fighters crossing the top survive when their knockback is at or below
 it, even if self velocity carries them higher. Grounded fighters crossing the
 top still lose a stock. Side and bottom crossings remain unconditional in the
 ordinary supported branch. Omission retains the older demo's synthetic rule
-that every boundary crossing loses a stock. Scripted death exemptions/overrides
-and star/screen death selection are separate, unported behavior.
-The complete KO callback order is also unported: this scheduler checks after
-contacts, while the original eligibility callback runs earlier in fighter update.
+that every boundary crossing loses a stock. Optional [`rules.death`](deaths.md)
+adds directional death actions plus deterministic top star/screen selection,
+camera-relative model motion and delayed stock loss. Scripted/player death
+exemptions and ice-damage entry remain unported. The complete KO callback order
+is also unported: this scheduler checks after contacts, while the original
+eligibility callback runs earlier in fighter update.
 
 ## Explicit coverage limits
 
@@ -236,6 +238,10 @@ and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials, character-specific special state, running turns
 and character multijumps remain unported. Some accepted stick/button
 combinations consequently have no action in this experimental profile.
+
+The optional [blast-death profile](deaths.md) adds normal directional deaths and
+resource-driven star/screen phases. It does not implement the camera, effects,
+audio, stat/bonus callbacks or authentic common-data values.
 
 Moving stages/remapping and full ECB corner/squeeze response remain unported.
 Ledge actions currently require static marked endpoints and supplied generic

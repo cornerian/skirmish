@@ -203,5 +203,10 @@
     "fixture": "tests/oracle/original/special_input.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_0D67.c",
     "sha256": "30fc5f74f8f8f04eb988f47fdb897359b5cd6dc08d1de5d09bc2162807562614"
+  },
+  {
+    "fixture": "tests/oracle/original/death.c",
+    "upstream": "src/melee/ft/ft_0D31.c",
+    "sha256": "014cdd01686238eb22398e87cc10784e899684beedccbba4eb41f02524bb94d5"
   }
 ]

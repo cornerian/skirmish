@@ -4,6 +4,7 @@ pub mod aerial;
 pub mod clank;
 pub mod combat;
 pub mod damage;
+pub mod death;
 pub mod grab;
 pub mod ledge;
 pub mod locomotion;

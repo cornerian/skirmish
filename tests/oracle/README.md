@@ -123,3 +123,8 @@ predicate. The host adapter supplies the fresh button mask, main stick and two
 common-data thresholds. Generated comparisons retain its strict axis bounds and
 comparison-based ABS behavior. Native match tests own action priority, grounded
 and airborne animation, contact, terrain conversion and input rearming.
+
+`death` preserves the complete `ftCo_800D3158` blast-line selector. The host
+adapter records its selected death callback and compares line order, top
+eligibility, ice variants, screen chance and exact HSD RNG consumption. Native
+match tests own the resource-driven death action timelines and stock lifecycle.
