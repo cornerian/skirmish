@@ -7,8 +7,10 @@ pub const PARTICLE_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/partic
 pub const MAX_PARTICLES: usize = 8192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[repr(u32)]
 pub enum ParticleEffect {
     Smoke,
+    Fire,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
@@ -72,6 +74,7 @@ struct Instance {
     size_rotation: [f32; 4],
     color: [f32; 4],
     seed: u32,
+    effect: u32,
 }
 
 pub struct ParticleRenderer {
@@ -126,8 +129,7 @@ impl ParticleRenderer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let attributes =
-            wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Uint32];
+        let attributes = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Uint32, 4 => Uint32];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced procedural particles"),
             layout: Some(&pipeline_layout),
@@ -213,6 +215,7 @@ impl ParticleRenderer {
                 size_rotation: [p.half_size[0], p.half_size[1], cos, sin],
                 color: p.color,
                 seed: p.seed,
+                effect: p.effect as u32,
             });
         }
         if self.instances.is_empty() {

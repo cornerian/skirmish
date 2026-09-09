@@ -20,8 +20,8 @@ previous batch. Samples outside their open lifetime interval are invisible.
 
 ## Rendering and cost
 
-Six GPU-generated vertices form each camera-facing quad. One 52-byte record per
-live particle is uploaded into a persistent 416 KiB instance buffer. CPU staging
+Six GPU-generated vertices form each camera-facing quad. One 56-byte record per
+live particle is uploaded into a persistent 448 KiB instance buffer. CPU staging
 vectors reserve the capacity once. Sorting is allocation-free and back to front
 by view depth with an input-index tiebreaker. Smoke uses one instanced draw,
 premultiplied alpha and depth comparison without depth writes. There are no
@@ -39,6 +39,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Effect | Source evidence | Redesign | Status |
 | --- | --- | --- | --- |
 | Smoke puff | skirmish-assets `effects/smoke/turbulent_smoke_puff`, EfCoData offsets 232800 and 1021600 | Expanding lobed density, seeded filtered turbulence, lit gray body and lifetime fade | Implemented; runtime effect IDs unverified |
+| Fire | EfCaData particle frames at offsets 0xcf00, 0xdf00, 0xef00, visually inspected in the existing decoded export | Tapered silhouette, upward noise advection, hot core, cool edge and dissipating tip | Implemented redesign; emitter timing remains caller-owned |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and

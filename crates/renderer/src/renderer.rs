@@ -807,44 +807,49 @@ mod tests {
             pollster::block_on(render_rgba(scene, None, particles, 257, 193)).unwrap()
         };
         let background = capture(&empty, &[]);
-        let mut particle = Particle::preview(ParticleEffect::Smoke, 0.35);
-        let first = capture(&empty, &[particle]);
-        assert_ne!(first, background, "live effect must draw");
-        assert_eq!(
-            first,
-            capture(&empty, &[particle]),
-            "fixed inputs must reproduce"
-        );
-        particle.seed += 1;
-        assert_ne!(
-            first,
-            capture(&empty, &[particle]),
-            "seed must change detail"
-        );
-        particle.age = 0.8;
-        assert_ne!(
-            first,
-            capture(&empty, &[particle]),
-            "age must change appearance"
-        );
-        for age in [-1.0, 0.0, 1.0, 2.0] {
-            particle.age = age;
-            assert_eq!(background, capture(&empty, &[particle]));
+        use clap::ValueEnum;
+        for &effect in ParticleEffect::value_variants() {
+            let mut particle = Particle::preview(effect, 0.35);
+            let first = capture(&empty, &[particle]);
+            assert_ne!(first, background, "live effect must draw");
+            assert_eq!(
+                first,
+                capture(&empty, &[particle]),
+                "fixed inputs must reproduce"
+            );
+            particle.seed += 1;
+            if matches!(effect, ParticleEffect::Smoke | ParticleEffect::Fire) {
+                assert_ne!(
+                    first,
+                    capture(&empty, &[particle]),
+                    "seed must change detail"
+                );
+            }
+            particle.age = 0.8;
+            assert_ne!(
+                first,
+                capture(&empty, &[particle]),
+                "age must change appearance"
+            );
+            for age in [-1.0, 0.0, 1.0, 2.0] {
+                particle.age = age;
+                assert_eq!(background, capture(&empty, &[particle]));
+            }
+            let scene = Scene::demo();
+            let baseline = capture(&scene, &[]);
+            particle.age = 0.35;
+            particle.position = [0.0, 1.0, 0.0];
+            particle.half_size = [0.25; 2];
+            assert_eq!(
+                baseline,
+                capture(&scene, &[particle]),
+                "opaque cube must occlude an interior particle"
+            );
+            // Far behind the camera and outside the view volume.
+            particle.position = [1e8; 3];
+            assert_eq!(baseline, capture(&scene, &[particle]));
+            assert!(first.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
         }
-        let scene = Scene::demo();
-        let baseline = capture(&scene, &[]);
-        particle.age = 0.35;
-        particle.position = [0.0, 1.0, 0.0];
-        particle.half_size = [0.25; 2];
-        assert_eq!(
-            baseline,
-            capture(&scene, &[particle]),
-            "opaque cube must occlude an interior particle"
-        );
-        // Far behind the camera and outside the view volume.
-        particle.position = [1e8; 3];
-        assert_eq!(baseline, capture(&scene, &[particle]));
-        assert!(first.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
     }
 
     #[test]
