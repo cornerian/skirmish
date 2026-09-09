@@ -11,6 +11,7 @@ pub const MAX_PARTICLES: usize = 8192;
 pub enum ParticleEffect {
     Smoke,
     Fire,
+    Glow,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.

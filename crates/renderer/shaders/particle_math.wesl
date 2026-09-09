@@ -29,3 +29,34 @@ fn turbulence(p: vec2f, footprint: f32, seed: u32) -> f32 {
     }
     return sum;
 }
+
+fn coverage(distance: f32, footprint: f32) -> f32 {
+    let width = max(0.004, footprint);
+    return 1.0 - smoothstep(-width, width, distance);
+}
+
+fn segment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
+    let v = b - a;
+    let t = clamp(dot(p - a, v) / max(dot(v, v), 0.000001), 0.0, 1.0);
+    return length(p - a - t * v);
+}
+
+fn rotate(p: vec2f, angle: f32) -> vec2f {
+    let s = sin(angle);
+    let c = cos(angle);
+    return vec2f(c * p.x - s * p.y, s * p.x + c * p.y);
+}
+
+fn angle(p: vec2f) -> f32 {
+    // atan2(0, 0) is indeterminate in WGSL.
+    return atan2(p.y, p.x + 0.000001);
+}
+
+fn star_distance(p: vec2f) -> f32 {
+    let a = angle(p) + 1.5707963;
+    let sector = floor(a / 1.2566371 + 0.5);
+    // Signed polar boundary of a five-point star; avoids loops over edges.
+    let t = abs(a - sector * 1.2566371);
+    let radius = 0.7 * 0.4 / max(0.001, 0.4 * cos(t) + 0.623 * sin(t));
+    return length(p) - radius;
+}

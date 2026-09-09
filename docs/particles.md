@@ -40,6 +40,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | --- | --- | --- | --- |
 | Smoke puff | skirmish-assets `effects/smoke/turbulent_smoke_puff`, EfCoData offsets 232800 and 1021600 | Expanding lobed density, seeded filtered turbulence, lit gray body and lifetime fade | Implemented; runtime effect IDs unverified |
 | Fire | EfCaData particle frames at offsets 0xcf00, 0xdf00, 0xef00, visually inspected in the existing decoded export | Tapered silhouette, upward noise advection, hot core, cool edge and dissipating tip | Implemented redesign; emitter timing remains caller-owned |
+| Glow | EfCaData offset 0x9c0 and aliases in particle_sources.jsonl | Radial core, halo and filtered rays with additive light | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
@@ -48,7 +49,14 @@ The asset catalog identifies these visually as smoke-like; it does not identify
 their runtime names. This shader intentionally creates new wisps. The asset
 project's original approximation metrics do not validate this new shader.
 
-All remaining Melee particle effects are pending. Melee's source distinguishes
+The source catalog `crates/renderer/particle_sources.jsonl` retains 337 unique
+frames and all 593 aliases from the existing decoded export, visually classified
+into 28 families. `particle_catalog::effect_for_texture` resolves a decoded RGBA
+hash to an implemented shader family at material-load time. An unimplemented
+family or unknown texture returns `None`. The catalog contains source identities
+and visual classifications, not copied textures or original runtime names.
+
+Remaining families are pending. Melee's source distinguishes
 generator effects, animated mesh effects and composite spawns. Direct generator
 ranges alone are not a verified inventory of actual bank entries. Do not label a
 generic shader or unknown ID as a completed reconstruction. The native runtime

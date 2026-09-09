@@ -808,7 +808,15 @@ mod tests {
         };
         let background = capture(&empty, &[]);
         use clap::ValueEnum;
+        let selected = std::env::var("SKIRMISH_PARTICLE_CHECK").ok();
         for &effect in ParticleEffect::value_variants() {
+            if let Some(selected) = &selected {
+                let requested =
+                    ParticleEffect::from_str(selected, false).expect("valid particle check filter");
+                if effect != requested {
+                    continue;
+                }
+            }
             let mut particle = Particle::preview(effect, 0.35);
             let first = capture(&empty, &[particle]);
             assert_ne!(first, background, "live effect must draw");
