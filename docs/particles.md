@@ -56,6 +56,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Snowflake | files/EfCoData.dat offset 0xa93c0; full aliases in particle_sources.jsonl | Analytic snowflake appearance and lifetime fade | Implemented visual redesign |
 | Streak | files/EfCoData.dat offset 0xb40c0; full aliases in particle_sources.jsonl | Analytic streak appearance and lifetime fade | Implemented visual redesign |
 | Bubble | files/EfCoData.dat offset 0xda560; full aliases in particle_sources.jsonl | Analytic bubble appearance and lifetime fade | Implemented visual redesign |
+| Crystal | files/EfIcData.dat offset 0x4f40; full aliases in particle_sources.jsonl | Analytic crystal appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
