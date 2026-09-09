@@ -60,6 +60,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Mote | files/EfKbData.dat offset 0x3e20; full aliases in particle_sources.jsonl | Analytic mote appearance and lifetime fade | Implemented visual redesign |
 | Rock | files/EfKbData.dat offset 0x3f40; full aliases in particle_sources.jsonl | Analytic rock appearance and lifetime fade | Implemented visual redesign |
 | Coin | files/EfLgData.dat offset 0x3d40; full aliases in particle_sources.jsonl | Analytic coin appearance and lifetime fade | Implemented visual redesign |
+| Rainbow | files/EfMtData.dat offset 0x44e0; full aliases in particle_sources.jsonl | Analytic rainbow appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
