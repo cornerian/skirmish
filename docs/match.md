@@ -71,8 +71,8 @@ coordinates use +X forward, +Y up and +Z depth; resource imports must convert
 source coordinate conventions explicitly.
 
 The experimental scheduler first handles countdown or respawn/freeze counters,
-then updates actions and physics for both players, samples their ECBs and resolves
-static stage contacts in source-sized movement substeps. It evaluates contact
+then samples optional stage motion, updates actions and physics for both players,
+samples their ECBs and resolves stage contacts in source-sized movement substeps. It evaluates contact
 poses, resolves configured ordinary grounded clashes, and collects remaining
 shield/hurtbox contact decisions before applying damage so both
 players can trade on the same frame. Hit-group history suppresses repeated
@@ -89,9 +89,11 @@ front/back and angle values, or `bones` with six bone indices, source thresholds
 side-height offset and flags. These boxes are separate from hurtboxes. The stage
 accepts explicit `geometry.lines` and `geometry.joints`; when absent, its compact
 `floor` becomes one directed segment. Lines retain source IDs by array position,
-adjacency, surface flags and joint ranges. Floor segments run left to right,
+adjacency, surface flags and joint ranges. Optional [`stage.motion`](stage-motion.md)
+applies cyclic affine samples to stable line ranges, and `Match::stage_geometry`
+reconstructs the collision mesh for the current checkpointed stage frame. Floor segments run left to right,
 ceilings right to left, left-facing walls bottom to top and right-facing walls
-top to bottom. Current geometry is static throughout a match.
+top to bottom.
 
 Movement subdivision retains the original strict six-unit threshold and ECB
 growth checks: exactly twelve units takes three substeps. Grounded fighters
@@ -243,7 +245,9 @@ The optional [blast-death profile](deaths.md) adds normal directional deaths and
 resource-driven star/screen phases. It does not implement the camera, effects,
 audio, stat/bonus callbacks or authentic common-data values.
 
-Moving stages/remapping and full ECB corner/squeeze response remain unported.
+The [stage-motion profile](stage-motion.md) adds transformed collision samples
+and exact grounded-line carry/remapping. Sweeps caused only by surface motion,
+dynamic surface-kind changes and full ECB corner/squeeze response remain unported.
 Ledge actions currently require static marked endpoints and supplied generic
 poses; percent-dependent variants and ledge trumping remain unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the

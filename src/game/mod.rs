@@ -18,6 +18,7 @@ pub mod rebirth;
 pub mod shield;
 mod simulation;
 pub mod special;
+pub mod stage_motion;
 pub mod staling;
 mod validation;
 
@@ -279,6 +280,7 @@ pub struct State {
     pub next_frame: u32,
     pub remaining_frames: u32,
     pub phase: Phase,
+    pub stage: stage_motion::State,
     pub fighters: [Fighter; 2],
     pub rng_seed: u32,
     pub attack_instances: crate::fighter::stale::InstanceCounter,
@@ -342,6 +344,10 @@ impl Match {
     }
     pub fn resource_id(&self) -> [u8; 32] {
         self.resource_id
+    }
+    /// Current collision geometry, reconstructed from resources and stage time.
+    pub fn stage_geometry(&self) -> std::borrow::Cow<'_, data::StageGeometry> {
+        stage_motion::geometry(&self.data.stage, self.state.stage.frame)
     }
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {

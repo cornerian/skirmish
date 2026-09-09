@@ -1,7 +1,7 @@
-//! Experimental composition of source ECB arithmetic and static stage queries.
+//! Experimental composition of source ECB arithmetic and sampled stage queries.
 //! This response policy covers ordinary floor/ceiling/side contacts; Melee's
-//! complete corner, squeeze, ledge, moving-platform and damage callback graph
-//! is not implied by the translated primitives used here.
+//! complete corner, squeeze and damage callback graph is not implied by the
+//! translated primitives used here.
 use super::{Action, Error, Event, Fighter, data::*, simulation};
 use crate::{
     collision::{
@@ -14,12 +14,12 @@ use crate::{
 use std::borrow::Cow;
 
 /// `mpColl_IsOnPlatform`: passability belongs to the supporting source line.
-pub(crate) fn on_platform(f: &Fighter, map: &Stage) -> bool {
+pub(crate) fn on_platform(f: &Fighter, geometry: &StageGeometry) -> bool {
     f.grounded
         && f.ground_line.is_some_and(|id| {
-            map.geometry
-                .as_ref()
-                .and_then(|geometry| geometry.lines.get(id))
+            geometry
+                .lines
+                .get(id)
                 .is_some_and(|line| u32::from(line.material_flags) & stage::PLATFORM != 0)
         })
 }
@@ -31,10 +31,10 @@ pub(crate) fn on_platform(f: &Fighter, map: &Stage) -> bool {
 pub(crate) fn begin_pass(
     f: &mut Fighter,
     data: &FighterData,
-    map: &Stage,
+    geometry: &StageGeometry,
     velocity_y: f32,
 ) -> bool {
-    if !on_platform(f, map) {
+    if !on_platform(f, geometry) {
         return false;
     }
     let support = f.ground_line;
@@ -98,10 +98,13 @@ pub(crate) fn sample(f: &mut Fighter, data: &FighterData, pose: &Pose) -> Result
     Ok(())
 }
 
-pub(crate) fn initialize(f: &mut Fighter, data: &FighterData, map: &Stage) -> Result<(), Error> {
+pub(crate) fn initialize(
+    f: &mut Fighter,
+    data: &FighterData,
+    geometry: &StageGeometry,
+) -> Result<(), Error> {
     sample(f, data, &simulation::pose(f, data)?)?;
     f.ecb.interpolate(1.0).map_err(physics)?;
-    let geometry = geometry(map);
     let stage = stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
     let bottom = add(f.position, f.ecb.current.bottom);
     // Starting on a supplied floor is a native-data convention. Only eligible

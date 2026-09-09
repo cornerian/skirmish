@@ -33,6 +33,8 @@ pub struct Stage {
     pub floor: Floor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<StageGeometry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<super::stage_motion::Rules>,
     /// Left, right, bottom, top. Top eligibility is configured in `Rules`.
     pub blast: [f32; 4],
     pub spawns: [[f32; 2]; 2],

@@ -160,6 +160,14 @@ complete original blast selector and post-call HSD seed over generated states.
 The independent star/screen conformance fixture remains blocked until a trace
 from an independent producer exists.
 
+The [stage-motion profile](stage-motion.md) adds `game_stage_motion` coverage
+for affine and cyclic line samples, grounded carry after self movement, hitlag,
+airborne detachment and relanding, current-geometry access, countdown timing,
+checkpoint replay and malformed resources. `stage_differential` now compares
+the complete original `mpRemap2d` body across generated binary32 endpoints and
+points, including clamping and degenerate-line behavior. Its independent
+moving-platform trace remains blocked until a separate producer exists.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -173,6 +181,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |
 | `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
+| `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -192,7 +201,8 @@ explicitly disable unrelated state/environment branches.
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release and implemented hitlag/floor responses |
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
-| Moving platforms/remapping, ECB corner and squeeze response | `conformance_stage`: independent reference cases |
+| Moving platforms/remapping | `game_stage_motion` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
+| ECB corner and moving-surface squeeze response | `conformance_stage`: independent reference cases |
 | Conditional top KOs and rebirth platform | `conformance_stage`: ordinary upper-boundary jump and stock-loss lifecycle |
 | Star/screen deaths | `game_death` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
 | Authentic skeletons/bind parents, animation tracks, hurtbox/ECB attachments | `conformance_resources`: independent native-resource scenarios |

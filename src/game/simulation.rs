@@ -10,6 +10,8 @@ use crate::{
 };
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
+    let stage_state = stage_motion::State::default();
+    let geometry = stage_motion::geometry(&data.stage, stage_state.frame);
     Ok(State {
         next_frame: 0,
         remaining_frames: data.rules.time_limit_frames,
@@ -20,9 +22,10 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
                 remaining: data.rules.countdown_frames,
             }
         },
+        stage: stage_state,
         fighters: [
-            spawn(data, 0, data.rules.stocks, 0)?,
-            spawn(data, 1, data.rules.stocks, 0)?,
+            spawn(data, &geometry, 0, data.rules.stocks, 0)?,
+            spawn(data, &geometry, 1, data.rules.stocks, 0)?,
         ],
         rng_seed: seed,
         attack_instances: crate::fighter::stale::InstanceCounter::default(),
@@ -32,6 +35,7 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
 
 fn spawn(
     data: &MatchData,
+    geometry: &StageGeometry,
     player: usize,
     stocks: u8,
     invincibility: u32,
@@ -82,7 +86,7 @@ fn spawn(
         staling: staling::State::default(),
         previous_input: Controller::default(),
     };
-    collision::initialize(&mut fighter, &data.fighters[player], &data.stage)?;
+    collision::initialize(&mut fighter, &data.fighters[player], geometry)?;
     if !fighter.grounded {
         fighter.locomotion.jumps_used = 1;
     }
@@ -125,12 +129,14 @@ pub(crate) fn advance(
         return Ok(());
     }
 
+    stage_motion::advance(&data.stage, &mut state.stage)?;
+
     // The source runs priority-1 animation callbacks and push sampling in stable
     // entity order, then priority-3 action input and priority-4/6 physics/map.
     // Positions do not advance until every subject's nudge has been sampled.
     let mut frozen = [false; 2];
     let mut active = [false; 2];
-    let geometry = collision::geometry(&data.stage);
+    let geometry = stage_motion::geometry(&data.stage, state.stage.frame);
     let stage = stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
     let nudge_neighbors = if data.rules.nudge.is_some() {
         Some(
@@ -157,6 +163,7 @@ pub(crate) fn advance(
             if fighter.action_frame >= data.rules.respawn_frames {
                 *fighter = spawn(
                     data,
+                    &geometry,
                     player,
                     fighter.stocks,
                     data.rules.respawn_invincibility_frames,
@@ -207,6 +214,7 @@ pub(crate) fn advance(
             } else {
                 damage::during_hitlag(fighter, input.stick, &data.rules.damage)?;
             }
+            stage_motion::carry(&data.stage, &state.stage, fighter)?;
             advance_ecb_lock(fighter);
             collision::sample(
                 fighter,
@@ -287,9 +295,9 @@ pub(crate) fn advance(
             fighter,
             &data.fighters[player],
             input,
-            collision::on_platform(fighter, &data.stage),
+            collision::on_platform(fighter, &geometry),
         ) {
-            collision::begin_pass(fighter, &data.fighters[player], &data.stage, velocity_y);
+            collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
         }
     }
     grab::synchronize_actions(state);
@@ -353,6 +361,7 @@ pub(crate) fn advance(
         }
         let previous_position = fighter.position;
         move_fighter(fighter, &data.fighters[player], &data.rules, input);
+        stage_motion::carry(&data.stage, &state.stage, fighter)?;
         advance_ecb_lock(fighter);
         collision::sample(
             fighter,

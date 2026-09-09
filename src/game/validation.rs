@@ -26,6 +26,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     require(data.schema == 1, "unsupported schema")?;
     require(!data.provenance.trim().is_empty(), "provenance is required")?;
     let stage = &data.stage;
+    super::stage_motion::validate(stage)?;
     if let Some(geometry) = &stage.geometry {
         require(
             !geometry.lines.is_empty()

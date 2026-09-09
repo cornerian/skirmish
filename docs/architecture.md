@@ -19,8 +19,8 @@ from vector artwork and procedural presentation effects.
 The main crate groups native code by responsibility. Focused top-level modules
 hold translated HSD and Metrowerks algorithms. `fighter` contains scalar
 movement, walking/jump launch, and damage arithmetic; `collision` contains bone
-hierarchy transforms, environmental collision boxes, static stage queries, and
-swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
+hierarchy transforms, environmental collision boxes, sampled stage queries,
+moving-line remapping and swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
 headless. `game` composes the experimental match slice and owns gameplay state
 and frame scheduling. Separate workspace crates remain only where a real
 dependency boundary exists, such as replay parsing or presentation.

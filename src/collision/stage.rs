@@ -3,8 +3,8 @@
 //! Caller-owned lines and joints replace the global collision arrays/list.
 //! Queries retain endpoint direction, tolerances, neighbor extension, flags,
 //! traversal order and strict nearest-contact selection. Joint ranges include
-//! currently sampled dynamic lines, but previous-frame remapping, moving-joint
-//! callbacks, stage transforms and the fighter ECB response pipeline are separate.
+//! currently sampled dynamic lines. The game layer supplies resource transforms
+//! and composes the exact moving-line remap with fighter physics.
 //!
 //! Sloped normals use Dolphin's scalar C_VECNormalize arithmetic with libm sqrt.
 //! This does not reproduce PSVECNormalize's PowerPC reciprocal-root estimate.
@@ -22,6 +22,36 @@ pub const ENABLED: u32 = 1 << 16;
 pub const HIDDEN: u32 = 1 << 18;
 pub const JOINT_ALWAYS_CHECK: u32 = 1 << 10;
 pub const JOINT_TOO_FAR: u32 = 1 << 12;
+
+/// `mpRemap2d`: remap a point from a line's previous endpoints to its current
+/// endpoints. The mixed f32/f64 evaluation order is intentional and covered by
+/// the original-C differential suite.
+pub fn remap_point(previous: [Point; 2], current: [Point; 2], point: Point) -> Point {
+    let [a0, a1] = previous;
+    let [b0, b1] = current;
+    let dx = f64::from(a1[0] - a0[0]);
+    let dy = f64::from(a1[1] - a0[1]);
+    let relative_x = point[0] - a0[0];
+    let relative_y = point[1] - a0[1];
+    let distance_squared = dy * dy + dx * dx;
+    if distance_squared.abs() > 0.0001 {
+        let t = ((dy * f64::from(relative_y) + dx * f64::from(relative_x)) / distance_squared)
+            .clamp(0.0, 1.0);
+        [
+            (f64::from(point[0])
+                + (1.0 - t) * f64::from(b0[0] - a0[0])
+                + t * f64::from(b1[0] - a1[0])) as f32,
+            (f64::from(point[1])
+                + (1.0 - t) * f64::from(b0[1] - a0[1])
+                + t * f64::from(b1[1] - a1[1])) as f32,
+        ]
+    } else {
+        [
+            point[0] + (b0[0] - a0[0]) + (b1[0] - a0[0]),
+            point[1] + (b0[1] - a0[1]) + (b1[1] - a0[1]),
+        ]
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -619,6 +649,19 @@ fn finite(values: impl IntoIterator<Item = f32>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_line_remap_clamps_projection_and_keeps_degenerate_rule() {
+        let previous = [[0.0, 0.0], [10.0, 0.0]];
+        let current = [[2.0, 1.0], [14.0, 3.0]];
+        assert_eq!(remap_point(previous, current, [5.0, 4.0]), [8.0, 6.0]);
+        assert_eq!(remap_point(previous, current, [-5.0, 4.0]), [-3.0, 5.0]);
+        assert_eq!(remap_point(previous, current, [15.0, 4.0]), [19.0, 7.0]);
+        assert_eq!(
+            remap_point([[1.0, 2.0]; 2], [[3.0, 5.0], [7.0, 11.0]], [13.0, 17.0]),
+            [21.0, 29.0]
+        );
+    }
 
     #[test]
     fn static_slope_contact_and_projection_retain_floor_direction() {

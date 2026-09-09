@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 stage-motion batch is recorded at:
+
+`/mnt/archive/runs/skirmish-stage-motion-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage runs affine/cyclic collision-line
+motion, current geometry, grounded carry after self movement and during hitlag,
+airborne detachment/relanding, countdown timing, checkpoint replay and invalid
+resources. Generated cases compare the complete original moving-line remap,
+including exceptional binary32 inputs. The independent moving-platform trace
+remains blocked pending a separate producer.
+
 The 2026-09-09 blast-death batch is recorded at:
 
 `/mnt/archive/runs/skirmish-deaths-20260909`

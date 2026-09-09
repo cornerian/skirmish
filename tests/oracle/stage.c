@@ -134,6 +134,12 @@ int oracle_stage_intersection(int kind, const float endpoints[8], float out[2]) 
         endpoints[4], endpoints[5], endpoints[6], endpoints[7]);
 }
 
+void oracle_stage_remap(const float previous[4], const float current[4],
+                        const float point[2], float out[2]) {
+    mpRemap2d(out, out + 1, previous[0], previous[1], previous[2], previous[3],
+              current[0], current[1], current[2], current[3], point[0], point[1]);
+}
+
 void oracle_stage_endpoints(const OracleLine* lines, int count, int id,
     float out[4], s32 neighbors[2]) {
     MapLine* map = setup_lines(lines, count);

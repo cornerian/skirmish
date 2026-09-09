@@ -12,7 +12,10 @@ removed and host declarations come from the corresponding C adapters. Documented
 bytecode pointer adaptations remain in `build.rs`.
 
 The stage adapter replaces GameCube pointer subtraction with native logical
-line indices, preserving the original eight-byte index calculation. Source
+line indices, preserving the original eight-byte index calculation. It also
+exposes the complete static `mpRemap2d` body used by `mpGetSpeed`; generated
+tests compare its mixed float/double arithmetic before match-level carry tests.
+Source
 definitions are selected past forward declarations. ECB subdivision and ordinary
 air knockback decay use exact excerpts of larger callbacks, checked against the
 pinned snapshots by tests. Host shims provide arrays, sampled joint positions and

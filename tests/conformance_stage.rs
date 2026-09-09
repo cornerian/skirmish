@@ -1,4 +1,5 @@
-//! Required integration behavior still absent from the experimental scheduler.
+//! Independent fidelity contracts that still need externally produced traces.
+//! Implemented native profiles remain ignored here until that reference exists.
 //! Run explicitly with `cargo test --test conformance_stage -- --ignored`.
 #[path = "support/rebirth.rs"]
 mod rebirth_resources;
@@ -133,7 +134,7 @@ fn lost_stock_returns_on_an_airborne_rebirth_platform() {
 }
 
 #[test]
-#[ignore = "blocked: independent moving-platform carry/remapping reference required"]
+#[ignore = "blocked: independent reference for implemented moving-platform profile required"]
 fn moving_platform_carries_a_supported_fighter() {
     reference::assert_reference("moving_platform_carry");
 }

@@ -75,6 +75,12 @@ struct OracleContact {
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
+    fn oracle_stage_remap(
+        previous: *const f32,
+        current: *const f32,
+        point: *const f32,
+        out: *mut f32,
+    );
     fn oracle_stage_intersection(kind: i32, endpoints: *const f32, out: *mut f32) -> i32;
     fn oracle_stage_endpoints(
         lines: *const OracleLine,
@@ -105,6 +111,59 @@ unsafe extern "C" {
         accept_mask: u64,
         out: *mut OracleContact,
     ) -> i32;
+}
+
+proptest! {
+    #[test]
+    fn moving_line_remap_matches_original_c(values in any::<[f32; 10]>()) {
+        remap_reference(values);
+    }
+}
+
+#[test]
+fn moving_line_remap_special_values_and_threshold_neighbors_match_c() {
+    let base = [0.0, 0.0, 1.0, 0.0, 2.0, 3.0, 4.0, 5.0, 0.5, -0.25];
+    for value in [
+        -0.0,
+        f32::from_bits(1),
+        f32::MIN_POSITIVE,
+        0.01,
+        f32::from_bits(0.01_f32.to_bits() - 1),
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+    ] {
+        for slot in 0..base.len() {
+            let mut values = base;
+            values[slot] = value;
+            remap_reference(values);
+        }
+    }
+    remap_reference([1.0, 2.0, 1.0, 2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0]);
+}
+
+fn remap_reference(values: [f32; 10]) {
+    let previous = [values[0], values[1], values[2], values[3]];
+    let current = [values[4], values[5], values[6], values[7]];
+    let point = [values[8], values[9]];
+    let actual = remap_point(
+        [[previous[0], previous[1]], [previous[2], previous[3]]],
+        [[current[0], current[1]], [current[2], current[3]]],
+        point,
+    );
+    let mut expected = [0.0; 2];
+    // SAFETY: every input/output array remains live for the complete call.
+    unsafe {
+        oracle_stage_remap(
+            previous.as_ptr(),
+            current.as_ptr(),
+            point.as_ptr(),
+            expected.as_mut_ptr(),
+        )
+    };
+    for (rust, original) in actual.into_iter().zip(expected) {
+        same(rust, original);
+    }
 }
 
 fn index(id: Option<usize>) -> i32 {
