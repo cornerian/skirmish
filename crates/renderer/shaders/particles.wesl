@@ -1,3 +1,4 @@
+import package::leaf;
 import package::splash;
 import package::music_note;
 import package::rainbow;
@@ -69,6 +70,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 25u: { field = leaf::shade(in.uv, in.age, in.seed, footprint); }
         case 24u: { field = splash::shade(in.uv, in.age, in.seed, footprint); }
         case 23u: { field = music_note::shade(in.uv, in.age, in.seed, footprint); }
         case 22u: { field = rainbow::shade(in.uv, in.age, in.seed, footprint); }

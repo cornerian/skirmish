@@ -63,6 +63,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Rainbow | files/EfMtData.dat offset 0x44e0; full aliases in particle_sources.jsonl | Analytic rainbow appearance and lifetime fade | Implemented visual redesign |
 | Music Note | files/EfPrData.dat offset 0x2340; full aliases in particle_sources.jsonl | Analytic music note appearance and lifetime fade | Implemented visual redesign |
 | Splash | files/GrGd.dat offset 0x3ab60; full aliases in particle_sources.jsonl | Analytic splash appearance and lifetime fade | Implemented visual redesign |
+| Leaf | files/GrGr.dat offset 0x57b00; full aliases in particle_sources.jsonl | Analytic leaf appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
