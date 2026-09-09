@@ -1,3 +1,4 @@
+import package::explosion;
 import package::star;
 import package::arc;
 import package::glint;
@@ -58,6 +59,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 14u: { field = explosion::shade(in.uv, in.age, in.seed, footprint); }
         case 13u: { field = star::shade(in.uv, in.age, in.seed, footprint); }
         case 12u: { field = arc::shade(in.uv, in.age, in.seed, footprint); }
         case 11u: { field = glint::shade(in.uv, in.age, in.seed, footprint); }
