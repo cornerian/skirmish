@@ -123,5 +123,20 @@
     "fixture": "tests/oracle/original/stale_damage.c",
     "upstream": "src/melee/ft/ft_0881.c",
     "sha256": "811b429ea6572f10249e31db3a9ea9c5a458bbb2187af8215c678907c9395d62"
+  },
+  {
+    "fixture": "tests/oracle/original/aerial_input.c",
+    "upstream": "src/melee/ft/ft_0DF1.c",
+    "sha256": "e13eff4bf5970f45db95b30b6f67e8a9d25149dad45046f8b91a9114ba37056a"
+  },
+  {
+    "fixture": "tests/oracle/original/aerial_select.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackAir.c",
+    "sha256": "18eb8f663442558e375f07e2cdefe818b311473c93e023fc6d81f012d3ceeeac"
+  },
+  {
+    "fixture": "tests/oracle/original/aerial_landing.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_LandingAir.c",
+    "sha256": "ac7235335876dfa582015ce27e141e1baaea04abfe07ae20c971e3a2c196edab"
   }
 ]

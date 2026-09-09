@@ -6,5 +6,7 @@
   "damage_angle_range": "combat_knockback",
   "shield_collision": "combat_collision",
   "shield_mtx": "hsd_mtx",
-  "shield_sdk": "sdk_mtx"
+  "shield_sdk": "sdk_mtx",
+  "aerial_angles": "ftcommon",
+  "aerial_rate": "aerial_landing"
 }

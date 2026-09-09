@@ -1,5 +1,6 @@
 //! Fighter movement and combat mechanics.
 
+pub mod aerial;
 pub mod combat;
 pub mod damage;
 pub mod locomotion;

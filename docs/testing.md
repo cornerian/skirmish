@@ -48,6 +48,24 @@ cargo test --locked --test conformance_resources -- --ignored
 
 ## Coverage map
 
+`fighter::aerial` isolates ordinary C-stick freshness, main/C-stick aerial
+selection, folded stick angles and landing arithmetic. `aerial_differential`
+uses unchanged original function bodies and explicit synthetic coefficients;
+it covers held/reversed C-stick input, neutral and angle boundaries, signed
+zeros, L-cancel truncation/window edges, and `(end_frame + 0.1) / lag` animation
+rate. Main/C-stick angles use `atan2(y, ABS(x))`; host libm comparisons allow a
+small numerical tolerance for general inputs. Undefined lag float-to-int
+conversions are errors instead of executing undefined C behavior.
+
+Animation completion is a separate state contract. `ftAnim_IsFramesRemaining`
+checks eligible parts' animation flags (and selects the blended skeleton when
+active). `lb_8000B074` reads `AOBJ_NO_ANIM`; the non-looping branch in
+`HSD_AObjInterpretAnim` sets that flag when `end_frame <= curr_frame`, after
+animation processing. First-play skips frame advancement. No numerical epsilon
+is used for completion. These graph/callback semantics are not implemented by
+the aerial scalar helpers. L-cancel's input age is likewise supplied by the
+caller: x67F tracks a fresh aggregate virtual-LR edge, not just physical L/R.
+
 The stale-move batch enables repeated-jab conformance. `stale_differential`
 compares original queue, identity and damage functions, including the tenth
 slot's duplicate suppression, nine-entry weighting, holes, 16-bit wrap, debug

@@ -41,3 +41,11 @@ coefficient, debug and instance globals. The damage function's unused instance
 argument is retained. The core tests cover fighter-owned updates; item ownership
 routing is not included. Native match tests exercise creation-time hitbox damage
 caching and the separate unstaled integer knockback term.
+
+The aerial adapters select complete functions from ft_0DF1.c, ftCo_AttackAir.c,
+ftCo_LandingAir.c and the existing ftcommon.c snapshot. Host transition callbacks
+capture selected lag or animation rate without running the JObj/motion graph.
+Landing-lag comparisons use valid aerial IDs with the script lag flag enabled;
+basic/auto-cancel landing remains a caller decision. Generated lag divisions stay
+within C's defined float-to-int range. Runtime/platform.h's comparison-based ABS
+macro is retained so negative-zero angle behavior is preserved.
