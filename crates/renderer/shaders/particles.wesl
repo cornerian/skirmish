@@ -1,3 +1,4 @@
+import package::rock;
 import package::mote;
 import package::crystal;
 import package::bubble;
@@ -64,6 +65,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 20u: { field = rock::shade(in.uv, in.age, in.seed, footprint); }
         case 19u: { field = mote::shade(in.uv, in.age, in.seed, footprint); }
         case 18u: { field = crystal::shade(in.uv, in.age, in.seed, footprint); }
         case 17u: { field = bubble::shade(in.uv, in.age, in.seed, footprint); }

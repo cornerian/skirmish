@@ -29,6 +29,7 @@ pub enum ParticleEffect {
     Bubble,
     Crystal,
     Mote,
+    Rock,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
