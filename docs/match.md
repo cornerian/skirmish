@@ -14,8 +14,11 @@ cargo run --locked --bin skirmish -- run-match --data /path/to/native-match.json
 
 `run-match` consumes one controller pair per JSONL line, from stdin when
 `--inputs` is omitted. Each controller has
-`buttons` (A=256, X=1024, Y=2048) and normalized `stick: [x, y]`. Unsupported
-buttons and nonfinite/out-of-range sticks produce errors. Example:
+`buttons` (A=256, X=1024, Y=2048, L=64, R=32), normalized `stick: [x, y]`,
+optional `cstick: [x, y]` and optional processed analog `trigger` in `[0, 1]`.
+Omitted new channels default to zero. Digital L/R produce full shield pressure
+without replacing the stored analog value. Unsupported buttons and nonfinite or
+out-of-range channels produce errors. Example:
 
 ```json
 [{"buttons":256,"stick":[0.0,0.0]},{"buttons":0,"stick":[0.0,0.0]}]
@@ -108,12 +111,15 @@ Damage rules explicitly supply DI limits, angle-361 coefficients and the
 knockback replacement window. Optional `rules.damage.displacement` supplies
 main-stick SDI thresholds, timing and distances, and the ASDI distance. Fresh
 stick motions can displace a victim during positive hitlag; held input produces
-one ASDI displacement at expiry, before DI. Static collision response constrains
+one ASDI displacement at expiry, before DI. C-stick has ASDI priority when its
+squared magnitude meets the minimum threshold, including equality; otherwise
+ASDI uses the main stick. Positive-hitlag SDI and DI use only the main stick.
+Static collision response constrains
 that displacement while ordinary motion stays frozen. Attacker hitlag does not
 install those damage callbacks. Zero hitlag creates no expiry callback. Optional
 fighter `armor` supplies two subtraction channels and a minimum knockback;
 ordinary armor subtracts the larger channel without changing percent damage.
-Grounded launch projection, C-stick ASDI and the complete damage callback
+Grounded launch projection and the complete damage callback
 sequence remain unported.
 
 Movement and displacement share the source stick-age timers, sampled once per

@@ -27,7 +27,15 @@ fn data() -> MatchData {
 }
 
 fn controls(stick: [f32; 2]) -> [Controller; 2] {
-    [Controller::default(), Controller { stick, buttons: 0 }]
+    [
+        Controller::default(),
+        Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
+            stick,
+            buttons: 0,
+        },
+    ]
 }
 
 fn hit(data: MatchData, prior: [f32; 2]) -> Match {

@@ -134,7 +134,7 @@ pub(crate) fn advance(
             let previous_position = fighter.position;
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
             if fighter.hitlag == 0.0 {
-                damage::exit_hitlag(fighter, input.stick, &data.rules.damage)?;
+                damage::exit_hitlag(fighter, input, &data.rules.damage)?;
             } else {
                 damage::during_hitlag(fighter, input.stick, &data.rules.damage)?;
             }

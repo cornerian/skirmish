@@ -9,6 +9,8 @@ use skirmish::game::{
 };
 
 const IDLE: [Controller; 2] = [Controller {
+    cstick: [0.0; 2],
+    trigger: 0.0,
     buttons: 0,
     stick: [0.0; 2],
 }; 2];
@@ -80,6 +82,8 @@ fn geometry(lines: Vec<stage::Line>) -> StageGeometry {
 fn input(buttons: u16, horizontal: f32) -> [Controller; 2] {
     [
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons,
             stick: [horizontal, 0.0],
         },

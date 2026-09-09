@@ -7,6 +7,8 @@ use skirmish::game::{
 };
 
 const IDLE: [Controller; 2] = [Controller {
+    cstick: [0.0; 2],
+    trigger: 0.0,
     buttons: 0,
     stick: [0.0; 2],
 }; 2];

@@ -273,11 +273,21 @@ pub(crate) fn during_hitlag(
 /// hitlag. Attacker hitlag does not install this damage callback.
 pub(crate) fn exit_hitlag(
     fighter: &mut Fighter,
-    stick: [f32; 2],
+    input: super::Controller,
     rules: &CombatRules,
 ) -> Result<(), Error> {
     if fighter.di_pending {
         if let Some(profile) = &rules.displacement {
+            // ftCo_Damage_OnExitHitlag gives a held C-stick priority for ASDI.
+            // Main-stick DI below remains independent of that choice.
+            let [x, y] = input.cstick;
+            let stick = if x * x + y * y
+                >= profile.minimum_stick_magnitude * profile.minimum_stick_magnitude
+            {
+                input.cstick
+            } else {
+                input.stick
+            };
             damage::automatic_displacement(
                 &mut fighter.position,
                 stick,
@@ -287,7 +297,7 @@ pub(crate) fn exit_hitlag(
             finite_position(fighter)?;
         }
         let influenced =
-            damage::directional_influence(fighter.knockback, stick, rules.di_max_degrees);
+            damage::directional_influence(fighter.knockback, input.stick, rules.di_max_degrees);
         if influenced.into_iter().any(|value| !value.is_finite()) {
             return Err(Error::NonFinite);
         }

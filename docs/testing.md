@@ -11,7 +11,9 @@ documented in `tests/oracle`; they do not establish whole-game equivalence.
 `tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
 files, and advances `game::Match` using their controller inputs. It exercises
 movement, jumps, landing, a jab, damage, explicit checkpoint restoration, and
-the command-line executable. Deliberate late post-state corruption and changed
+the command-line executable. C-stick ASDI cases check inclusive selection,
+main-stick-only DI, hitlag freeze and checkpoint branching; the file-backed
+version detects a changed C-stick at the first affected frame. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. These expected recordings come from
 the native implementation itself, so this is harness validation; independent

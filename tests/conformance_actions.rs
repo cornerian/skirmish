@@ -14,7 +14,15 @@ const BUTTON_Z: u16 = 0x0010;
 const BUTTON_L: u16 = 0x0040;
 
 fn input(buttons: u16, stick: [f32; 2]) -> [Controller; 2] {
-    [Controller { buttons, stick }, Controller::default()]
+    [
+        Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
+            buttons,
+            stick,
+        },
+        Controller::default(),
+    ]
 }
 
 fn airborne_game() -> Match {

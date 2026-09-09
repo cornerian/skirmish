@@ -16,6 +16,8 @@ mod support;
 const FIRST: i32 = -123;
 const PORTS: [Port; 2] = [Port::P1, Port::P3];
 const IDLE: [Controller; 2] = [Controller {
+    cstick: [0.0; 2],
+    trigger: 0.0,
     buttons: 0,
     stick: [0.0; 2],
 }; 2];
@@ -83,9 +85,9 @@ impl Recording {
                     pre.joystick.y.set(row, Some(input.stick[1]));
                     pre.buttons.set(row, Some(u32::from(input.buttons)));
                     pre.buttons_physical.set(row, Some(input.buttons));
-                    pre.cstick.x.set(row, Some(0.0));
-                    pre.cstick.y.set(row, Some(0.0));
-                    pre.triggers.set(row, Some(0.0));
+                    pre.cstick.x.set(row, Some(input.cstick[0]));
+                    pre.cstick.y.set(row, Some(input.cstick[1]));
+                    pre.triggers.set(row, Some(input.trigger));
                     pre.triggers_physical.l.set(row, Some(0.0));
                     pre.triggers_physical.r.set(row, Some(0.0));
                     let fighter = &state.fighters[player];
@@ -251,9 +253,9 @@ fn unsupported_inputs_fail_at_their_frame_after_the_matching_prefix() {
         let bytes = recording.bytes(support::Fixture::default(), |frames| {
             let pre = &mut frames.ports[0].leader.pre;
             match case {
-                0 => pre.cstick.x.set(row, Some(0.5)),
-                1 => pre.triggers.set(row, Some(0.25)),
-                2 => pre.triggers_physical.r.set(row, Some(0.5)),
+                0 => pre.cstick.x.set(row, Some(1.01)),
+                1 => pre.triggers.set(row, Some(-0.25)),
+                2 => pre.triggers_physical.r.set(row, Some(1.5)),
                 3 => pre.buttons_physical.set(row, Some(0x200)),
                 _ => pre.buttons.set(row, Some(0x200)),
             }
@@ -269,6 +271,38 @@ fn unsupported_inputs_fail_at_their_frame_after_the_matching_prefix() {
             "case {case}: {report:?}"
         );
     }
+}
+
+#[test]
+fn file_backed_cstick_asdi_reaches_simulation_and_changed_input_diverges() {
+    let mut recording = Recording::new();
+    recording.initialization.data.rules.damage.displacement =
+        Some(skirmish::game::damage::HitlagDisplacementRules {
+            axis_thresholds: [0.5; 2],
+            minimum_stick_magnitude: 0.5,
+            sdi_window: 3,
+            sdi_distance: 2.0,
+            asdi_distance: 0.75,
+        });
+    for input in &mut recording.inputs[2..5] {
+        input[1].cstick = [0.5, 0.0];
+        input[1].trigger = 0.25;
+    }
+    recording.inputs[12][0].buttons = skirmish::game::BUTTON_L;
+    let mut game = replay_match::initialize(&recording.initialization).unwrap();
+    recording.states = recording
+        .inputs
+        .iter()
+        .map(|&input| game.step(input).unwrap().clone())
+        .collect();
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Hit connects at row1, with three hitlag ticks; row4 is its ASDI expiry.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[1].leader.pre.cstick.x.set(4, Some(-0.5));
+    });
+    assert!(matches!(recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. } if frame == FIRST + 4 && checked_frames == 4));
 }
 
 #[test]

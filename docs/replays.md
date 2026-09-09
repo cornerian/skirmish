@@ -124,10 +124,14 @@ compare. Persistent checkpoint encoding is not provided.
 Native comparison requires exactly two human-controlled leaders in a non-team
 match. Peppi preserves
 Nana/follower data, but this adapter rejects followers. Processed joystick X/Y
-supplies normalized stick input; physical button bits supply A/X/Y. Other buttons,
-C-stick activity and nonzero logical/physical triggers are unsupported errors.
-Raw analog samples remain preserved by the importer but are not substituted into
-this adapter. Pre-frame position, action and RNG never overwrite the simulation.
+supplies normalized main-stick input; processed C-stick and analog trigger
+values pass through without recalibration. Physical button bits supply A/X/Y/L/R.
+Derived main-stick, C-stick and logical-trigger flags are accepted; a logical
+trigger flag without analog pressure or digital L/R is rejected. Other buttons
+remain unsupported. Raw stick and physical analog samples remain preserved by
+the importer, but do not replace processed input. This channel support enables
+C-stick ASDI; it does not establish shield or aerial-action coverage. Pre-frame
+position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v1`** policy compares only these post-frame fields for
 each mapped actor:

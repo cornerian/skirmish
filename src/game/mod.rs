@@ -18,16 +18,38 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 pub const BUTTON_A: u16 = 0x100;
+pub const BUTTON_L: u16 = 0x40;
+pub const BUTTON_R: u16 = 0x20;
 pub const BUTTON_X: u16 = 0x400;
 pub const BUTTON_Y: u16 = 0x800;
 
 /// Normalized fighter inputs. Raw PAD calibration remains in `input`.
-/// This slice accepts A/X/Y only; unsupported buttons are errors.
+/// Sticks and trigger are processed game inputs; PAD calibration is separate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Controller {
     pub buttons: u16,
     pub stick: [f32; 2],
+    #[serde(default)]
+    pub cstick: [f32; 2],
+    /// Processed analog trigger value, before the digital L/R override.
+    #[serde(default)]
+    pub trigger: f32,
+}
+
+impl Controller {
+    /// Fighter_Spaghetti_8006AD10: either digital shoulder forces full pressure.
+    pub fn shield_pressure(self) -> f32 {
+        if self.buttons & (BUTTON_L | BUTTON_R) != 0 {
+            1.0
+        } else {
+            self.trigger
+        }
+    }
+
+    pub fn shield_held(self) -> bool {
+        self.shield_pressure() != 0.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

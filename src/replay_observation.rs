@@ -15,13 +15,16 @@ pub const FIELDS: &[&str] = &[
     "airborne",
 ];
 
-pub const INPUT_POLICY: &str = "processed main-stick XY and physical A/X/Y; neutral C-stick and triggers; main-stick direction flags allowed; no replay state or RNG overrides";
+pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger; physical A/X/Y/L/R; derived stick/trigger flags allowed; no replay state or RNG overrides";
 
-const BUTTONS: u16 = game::BUTTON_A | game::BUTTON_X | game::BUTTON_Y;
+const BUTTONS: u16 =
+    game::BUTTON_A | game::BUTTON_X | game::BUTTON_Y | game::BUTTON_L | game::BUTTON_R;
 // HSD_PadADConvert in the pinned controller.c derives these four flags from the
-// main stick. Bits 20..23 describe the C-stick; bit 31 is actionable HSD_PAD_LR
-// (Fighter_Spaghetti_8006AD10), so those are deliberately unsupported here.
+// main stick. C-stick directions occupy bits 20..23. Logical LR is represented
+// by native digital buttons or processed analog pressure, not silently dropped.
 const MAIN_STICK_FLAGS: u32 = 0x000f_0000;
+const CSTICK_FLAGS: u32 = 0x00f0_0000;
+const LOGICAL_TRIGGER: u32 = 0x8000_0000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct FighterObservation {
@@ -84,41 +87,51 @@ pub fn controllers(
         let pre = &actor.pre;
         let stick = [pre.joystick.x, pre.joystick.y];
         let unsupported_physical = pre.buttons_physical & !BUTTONS;
-        let unsupported_logical = pre.buttons & !(u32::from(BUTTONS) | MAIN_STICK_FLAGS);
+        let unsupported_logical =
+            pre.buttons & !(u32::from(BUTTONS) | MAIN_STICK_FLAGS | CSTICK_FLAGS | LOGICAL_TRIGGER);
         if unsupported_physical != 0 || unsupported_logical != 0 {
             return Err(format!(
                 "{} unsupported button bits: physical {unsupported_physical:#06x}, processed {unsupported_logical:#010x}",
                 actor.port
             ));
         }
+        let cstick = [pre.cstick.x, pre.cstick.y];
+        if stick
+            .iter()
+            .chain(&cstick)
+            .any(|axis| !axis.is_finite() || !(-1.0..=1.0).contains(axis))
+        {
+            return Err(format!(
+                "{} stick values must be finite and within [-1, 1]",
+                actor.port
+            ));
+        }
         if [
-            pre.cstick.x,
-            pre.cstick.y,
             pre.triggers,
             pre.triggers_physical.l,
             pre.triggers_physical.r,
         ]
-        .iter()
-        .any(|&value| value != 0.0)
+        .into_iter()
+        .any(|value| !(0.0..=1.0).contains(&value))
         {
             return Err(format!(
-                "{} requires neutral C-stick and triggers",
+                "{} triggers must be finite and within [0, 1]",
                 actor.port
             ));
         }
-        if stick
-            .iter()
-            .any(|axis| !axis.is_finite() || !(-1.0..=1.0).contains(axis))
-        {
-            return Err(format!(
-                "{} main-stick values must be finite and within [-1, 1]",
-                actor.port
-            ));
-        }
-        Ok(game::Controller {
+        let controller = game::Controller {
             buttons: pre.buttons_physical,
             stick,
-        })
+            cstick,
+            trigger: pre.triggers,
+        };
+        if pre.buttons & LOGICAL_TRIGGER != 0 && !controller.shield_held() {
+            return Err(format!(
+                "{} logical trigger flag has no matching pressure",
+                actor.port
+            ));
+        }
+        Ok(controller)
     };
     let [first, second] = actors(frame, ports)?;
     Ok([convert(first)?, convert(second)?])
@@ -281,20 +294,12 @@ mod tests {
 
     #[test]
     fn unsupported_inputs_and_actor_sets_are_errors() {
-        for flag in [0x1, 0x10, 0x20, 0x40, 0x80, 0x200, 0x1000] {
+        for flag in [0x1, 0x10, 0x80, 0x200, 0x1000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons_physical = flag;
             assert!(controllers(&frame, PORTS).is_err());
         }
-        for flag in [
-            0x1,
-            0x10,
-            0x200,
-            0x1000,
-            0x0010_0000,
-            0x0100_0000,
-            0x8000_0000,
-        ] {
+        for flag in [0x1, 0x10, 0x200, 0x1000, 0x0100_0000, 0x8000_0000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons = flag;
             assert!(controllers(&frame, PORTS).is_err());
@@ -309,7 +314,7 @@ mod tests {
                 &mut pre.triggers_physical.l,
                 &mut pre.triggers_physical.r,
             ];
-            *fields[index] = f32::from_bits(1);
+            *fields[index] = f32::NAN;
             assert!(controllers(&frame, PORTS).is_err());
         }
         for value in [f32::NAN, f32::INFINITY, -1.001, 1.001] {
@@ -324,6 +329,31 @@ mod tests {
         let mut follower = frame();
         follower.actors[1].follower = true;
         assert!(expected(&follower, PORTS).is_err());
+    }
+
+    #[test]
+    fn processed_cstick_trigger_and_shoulder_channels_preserve_bits() {
+        let mut frame = frame();
+        let pre = &mut frame.actors[1].pre;
+        pre.cstick = row::Position {
+            x: -0.0,
+            y: f32::from_bits(0x3eaa_aaab),
+        };
+        pre.triggers = f32::from_bits(0x3dcc_cccd);
+        pre.triggers_physical.l = 0.75;
+        pre.triggers_physical.r = 0.5;
+        pre.buttons = LOGICAL_TRIGGER | CSTICK_FLAGS;
+        let input = controllers(&frame, PORTS).unwrap()[0];
+        assert_eq!(input.cstick.map(f32::to_bits), [0x8000_0000, 0x3eaa_aaab]);
+        assert_eq!(input.trigger.to_bits(), 0x3dcc_cccd);
+        assert_eq!(input.shield_pressure().to_bits(), 0x3dcc_cccd);
+        for button in [game::BUTTON_L, game::BUTTON_R] {
+            frame.actors[1].pre.buttons_physical = button;
+            let input = controllers(&frame, PORTS).unwrap()[0];
+            assert_eq!(input.buttons, button);
+            assert_eq!(input.shield_pressure(), 1.0);
+            assert_eq!(input.trigger.to_bits(), 0x3dcc_cccd);
+        }
     }
 
     #[test]

@@ -4,6 +4,8 @@
 use skirmish::game::{BUTTON_A, BUTTON_X, Controller, Event, Match, data::MatchData};
 
 const IDLE: [Controller; 2] = [Controller {
+    cstick: [0.0; 2],
+    trigger: 0.0,
     buttons: 0,
     stick: [0.0; 2],
 }; 2];

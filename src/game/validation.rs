@@ -292,8 +292,13 @@ fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
 
 pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
     for (player, input) in input.iter().enumerate() {
-        if input.buttons & !(BUTTON_A | BUTTON_X | BUTTON_Y) != 0
-            || input.stick.iter().any(|x| !(-1.0..=1.0).contains(x))
+        if input.buttons & !(BUTTON_A | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R) != 0
+            || input
+                .stick
+                .iter()
+                .chain(&input.cstick)
+                .any(|x| !(-1.0..=1.0).contains(x))
+            || !(0.0..=1.0).contains(&input.trigger)
         {
             return Err(Error::Input(player));
         }

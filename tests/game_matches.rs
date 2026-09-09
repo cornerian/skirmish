@@ -7,6 +7,8 @@ use skirmish::game::{
 use skirmish::replay::{Checkpoint, Transition, ValidationError, branch_from, validate};
 
 const IDLE: [Controller; 2] = [Controller {
+    cstick: [0.0; 2],
+    trigger: 0.0,
     buttons: 0,
     stick: [0.0; 2],
 }; 2];
@@ -254,6 +256,8 @@ fn simultaneous_contacts_trade_and_timer_uses_damage_to_break_stock_ties() {
     trade
         .step(
             [Controller {
+                cstick: [0.0; 2],
+                trigger: 0.0,
                 buttons: BUTTON_A,
                 stick: [0.0; 2],
             }; 2],
@@ -359,6 +363,8 @@ fn simultaneous_last_stock_knockouts_are_a_draw() {
     let mut game = playing(resource);
     game.step(
         [Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: BUTTON_A,
             stick: [0.0; 2],
         }; 2],
@@ -441,18 +447,26 @@ fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
     let before = state_bits(game.state());
     for invalid in [
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: 1,
             stick: [0.0; 2],
         },
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: 0,
             stick: [1.01, 0.0],
         },
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: 0,
             stick: [f32::NAN, 0.0],
         },
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: 0,
             stick: [0.0, f32::INFINITY],
         },

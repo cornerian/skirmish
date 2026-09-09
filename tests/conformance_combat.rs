@@ -29,7 +29,12 @@ fn close_data() -> MatchData {
 
 fn input(player: usize, buttons: u16, stick: [f32; 2]) -> [Controller; 2] {
     let mut input = idle();
-    input[player] = Controller { buttons, stick };
+    input[player] = Controller {
+        cstick: [0.0; 2],
+        trigger: 0.0,
+        buttons,
+        stick,
+    };
     input
 }
 
@@ -87,6 +92,8 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     step(
         &mut game,
         [Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: BUTTON_A,
             stick: [0.0; 2],
         }; 2],

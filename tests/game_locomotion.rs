@@ -23,9 +23,17 @@ fn game() -> Match {
     Match::new(data(), 42).unwrap()
 }
 fn step(game: &mut Match, buttons: u16, stick: [f32; 2]) -> State {
-    game.step([Controller { buttons, stick }, Controller::default()])
-        .unwrap()
-        .clone()
+    game.step([
+        Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
+            buttons,
+            stick,
+        },
+        Controller::default(),
+    ])
+    .unwrap()
+    .clone()
 }
 fn launch(game: &mut Match, buttons: u16, stick: [f32; 2]) -> State {
     for _ in 0..20 {
@@ -342,6 +350,8 @@ fn holding_up_during_hitlag_does_not_become_a_fresh_jump_after_damage() {
     let held_up = [
         Controller::default(),
         Controller {
+            cstick: [0.0; 2],
+            trigger: 0.0,
             buttons: 0,
             stick: [0.0, 1.0],
         },
