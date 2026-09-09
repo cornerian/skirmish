@@ -16,6 +16,7 @@ pub enum ParticleEffect {
     Sparkles,
     Impact,
     Vortex,
+    Lightning,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
