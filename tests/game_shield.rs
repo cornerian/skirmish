@@ -271,7 +271,9 @@ fn shield_break_launch_landing_stand_and_mash_recovery_preserve_health_and_stock
         mashed += 1;
     }
     assert_eq!(game.state().fighters[1].stocks, 2);
-    assert_eq!(game.state().fighters[1].action, Action::Wait);
+    // Furafura ends in Anim; the newly installed Wait IASA sees this frame's
+    // stick and starts Dash before physics, matching the source scheduler.
+    assert_eq!(game.state().fighters[1].action, Action::Dash);
     game.restore_checkpoint(&checkpoint).unwrap();
     for _ in 0..mashed + 2 {
         step(&mut game, 0, Controller::default());

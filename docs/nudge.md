@@ -24,16 +24,18 @@ are disabled, depth still recenters. Zero-crossing changes a temporary depth
 before the cap checks; the original sequence is retained rather than replaced
 with a conventional final-position clamp.
 
-Future native integration must preserve the priority-1 per-entity Anim→nudge
-order, followed by priority-3 input dispatch, priority-4 movement and priority-6
-map callbacks. Calculate nudge before any fighter's physical position advances;
-do not let an earlier fighter's integrated movement change a later query. Earlier
-animation callbacks may change facing or grounded state visible to later actors.
-Nudge resets in the animation pass, not on every action change. Preserve the
-velocity and persistent depth in checkpoints, apply X/Z before self velocity and
-knockback, and include depth in physics-bone/contact transforms. Wait/Walk also
-branch on backward nudge in ft_80084280; complete ledge behavior needs that map
-branch. Follower ownership and deferred-position state must remain explicit.
+The native two-leader match profile runs priority-1 per-entity Anim→nudge in
+stable player order, followed by action input, then movement and map callbacks.
+It samples every push before either fighter's physical position advances. The
+sampled velocity and persistent depth are checkpointed, X/Z are applied before
+self velocity and knockback, and depth participates in physics-bone/contact
+transforms. Nudge resets in the animation pass rather than on action changes.
+
+The match does not yet instantiate follower entities, victim-holding state or
+nonordinary disable flags beyond the explicit fighter attributes. Wait/Walk's
+backward-nudge ledge branch in ft_80084280 remains coupled to the incomplete
+ledge system. The safe kernel already covers follower ownership and deferred
+position inputs for that later scheduler expansion.
 
 The C tests compile all four original functions from the existing snapshot,
 using documented entity/neighbor storage adapters. Finite physical inputs use

@@ -79,6 +79,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     if let Some(staling) = &rules.staling {
         super::staling::validate(staling)?;
     }
+    if let Some(nudge) = &rules.nudge {
+        require(
+            nonnegative([
+                nudge.horizontal_step,
+                nudge.depth_step,
+                nudge.depth_limit,
+                nudge.follower_depth_step,
+                nudge.follower_depth_limit,
+            ]),
+            "invalid fighter nudge rules",
+        )?;
+    }
     require(
         rules
             .top_ko_min_knockback
@@ -136,6 +148,23 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 fighter.rebound.is_none(),
                 "rebound animation requires a clank profile",
             )?;
+        }
+        match (&rules.nudge, &fighter.nudge) {
+            (Some(_), Some(attributes)) => require(
+                finite([attributes.center_offset]) && nonnegative([attributes.half_width]),
+                "invalid fighter nudge attributes",
+            )?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "fighter nudge rules require attributes for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "fighter nudge attributes require common rules".into(),
+                ));
+            }
+            (None, None) => {}
         }
         if let Some(rules) = &rules.shield {
             shield::validate(rules, fighter)?;
@@ -403,6 +432,9 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
         )?;
         if f.position
             .into_iter()
+            .chain([f.depth])
+            .chain(f.deferred_position)
+            .chain(f.nudge)
             .chain(f.velocity)
             .chain(f.knockback)
             .chain(f.floor_normal)

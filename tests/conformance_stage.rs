@@ -7,7 +7,8 @@ mod support;
 
 use skirmish::{
     collision::stage,
-    game::{BUTTON_X, Event, Match, data::StageGeometry},
+    fighter::nudge::Rules as NudgeRules,
+    game::{BUTTON_X, Event, Match, data::StageGeometry, nudge::Attributes as NudgeAttributes},
 };
 use support::*;
 
@@ -48,24 +49,35 @@ fn downward_input_drops_through_a_passable_platform() {
     );
 }
 
-// Fighter_procUpdate push/nudge phase: grounded opponents do not occupy the
-// same push volume when they move into one another.
+// Fighter_procUpdate uses fixed push velocities. It does not solve penetration
+// or guarantee that arbitrary walk speeds cannot cross, so this contract checks
+// the exact bounded displacement and strict-touching cutoff supplied by E0E4.
 #[test]
-#[ignore = "unimplemented: fighter push/nudge"]
-fn grounded_opponents_push_apart_instead_of_crossing_through_each_other() {
+fn grounded_opponents_receive_source_fixed_push_before_movement() {
     let mut data = data();
-    data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
-    let mut game = Match::new(data, 0).unwrap();
-    let mut input = idle();
-    input[0].stick[0] = 0.5;
-    input[1].stick[0] = -0.5;
-    for _ in 0..20 {
-        let state = step(&mut game, input);
-        assert!(
-            state.fighters[0].position[0] < state.fighters[1].position[0],
-            "grounded fighters crossed without a push response"
-        );
+    data.stage.spawns = [[0.0, 0.0], [1.75, 0.0]];
+    data.rules.nudge = Some(NudgeRules {
+        horizontal_step: 0.25,
+        depth_step: 0.125,
+        depth_limit: 0.5,
+        follower_depth_step: 0.375,
+        follower_depth_limit: 1.0,
+    });
+    for fighter in &mut data.fighters {
+        fighter.nudge = Some(NudgeAttributes {
+            center_offset: 0.0,
+            half_width: 1.0,
+            nudge_disabled: false,
+            overlap_disabled: false,
+        });
     }
+    let mut game = Match::new(data, 0).unwrap();
+    let state = step(&mut game, idle());
+    assert_eq!(state.fighters.each_ref().map(|f| f.nudge[0]), [-0.25, 0.25]);
+    assert_eq!(
+        state.fighters.each_ref().map(|f| f.position[0]),
+        [-0.25, 2.0]
+    );
 }
 
 // src/melee/ft/ft_0D31.c: crossing the upper boundary in an ordinary jump does not

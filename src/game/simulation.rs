@@ -4,7 +4,9 @@
 use super::{data::*, *};
 use crate::{
     collision::{bones, ecb, stage, sweep},
-    fighter::{Movement, combat, damage as damage_math, locomotion as movement_math},
+    fighter::{
+        Movement, combat, damage as damage_math, locomotion as movement_math, nudge as push,
+    },
 };
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
@@ -37,6 +39,9 @@ fn spawn(
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
         position,
+        depth: 0.0,
+        deferred_position: [0.0; 3],
+        nudge: [0.0; 2],
         velocity: [0.0; 2],
         knockback: [0.0; 2],
         ground_velocity: 0.0,
@@ -113,14 +118,31 @@ pub(crate) fn advance(
         return Ok(());
     }
 
-    // Resolve both players' movement before observing either player's contacts.
-    // Frozen players cannot re-activate hitboxes when their last hitlag tick ends.
+    // The source runs priority-1 animation callbacks and push sampling in stable
+    // entity order, then priority-3 action input and priority-4/6 physics/map.
+    // Positions do not advance until every subject's nudge has been sampled.
     let mut frozen = [false; 2];
+    let mut active = [false; 2];
     let geometry = collision::geometry(&data.stage);
     let stage = stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
+    let nudge_neighbors = if data.rules.nudge.is_some() {
+        Some(
+            (0..geometry.lines.len())
+                .map(|line| {
+                    Ok(push::Neighbors {
+                        previous: stage.neighbor(line, false).map_err(physics)?,
+                        next: stage.neighbor(line, true).map_err(physics)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, Error>>()?,
+        )
+    } else {
+        None
+    };
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
         let input = inputs[player];
+        fighter.nudge = [0.0; 2];
         if fighter.action == Action::Eliminated {
             continue;
         }
@@ -176,7 +198,45 @@ pub(crate) fn advance(
             frozen[player] = true;
             continue;
         }
-        update_action(fighter, &data.fighters[player], &data.rules, input);
+        active[player] = true;
+    }
+
+    let mut just_turned = [false; 2];
+    let mut clank_owns = [false; 2];
+    let mut shield_owns = [false; 2];
+    for player in 0..2 {
+        if !active[player] {
+            continue;
+        }
+        (just_turned[player], clank_owns[player], shield_owns[player]) = update_animation(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            &data.rules,
+            inputs[player],
+        );
+        update_nudge(
+            data,
+            state,
+            nudge_neighbors.as_deref().unwrap_or_default(),
+            player,
+        )?;
+    }
+
+    for player in 0..2 {
+        if !active[player] {
+            continue;
+        }
+        let fighter = &mut state.fighters[player];
+        let input = inputs[player];
+        update_actions(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            input,
+            just_turned[player],
+            clank_owns[player],
+            shield_owns[player],
+        );
         if let Some(velocity_y) = locomotion::pass_request(
             fighter,
             &data.fighters[player],
@@ -185,6 +245,14 @@ pub(crate) fn advance(
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &data.stage, velocity_y);
         }
+    }
+
+    for player in 0..2 {
+        if !active[player] {
+            continue;
+        }
+        let fighter = &mut state.fighters[player];
+        let input = inputs[player];
         if fighter.damage_elapsed >= 0 {
             fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
         }
@@ -429,6 +497,53 @@ fn advance_ecb_lock(fighter: &mut Fighter) {
     }
 }
 
+fn update_nudge(
+    data: &MatchData,
+    state: &mut State,
+    neighbors: &[push::Neighbors],
+    subject: usize,
+) -> Result<(), Error> {
+    let Some(rules) = &data.rules.nudge else {
+        return Ok(());
+    };
+    if matches!(
+        state.fighters[subject].action,
+        Action::Respawn | Action::Eliminated
+    ) {
+        return Ok(());
+    }
+    let attributes = [
+        data.fighters[0]
+            .nudge
+            .ok_or_else(|| Error::Data("nudge rules require fighter attributes".into()))?,
+        data.fighters[1]
+            .nudge
+            .ok_or_else(|| Error::Data("nudge rules require fighter attributes".into()))?,
+    ];
+    let bodies: [push::Body; 2] = core::array::from_fn(|player| {
+        let fighter = &state.fighters[player];
+        let attributes = attributes[player];
+        push::Body {
+            position: [fighter.position[0], fighter.position[1], fighter.depth],
+            deferred_position: fighter.deferred_position,
+            facing: fighter.facing,
+            center_offset: attributes.center_offset,
+            half_width: attributes.half_width,
+            player_id: player as u8,
+            floor: fighter.ground_line,
+            follower_of: None,
+            inactive: matches!(fighter.action, Action::Respawn | Action::Eliminated),
+            holds_victim: false,
+            nudge_disabled: attributes.nudge_disabled,
+            hitlag: fighter.hitlag > 0.0,
+            overlap_disabled: attributes.overlap_disabled,
+        }
+    });
+    state.fighters[subject].nudge =
+        push::velocity(subject, &bodies, neighbors, rules).map_err(physics)?;
+    Ok(())
+}
+
 // The original x670/x671 timers are shared by movement and damage callbacks.
 // Input sampling continues during hitlag; SDI/jump transitions consume the
 // same history, so old held inputs cannot become fresh after a state change.
@@ -465,7 +580,12 @@ fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, inpu
     }
 }
 
-fn update_action(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+fn update_animation(
+    f: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    input: Controller,
+) -> (bool, bool, bool) {
     let attrs = &data.movement;
     match f.action {
         Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
@@ -514,10 +634,28 @@ fn update_action(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Cont
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
     aerial::update_animation(f, data);
-    if clank::update_animation(f, data) {
+    let clank_owns = clank::update_animation(f, data);
+    let shield_owns = if clank_owns {
+        false
+    } else {
+        shield::update_animation(f, data, rules.shield.as_ref(), input)
+    };
+    (just_turned, clank_owns, shield_owns)
+}
+
+fn update_actions(
+    f: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    input: Controller,
+    just_turned: bool,
+    clank_owns: bool,
+    shield_owns: bool,
+) {
+    if clank_owns {
         return;
     }
-    if shield::update(f, data, rules.shield.as_ref(), input) {
+    if shield::update_actions(f, data, rules.shield.as_ref(), input, shield_owns) {
         return;
     }
     if aerial::update(f, data, input) {
@@ -631,6 +769,10 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     }
     f.knockback = damage_math::decay_air_knockback(f.knockback, rules.knockback_decay);
     shield::recoil(f, data, rules.shield.as_ref());
+    // Fighter_procUpdate adds the priority-1 push result before self velocity,
+    // knockback and shield recoil. Depth is gameplay state used by bone contact.
+    f.position[0] += f.nudge[0];
+    f.depth += f.nudge[1];
     for axis in 0..2 {
         f.position[axis] += f.velocity[axis];
         f.position[axis] += f.knockback[axis];
@@ -654,7 +796,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     let root = [
         [fighter.facing, 0.0, 0.0, fighter.position[0]],
         [0.0, 1.0, 0.0, fighter.position[1]],
-        [0.0, 0.0, fighter.facing, 0.0],
+        [0.0, 0.0, fighter.facing, fighter.depth],
     ];
     bones::Pose::evaluate_with_root(&bones, &root).map_err(physics)
 }

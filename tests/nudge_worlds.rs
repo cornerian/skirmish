@@ -1,5 +1,5 @@
-//! Ordered-body, stage-neighbor and physics-bone composition. Integration here
-//! is explicit test code; the native match has not yet acquired nudge phases.
+//! Ordered-body, stage-neighbor and physics-bone composition around the safe
+//! kernel. Native scheduler coverage lives separately in `game_nudge`.
 #[path = "support/nudge.rs"]
 mod support;
 use skirmish::{

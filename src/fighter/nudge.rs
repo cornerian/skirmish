@@ -1,7 +1,6 @@
 //! Fixed horizontal/depth nudges from ftCommon_8007E0E4, 8007DD7C and 8007DFD0.
 //! These are per-frame X/Z velocities, not penetration correction or a guarantee
 //! against crossing. Inputs retain entity-list order and pre-physics positions.
-//! The native match scheduler does not yet call this helper.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

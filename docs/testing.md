@@ -120,7 +120,7 @@ explicitly disable unrelated state/environment branches.
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release, hitlag displacement, landing responses |
-| Platform drop and fighter pushing | `conformance_stage`: downward platform input and opposing grounded movement |
+| Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
 | Moving platforms/remapping, ECB corner and squeeze response | `conformance_stage`: independent reference cases |
 | Conditional top KOs and rebirth platform | `conformance_stage`: ordinary upper-boundary jump and stock-loss lifecycle |
 | Star/screen deaths | `conformance_stage`: independent death lifecycle reference |

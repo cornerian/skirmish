@@ -202,9 +202,9 @@ fn start_break(f: &mut Fighter, a: &Attributes) {
     enter(f, Action::ShieldBreakFly);
 }
 
-/// Shield actions consume their IASA callback. Entry honors the existing
-/// supported attack priority; missing roll/grab/powershield paths are explicit.
-pub(crate) fn update(
+/// Priority-1 shield animation callback. The returned flag selects whether the
+/// current destination action owns priority-3 input dispatch on this frame.
+pub(crate) fn update_animation(
     f: &mut Fighter,
     data: &FighterData,
     rules: Option<&Rules>,
@@ -249,7 +249,6 @@ pub(crate) fn update(
             }
             Action::GuardOff if f.action_frame >= a.release_frames => {
                 enter(f, Action::Wait);
-                return false;
             }
             Action::GuardOn | Action::Guard => {
                 f.shield.strength = math::strength(
@@ -297,6 +296,24 @@ pub(crate) fn update(
             }
             _ => {}
         }
+        return active(f) || matches!(f.action, Action::GuardOff) || breaking(f.action);
+    }
+    false
+}
+
+/// Priority-3 shield input callback. Entry honors the existing supported attack
+/// priority; missing roll/grab/powershield paths remain explicit.
+pub(crate) fn update_actions(
+    f: &mut Fighter,
+    data: &FighterData,
+    rules: Option<&Rules>,
+    input: Controller,
+    own_action: bool,
+) -> bool {
+    let (Some(r), Some(_a)) = (rules, data.shield.as_ref()) else {
+        return false;
+    };
+    if own_action {
         if matches!(f.action, Action::GuardOn | Action::Guard | Action::GuardOff) {
             let pressed = input.buttons & !f.previous_input.buttons;
             let stick_jump = data.locomotion.as_ref().is_some_and(|p| {

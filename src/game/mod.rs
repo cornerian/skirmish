@@ -10,6 +10,7 @@ pub mod damage;
 pub mod data;
 pub mod hitboxes;
 pub mod locomotion;
+pub mod nudge;
 pub mod shield;
 mod simulation;
 pub mod staling;
@@ -104,6 +105,12 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Fighter {
     pub position: [f32; 2],
+    /// Persistent gameplay depth. Bone, hitbox and hurtbox transforms include it.
+    pub depth: f32,
+    /// Original xD4 position offset used by push overlap calculations.
+    pub deferred_position: [f32; 3],
+    /// Per-frame X/Z push velocity, sampled before any physics integration.
+    pub nudge: [f32; 2],
     pub velocity: [f32; 2],
     pub knockback: [f32; 2],
     pub ground_velocity: f32,
