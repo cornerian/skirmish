@@ -12,6 +12,7 @@ pub enum ParticleEffect {
     Smoke,
     Fire,
     Glow,
+    Embers,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.

@@ -1,3 +1,4 @@
+import package::embers;
 import package::glow;
 import package::smoke;
 import package::fire;
@@ -47,6 +48,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 3u: { field = embers::shade(in.uv, in.age, in.seed, footprint); }
         case 2u: { field = glow::shade(in.uv, in.age, in.seed, footprint); }
         case 1u: { field = fire::shade(in.uv, in.age, in.seed, footprint); }
         default: { field = smoke::shade(in.uv, in.age, in.seed, footprint); }
@@ -55,6 +57,6 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let alpha = clamp(field.a * in.color.a * lifetime, 0.0, 1.0);
     // Emissive particles use source alpha zero with premultiplied blending:
     // source RGB adds while destination color and alpha remain intact.
-    let emissive = in.effect == 2u;
+    let emissive = in.effect == 3u || in.effect == 2u;
     return vec4f(field.rgb * in.color.rgb * alpha, select(alpha, 0.0, emissive));
 }
