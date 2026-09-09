@@ -26,6 +26,7 @@ pub enum ParticleEffect {
     Explosion,
     Snowflake,
     Streak,
+    Bubble,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.

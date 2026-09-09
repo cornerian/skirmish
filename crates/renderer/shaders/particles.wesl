@@ -1,3 +1,4 @@
+import package::bubble;
 import package::streak;
 import package::snowflake;
 import package::explosion;
@@ -61,6 +62,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 17u: { field = bubble::shade(in.uv, in.age, in.seed, footprint); }
         case 16u: { field = streak::shade(in.uv, in.age, in.seed, footprint); }
         case 15u: { field = snowflake::shade(in.uv, in.age, in.seed, footprint); }
         case 14u: { field = explosion::shade(in.uv, in.age, in.seed, footprint); }
