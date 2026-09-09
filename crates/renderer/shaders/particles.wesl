@@ -1,3 +1,4 @@
+import package::shockwave;
 import package::shard;
 import package::lightning;
 import package::vortex;
@@ -53,6 +54,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 9u: { field = shockwave::shade(in.uv, in.age, in.seed, footprint); }
         case 8u: { field = shard::shade(in.uv, in.age, in.seed, footprint); }
         case 7u: { field = lightning::shade(in.uv, in.age, in.seed, footprint); }
         case 6u: { field = vortex::shade(in.uv, in.age, in.seed, footprint); }

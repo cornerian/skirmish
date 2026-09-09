@@ -18,6 +18,7 @@ pub enum ParticleEffect {
     Vortex,
     Lightning,
     Shard,
+    Shockwave,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
