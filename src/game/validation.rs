@@ -133,6 +133,14 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             rules.staling.is_none() || fighter.jab.move_id.is_some_and(|id| id != 0),
             "staling requires an explicit nonzero attack move_id",
         )?;
+        if let Some(rules) = &rules.shield {
+            shield::validate(rules, fighter)?;
+        } else {
+            require(
+                fighter.shield.is_none(),
+                "shield attributes require common shield rules",
+            )?;
+        }
         if let Some(parameters) = &fighter.locomotion {
             locomotion::validate(parameters)?;
             require(
@@ -243,6 +251,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                         && finite(hit.center)
                         && nonnegative([hit.radius])
                         && hit.damage <= 999
+                        && (-1000..=1000).contains(&hit.shield_damage)
                         && hit.growth <= 1000
                         && hit.fixed <= 1000
                         && hit.base <= 1000
@@ -357,12 +366,28 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             ])
             .chain(f.locomotion.pass_delay)
             .chain(f.staling.hits.iter().flatten().map(|hit| hit.damage))
+            .chain([
+                f.shield.health,
+                f.shield.strength,
+                f.shield.minimum_hold,
+                f.shield.raise_progress,
+                f.shield.stun_progress,
+                f.shield.stun_rate,
+                f.shield.attacker_ground_push,
+                f.shield.dizzy_timer,
+            ])
+            .chain(f.shield.attacker_push)
             .any(|v| !v.is_finite())
         {
             return Err(Error::NonFinite);
         }
     }
     for event in &state.events {
+        if let Event::ShieldHit { damage, .. } = event
+            && !damage.is_finite()
+        {
+            return Err(Error::NonFinite);
+        }
         if let Event::Hit {
             damage, knockback, ..
         } = event

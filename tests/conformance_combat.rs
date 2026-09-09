@@ -146,7 +146,6 @@ fn armor_reduces_launch_without_erasing_damage() {
 }
 
 #[test]
-#[ignore = "unimplemented: shield input, collision response and shield stun"]
 fn holding_shield_takes_contact_stun_without_percent_damage() {
     // ft/kinds/ftCommon/ftCo_Guard.c and ft/ftcoll.c::ftColl_80076CBC
     // route shield contact to guard response rather than ordinary percent damage.

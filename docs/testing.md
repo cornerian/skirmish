@@ -98,10 +98,10 @@ explicitly disable unrelated state/environment branches.
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
 | Grounded and airborne specials | `conformance_actions`: neutral-B dispatch |
-| Shield raise/release, grab, throw | `conformance_actions`: shoulder lifecycle, paired capture, throw release |
+| Grab and throw | `conformance_actions`: paired capture and throw release |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions`: individual ledge scenarios |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
-| Stale moves, clanks, armor, shield interaction | `conformance_combat`: repeated attacks, simultaneous attacks, armored target, guarding target |
+| Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release, hitlag displacement, landing responses |
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and opposing grounded movement |
 | Moving platforms/remapping, ECB corner and squeeze response | `conformance_stage`: independent reference cases |

@@ -147,7 +147,6 @@ fn airborne_neutral_b_enters_an_aerial_special() {
 
 // src/melee/ft/kinds/ftCommon/ftCo_Guard.c: GuardOn/Guard/GuardOff dispatch.
 #[test]
-#[ignore = "unimplemented: digital shoulder inputs and shield action lifecycle"]
 fn digital_shoulder_raises_shield_and_release_lowers_it() {
     let mut game = game();
     let state = step(&mut game, input(BUTTON_L, [0.0; 2]));

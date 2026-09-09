@@ -49,6 +49,10 @@ fn spawn(
         ecb: ecb::State::default(),
         ecb_lock: 0,
         locomotion: locomotion::State::default(),
+        shield: shield::ShieldState {
+            health: data.rules.shield.as_ref().map_or(0.0, |r| r.maximum_health),
+            ..Default::default()
+        },
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -136,6 +140,7 @@ pub(crate) fn advance(
         if fighter.hitlag > 0.0 {
             let previous_position = fighter.position;
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
+            shield::hitlag(fighter, input, &data.rules, fighter.hitlag == 0.0);
             if fighter.hitlag == 0.0 {
                 damage::exit_hitlag(fighter, input, &data.rules.damage)?;
             } else {
@@ -166,7 +171,7 @@ pub(crate) fn advance(
             frozen[player] = true;
             continue;
         }
-        update_action(fighter, &data.fighters[player], input);
+        update_action(fighter, &data.fighters[player], &data.rules, input);
         if let Some(velocity_y) = locomotion::pass_request(
             fighter,
             &data.fighters[player],
@@ -226,6 +231,7 @@ pub(crate) fn advance(
         if frozen[attacker]
             || source.action != Action::Jab
             || target.invincibility > 0
+            || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
         {
             continue;
@@ -238,6 +244,21 @@ pub(crate) fn advance(
             let attack = swept[attacker][slot]
                 .as_ref()
                 .ok_or_else(|| Error::Physics("active hitbox has no tracked sweep".into()))?;
+            let staled = source.staling.hits[slot]
+                .ok_or_else(|| Error::Physics("active hitbox has no damage sample".into()))?;
+            if shield::active(target)
+                && let Some(rules) = &data.rules.shield
+            {
+                let (center, matrix) =
+                    shield::geometry(target, &data.fighters[victim], rules, &poses[victim])?;
+                if crate::collision::shield::shield_contact(attack, center, &matrix, 1.0, 20.0)
+                    .map_err(physics)?
+                    .is_some()
+                {
+                    hits.push((attacker, hit, staled, true));
+                    break;
+                }
+            }
             let mut collided = false;
             for hurtbox in &data.fighters[victim].hurtboxes {
                 let hurt = hurtbox
@@ -265,23 +286,27 @@ pub(crate) fn advance(
                 }
             }
             if collided {
-                let staled = source.staling.hits[slot]
-                    .ok_or_else(|| Error::Physics("active hitbox has no damage sample".into()))?;
-                hits.push((attacker, hit, staled));
+                hits.push((attacker, hit, staled, false));
                 break;
             }
         }
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.
-    for &(attacker, hit, _) in &hits {
+    for &(attacker, hit, _, _) in &hits {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
     }
     let mut newly_hit = [false; 2];
-    for (attacker, hit, staled) in hits {
+    let mut shield_contact = [false; 2];
+    for (attacker, hit, staled, blocked) in hits {
         newly_hit[1 - attacker] = true;
-        damage::apply_hit(data, state, attacker, hit, staled)?;
-        if data.rules.staling.is_some() {
+        if blocked {
+            shield_contact[1 - attacker] = true;
+            shield::apply_contact(data, state, attacker, hit, staled)?;
+        } else {
+            damage::apply_hit(data, state, attacker, hit, staled)?;
+        }
+        if !blocked && data.rules.staling.is_some() {
             state.fighters[attacker]
                 .staling
                 .queue
@@ -297,6 +322,7 @@ pub(crate) fn advance(
 
     for (player, fighter) in state.fighters.iter_mut().enumerate() {
         if !matches!(fighter.action, Action::Respawn | Action::Eliminated) {
+            shield::finish_frame(fighter, data.rules.shield.as_ref(), shield_contact[player]);
             let [left, right, bottom, top] = data.stage.blast;
             let [x, y] = fighter.position;
             // Ordinary supported branch of ftCo_800D3158. Scripted death
@@ -415,7 +441,7 @@ fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, inpu
     }
 }
 
-fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
+fn update_action(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
     let attrs = &data.movement;
     match f.action {
         Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
@@ -459,6 +485,9 @@ fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
             enter(f, Action::Jump);
         }
         _ => {}
+    }
+    if shield::update(f, data, rules.shield.as_ref(), input) {
+        return;
     }
     if data.locomotion.is_some() {
         locomotion::update_actions(f, data, input);
@@ -524,7 +553,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     } else if !(f.action == Action::Jump && f.action_frame == 0) {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if f.action != Action::Damage {
+        if f.action != Action::Damage && !shield::break_invulnerable(f.action) {
             if !f.fast_fall
                 && f.velocity[1] < 0.0
                 && input.stick[1] <= -rules.fast_fall_threshold
@@ -553,9 +582,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         *velocity = movement.self_velocity[axis] + movement.animation_velocity[axis];
     }
     f.knockback = damage_math::decay_air_knockback(f.knockback, rules.knockback_decay);
+    shield::recoil(f, data, rules.shield.as_ref());
     for axis in 0..2 {
         f.position[axis] += f.velocity[axis];
         f.position[axis] += f.knockback[axis];
+        f.position[axis] += f.shield.attacker_push[axis];
     }
 }
 

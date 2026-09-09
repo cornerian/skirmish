@@ -278,7 +278,9 @@ pub(crate) fn resolve(
             f.ecb_lock = 0;
             f.ecb.bottom_locked = false;
             f.skip_floor = None;
-            if f.action != Action::Damage {
+            if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
+                simulation::enter(f, Action::ShieldBreakDown);
+            } else if f.action != Action::Damage {
                 simulation::enter(f, Action::Landing);
             }
             events.push(Event::Landed { player });

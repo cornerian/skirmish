@@ -90,6 +90,8 @@ pub struct Rules {
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
     pub damage: super::damage::CombatRules,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shield: Option<super::shield::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -147,6 +149,8 @@ pub struct FighterData {
     pub locomotion: Option<super::locomotion::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armor: Option<super::damage::Armor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shield: Option<super::shield::Attributes>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
@@ -266,6 +270,9 @@ pub struct Hitbox {
     pub center: [f32; 3],
     pub radius: f32,
     pub damage: u32,
+    /// Additional integer shield damage (HitCapsule::x34), before clamping.
+    #[serde(default)]
+    pub shield_damage: i32,
     /// Integral ordinary launch angles or 361, whose coefficients are explicit.
     pub angle_degrees: f32,
     pub growth: u32,

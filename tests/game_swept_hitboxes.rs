@@ -15,6 +15,7 @@ const IDLE: [Controller; 2] = [Controller {
 
 fn hit(group: u8) -> Hitbox {
     Hitbox {
+        shield_damage: 0,
         group,
         bone: 0,
         center: [0.0; 3],

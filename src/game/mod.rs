@@ -8,6 +8,7 @@ pub mod damage;
 pub mod data;
 pub mod hitboxes;
 pub mod locomotion;
+pub mod shield;
 mod simulation;
 pub mod staling;
 mod validation;
@@ -68,6 +69,15 @@ pub enum Action {
     JumpSquat,
     Jump,
     JumpAerial,
+    GuardOn,
+    Guard,
+    GuardOff,
+    GuardSetOff,
+    ShieldBreakFly,
+    ShieldBreakFall,
+    ShieldBreakDown,
+    ShieldBreakStand,
+    Furafura,
     Pass,
     Fall,
     Jab,
@@ -95,6 +105,7 @@ pub struct Fighter {
     pub ecb: ecb::State,
     pub ecb_lock: u8,
     pub locomotion: locomotion::State,
+    pub shield: shield::ShieldState,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -145,6 +156,12 @@ pub enum Event {
         victim: usize,
         damage: f32,
         knockback: f32,
+    },
+    ShieldHit {
+        attacker: usize,
+        victim: usize,
+        damage: f32,
+        broken: bool,
     },
     Landed {
         player: usize,

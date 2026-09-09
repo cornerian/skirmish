@@ -49,3 +49,10 @@ Landing-lag comparisons use valid aerial IDs with the script lag flag enabled;
 basic/auto-cancel landing remains a caller decision. Generated lag divisions stay
 within C's defined float-to-int range. Runtime/platform.h's comparison-based ABS
 macro is retained so negative-zero angle behavior is preserved.
+
+`shield_guard` preserves ftCo_Guard.c. The shield adapter selects complete radius,
+drain, stun/animation-rate/push, and displacement routines, plus getEnvDmg from
+the existing ftcoll.c snapshot and GrabMash from ftcommon.c. Minimal layouts and
+thread-local common data replace engine storage. Graphics/audio/statistics calls
+are explicit no-result stubs; their outputs do not feed the compared arithmetic.
+Full shield lifecycle and matrix contacts are exercised through native matches.

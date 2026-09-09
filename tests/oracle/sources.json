@@ -110,6 +110,11 @@
     "sha256": "6dd4bc76acd98fc8cc5ed000f0555928325ed86060b03ba2fdccff265d405e80"
   },
   {
+    "fixture": "tests/oracle/original/shield_guard.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Guard.c",
+    "sha256": "738114cca1146510f30bb6456151cf6f2a9479466bd45e6e5389ce07a7dbb4a3"
+  },
+  {
     "fixture": "tests/oracle/original/mpcoll.c",
     "upstream": "src/melee/mp/mpcoll.c",
     "sha256": "a89b65abe1203137f2efdc66de1b1280c15b6a4632991e06022dba4979c74172"

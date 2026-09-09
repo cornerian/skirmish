@@ -109,7 +109,8 @@ The reusable `collision::shield` helper separately ports `lbColl_80006E58` and
 the ordinary geometric branch of `lbColl_80007BCC`: transformed hurt volumes
 retain directional radii, contact position, overlap and the original broadphase.
 It accepts caller-prepared world endpoints and matrices; bone caching, forced
-hits and shield gameplay integration remain outside that helper. Its C oracle
+hits remain outside that helper. Ordinary shield gameplay now uses it before
+hurtbox contact; see the [shield profile](shield.md). Its C oracle
 uses the SDK scalar matrix-vector routine in place of paired-single assembly,
 so passing comparisons establish native scalar agreement only.
 
@@ -184,8 +185,9 @@ contacts, while the original eligibility callback runs earlier in fighter update
 
 The match supports the supplied movement profiles, airborne drift/fast fall,
 a single jab, ordinary damage/armor, integral fixed-angle launch and angle 361.
-Its inputs do not yet reproduce the full PAD-to-fighter input history. Shield,
-grabs, specials, aerial attacks, ledge actions, running turns and character
+Its inputs do not yet reproduce the full PAD-to-fighter input history. The
+optional [shield profile](shield.md) adds ordinary raise/hold/release, stun,
+recoil, break and dizzy recovery. Grabs, specials, aerial attacks, ledge actions, running turns and character
 multijumps remain unported. Some accepted stick/button combinations consequently
 have no action in this experimental profile.
 
@@ -195,7 +197,8 @@ policies, without the original rebirth platform. Damage landing does not yet
 implement techs, bounces or knockdown.
 
 Combat omits priority/clanks, dynamic metal/state knockback modifiers,
-vulnerability/target flags, shield responses, throws and other special launch-angle behaviors. Outside jab,
+vulnerability/target flags, powershield/reflect and character-specific shield responses,
+throws and other special launch-angle behaviors. Outside jab,
 fighters currently use a static supplied pose; authentic walking, jumping and
 damage collision require those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

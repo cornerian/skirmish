@@ -14,8 +14,17 @@ pub fn data() -> MatchData {
     // extracted Melee common data or authentic character timings.
     let locomotion =
         serde_json::from_str(include_str!("../fixtures/game/locomotion.json")).unwrap();
+    #[derive(serde::Deserialize)]
+    struct ShieldFixture {
+        rules: skirmish::game::shield::Rules,
+        attributes: skirmish::game::shield::Attributes,
+    }
+    let shield: ShieldFixture =
+        serde_json::from_str(include_str!("../fixtures/game/shield.json")).unwrap();
+    data.rules.shield = Some(shield.rules);
     for fighter in &mut data.fighters {
         fighter.locomotion = Some(locomotion);
+        fighter.shield = Some(shield.attributes.clone());
     }
     data.stage.floor.left = -100.0;
     data.stage.floor.right = 100.0;
