@@ -178,6 +178,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.ledge, &fighter.ledge) {
+            (Some(rules), Some(parameters)) => ledge::validate(rules, parameters, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "ledge rules require parameters for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("ledge parameters require common rules".into()));
+            }
+            (None, None) => {}
+        }
         if let Some(rules) = &rules.shield {
             shield::validate(rules, fighter)?;
         } else {
@@ -313,12 +325,15 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 )?;
             }
         }
-        for attack in core::iter::once(&fighter.jab).chain(
-            fighter
-                .aerials
-                .iter()
-                .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
-        ) {
+        for attack in core::iter::once(&fighter.jab)
+            .chain(
+                fighter
+                    .aerials
+                    .iter()
+                    .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
+            )
+            .chain(fighter.ledge.iter().map(|p| &p.attack.attack))
+        {
             require(
                 rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),
                 "staling requires an explicit nonzero attack move_id",
@@ -442,6 +457,7 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             grab::valid_relationship(&state.fighters, player),
             "invalid paired capture state",
         )?;
+        require(ledge::valid_state(f), "invalid ledge attachment state")?;
         require(
             f.staling.transitions.is_empty(),
             "unflushed attack identity transition",

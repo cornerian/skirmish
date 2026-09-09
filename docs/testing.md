@@ -130,6 +130,14 @@ input suppression, checkpoint suffixes, simultaneous ordering, target policy,
 KO cleanup and invalid resources. `grab_differential` compares the three exact
 `ftCo_800DD1E4` main-stick threshold predicates against pinned C.
 
+The [ledge profile](ledges.md) promotes all six ledge conformance scenarios.
+`game_ledge` covers endpoint flags/connectivity, both sides, eligibility,
+stable occupancy, bone attachment, action priority and completion, jump launch,
+ordinary attack contact, incoming-damage release, timeout, cooldown/regrab,
+checkpoint replay, KO cleanup and invalid resources. `ledge_differential`
+compares the complete retained `ftCo_8009AAFC` callback, including its strict
+float branches and drop-cooldown side effect, against pinned C.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -156,7 +164,7 @@ explicitly disable unrelated state/environment branches.
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
 | Grounded and airborne specials | `conformance_actions`: neutral-B dispatch |
 | Grab and throw | `conformance_actions` and `conformance_combat`: paired capture and throw release (implemented) |
-| Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions`: individual ledge scenarios |
+| Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release and implemented hitlag/floor responses |

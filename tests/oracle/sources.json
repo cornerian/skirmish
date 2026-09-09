@@ -188,5 +188,10 @@
     "fixture": "tests/oracle/original/throw_input.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Throw.c",
     "sha256": "5ff98ff23893109eeb38450325a26fccbce81c869e4db3fc59ab813ed42f9a02"
+  },
+  {
+    "fixture": "tests/oracle/original/ledge_option.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c",
+    "sha256": "7e6c054dea388508689b0eea87b899246961a260f762055be40a9d7e7b68c274"
   }
 ]

@@ -255,6 +255,7 @@ pub(crate) fn apply_hit(
     target.grounded = false;
     target.ground_line = None;
     target.fast_fall = false;
+    super::ledge::release_on_damage(target, rules.ledge.as_ref());
     super::simulation::enter(target, Action::Damage);
     target.damage_elapsed = 0;
     target.locomotion.tilt_x_age = 254;

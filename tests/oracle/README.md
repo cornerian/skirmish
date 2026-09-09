@@ -101,3 +101,10 @@ only the current/previous stick samples and each common-data threshold. The Rust
 selector composes those exact predicates with C-stick freshness and facing;
 native match tests own catch contact, direction priority, bone attachment,
 scripted release and the following damage lifecycle.
+
+`ledge_option` preserves ftCo_CliffClimb.c and selects complete
+`ftCo_8009AAFC`. The host adapter supplies its main/C-stick identity, input-ready
+flag, X value, precomputed angle, facing, common angle boundary and cooldowns.
+Stub transitions report climb or fall while the original callback owns every
+comparison, return value and cooldown write. Native match tests own endpoint
+eligibility, bone attachment and the six-state action lifecycle.

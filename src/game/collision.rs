@@ -66,6 +66,7 @@ pub(crate) fn geometry(data: &Stage) -> Cow<'_, StageGeometry> {
             start: [data.floor.left, data.floor.y],
             end: [data.floor.right, data.floor.y],
             flags: stage::ENABLED | stage::FLOOR,
+            material_flags: stage::LEDGE as u16,
             ..Default::default()
         }],
         joints: vec![stage::Joint {

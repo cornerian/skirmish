@@ -61,6 +61,7 @@ fn spawn(
         aerial: aerial::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
+        ledge: ledge::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -218,8 +219,9 @@ pub(crate) fn advance(
             &mut state.fighters[player],
             &data.fighters[player],
             &data.rules,
+            &geometry,
             inputs[player],
-        );
+        )?;
         update_nudge(
             data,
             state,
@@ -279,6 +281,22 @@ pub(crate) fn advance(
             fighter.previous_input = input;
             continue;
         }
+        if ledge::attached(fighter) {
+            ledge::attach(fighter, &data.fighters[player], &geometry)?;
+            collision::sample(
+                fighter,
+                &data.fighters[player],
+                &pose(fighter, &data.fighters[player])?,
+            )?;
+            staling::flush(
+                fighter,
+                &data.fighters[player],
+                data.rules.staling.as_ref(),
+                &mut state.attack_instances,
+            )?;
+            fighter.previous_input = input;
+            continue;
+        }
         if fighter.damage_elapsed >= 0 {
             fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
         }
@@ -316,6 +334,7 @@ pub(crate) fn advance(
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
+    ledge::scan(data, state, &stage, &geometry, inputs)?;
     grab::scan(data, state, frozen)?;
     for player in 0..2 {
         staling::flush(
@@ -485,6 +504,7 @@ pub(crate) fn advance(
                 fighter.hitlag = 0.0;
                 fighter.hitstun = 0;
                 fighter.di_pending = false;
+                fighter.ledge = ledge::State::default();
                 enter(
                     fighter,
                     if fighter.stocks == 0 {
@@ -591,7 +611,8 @@ fn update_nudge(
             floor: fighter.ground_line,
             follower_of: None,
             inactive: matches!(fighter.action, Action::Respawn | Action::Eliminated)
-                || fighter.grab.captor.is_some(),
+                || fighter.grab.captor.is_some()
+                || ledge::attached(fighter),
             holds_victim: fighter.grab.victim.is_some(),
             nudge_disabled: attributes.nudge_disabled,
             hitlag: fighter.hitlag > 0.0,
@@ -649,9 +670,11 @@ fn update_animation(
     f: &mut Fighter,
     data: &FighterData,
     rules: &Rules,
+    geometry: &StageGeometry,
     input: Controller,
-) -> (bool, bool, bool) {
+) -> Result<(bool, bool, bool), Error> {
     let attrs = &data.movement;
+    ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     grab::update_fighter_animation(f, data);
     match f.action {
         Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
@@ -699,7 +722,7 @@ fn update_animation(
     } else {
         shield::update_animation(f, data, rules.shield.as_ref(), input)
     };
-    (just_turned, clank_owns, shield_owns)
+    Ok((just_turned, clank_owns, shield_owns))
 }
 
 fn update_actions(
@@ -711,6 +734,9 @@ fn update_actions(
     clank_owns: bool,
     shield_owns: bool,
 ) {
+    if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
+        return;
+    }
     if grab::update_actions(f, data, rules.grab.as_ref(), input) {
         return;
     }
@@ -796,7 +822,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             }
             movement.project_ground();
         }
-    } else if !(f.action == Action::Jump && f.action_frame == 0) {
+    } else if !(f.action == Action::Jump && f.action_frame == 0)
+        && !ledge::skip_jump_physics(f, data)
+    {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
         if f.action != Action::Damage && !shield::break_invulnerable(f.action) {
@@ -844,6 +872,8 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
 
 pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
     let local = if let Some(pose) = grab::pose(fighter, data) {
+        pose
+    } else if let Some(pose) = ledge::pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

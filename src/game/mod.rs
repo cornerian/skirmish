@@ -10,6 +10,7 @@ pub mod damage;
 pub mod data;
 pub mod grab;
 pub mod hitboxes;
+pub mod ledge;
 pub mod locomotion;
 pub mod nudge;
 pub mod shield;
@@ -99,6 +100,12 @@ pub enum Action {
     ThrownB,
     ThrownHi,
     ThrownLw,
+    CliffCatch,
+    CliffWait,
+    CliffClimb,
+    CliffJump,
+    CliffAttack,
+    CliffEscape,
     AttackAirN,
     AttackAirF,
     AttackAirB,
@@ -151,6 +158,7 @@ pub struct Fighter {
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,
+    pub ledge: ledge::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -218,6 +226,11 @@ pub enum Event {
     Grabbed {
         holder: usize,
         victim: usize,
+    },
+    LedgeCaught {
+        player: usize,
+        line: usize,
+        side: ledge::Side,
     },
     Landed {
         player: usize,

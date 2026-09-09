@@ -98,6 +98,8 @@ pub struct Rules {
     pub nudge: Option<super::nudge::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grab: Option<super::grab::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ledge: Option<super::ledge::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -163,6 +165,8 @@ pub struct FighterData {
     pub nudge: Option<super::nudge::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grab: Option<super::grab::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ledge: Option<super::ledge::Parameters>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
@@ -176,6 +180,9 @@ impl FighterData {
     pub(crate) fn attack(&self, action: super::Action) -> Option<&Attack> {
         if action == super::Action::Jab {
             return Some(&self.jab);
+        }
+        if action == super::Action::CliffAttack {
+            return Some(&self.ledge.as_ref()?.attack.attack);
         }
         let index = super::aerial::attack_index(action)?;
         Some(&self.aerials.as_ref()?.moves[index].attack)

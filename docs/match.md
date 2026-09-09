@@ -41,7 +41,7 @@ restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
 time, tumble eligibility, physical-L/R tech ages, swept hitbox centers, ECB
-interpolation history, stage contacts, stocks,
+interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
 random events and consumes no RNG draws. Checkpoints are opaque in-memory
 values, and restoration rejects different resource/rule identities. Persistent
@@ -170,6 +170,14 @@ pipeline. Pair ownership is checkpointed and cleared transactionally on release
 or stock loss. Pummels, mash escape, dash/tether variants, throw staling and
 capture-contact interference remain unported.
 
+Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
+endpoint discovery, bone-attached catch/hang poses, climb, jump, attack, escape,
+drop and regrab cooldown. Ledge attack uses the same swept-contact and damage
+pipeline as other attacks. Endpoint ownership, stick arming and cooldown are
+checkpointed; damage and stock loss clear ownership. The [ledge profile](ledges.md)
+documents its explicit resource schema and remaining dynamic-stage and
+character-specific limits.
+
 ## Explicit movement data
 
 `fighters[].locomotion` supplies thresholds, stick-age windows, dash/run
@@ -206,13 +214,15 @@ damage/armor, integral fixed-angle launch and angle 361. Aerial resources and
 callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
-standing catches, paired holds and four-direction throws. Inputs do not yet
-reproduce the full PAD-to-fighter history. Specials, ledge actions, running turns and character
+standing catches, paired holds and four-direction throws. The optional [ledge
+profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
+and drop. Inputs do not yet reproduce the full PAD-to-fighter history. Specials, running turns and character
 multijumps remain unported. Some accepted stick/button combinations consequently
 have no action in this experimental profile.
 
-Ledge actions, moving stages/remapping and full ECB corner/squeeze response
-remain unported. The optional [nudge profile](nudge.md) adds source-backed
+Moving stages/remapping and full ECB corner/squeeze response remain unported.
+Ledge actions currently require static marked endpoints and supplied generic
+poses; percent-dependent variants and ledge trumping remain unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the
 ledge-specific backward-push map branch remain unported. Respawn delay and
 invincibility are configured integration policies without the original rebirth

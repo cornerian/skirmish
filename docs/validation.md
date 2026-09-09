@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 static ledge-action batch is recorded at:
+
+`/mnt/archive/runs/skirmish-ledge-20260909`
+
+It validates the composed tree after the native asset-import commit with
+formatting, strict all-target/all-feature Clippy, native workspace tests and
+original-C differential tests in debug and release modes. Six formerly ignored
+ledge scenarios now pass, with focused integration coverage for endpoint
+eligibility and ownership, bone attachment, every ledge option, combat contact,
+damage/KO release, cooldown/regrab and checkpoint restoration. The current
+conformance audit has 3 executable unimplemented scenarios and 13 cases blocked
+on independent reference fixtures.
+
 The 2026-09-09 movement/combat coverage milestone is recorded at:
 
 `/mnt/archive/runs/skirmish-gameplay-20260909-v6b`
@@ -37,8 +50,8 @@ simulated state. Their expectations originate from the experimental native
 match and do not establish independent Melee equivalence. Explicit conformance
 audits report missing implementation and independent-reference fixtures as
 failures, separately from the normal passing regressions; see [testing.md](testing.md).
-There are 32 executable missing-behavior scenarios and 13 cases blocked on
-independent reference fixtures. The audit invokes all 45 explicitly and records
+That archived audit had 32 executable missing-behavior scenarios and 13 cases blocked on
+independent reference fixtures. It invoked all 45 explicitly and recorded
 their failures; default test discovery reports them as ignored. Three real
 Slippi 2.0.1 corpus files are also parsed with hashes and frame counts recorded.
 This smoke check covers parsing, without compatible native-match initialization

@@ -6,6 +6,8 @@
 mod aerial_resources;
 #[path = "support/grab.rs"]
 mod grab_resources;
+#[path = "support/ledge.rs"]
+mod ledge_resources;
 use aerial_resources::conformance as support;
 
 use skirmish::game::{BUTTON_A, BUTTON_X, Controller, Match, State};
@@ -211,7 +213,7 @@ fn forward_throw_releases_the_victim_with_damage_and_knockback() {
 }
 
 fn ledge_game() -> Match {
-    let mut data = data();
+    let mut data = ledge_resources::profile(data());
     data.stage.floor.left = -2.0;
     data.stage.floor.right = 2.0;
     data.stage.spawns = [[-1.9, 1.0], [1.0, 0.0]];
@@ -236,7 +238,6 @@ fn ledge_game() -> Match {
 
 // src/melee/ft/ftcliffcommon.c and kinds/ftCommon/ftCo_CliffWait.c.
 #[test]
-#[ignore = "unimplemented: ledge eligibility, catch and hang states"]
 fn descending_fighter_catches_a_free_ledge_and_stops_falling() {
     let mut game = ledge_game();
     let state = step(&mut game, idle());
@@ -251,28 +252,24 @@ fn ledge_option(buttons: u16, stick: [f32; 2]) -> State {
 
 // src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c.
 #[test]
-#[ignore = "unimplemented: ledge hang and ledge climb action"]
 fn stick_toward_stage_selects_ledge_climb() {
     assert!(action(&ledge_option(0, [1.0, 0.0]), 0).starts_with("cliff_climb"));
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_CliffJump.c.
 #[test]
-#[ignore = "unimplemented: ledge hang and ledge jump action"]
 fn jump_button_selects_ledge_jump() {
     assert!(action(&ledge_option(BUTTON_X, [0.0; 2]), 0).starts_with("cliff_jump"));
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_CliffAttack.c.
 #[test]
-#[ignore = "unimplemented: ledge hang and ledge attack action"]
 fn attack_button_selects_ledge_attack() {
     assert!(action(&ledge_option(BUTTON_A, [0.0; 2]), 0).starts_with("cliff_attack"));
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_CliffEscape.c.
 #[test]
-#[ignore = "unimplemented: ledge hang, shoulder input and ledge roll action"]
 fn shoulder_button_selects_ledge_roll() {
     assert!(action(&ledge_option(BUTTON_L, [0.0; 2]), 0).starts_with("cliff_escape"));
 }
@@ -280,7 +277,6 @@ fn shoulder_button_selects_ledge_roll() {
 // src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c: ftCo_8009AA0C lets go
 // when stick displacement exceeds the threshold away from the ledge.
 #[test]
-#[ignore = "unimplemented: ledge hang release and regrab cooldown"]
 fn down_stick_releases_the_ledge_and_starts_falling() {
     let state = ledge_option(0, [0.0, -1.0]);
     assert!(matches!(action(&state, 0).as_str(), "fall" | "damage_fall"));
