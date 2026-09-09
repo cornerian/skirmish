@@ -54,6 +54,7 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
+        clank: clank::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -80,6 +81,7 @@ fn spawn(
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
+    clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
     staling::transition(fighter, action);
     fighter.action = action;
@@ -227,7 +229,11 @@ pub(crate) fn advance(
         };
         swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
         staling::sample(&mut fighter.staling, frame, data.rules.staling.as_ref())?;
+        if data.rules.clank.is_some() {
+            clank::sample(&mut fighter.clank, frame);
+        }
     }
+    clank::scan(data, state, &swept)?;
     let mut hits = Vec::with_capacity(2);
     for attacker in 0..2 {
         let victim = 1 - attacker;
@@ -242,7 +248,11 @@ pub(crate) fn advance(
         }
         let frame = attack_frame(source, &data.fighters[attacker])?;
         for (slot, hit) in frame.hitboxes.iter().enumerate() {
-            if source.hit_groups & (1 << hit.group) != 0 {
+            if if data.rules.clank.is_some() {
+                clank::blocked(source, slot, victim)
+            } else {
+                source.hit_groups & (1 << hit.group) != 0
+            } {
                 continue;
             }
             let attack = swept[attacker][slot]
@@ -299,6 +309,9 @@ pub(crate) fn advance(
     // replaces their action; attacks that connected start hitlag on this step.
     for &(attacker, hit, _, _) in &hits {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
+        if data.rules.clank.is_some() {
+            clank::record(&mut state.fighters[attacker], hit.group, 1 - attacker)?;
+        }
     }
     let mut newly_hit = [false; 2];
     let mut shield_contact = [false; 2];
@@ -323,6 +336,8 @@ pub(crate) fn advance(
             &mut state.attack_instances,
         )?;
     }
+
+    clank::finish(data, state, newly_hit)?;
 
     for (player, fighter) in state.fighters.iter_mut().enumerate() {
         if !matches!(fighter.action, Action::Respawn | Action::Eliminated) {
@@ -499,6 +514,9 @@ fn update_action(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Cont
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
     aerial::update_animation(f, data);
+    if clank::update_animation(f, data) {
+        return;
+    }
     if shield::update(f, data, rules.shield.as_ref(), input) {
         return;
     }
@@ -542,7 +560,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         ..Movement::default()
     };
     if f.grounded {
-        if locomotion::ground_motion(f, data, &mut movement, input) {
+        if f.action == Action::Rebound
+            && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
+        {
+            // Rebound's first physics callback retains projected self velocity.
+        } else if locomotion::ground_motion(f, data, &mut movement, input) {
             // Explicit locomotion parameters supply dash/run acceleration.
         } else if f.action == Action::Walk {
             movement_math::walk(
@@ -564,6 +586,14 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                 friction *= rules.friction_above_walk;
             }
             movement.friction_ground(friction);
+            // Rebound_Phys uses ApplyGroundMovement, which scales the already
+            // clamped acceleration on slippery surfaces before projection.
+            if f.action == Action::Rebound
+                && let Some(clank) = &rules.clank
+                && clank.surface_friction_multiplier < 1.0
+            {
+                movement.ground_acceleration *= clank.surface_friction_multiplier;
+            }
             movement.project_ground();
         }
     } else if !(f.action == Action::Jump && f.action_frame == 0) {
@@ -594,6 +624,8 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     // Ordinary no-wind/no-shield branch of Fighter_procUpdate's integration:
     // apply acceleration, clear it, then add self velocity and knockback.
     f.ground_velocity = movement.ground_velocity + movement.ground_acceleration;
+    f.ground_velocity += f.clank.pending_ground_acceleration;
+    f.clank.pending_ground_acceleration = 0.0;
     for (axis, velocity) in f.velocity.iter_mut().enumerate() {
         *velocity = movement.self_velocity[axis] + movement.animation_velocity[axis];
     }
@@ -607,7 +639,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
 }
 
 pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
-    let local = if data.attack(fighter.action).is_some() {
+    let local = if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
+        clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
+    } else if data.attack(fighter.action).is_some() {
         &attack_frame(fighter, data)?.bones
     } else if aerial::landing_index(fighter.action).is_some() {
         aerial::landing_pose(fighter, data)

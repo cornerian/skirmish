@@ -252,6 +252,8 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
     for (frame, x) in [(0, -6.0), (1, -2.0), (2, -2.0)] {
         movement.attack.frames[frame].bones[1].translation = [x, 1.0, 0.0];
         movement.attack.frames[frame].hitboxes = vec![Hitbox {
+            clank: false,
+            rebound: false,
             shield_damage: 0,
             group: 0,
             bone: 1,
@@ -468,6 +470,8 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
         .frames[0];
     frame.bones[1].translation[0] = 2.0;
     frame.hitboxes.push(Hitbox {
+        clank: false,
+        rebound: false,
         shield_damage: 0,
         group: 0,
         bone: 1,

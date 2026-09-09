@@ -72,9 +72,13 @@ source coordinate conventions explicitly.
 The experimental scheduler first handles countdown or respawn/freeze counters,
 then updates actions and physics for both players, samples their ECBs and resolves
 static stage contacts in source-sized movement substeps. It evaluates contact
-poses and collects contact decisions before applying damage so both
+poses, resolves configured ordinary grounded clashes, and collects remaining
+shield/hurtbox contact decisions before applying damage so both
 players can trade on the same frame. Hit-group history suppresses repeated
-contacts during one attack. It then resolves stock losses together, checks the
+contacts during one attack. With the [clank profile](clanks.md), active same-group
+slots instead share explicit victim histories that survive hitlag and clear on
+deactivation. Pending rebound yields to incoming body damage and shield stun.
+It then resolves stock losses together, checks the
 clock and emits events. A timeout compares stocks, then percent; exact ties
 finish as a draw. This schedule and these match policies are integration code,
 not a claimed translation of the complete original callback graph.
@@ -199,7 +203,7 @@ push/nudge is not yet integrated into matches. Respawn delay/invincibility are c
 policies, without the original rebirth platform. Damage landing does not yet
 implement techs, bounces or knockdown.
 
-Combat omits priority/clanks, dynamic metal/state knockback modifiers,
+Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,
 throws and other special launch-angle behaviors. Outside supplied attack and landing poses,
 fighters currently use a static supplied pose; authentic walking, jumping and

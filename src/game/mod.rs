@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod aerial;
+pub mod clank;
 mod collision;
 pub mod damage;
 pub mod data;
@@ -93,6 +94,8 @@ pub enum Action {
     LandingAirHi,
     LandingAirLw,
     Damage,
+    ReboundStop,
+    Rebound,
     Landing,
     Respawn,
     Eliminated,
@@ -118,6 +121,7 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
+    pub clank: clank::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -174,6 +178,11 @@ pub enum Event {
         victim: usize,
         damage: f32,
         broken: bool,
+    },
+    Clank {
+        /// Slot indices and suppression flags in native player order.
+        slots: [usize; 2],
+        suppressed: [bool; 2],
     },
     Landed {
         player: usize,

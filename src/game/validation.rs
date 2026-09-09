@@ -129,6 +129,14 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        if let Some(rules) = &rules.clank {
+            super::clank::validate(rules, fighter)?;
+        } else {
+            require(
+                fighter.rebound.is_none(),
+                "rebound animation requires a clank profile",
+            )?;
+        }
         if let Some(rules) = &rules.shield {
             shield::validate(rules, fighter)?;
         } else {
@@ -283,6 +291,10 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
                 for hit in &frame.hitboxes {
                     require(
+                        rules.clank.is_some() || !(hit.clank || hit.rebound),
+                        "clank/rebound flags require an explicit ordinary profile",
+                    )?;
+                    require(
                         hit.bone < frame.bones.len()
                             && hit.group < 16
                             && finite(hit.center)
@@ -309,7 +321,10 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     Ok(())
 }
 
-fn validate_animation_pose(bones: &[Bone], fighter: &FighterData) -> Result<Pose, Error> {
+pub(crate) fn validate_animation_pose(
+    bones: &[Bone],
+    fighter: &FighterData,
+) -> Result<Pose, Error> {
     require(
         bones.len() == fighter.bones.len(),
         "animation changes bone count",
@@ -423,6 +438,12 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.locomotion.dash_initial_delta,
                 f.aerial.landing_elapsed,
                 f.aerial.landing_rate,
+                f.clank.clock,
+                f.clank.rate,
+                f.clank.impulse,
+                f.clank.pending_ground_acceleration,
+                f.clank.response.rebound_duration,
+                f.clank.response.towards,
             ])
             .chain(f.locomotion.pass_delay)
             .chain(f.staling.hits.iter().flatten().map(|hit| hit.damage))

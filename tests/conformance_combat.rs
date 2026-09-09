@@ -91,11 +91,39 @@ fn repeated_jab_is_weaker_than_the_fresh_hit() {
 }
 
 #[test]
-#[ignore = "unimplemented: grounded hitbox clanks and rebound priority"]
 fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     // ft/ftcoll.c::ftColl_8007699C and its hitbox-pair collision caller test
     // equal-damage grounded hitboxes before the hurtbox damage path.
-    let mut game = Match::new(close_data(), 0).unwrap();
+    let mut data = close_data();
+    // Explicit invented common coefficients and sampled recovery resources.
+    data.rules.clank = Some(skirmish::game::clank::Rules {
+        profile: skirmish::game::clank::Profile::OrdinaryGroundedNonSlash,
+        response: skirmish::fighter::clank::Rules {
+            damage_gap: 9,
+            duration_scale: 0.5,
+            duration_base: 2.0,
+        },
+        push_scale: 0.2,
+        push_base: 0.6,
+        hitlag_maximum: 20.0,
+        surface_friction_multiplier: 0.5,
+    });
+    for fighter in &mut data.fighters {
+        fighter.rebound = Some(skirmish::game::clank::Animation {
+            animation_length: 13.9,
+            poses: vec![fighter.bones.clone(); 15],
+        });
+        for hit in fighter
+            .jab
+            .frames
+            .iter_mut()
+            .flat_map(|frame| &mut frame.hitboxes)
+        {
+            hit.clank = true;
+            hit.rebound = true;
+        }
+    }
+    let mut game = Match::new(data, 0).unwrap();
     step(
         &mut game,
         [Controller {
@@ -113,6 +141,12 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     assert!(
         collision.fighters.iter().any(|f| f.hitlag > 0.0),
         "clank must produce contact response"
+    );
+    assert!(
+        collision
+            .fighters
+            .iter()
+            .all(|f| f.action == Action::ReboundStop)
     );
 }
 

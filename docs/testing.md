@@ -82,11 +82,13 @@ bypass and exceptional float behavior. `game_staling` checks percent versus
 knockback damage, hitbox caching and instance deduplication, simultaneous trades,
 death/reset lifecycle and checkpoint replay with wholly synthetic resources.
 
-The [clank kernels](clanks.md) have original-C mutation comparisons and synthetic
-staling→clash→hitlag→rebound compositions. They preserve victim-group history,
-priority boundaries and old pending responses. The native match clank dispatcher
-and rebound action graph remain unimplemented; their ignored conformance test is
-not promoted by passing these prerequisite tests.
+The [ordinary clank profile](clanks.md) adds native `game_clank` scenarios and
+enables equal-grounded-jab conformance. Original-C kernels compare response and
+victim-table mutations; match tests cover source slot order, staled fractional
+damage, one-sided priority, body-hit precedence, frozen poses, delayed recoil,
+group history, resource rejection and restored recovery. These fixtures are
+synthetic. Items, capture rules, Slash RNG and the full original graph remain
+outside the declared profile.
 
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,

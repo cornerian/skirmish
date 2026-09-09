@@ -92,6 +92,8 @@ pub struct Rules {
     pub damage: super::damage::CombatRules,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shield: Option<super::shield::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clank: Option<super::clank::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -143,6 +145,8 @@ impl HitlagData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FighterData {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebound: Option<super::clank::Animation>,
     pub name: String,
     pub movement: MovementData,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -276,7 +280,13 @@ pub struct AttackFrame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Hitbox {
-    /// Hitboxes in the same group cannot hit the same victim twice per attack.
+    /// Ordinary collision-script clank/rebound bits. False retains older fixtures.
+    #[serde(default)]
+    pub clank: bool,
+    #[serde(default)]
+    pub rebound: bool,
+    /// Same-group hitboxes share victim history while active. The legacy profile
+    /// without clank data retains its simpler per-attack group mask.
     pub group: u8,
     pub bone: usize,
     pub center: [f32; 3],
