@@ -1,3 +1,4 @@
+import package::dark_flare;
 import package::feather;
 import package::leaf;
 import package::splash;
@@ -71,6 +72,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 27u: { field = dark_flare::shade(in.uv, in.age, in.seed, footprint); }
         case 26u: { field = feather::shade(in.uv, in.age, in.seed, footprint); }
         case 25u: { field = leaf::shade(in.uv, in.age, in.seed, footprint); }
         case 24u: { field = splash::shade(in.uv, in.age, in.seed, footprint); }

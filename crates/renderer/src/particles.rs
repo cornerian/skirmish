@@ -36,6 +36,7 @@ pub enum ParticleEffect {
     Splash,
     Leaf,
     Feather,
+    DarkFlare,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
