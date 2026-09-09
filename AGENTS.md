@@ -9,6 +9,15 @@ Hard requirement: native modern-machine builds, execution, and tests must never
 require an ISO, DOL, emulator, or GameCube runtime. Use native game resources,
 host-compiled original C, generated scenarios and future replay observations.
 
+Resource extraction and visual conversion are owned by a separate task/project,
+`melee-assets`. Keep this task focused on native gameplay and physics; consume
+its exports as they become available without duplicating extraction or
+reorganizing its directories. Vector artwork and procedural visual effects are
+presentation resources. Bone animation, collision geometry, action scripts and
+gameplay-affecting effects must retain their simulation semantics. See
+`docs/resources.md` for the consumer requirements; the final export layout is
+owned by the resource task.
+
 - Upstream source: `../../External/melee` relative to this project, or the path
   passed to `skirmish inventory`. Revision is recorded in `upstream.lock.json`.
 - Do not introduce disc/executable dependencies. Reference C snapshots are

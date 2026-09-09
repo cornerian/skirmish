@@ -23,6 +23,32 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     require(data.schema == 1, "unsupported schema")?;
     require(!data.provenance.trim().is_empty(), "provenance is required")?;
     let stage = &data.stage;
+    if let Some(geometry) = &stage.geometry {
+        require(
+            !geometry.lines.is_empty()
+                && geometry.lines.len() <= 16384
+                && !geometry.joints.is_empty()
+                && geometry.joints.len() <= 1024,
+            "stage requires bounded nonempty line and joint arrays",
+        )?;
+        melee_physics::stage::Stage::new(&geometry.lines, &geometry.joints)
+            .map_err(|e| Error::Data(e.to_string()))?;
+        for line in &geometry.lines {
+            use melee_physics::stage::{CEILING, FLOOR, LEFT_WALL, RIGHT_WALL};
+            let kind = line.flags & (FLOOR | CEILING | LEFT_WALL | RIGHT_WALL);
+            let directed = match kind {
+                FLOOR => line.start[0] < line.end[0],
+                CEILING => line.start[0] > line.end[0],
+                LEFT_WALL => line.start[1] < line.end[1],
+                RIGHT_WALL => line.start[1] > line.end[1],
+                _ => false,
+            };
+            require(
+                directed && finite(line.start.into_iter().chain(line.end)),
+                "stage lines require a finite directed surface",
+            )?;
+        }
+    }
     let [left, right, bottom, top] = stage.blast;
     require(
         finite(stage.blast) && left < right && bottom < top,
@@ -46,6 +72,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         )?;
     }
     let rules = &data.rules;
+    damage::validate_rules(&rules.damage)?;
     require(
         rules.stocks > 0
             && rules.time_limit_frames > 0
@@ -119,6 +146,24 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             "invalid fighter attributes",
         )?;
         let pose = validate_bones(&fighter.bones)?;
+        match &fighter.collision_box {
+            CollisionBox::Fixed { source } => require(
+                nonnegative([source.up, source.down, source.front, source.back])
+                    && finite([source.angle]),
+                "invalid fixed environmental collision box",
+            )?,
+            CollisionBox::Bones {
+                indices,
+                parameters,
+                flags,
+            } => require(
+                indices.iter().all(|&index| index < fighter.bones.len())
+                    && finite([parameters.side_y_offset])
+                    && nonnegative([parameters.height_threshold, parameters.width_threshold])
+                    && flags & !31 == 0,
+                "invalid bone environmental collision box",
+            )?,
+        }
         require(
             !fighter.hurtboxes.is_empty() && fighter.hurtboxes.len() <= 128,
             "hurtboxes required (maximum 128)",
@@ -165,7 +210,8 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                         && hit.growth <= 1000
                         && hit.fixed <= 1000
                         && hit.base <= 1000
-                        && (0.0..360.0).contains(&hit.angle_degrees),
+                        && (0.0..=361.0).contains(&hit.angle_degrees)
+                        && hit.angle_degrees.fract() == 0.0,
                     "invalid or unsupported hitbox",
                 )?;
                 validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
@@ -232,6 +278,32 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             .into_iter()
             .chain(f.velocity)
             .chain(f.knockback)
+            .chain(f.floor_normal)
+            .chain(f.hitboxes.into_iter().flat_map(|track| {
+                track
+                    .previous
+                    .into_iter()
+                    .chain(track.current)
+                    .chain([track.radius])
+            }))
+            .chain(
+                [
+                    f.ecb.current,
+                    f.ecb.previous,
+                    f.ecb.desired,
+                    f.ecb.before_load,
+                    f.ecb.unsqueezed,
+                ]
+                .into_iter()
+                .flat_map(|shape| {
+                    shape
+                        .top
+                        .into_iter()
+                        .chain(shape.bottom)
+                        .chain(shape.left)
+                        .chain(shape.right)
+                }),
+            )
             .chain([f.percent, f.ground_velocity, f.hitlag, f.facing])
             .any(|v| !v.is_finite())
         {
@@ -258,7 +330,7 @@ mod tests {
     fn rejects_nonfinite_events_even_when_fighter_state_is_finite() {
         let data: MatchData =
             serde_json::from_str(include_str!("../tests/fixtures/integration-match.json")).unwrap();
-        let mut snapshot = crate::simulation::initial_state(&data, 0);
+        let mut snapshot = crate::simulation::initial_state(&data, 0).unwrap();
         for (damage, knockback) in [(f32::NAN, 1.0), (1.0, f32::INFINITY)] {
             snapshot.events = vec![Event::Hit {
                 attacker: 0,

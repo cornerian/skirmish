@@ -124,7 +124,10 @@ fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
     );
     let landing_events = until(&mut game, 40, |state| state.fighters[0].grounded);
     assert!(landing_events.contains(&Event::Landed { player: 0 }));
-    assert_eq!(game.state().fighters[0].position[1], resource.stage.floor.y);
+    // Source floor projection retains its +0.0001 separation displacement.
+    assert!(
+        (game.state().fighters[0].position[1] - resource.stage.floor.y - 0.0001).abs() < 0.000001
+    );
     until(&mut game, 5, |state| {
         state.fighters[0].action == Action::Wait
     });
@@ -425,7 +428,7 @@ fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
         |data| data.stage.floor.right = data.stage.blast[1],
         |data| data.fighters[0].bones[0].parent = Some(1),
         |data| data.fighters[0].jab.frames.clear(),
-        |data| data.fighters[0].jab.frames[1].hitboxes[0].angle_degrees = 361.0,
+        |data| data.fighters[0].jab.frames[1].hitboxes[0].angle_degrees = 362.0,
         |data| data.fighters[0].jab.frames[1].bones[1].classical_scale = true,
         |data| data.fighters[0].bones[0].scale = [1_000_000.0; 3],
     ];

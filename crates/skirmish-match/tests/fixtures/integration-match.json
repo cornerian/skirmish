@@ -358,6 +358,16 @@
             "hitboxes": []
           }
         ]
+      },
+      "collision_box": {
+        "kind": "fixed",
+        "source": {
+          "up": 3.0,
+          "down": 0.0,
+          "front": 1.5,
+          "back": 1.5,
+          "angle": 0.0
+        }
       }
     },
     {
@@ -691,6 +701,16 @@
             "hitboxes": []
           }
         ]
+      },
+      "collision_box": {
+        "kind": "fixed",
+        "source": {
+          "up": 3.0,
+          "down": 0.0,
+          "front": 1.5,
+          "back": 1.5,
+          "angle": 0.0
+        }
       }
     }
   ],
@@ -720,6 +740,17 @@
       "damage_scale": 0.1,
       "base": 2.0,
       "crouch_multiplier": 1.0
+    },
+    "damage": {
+      "angle_361_airborne_radians": 0.6,
+      "angle_361_grounded_max_degrees": 40.0,
+      "angle_361_low_knockback": 20.0,
+      "angle_361_high_knockback": 30.0,
+      "di_max_degrees": 10.0,
+      "special_angle_min": 362,
+      "special_angle_max": 362,
+      "special_angle_timer": 0,
+      "knockback_replace_window": 3
     }
   }
 }

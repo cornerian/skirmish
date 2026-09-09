@@ -69,6 +69,14 @@ fn build_oracle() {
                 .replace("*(void**) &f0", "float_bits(f0)")
                 .replace("(void*)", "(uint32_t)");
         }
+        if path.file_stem().unwrap() == "mplib" {
+            // Original CollLine is 8 bytes; native pointers make the host
+            // adapter's struct larger. Retain logical indices without truncating pointers.
+            adapted = adapted.replace(
+                "(s32) line_r26 - (s32) groundCollLine",
+                "(ptrdiff_t) (line_r26 - groundCollLine) * 8",
+            );
+        }
         fs::write(out.join(format!("{adapter}_original.inc")), adapted).unwrap();
     }
     let mut build = cc::Build::new();
@@ -102,8 +110,11 @@ fn extract_function<'a>(source: &'a str, name: &str) -> &'a str {
         .find_map(|(pos, _)| {
             let line = source[..pos].rfind('\n').map_or(0, |i| i + 1);
             let prefix = &source[line..pos];
-            (!prefix.starts_with(char::is_whitespace) && !prefix.contains([';', '=', '(']))
-                .then_some(line)
+            let body = source[pos..].find('{')? + pos;
+            (!prefix.starts_with(char::is_whitespace)
+                && !prefix.contains([';', '=', '('])
+                && !source[pos..body].contains(';'))
+            .then_some(line)
         })
         .unwrap_or_else(|| panic!("missing original function {name}"));
     let body = source[start..].find('{').unwrap() + start;

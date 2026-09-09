@@ -2,10 +2,10 @@
 //! against Melee's complete GObj/action pipeline. Unsupported rules are listed
 //! in docs/match.md, and every input resource carries an experimental profile.
 use crate::{data::*, *};
-use melee_physics::{Movement, bones, combat, locomotion};
+use melee_physics::{Movement, bones, combat, locomotion, sweep};
 
-pub(crate) fn initial_state(data: &MatchData, seed: u32) -> State {
-    State {
+pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
+    Ok(State {
         next_frame: 0,
         remaining_frames: data.rules.time_limit_frames,
         phase: if data.rules.countdown_frames == 0 {
@@ -15,41 +15,60 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> State {
                 remaining: data.rules.countdown_frames,
             }
         },
-        fighters: std::array::from_fn(|player| spawn(data, player, data.rules.stocks, 0)),
+        fighters: [
+            spawn(data, 0, data.rules.stocks, 0)?,
+            spawn(data, 1, data.rules.stocks, 0)?,
+        ],
         rng_seed: seed,
         events: vec![],
-    }
+    })
 }
 
-fn spawn(data: &MatchData, player: usize, stocks: u8, invincibility: u32) -> Fighter {
+fn spawn(
+    data: &MatchData,
+    player: usize,
+    stocks: u8,
+    invincibility: u32,
+) -> Result<Fighter, Error> {
     let position = data.stage.spawns[player];
-    let grounded = position[1] == data.stage.floor.y;
-    Fighter {
+    let mut fighter = Fighter {
         position,
         velocity: [0.0; 2],
         knockback: [0.0; 2],
         ground_velocity: 0.0,
         facing: if player == 0 { 1.0 } else { -1.0 },
-        grounded,
-        action: if grounded { Action::Wait } else { Action::Fall },
+        grounded: false,
+        ground_line: None,
+        floor_normal: [0.0, 1.0, 0.0],
+        contacts: [None; 4],
+        ecb: melee_physics::ecb::State::default(),
+        action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
         stocks,
         hitlag: 0.0,
         hitstun: 0,
+        damage_elapsed: -1,
+        damage_angle_flag: 0,
+        damage_angle_timer: 0,
+        di_pending: false,
         invincibility,
         short_hop: false,
         fast_fall: false,
         hit_groups: 0,
+        hitboxes: [hitboxes::Track::default(); 4],
         previous_input: Controller::default(),
-    }
+    };
+    collision::initialize(&mut fighter, &data.fighters[player], &data.stage)?;
+    Ok(fighter)
 }
 
-fn enter(fighter: &mut Fighter, action: Action) {
+pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.action = action;
     fighter.action_frame = 0;
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
+    fighter.hitboxes = [hitboxes::Track::default(); 4];
 }
 
 pub(crate) fn advance(
@@ -75,6 +94,9 @@ pub(crate) fn advance(
     // Resolve both players' movement before observing either player's contacts.
     // Frozen players cannot re-activate hitboxes when their last hitlag tick ends.
     let mut frozen = [false; 2];
+    let geometry = collision::geometry(&data.stage);
+    let stage =
+        melee_physics::stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
         let input = inputs[player];
@@ -88,7 +110,7 @@ pub(crate) fn advance(
                     player,
                     fighter.stocks,
                     data.rules.respawn_invincibility_frames,
-                );
+                )?;
                 state.events.push(Event::Respawned { player });
             } else {
                 fighter.action_frame += 1;
@@ -99,20 +121,31 @@ pub(crate) fn advance(
         }
         if fighter.hitlag > 0.0 {
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
+            if fighter.hitlag == 0.0 {
+                damage::exit_hitlag(fighter, input.stick, &data.rules.damage)?;
+            }
             fighter.previous_input = input;
             frozen[player] = true;
             continue;
         }
         update_action(fighter, &data.fighters[player], input);
+        if fighter.damage_elapsed >= 0 {
+            fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
+        }
         let previous_position = fighter.position;
         move_fighter(fighter, &data.fighters[player], &data.rules, input);
-        collide_floor(
+        collision::sample(
+            fighter,
+            &data.fighters[player],
+            &pose(fighter, &data.fighters[player])?,
+        )?;
+        collision::resolve(
             fighter,
             previous_position,
-            &data.stage.floor,
+            &stage,
             player,
             &mut state.events,
-        );
+        )?;
         fighter.previous_input = input;
     }
 
@@ -122,6 +155,16 @@ pub(crate) fn advance(
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
+    let mut swept = [[None; 4]; 2];
+    for player in 0..2 {
+        let fighter = &mut state.fighters[player];
+        let frame = if fighter.action == Action::Jab {
+            Some(attack_frame(fighter, &data.fighters[player])?)
+        } else {
+            None
+        };
+        swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
+    }
     let mut hits = Vec::with_capacity(2);
     for attacker in 0..2 {
         let victim = 1 - attacker;
@@ -134,13 +177,13 @@ pub(crate) fn advance(
             continue;
         }
         let frame = attack_frame(source, &data.fighters[attacker])?;
-        for hit in &frame.hitboxes {
+        for (slot, hit) in frame.hitboxes.iter().enumerate() {
             if source.hit_groups & (1 << hit.group) != 0 {
                 continue;
             }
-            let sphere = bones::BoneCapsule::sphere(hit.bone, hit.center, hit.radius)
-                .transform(&poses[attacker], 1.0)
-                .map_err(physics)?;
+            let attack = swept[attacker][slot]
+                .as_ref()
+                .ok_or_else(|| Error::Physics("active hitbox has no tracked sweep".into()))?;
             let mut collided = false;
             for hurtbox in &data.fighters[victim].hurtboxes {
                 let hurt = hurtbox
@@ -152,10 +195,14 @@ pub(crate) fn advance(
                     end: hurt.end,
                     radius: hurt.radius,
                 };
-                let mut closest = [0.0; 3];
-                let overlaps =
-                    combat::capsule_sphere(&capsule, sphere.start, sphere.radius, &mut closest);
-                if closest.iter().any(|v| !v.is_finite()) {
+                let mut closest = sweep::ClosestPair::default();
+                let overlaps = sweep::capsule_capsule(attack, &capsule, &mut closest);
+                if closest
+                    .first
+                    .into_iter()
+                    .chain(closest.second)
+                    .any(|v| !v.is_finite())
+                {
                     return Err(Error::NonFinite);
                 }
                 if overlaps {
@@ -177,7 +224,7 @@ pub(crate) fn advance(
     let mut newly_hit = [false; 2];
     for (attacker, hit) in hits {
         newly_hit[1 - attacker] = true;
-        apply_hit(data, state, attacker, hit)?;
+        damage::apply_hit(data, state, attacker, hit)?;
     }
 
     for (player, fighter) in state.fighters.iter_mut().enumerate() {
@@ -190,6 +237,7 @@ pub(crate) fn advance(
                 fighter.knockback = [0.0; 2];
                 fighter.hitlag = 0.0;
                 fighter.hitstun = 0;
+                fighter.di_pending = false;
                 enter(
                     fighter,
                     if fighter.stocks == 0 {
@@ -280,6 +328,7 @@ fn update_action(f: &mut Fighter, data: &FighterData, input: Controller) {
             f.velocity = [velocity[0], velocity[1]];
             f.ground_velocity = 0.0;
             f.grounded = false;
+            f.ground_line = None;
             f.fast_fall = false;
             enter(f, Action::Jump);
         }
@@ -313,7 +362,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         attributes: attrs.physics(),
         self_velocity: [f.velocity[0], f.velocity[1], 0.0],
         ground_velocity: f.ground_velocity,
-        floor_normal: [0.0, 1.0, 0.0],
+        floor_normal: f.floor_normal,
         stick_x: input.stick[0],
         ..Movement::default()
     };
@@ -371,57 +420,14 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     for (axis, velocity) in f.velocity.iter_mut().enumerate() {
         *velocity = movement.self_velocity[axis] + movement.animation_velocity[axis];
     }
-    if f.knockback != [0.0; 2] {
-        let [x, y] = f.knockback;
-        let angle = libm::atan2f(y, x);
-        if libm::sqrtf(x * x + y * y) < rules.knockback_decay {
-            f.knockback = [0.0; 2];
-        } else {
-            f.knockback[0] -= rules.knockback_decay * libm::cosf(angle);
-            f.knockback[1] -= rules.knockback_decay * libm::sinf(angle);
-        }
-    }
+    f.knockback = melee_physics::damage::decay_air_knockback(f.knockback, rules.knockback_decay);
     for axis in 0..2 {
         f.position[axis] += f.velocity[axis];
         f.position[axis] += f.knockback[axis];
     }
 }
 
-fn collide_floor(
-    f: &mut Fighter,
-    previous_position: [f32; 2],
-    floor: &Floor,
-    player: usize,
-    events: &mut Vec<Event>,
-) {
-    let on_segment = (floor.left..=floor.right).contains(&f.position[0]);
-    if f.grounded {
-        if !on_segment {
-            f.grounded = false;
-            f.ground_velocity = 0.0;
-            f.fast_fall = false;
-            enter(f, Action::Fall);
-        }
-    } else {
-        // Experimental point-foot sweep; native ECB geometry is still missing.
-        let descending = f.velocity[1] + f.knockback[1] <= 0.0;
-        if on_segment && descending && previous_position[1] >= floor.y && f.position[1] <= floor.y {
-            f.position[1] = floor.y;
-            f.velocity[1] = 0.0;
-            f.knockback = [0.0; 2];
-            f.ground_velocity = f.velocity[0];
-            f.grounded = true;
-            f.fast_fall = false;
-            // Damage landing/tech/bounce states are not implemented in this slice.
-            if f.action != Action::Damage {
-                enter(f, Action::Landing);
-            }
-            events.push(Event::Landed { player });
-        }
-    }
-}
-
-fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
+pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
     let local = if fighter.action == Action::Jab {
         &attack_frame(fighter, data)?.bones
     } else {
@@ -442,72 +448,6 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .frames
         .get(fighter.action_frame as usize)
         .ok_or_else(|| Error::Physics("attack pose frame is outside the supplied animation".into()))
-}
-
-fn apply_hit(
-    data: &MatchData,
-    state: &mut State,
-    attacker: usize,
-    hit: &Hitbox,
-) -> Result<(), Error> {
-    let victim = 1 - attacker;
-    let target = &state.fighters[victim];
-    let knockback = combat::knockback(
-        &data.rules.knockback.physics(),
-        combat::KnockbackHit {
-            growth: hit.growth,
-            fixed: hit.fixed,
-            base: hit.base,
-        },
-        combat::DamageState {
-            percent: target.percent,
-            pending_damage: hit.damage as f32,
-            count_override: None,
-        },
-        hit.damage,
-        combat::KnockbackModifiers {
-            stage: 1.0,
-            attack: 1.0,
-            defense: 1.0,
-            weight: data.fighters[victim].weight,
-        },
-    )
-    .map_err(physics)?;
-    let hitlag = combat::hitlag(hit.damage as i32, false, 1.0, &data.rules.hitlag.physics())
-        .map_err(physics)?;
-    let hitstun = combat::initial_hitstun(knockback, data.rules.hitstun_scale).map_err(physics)?;
-    if !knockback.is_finite() || !hitlag.is_finite() {
-        return Err(Error::NonFinite);
-    }
-    if knockback < 0.0 || hitlag < 0.0 || hitstun < 1 {
-        return Err(Error::Physics(
-            "combat rules produced a negative magnitude or invalid timer".into(),
-        ));
-    }
-    let facing = state.fighters[attacker].facing;
-    state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(hitlag);
-    let target = &mut state.fighters[victim];
-    target.percent = (target.percent + hit.damage as f32).min(999.0);
-    target.hitlag = target.hitlag.max(hitlag);
-    target.hitstun = hitstun as u32;
-    target.velocity = [0.0; 2];
-    target.ground_velocity = 0.0;
-    let angle = hit.angle_degrees * (core::f32::consts::PI / 180.0);
-    let speed = knockback * data.rules.knockback_speed;
-    target.knockback = [
-        speed * libm::cosf(angle) * facing,
-        speed * libm::sinf(angle),
-    ];
-    target.grounded = false;
-    target.fast_fall = false;
-    enter(target, Action::Damage);
-    state.events.push(Event::Hit {
-        attacker,
-        victim,
-        damage: hit.damage as f32,
-        knockback,
-    });
-    Ok(())
 }
 
 fn physics(error: impl core::fmt::Display) -> Error {

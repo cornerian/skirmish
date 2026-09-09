@@ -1,5 +1,10 @@
 # Native data available for a first matchup
 
+Full resource extraction is now owned by the separate `melee-assets` task.
+The fixtures below remain focused regression evidence; this task should consume
+that project's native exports rather than duplicate its extraction work. See
+the [consumer requirements](resources.md) for gameplay/presentation boundaries.
+
 The small [source fixtures](../tests/fixtures/native-data/sources.json) contain
 Fox movement attributes, raw jab commands, captured jab hitbox positions, and
 Final Destination boundary constants. They can feed native decoders and focused

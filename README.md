@@ -44,10 +44,10 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `melee-runtime::spline` | Hermite, linear/Bezier/B-spline/cardinal points and arc-length inversion |
 | `melee-runtime::id` | Object-ID lookup, replacement, removal and default-table reset using `HashMap` |
 | `melee-runtime::quaternion` | Six matrix, axis/Euler rotation, multiplication and interpolation routines, using scalar `glam` plus compatibility wrappers |
-| `melee-physics` | Movement, walking/jump launch, skeletal poses and bone-attached shapes, capsule/sphere contacts, knockback and hitlag in a standalone `no_std` library (poses use `alloc`) |
+| `melee-physics` | Movement, skeletal poses, environmental collision boxes and substeps, directed stage queries, swept capsules, knockback, DI and hitlag in a standalone `no_std` library (poses use `alloc`) |
 | `melee-input` | Original controller stick/trigger clamping and four-port processing with owned calibration in a `no_std` library |
 | `skirmish-replay` | Streaming checkpoint/step/observation validation machinery for a future Slippi importer |
-| `skirmish-match` | Experimental native two-player match: frame stepping, bone-animated jab, damage, hitlag, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
+| `skirmish-match` | Experimental native two-player match: stage/ECB collision, animated swept jab, damage and DI, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
 
 Most game, engine, SDK and platform code remains unported. Transcendental
 tests allow a documented host-library tolerance; integer and

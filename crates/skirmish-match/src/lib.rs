@@ -3,7 +3,10 @@
 //! See `docs/match.md` for the explicit scheduler and unsupported gameplay rules.
 #![forbid(unsafe_code)]
 
+mod collision;
+pub mod damage;
 pub mod data;
+pub mod hitboxes;
 mod simulation;
 mod validation;
 
@@ -49,17 +52,29 @@ pub struct Fighter {
     pub ground_velocity: f32,
     pub facing: f32,
     pub grounded: bool,
+    pub ground_line: Option<usize>,
+    pub floor_normal: [f32; 3],
+    /// Last collision pass's floor, ceiling, left/right-facing wall IDs.
+    pub contacts: [Option<usize>; 4],
+    /// All interpolation history is included in checkpoints and trace output.
+    pub ecb: melee_physics::ecb::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
     pub stocks: u8,
     pub hitlag: f32,
     pub hitstun: u32,
+    /// Time since the previous damage transition; freezes during hitlag.
+    pub damage_elapsed: i32,
+    pub damage_angle_flag: u8,
+    pub damage_angle_timer: u8,
+    pub di_pending: bool,
     pub invincibility: u32,
     pub short_hop: bool,
     pub fast_fall: bool,
     /// Attack hit-group history is checkpointed, not inferred from observations.
     pub hit_groups: u16,
+    pub hitboxes: [hitboxes::Track; 4],
     pub previous_input: Controller,
 }
 
@@ -133,6 +148,7 @@ pub struct Match {
     data: Arc<MatchData>,
     resource_id: [u8; 32],
     state: State,
+    initial: State,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -159,10 +175,12 @@ impl Match {
         let resource_id =
             Sha256::digest(serde_json::to_vec(&data).map_err(|e| Error::Data(e.to_string()))?)
                 .into();
-        let state = simulation::initial_state(&data, seed);
+        let state = simulation::initial_state(&data, seed)?;
+        validation::state(&state)?;
         Ok(Self {
             data: Arc::new(data),
             resource_id,
+            initial: state.clone(),
             state,
         })
     }
@@ -184,7 +202,8 @@ impl Match {
     }
 
     pub fn reset(&mut self, seed: u32) -> &State {
-        self.state = simulation::initial_state(&self.data, seed);
+        self.state = self.initial.clone();
+        self.state.rng_seed = seed;
         &self.state
     }
 

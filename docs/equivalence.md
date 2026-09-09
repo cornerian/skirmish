@@ -10,7 +10,7 @@ No finite test suite proves equivalence for all possible game executions.
 with documented host ABI adaptations and tests translated functions against
 them. Integer outputs and eligible floating-point results are compared by bits.
 Bytecode transcendental comparisons use 2e-6 absolute/relative tolerance;
-quaternion and bone Euler transcendental comparisons use 4e-6. These are host-library checks,
+quaternion, bone Euler, damage and rotated ECB transcendental comparisons use 4e-6. These are host-library checks,
 not exact equivalence claims. Special NaN results in numerical kernels compare
 NaN classification; storage and trace comparisons preserve payload bits.
 The normal Rust tests cover malformed input and new safe API contracts too.
@@ -21,7 +21,11 @@ checkpoints, counterfactual branches and strict trace-adapter behavior. CI compa
 debug and optimized native match executable traces. This checks the experimental
 slice's consistency across compiler optimization; it does not establish agreement
 with original Melee. Original-C differential coverage includes the selected bone,
-contact, knockback, hitlag, walking and jump arithmetic used by the slice.
+contact, knockback, DI, hitlag, walking, jump, static stage query and ECB
+arithmetic used by the slice. Generated cases also exercise directed crossings,
+adjacency/tie order, collision-box state mutations and subdivision thresholds.
+Match integration tests cover slopes, walls, ceilings, platforms, swept attack
+history and bone-sampled environmental geometry using synthetic resources.
 
 These tests run natively and require no game image or original executable. Gekko
 paired-single operations, fused arithmetic, the original math library, floating

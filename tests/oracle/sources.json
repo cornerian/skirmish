@@ -93,5 +93,25 @@
     "fixture": "tests/oracle/original/ftwalk.c",
     "upstream": "src/melee/ft/ftwalkcommon.c",
     "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
+  },
+  {
+    "fixture": "tests/oracle/original/damage_fighter.c",
+    "upstream": "src/melee/ft/fighter.c",
+    "sha256": "c2a3b8b82ee2d141063f63a0be40717e65b015e85491143e1525b6c50730fdf1"
+  },
+  {
+    "fixture": "tests/oracle/original/mplib.c",
+    "upstream": "src/melee/mp/mplib.c",
+    "sha256": "7984d542363a1ee87ec5c812fb087ae0bc780916ea047278f297efbdb369e7eb"
+  },
+  {
+    "fixture": "tests/oracle/original/sdk_vec.c",
+    "upstream": "extern/dolphin/src/dolphin/mtx/vec.c",
+    "sha256": "6dd4bc76acd98fc8cc5ed000f0555928325ed86060b03ba2fdccff265d405e80"
+  },
+  {
+    "fixture": "tests/oracle/original/mpcoll.c",
+    "upstream": "src/melee/mp/mpcoll.c",
+    "sha256": "a89b65abe1203137f2efdc66de1b1280c15b6a4632991e06022dba4979c74172"
   }
 ]

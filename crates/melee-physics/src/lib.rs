@@ -1,4 +1,4 @@
-//! Selected native Melee movement, locomotion, bones and combat arithmetic.
+//! Selected native Melee movement, skeletal, stage and combat physics.
 //!
 //! Caller-supplied attributes and floor normals retain the upstream data model.
 //! This crate neither schedules a frame nor supplies character/stage resources.
@@ -7,10 +7,12 @@
 #![forbid(unsafe_code)]
 
 pub mod bones;
-
 pub mod combat;
-
+pub mod damage;
+pub mod ecb;
 pub mod locomotion;
+pub mod stage;
+pub mod sweep;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Attributes {

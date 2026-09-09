@@ -11,6 +11,13 @@ An optional `<stem>.functions.json` selects complete original functions; the
 removed and host declarations come from the corresponding C adapters. Documented
 bytecode pointer adaptations remain in `build.rs`.
 
+The stage adapter replaces GameCube pointer subtraction with native logical
+line indices, preserving the original eight-byte index calculation. Source
+definitions are selected past forward declarations. ECB subdivision and ordinary
+air knockback decay use exact excerpts of larger callbacks, checked against the
+pinned snapshots by tests. Host shims provide arrays, sampled joint positions and
+scalar vector normalization; they do not reproduce the whole engine environment.
+
 `adapters.json` maps additional adapter names to existing snapshot stems. Their
 own function selections produce separate includes without duplicating source:
 physics, hitlag, and locomotion all read the single `original/ftcommon.c` snapshot.

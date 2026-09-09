@@ -1,4 +1,7 @@
 {
   "combat_hitlag": "ftcommon",
-  "locomotion_common": "ftcommon"
+  "locomotion_common": "ftcommon",
+  "sweep": "combat_collision",
+  "damage_core": "combat_hitstun",
+  "damage_angle_range": "combat_knockback"
 }

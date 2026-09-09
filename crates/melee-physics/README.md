@@ -23,8 +23,33 @@ narrow-phase logic and is not approximated by increasing a capsule radius.
 
 `combat` supplies the source capsule/sphere narrow phase, base knockback,
 hitlag and initial hitstun counter. Common coefficients and modifiers are explicit
-inputs. Combat scheduling, stale moves, armor, throws, DI and full capsule-pair
-handling remain outside these translated helpers.
+inputs. `sweep::capsule_capsule` translates `lbColl_80006094` from
+`src/melee/lb/lbcollision.c`, returning collision and both closest centerline
+points for isotropic world-space capsules. A moving sphere uses its previous and
+current centers as endpoints. The original near-parallel endpoint selection,
+degenerate thresholds, early-rejection output behavior, and floating-point order
+are preserved; generic geometry libraries do not reproduce these rules.
+`point_segment` and `point_segment_xy` retain the source projection helpers,
+including NaN output on zero-length segments. This is not time-of-impact solving
+or the matrix-dependent hurt/shield pipeline `lbColl_80006E58`.
+Combat scheduling, stale moves, armor and throws remain outside these helpers.
+
+`damage` implements ordinary airborne knockback decay, directional influence,
+velocity merging and launch-angle selection, including 361 thresholds and
+conditional timer writes. Common coefficients are caller supplied. DI timing,
+ASDI/SDI, bounce, grounded projection and damage callbacks are separate concerns.
+
+`stage` translates directed floor, ceiling and both wall queries, neighbor
+selection, endpoint extension, filtering and surface projection. Line
+and joint arrays retain traversal order and flags. Normals use Dolphin's scalar
+C normalization, not the PowerPC reciprocal-root estimate. Stage motion,
+previous-frame remapping and moving-joint callbacks remain unported.
+
+`ecb` owns environmental collision-box history, fixed or six-joint sampling,
+normalization, locked bottoms, interpolation, squeeze restoration, swept bounds
+and source movement subdivision. These are reusable primitives; the full
+fighter collision callback graph remains unported. Optional `serde` support
+serializes native geometry and checkpoint state without a rendering dependency.
 
 `locomotion::jump_velocity` translates the launch velocity calculation from
 `ftCo_800CB110`; its caller owns motion flags, timers, and sound events.
@@ -52,7 +77,7 @@ Run the original C comparisons from the repository root:
 
 ```console
 $CARGO_TARGET_DIR = "/mnt/shared/tmp/skirmish-target"
-cargo test --locked --features c-oracle --test physics_differential --test bones_differential --test locomotion_differential --test combat_differential
+cargo test --locked --features c-oracle --test physics_differential --test bones_differential --test locomotion_differential --test combat_differential --test sweep_differential --test damage_differential --test stage_differential --test ecb_differential
 ```
 
 Use `/tmp/skirmish-target` when the shared scratch directory is not writable.

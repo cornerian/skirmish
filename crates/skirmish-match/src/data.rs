@@ -1,6 +1,6 @@
-//! Native, explicit data for the experimental two-player, flat-stage slice.
+//! Native, explicit data for the experimental two-player match slice.
 //! Frame samples are physics poses, not rendering assets or HSD animation bytecode.
-use melee_physics::{Attributes, bones, combat};
+use melee_physics::{Attributes, bones, combat, ecb, stage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -26,11 +26,34 @@ pub enum Profile {
 #[serde(deny_unknown_fields)]
 pub struct Stage {
     pub name: String,
-    /// The supported collision shape is one horizontal floor, no ledge grabs.
+    /// Compact floor used when explicit geometry is absent.
     pub floor: Floor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<StageGeometry>,
     /// Left, right, bottom, top. Crossing any boundary kills in this slice.
     pub blast: [f32; 4],
     pub spawns: [[f32; 2]; 2],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StageGeometry {
+    pub lines: Vec<stage::Line>,
+    pub joints: Vec<stage::Joint>,
+}
+
+/// Environmental collision samples are physics data, independent of hurtboxes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CollisionBox {
+    Fixed {
+        source: ecb::FixedSource,
+    },
+    Bones {
+        indices: [usize; 6],
+        parameters: ecb::JointParameters,
+        flags: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +80,7 @@ pub struct Rules {
     pub hitstun_scale: f32,
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
+    pub damage: crate::damage::CombatRules,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -111,6 +135,7 @@ pub struct FighterData {
     pub name: String,
     pub movement: MovementData,
     pub weight: f32,
+    pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
     pub hurtboxes: Vec<Capsule>,
     pub jab: Attack,
@@ -225,7 +250,7 @@ pub struct Hitbox {
     pub center: [f32; 3],
     pub radius: f32,
     pub damage: u32,
-    /// Ordinary fixed launch angles only. Special 361/362 angles are rejected.
+    /// Integral ordinary launch angles or 361, whose coefficients are explicit.
     pub angle_degrees: f32,
     pub growth: u32,
     pub fixed: u32,

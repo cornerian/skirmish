@@ -1,0 +1,21 @@
+[
+  "mpLineGetNext",
+  "mpLineGetPrev",
+  "mpLineIntersection",
+  "mpLineIntersectionH",
+  "mpLineIntersectionV",
+  "mpLineGetCollLine",
+  "mpLib_8004ED5C",
+  "mpLib_8004DD90_Floor",
+  "mpLib_8004E090_Ceiling",
+  "mpLib_8004E398_LeftWall",
+  "mpLib_8004E684_RightWall",
+  "mpCheckedBounding",
+  "mpBoundingCheck",
+  "mpBoundingCheck2",
+  "mpUncheckBounding",
+  "mpCheckFloor",
+  "mpCheckCeiling",
+  "mpCheckLeftWall",
+  "mpCheckRightWall"
+]

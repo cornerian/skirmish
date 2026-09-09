@@ -10,9 +10,16 @@ emulator or GameCube runtime must never be a dependency. Native resources will
 carry the gameplay data; unresolved data and rules must not be silently filled
 with approximate defaults to make a match appear playable.
 
+Resource extraction and visual conversion are owned by the separate
+`melee-assets` task. Skirmish consumes native exports while continuing gameplay
+work; it does not own that project's directory layout. The
+[resource integration contract](resources.md) separates exact gameplay data
+from vector artwork and procedural presentation effects.
+
 `crates/melee-runtime` is an independent library project for the translated HAL
 and Metrowerks algorithms. `crates/melee-physics` contains scalar movement,
-walking/jump launch, bone hierarchy transforms and combat arithmetic. Bone poses
+walking/jump launch, bone hierarchy transforms, environmental collision boxes,
+static stage queries, swept contacts and damage arithmetic. Bone poses
 and bone-attached hitboxes/hurtboxes are physics data, available headless.
 `crates/skirmish-match` composes an experimental match slice and owns gameplay
 state and frame scheduling. Cargo workspace packages keep builds and

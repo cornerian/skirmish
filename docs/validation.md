@@ -1,13 +1,14 @@
 # Local validation provenance
 
-The 2026-09-09 native match, bones, locomotion and combat validation run is stored
+The 2026-09-09 stage, ECB, swept-contact and damage physics validation run is stored
 outside Git at:
 
-`/mnt/archive/runs/skirmish-headless-match-20260909-v3`
+`/mnt/archive/runs/skirmish-physics-20260909-v4`
 
 It contains command/exit-code metadata and debug, optimized, lint and Rust-only
 test logs, plus debug/optimized synthetic match traces and their comparison.
-The earlier `skirmish-rust-port-20260909-v2` contains the runtime/physics/input/
+The earlier `skirmish-headless-match-20260909-v3` contains the first native match
+and skeletal physics milestone. `skirmish-rust-port-20260909-v2` contains the runtime/physics/input/
 replay milestone. `skirmish-rust-port-20260909-v1` also contains a
 hash inventory of all 2,441 upstream C/C++/header/assembly files. The input source
 revision and toolchain version are recorded in `validation.json`. The upstream
