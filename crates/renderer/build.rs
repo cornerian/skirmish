@@ -1,7 +1,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=shaders");
     let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"));
-    for name in ["mesh", "ui"] {
+    for name in ["mesh", "ui", "particles"] {
         let shader = wesl::Wesl::new("shaders")
             .compile(
                 &format!("package::{name}")

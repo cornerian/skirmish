@@ -10,7 +10,8 @@ use renderer::{
     audio::AudioOutput,
     controls::{ControllerPorts, KeyboardInput},
     menu::{FixedMenuClock, MenuEvent, MenuSession},
-    renderer::{WindowRenderer, render_headless, render_menu_headless},
+    particles::{Particle, ParticleEffect},
+    renderer::{WindowRenderer, render_headless, render_menu_headless, render_particles_headless},
     scene::Scene,
 };
 use sdl3::{
@@ -28,6 +29,12 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(16);
     about = "Skirmish SDL3 menus and wgpu scene preview"
 )]
 struct Cli {
+    /// Preview a procedural particle effect on an empty scene.
+    #[arg(long, value_enum, conflicts_with_all = ["scene", "menus"])]
+    particle: Option<ParticleEffect>,
+    /// Normalized lifetime for headless capture; window previews loop over it.
+    #[arg(long, default_value_t = 0.35)]
+    particle_age: f32,
     /// Load a native scene export instead of the built-in demonstration.
     #[arg(long, value_name = "PATH")]
     scene: Option<PathBuf>,
@@ -56,6 +63,8 @@ struct Cli {
 }
 
 struct App {
+    particle: Option<ParticleEffect>,
+    particle_age: f32,
     renderer: WindowRenderer,
     audio: Option<AudioOutput>,
     controllers: Option<ControllerHub>,
@@ -259,6 +268,15 @@ impl App {
                 break;
             }
             self.check_audio();
+            if let Some(effect) = self.particle
+                && self.drawable()
+                && !self.menu_active
+            {
+                self.particle_age = (self.particle_age + elapsed.as_secs_f32() * 0.5) % 1.0;
+                self.renderer
+                    .set_particles(&[Particle::preview(effect, self.particle_age)])?;
+                self.dirty = true;
+            }
             if self.drawable()
                 && now >= self.next_frame
                 && (self.dirty || self.frame_limit.is_some())
@@ -305,11 +323,22 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let scene = match &cli.scene {
-        Some(path) => {
-            Scene::load(path).with_context(|| format!("loading scene from {}", path.display()))?
+    anyhow::ensure!(
+        cli.particle_age.is_finite() && (0.0..=1.0).contains(&cli.particle_age),
+        "particle age must be 0..=1"
+    );
+    let scene = if cli.particle.is_some() {
+        Scene {
+            meshes: vec![],
+            textures: vec![],
+            warnings: vec![],
         }
-        None => Scene::demo(),
+    } else {
+        match &cli.scene {
+            Some(path) => Scene::load(path)
+                .with_context(|| format!("loading scene from {}", path.display()))?,
+            None => Scene::demo(),
+        }
     };
     for warning in &scene.warnings {
         eprintln!("warning: {warning}");
@@ -319,7 +348,15 @@ fn main() -> Result<()> {
         sound_test: cli.sound_test,
     });
     if let Some(output) = &cli.headless {
-        if cli.menus {
+        if let Some(effect) = cli.particle {
+            render_particles_headless(
+                &scene,
+                &[Particle::preview(effect, cli.particle_age)],
+                cli.width,
+                cli.height,
+                output,
+            )?;
+        } else if cli.menus {
             render_menu_headless(&scene, &menu.view(), cli.width, cli.height, output)?;
         } else {
             render_headless(&scene, cli.width, cli.height, output)?;
@@ -370,6 +407,8 @@ fn main() -> Result<()> {
         }
     };
     App {
+        particle: cli.particle,
+        particle_age: cli.particle_age,
         renderer,
         audio,
         controllers,

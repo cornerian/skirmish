@@ -6,6 +6,7 @@ use glam::Vec3;
 use sdl3::video::Window;
 use wgpu::util::DeviceExt;
 
+use crate::particles::{Particle, ParticleRenderer};
 use crate::scene::{CullMode, Scene, Texture, Vertex};
 use crate::{menu::MenuView, platform::SdlSurface, ui::UiRenderer};
 
@@ -39,6 +40,7 @@ struct GpuScene {
     draws: Vec<Draw>,
     center: Vec3,
     radius: f32,
+    particles: ParticleRenderer,
 }
 
 impl GpuScene {
@@ -316,6 +318,7 @@ impl GpuScene {
                 transparent,
             });
         }
+        let particles = ParticleRenderer::new(&device, format, DEPTH_FORMAT);
         if let Some(error) = scope.pop().await {
             bail!("creating graphics resources: {error}");
         }
@@ -339,11 +342,12 @@ impl GpuScene {
             draws,
             center,
             radius,
+            particles,
         })
     }
 
     fn draw(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth: &wgpu::TextureView,
@@ -375,6 +379,7 @@ impl GpuScene {
             0,
             bytemuck::cast_slice(&(projection * view).to_cols_array()),
         );
+        self.particles.prepare(&self.queue, view, projection);
         let mut order: Vec<_> = self.draws.iter().collect();
         order.sort_by(|a, b| {
             a.transparent.cmp(&b.transparent).then_with(|| {
@@ -416,6 +421,7 @@ impl GpuScene {
             pass.set_index_buffer(draw.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..draw.count, 0, 0..1);
         }
+        self.particles.draw(&mut pass);
     }
 }
 
@@ -511,6 +517,10 @@ impl WindowRenderer {
 
     pub fn adapter_name(&self) -> &str {
         &self.gpu.adapter_name
+    }
+
+    pub fn set_particles(&mut self, particles: &[Particle]) -> Result<()> {
+        self.gpu.particles.set_particles(particles)
     }
 
     pub fn window_id(&self) -> u32 {
@@ -614,7 +624,18 @@ impl WindowRenderer {
 
 /// Render with the same shaders and draw path, without opening a window or audio device.
 pub fn render_headless(scene: &Scene, width: u32, height: u32, output: &Path) -> Result<()> {
-    render_headless_view(scene, None, width, height, output)
+    render_headless_view(scene, None, &[], width, height, output)
+}
+
+/// Capture procedural particles through the native scene draw path.
+pub fn render_particles_headless(
+    scene: &Scene,
+    particles: &[Particle],
+    width: u32,
+    height: u32,
+    output: &Path,
+) -> Result<()> {
+    render_headless_view(scene, None, particles, width, height, output)
 }
 
 /// Captures a menu through the same GPU overlay used by the SDL window.
@@ -625,12 +646,13 @@ pub fn render_menu_headless(
     height: u32,
     output: &Path,
 ) -> Result<()> {
-    render_headless_view(scene, Some(menu), width, height, output)
+    render_headless_view(scene, Some(menu), &[], width, height, output)
 }
 
 fn render_headless_view(
     scene: &Scene,
     menu: Option<&MenuView>,
+    particles: &[Particle],
     width: u32,
     height: u32,
     output: &Path,
@@ -639,7 +661,8 @@ fn render_headless_view(
         (1..=8192).contains(&width) && (1..=8192).contains(&height),
         "capture dimensions must be 1..=8192"
     );
-    let rgba = pollster::block_on(render_rgba(scene, menu, width, height))?;
+    crate::particles::validate_batch(particles)?;
+    let rgba = pollster::block_on(render_rgba(scene, menu, particles, width, height))?;
     let file = File::create(output).with_context(|| format!("creating {}", output.display()))?;
     let mut encoder = png::Encoder::new(BufWriter::new(file), width, height);
     encoder.set_color(png::ColorType::Rgba);
@@ -653,13 +676,15 @@ fn render_headless_view(
 async fn render_rgba(
     scene: &Scene,
     menu: Option<&MenuView>,
+    particles: &[Particle],
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>> {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = request_adapter(&instance, None).await?;
-    let gpu = GpuScene::new(&adapter, scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+    let mut gpu = GpuScene::new(&adapter, scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+    gpu.particles.set_particles(particles)?;
     ensure!(
         width <= gpu.device.limits().max_texture_dimension_2d
             && height <= gpu.device.limits().max_texture_dimension_2d,
@@ -771,8 +796,61 @@ mod tests {
 
     #[test]
     #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
+    fn gpu_particles_have_seeded_detail_fade_and_depth() {
+        use crate::particles::ParticleEffect;
+        let empty = Scene {
+            meshes: vec![],
+            textures: vec![],
+            warnings: vec![],
+        };
+        let capture = |scene: &Scene, particles: &[Particle]| {
+            pollster::block_on(render_rgba(scene, None, particles, 257, 193)).unwrap()
+        };
+        let background = capture(&empty, &[]);
+        let mut particle = Particle::preview(ParticleEffect::Smoke, 0.35);
+        let first = capture(&empty, &[particle]);
+        assert_ne!(first, background, "live effect must draw");
+        assert_eq!(
+            first,
+            capture(&empty, &[particle]),
+            "fixed inputs must reproduce"
+        );
+        particle.seed += 1;
+        assert_ne!(
+            first,
+            capture(&empty, &[particle]),
+            "seed must change detail"
+        );
+        particle.age = 0.8;
+        assert_ne!(
+            first,
+            capture(&empty, &[particle]),
+            "age must change appearance"
+        );
+        for age in [-1.0, 0.0, 1.0, 2.0] {
+            particle.age = age;
+            assert_eq!(background, capture(&empty, &[particle]));
+        }
+        let scene = Scene::demo();
+        let baseline = capture(&scene, &[]);
+        particle.age = 0.35;
+        particle.position = [0.0, 1.0, 0.0];
+        particle.half_size = [0.25; 2];
+        assert_eq!(
+            baseline,
+            capture(&scene, &[particle]),
+            "opaque cube must occlude an interior particle"
+        );
+        // Far behind the camera and outside the view volume.
+        particle.position = [1e8; 3];
+        assert_eq!(baseline, capture(&scene, &[particle]));
+        assert!(first.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
     fn gpu_capture_draws_geometry_and_unpads_rows() {
-        let image = pollster::block_on(render_rgba(&Scene::demo(), None, 257, 193)).unwrap();
+        let image = pollster::block_on(render_rgba(&Scene::demo(), None, &[], 257, 193)).unwrap();
         assert_eq!(image.len(), 257 * 193 * 4);
         let background = &image[..4];
         let foreground = image

@@ -17,6 +17,9 @@ the workspace's version control and build output.
 
 ## Run
 
+Procedural particle previews use `--particle smoke`. See the
+[WESL particle API, coverage and cost](../../docs/particles.md).
+
 Use stable Rust and Cargo from the Skirmish workspace root. Install SDL3; the
 crate uses the system library with the Rust binding's `raw-window-handle`
 feature. On Linux the build also needs ALSA development files and `pkg-config`.

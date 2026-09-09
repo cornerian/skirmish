@@ -2,6 +2,7 @@
 pub mod audio;
 pub mod controls;
 pub mod menu;
+pub mod particles;
 mod platform;
 pub mod renderer;
 pub mod scene;
