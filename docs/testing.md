@@ -20,6 +20,31 @@ the native implementation itself, so this is harness validation; independent
 Melee observations must supply the fidelity oracle. See [replays.md](replays.md)
 for the exact selected fields and initialization contract.
 
+## GitHub Actions suites
+
+Three independent workflows run on pushes, pull requests, and manual dispatch:
+
+| Workflow | Coverage |
+| --- | --- |
+| [Unit tests](../.github/workflows/unit-tests.yml) | Workspace library/binary unit tests and doctests; formatting and Clippy |
+| [Integration tests](../.github/workflows/integration-tests.yml) | Workspace integration targets, including original-C differential tests, except the Slippi file targets below; debug/release match-trace comparison |
+| [System tests (Slippi file parity)](../.github/workflows/system-tests.yml) | `peppi-adapter`'s `replays`, plus `skirmish`'s `slippi_cli`, `slippi_corpus` and `replay_match` |
+
+Every suite retains default debug, C-oracle debug, and C-oracle release runs.
+Integration targets are discovered from Cargo metadata, so new integration test
+files are included automatically. Explicit `--test` selection avoids rerunning
+library/binary unit tests in the integration workflow. When adding a system test
+target, add it to the system workflow and the integration workflow's exclusion
+set. All workflows share native SDL3/ALSA and Rust setup.
+
+The system suite covers Slippi parsing, command-line import, file-backed match
+validation and first-divergence detection using synthetic recordings. It also
+checks hashes and import summaries for [ten original archived replays](../tests/fixtures/slippi/README.md),
+including explicit rejection of the unsupported 1.7.1 format. Import regressions
+do not establish native simulation parity against those recordings. The
+in-memory validator tests remain in the integration suite. Ignored conformance
+and graphics-dependent tests retain their existing opt-in behavior.
+
 ## Passing, unimplemented and blocked
 
 The normal suite contains passing regressions for implemented behavior.

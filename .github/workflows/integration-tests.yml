@@ -1,0 +1,49 @@
+name: Integration tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: /tmp/skirmish-target
+      PROPTEST_RNG_SEED: "68492137"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-tests
+      - name: Run workspace integration targets
+        shell: python
+        run: |
+          import json
+          import subprocess
+
+          metadata = json.loads(subprocess.check_output([
+              "cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"
+          ]))
+          system_targets = {
+              ("skirmish", "replay_match"),
+              ("skirmish", "slippi_cli"),
+              ("skirmish", "slippi_corpus"),
+              ("peppi-adapter", "replays"),
+          }
+          targets = {(package["name"], target["name"])
+                     for package in metadata["packages"]
+                     if package["id"] in metadata["workspace_members"]
+                     for target in package["targets"] if "test" in target["kind"]}
+          assert system_targets <= targets, "A system test target was renamed or removed"
+          integration_names = {name for package, name in targets - system_targets}
+          system_names = {name for package, name in system_targets}
+          assert integration_names.isdisjoint(system_names), "Ambiguous test target name across suites"
+          assert integration_names, "No integration targets discovered"
+          # Keep workspace feature unification (renderer enables controller-input).
+          command = ["cargo", "test", "--locked", "--workspace"]
+          for target in sorted(integration_names):
+              command.extend(["--test", target])
+          for flags in ([], ["--features", "c-oracle"],
+                        ["--release", "--features", "c-oracle"]):
+              subprocess.run(command + flags, check=True)
+      - name: Compare debug and release match traces
+        run: |
+          cargo run --locked --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-debug.jsonl"
+          cargo run --locked --release --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-release.jsonl"
+          cargo run --locked --bin skirmish -- compare-traces "$RUNNER_TEMP/skirmish-debug.jsonl" "$RUNNER_TEMP/skirmish-release.jsonl"

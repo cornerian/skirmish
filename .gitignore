@@ -4,6 +4,7 @@
 *.gcm
 *.rvz
 *.slp
+!/tests/fixtures/slippi/*.slp
 *.dtm
 *.raw
 *.log

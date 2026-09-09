@@ -1,0 +1,24 @@
+name: System tests (Slippi file parity)
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  slippi-parity:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: /tmp/skirmish-target
+      PROPTEST_RNG_SEED: "68492137"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-tests
+      # Real-corpus import regressions plus synthetic native-match parity fixtures.
+      # Independent whole-game Melee simulation parity is not yet covered.
+      - name: Slippi import and match parity (debug)
+        run: |
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus
+      - name: Slippi import and match parity (C oracle)
+        run: |
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --features c-oracle
+      - name: Slippi import and match parity (release, C oracle)
+        run: |
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --release --features c-oracle

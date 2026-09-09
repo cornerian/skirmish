@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "source_repository": "erickfm/slippi-public-dataset-v3.7",
+  "source_revision": "c82be5f6e43f3388555cfe0cf8652580601f396d",
+  "license": "CC0-1.0",
+  "selected_on": "2026-09-09",
+  "archive_root": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7",
+  "candidate_count": 3996,
+  "selection": "Greedy weighted coverage of header character IDs (100), stage IDs (25), format versions (25), occupied-port layouts (15), and duration buckets (10). Ties prefer smaller files, then lexicographically larger SHA-256. Candidates come from the pinned archive subset-manifest.json; short <7200, medium <14400, long >=14400 metadata lastFrame values. This is a coverage sample, not a representative accuracy benchmark.",
+  "expectation_provenance": "Header and lastFrame fields read from the original bytes; expected_summary snapshots captured with the existing inspect-replay command (Peppi 2.1.2). These are import regressions, not independently established simulator parity.",
+  "total_bytes": 32840742,
+  "files": [
+    {
+      "source_path": "DOC/18_21_00 [C2] Marth + Dr. Mario + Yoshi + [HELA] Captain Falcon (BF).slp",
+      "bytes": 4922479,
+      "sha256": "b0d5464e2ae10f2c448effbf13b2e7dc536906ef2196367a50eb926f4be4b798",
+      "version": "3.9.0",
+      "stage_id": 31,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 9,
+          "character": "marth"
+        },
+        {
+          "port": 2,
+          "character_id": 22,
+          "character": "dr-mario"
+        },
+        {
+          "port": 3,
+          "character_id": 17,
+          "character": "yoshi"
+        },
+        {
+          "port": 4,
+          "character_id": 0,
+          "character": "captain-falcon"
+        }
+      ],
+      "last_frame": 8514,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "battlefield",
+      "file": "01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "b0d5464e2ae10f2c448effbf13b2e7dc536906ef2196367a50eb926f4be4b798",
+        "bytes": 4922479,
+        "version": [
+          3,
+          9,
+          0
+        ],
+        "stage": 31,
+        "ports": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "physical_frames": 8638,
+        "surviving_frames": 8638,
+        "discarded_frames": 0,
+        "selected_frames": 8638,
+        "first_frame": -123,
+        "last_frame": 8514,
+        "latest_finalized_frame": 8514,
+        "timeline": "last_recorded",
+        "end_method": "Resolved"
+      }
+    },
+    {
+      "source_path": "BOWSER/18_50_28 Jigglypuff + Bowser + [TNDO] Zelda + Falco (BF).slp",
+      "bytes": 7353719,
+      "sha256": "9ec26b10cc018614bc8ea19784f2f6cd417ead0b3733c0b61237f467b3f4a0e2",
+      "version": "3.9.0",
+      "stage_id": 31,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 15,
+          "character": "jigglypuff"
+        },
+        {
+          "port": 2,
+          "character_id": 5,
+          "character": "bowser"
+        },
+        {
+          "port": 3,
+          "character_id": 18,
+          "character": "zelda"
+        },
+        {
+          "port": 4,
+          "character_id": 20,
+          "character": "falco"
+        }
+      ],
+      "last_frame": 12656,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "battlefield",
+      "file": "02-jigglypuff-bowser-zelda-falco-battlefield.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "9ec26b10cc018614bc8ea19784f2f6cd417ead0b3733c0b61237f467b3f4a0e2",
+        "bytes": 7353719,
+        "version": [
+          3,
+          9,
+          0
+        ],
+        "stage": 31,
+        "ports": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "physical_frames": 12780,
+        "surviving_frames": 12780,
+        "discarded_frames": 0,
+        "selected_frames": 12780,
+        "first_frame": -123,
+        "last_frame": 12656,
+        "latest_finalized_frame": 12656,
+        "timeline": "last_recorded",
+        "end_method": "Resolved"
+      }
+    },
+    {
+      "source_path": "MARIO/21_32_39 Mario + Donkey Kong (FD).slp",
+      "bytes": 428842,
+      "sha256": "2b5f3ac82834db50b69aca8cccea574254c3e156a1c34f6d4de741412d68fc0a",
+      "version": "2.0.1",
+      "stage_id": 32,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 8,
+          "character": "mario"
+        },
+        {
+          "port": 2,
+          "character_id": 1,
+          "character": "donkey-kong"
+        }
+      ],
+      "last_frame": 1722,
+      "duration_bucket": "short (<2m)",
+      "stage": "final-destination",
+      "file": "03-mario-donkey-kong-final-destination.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "2b5f3ac82834db50b69aca8cccea574254c3e156a1c34f6d4de741412d68fc0a",
+        "bytes": 428842,
+        "version": [
+          2,
+          0,
+          1
+        ],
+        "stage": 32,
+        "ports": [
+          "P1",
+          "P2"
+        ],
+        "physical_frames": 1846,
+        "surviving_frames": 1846,
+        "discarded_frames": 0,
+        "selected_frames": 1846,
+        "first_frame": -123,
+        "last_frame": 1722,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "NoContest"
+      }
+    },
+    {
+      "source_path": "GANONDORF/Game_20190309T124336.slp",
+      "bytes": 3256205,
+      "sha256": "65077313235c116e5c9b2b4aae85b769d6f13f8b54f882c0924576a5d0fd515b",
+      "version": "1.7.1",
+      "stage_id": 8,
+      "players": [
+        {
+          "port": 2,
+          "character_id": 16,
+          "character": "samus"
+        },
+        {
+          "port": 4,
+          "character_id": 25,
+          "character": "ganondorf"
+        }
+      ],
+      "last_frame": 15835,
+      "duration_bucket": "long (>=4m)",
+      "stage": "yoshis-story",
+      "file": "04-samus-ganondorf-yoshis-story.slp",
+      "expected_error": "unsupported Slippi version 1.7.1"
+    },
+    {
+      "source_path": "PEACH/Game_20191009T220830.slp",
+      "bytes": 1309861,
+      "sha256": "c7aea5b5f714ae73f5504de20b9ea28c0c81d7f20a9be9900c9a0c18a2b05a30",
+      "version": "2.2.0",
+      "stage_id": 2,
+      "players": [
+        {
+          "port": 2,
+          "character_id": 2,
+          "character": "fox"
+        },
+        {
+          "port": 3,
+          "character_id": 12,
+          "character": "peach"
+        }
+      ],
+      "last_frame": 5264,
+      "duration_bucket": "short (<2m)",
+      "stage": "fountain-of-dreams",
+      "file": "05-fox-peach-fountain-of-dreams.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "c7aea5b5f714ae73f5504de20b9ea28c0c81d7f20a9be9900c9a0c18a2b05a30",
+        "bytes": 1309861,
+        "version": [
+          2,
+          2,
+          0
+        ],
+        "stage": 2,
+        "ports": [
+          "P2",
+          "P3"
+        ],
+        "physical_frames": 5388,
+        "surviving_frames": 5388,
+        "discarded_frames": 0,
+        "selected_frames": 5388,
+        "first_frame": -123,
+        "last_frame": 5264,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "NESS/Game_20200719T002257.slp",
+      "bytes": 3386119,
+      "sha256": "f471d08a247243e28b2ab5e14c97f6613bc6ac894096b8eaf3263d323807c156",
+      "version": "3.7.0",
+      "stage_id": 28,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 3,
+          "character": "game-and-watch"
+        },
+        {
+          "port": 2,
+          "character_id": 11,
+          "character": "ness"
+        }
+      ],
+      "last_frame": 8815,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "dream-land",
+      "file": "06-game-and-watch-ness-dream-land.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "f471d08a247243e28b2ab5e14c97f6613bc6ac894096b8eaf3263d323807c156",
+        "bytes": 3386119,
+        "version": [
+          3,
+          7,
+          0
+        ],
+        "stage": 28,
+        "ports": [
+          "P1",
+          "P2"
+        ],
+        "physical_frames": 11041,
+        "surviving_frames": 8939,
+        "discarded_frames": 2102,
+        "selected_frames": 8939,
+        "first_frame": -123,
+        "last_frame": 8815,
+        "latest_finalized_frame": 8815,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "YLINK/ICs vs YLink [PS] Game_20200307T184117.slp",
+      "bytes": 6350990,
+      "sha256": "9871794183666dbf333121a10c11191654dc4a8cc7b585486240ec65a4b1ea6b",
+      "version": "3.3.0",
+      "stage_id": 3,
+      "players": [
+        {
+          "port": 2,
+          "character_id": 14,
+          "character": "ice-climbers"
+        },
+        {
+          "port": 3,
+          "character_id": 21,
+          "character": "young-link"
+        }
+      ],
+      "last_frame": 16074,
+      "duration_bucket": "long (>=4m)",
+      "stage": "pokemon-stadium",
+      "file": "07-ice-climbers-young-link-pokemon-stadium.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "9871794183666dbf333121a10c11191654dc4a8cc7b585486240ec65a4b1ea6b",
+        "bytes": 6350990,
+        "version": [
+          3,
+          3,
+          0
+        ],
+        "stage": 3,
+        "ports": [
+          "P2",
+          "P3"
+        ],
+        "physical_frames": 16198,
+        "surviving_frames": 16198,
+        "discarded_frames": 0,
+        "selected_frames": 16198,
+        "first_frame": -123,
+        "last_frame": 16074,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "LINK/Game_20191106T190812.slp",
+      "bytes": 2249077,
+      "sha256": "9a30c853f35e64b86419b1d92414d42116754ac3e81e1f8c862850b17ccc2a5a",
+      "version": "3.0.0",
+      "stage_id": 2,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 19,
+          "character": "sheik"
+        },
+        {
+          "port": 4,
+          "character_id": 6,
+          "character": "link"
+        }
+      ],
+      "last_frame": 8280,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "fountain-of-dreams",
+      "file": "08-sheik-link-fountain-of-dreams.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "9a30c853f35e64b86419b1d92414d42116754ac3e81e1f8c862850b17ccc2a5a",
+        "bytes": 2249077,
+        "version": [
+          3,
+          0,
+          0
+        ],
+        "stage": 2,
+        "ports": [
+          "P1",
+          "P4"
+        ],
+        "physical_frames": 8404,
+        "surviving_frames": 8404,
+        "discarded_frames": 0,
+        "selected_frames": 8404,
+        "first_frame": -123,
+        "last_frame": 8280,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "MEWTWO/13_37_37 Mewtwo + [S12] Pikachu (FoD).slp",
+      "bytes": 835307,
+      "sha256": "16b5138fde4198682e9723e8ce1a2268d1f340b9d4cf3922544479b40a45a457",
+      "version": "2.0.1",
+      "stage_id": 2,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 10,
+          "character": "mewtwo"
+        },
+        {
+          "port": 3,
+          "character_id": 13,
+          "character": "pikachu"
+        }
+      ],
+      "last_frame": 3474,
+      "duration_bucket": "short (<2m)",
+      "stage": "fountain-of-dreams",
+      "file": "09-mewtwo-pikachu-fountain-of-dreams.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "16b5138fde4198682e9723e8ce1a2268d1f340b9d4cf3922544479b40a45a457",
+        "bytes": 835307,
+        "version": [
+          2,
+          0,
+          1
+        ],
+        "stage": 2,
+        "ports": [
+          "P1",
+          "P3"
+        ],
+        "physical_frames": 3598,
+        "surviving_frames": 3598,
+        "discarded_frames": 0,
+        "selected_frames": 3598,
+        "first_frame": -123,
+        "last_frame": 3474,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "PICHU/21_28_54 Pichu + Roy (BF).slp",
+      "bytes": 2748143,
+      "sha256": "410ed845b3a94fc2d59121ce595675410e507f0c9ba128bfb18cd0b6d39ad640",
+      "version": "2.0.1",
+      "stage_id": 31,
+      "players": [
+        {
+          "port": 3,
+          "character_id": 24,
+          "character": "pichu"
+        },
+        {
+          "port": 4,
+          "character_id": 23,
+          "character": "roy"
+        }
+      ],
+      "last_frame": 11719,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "battlefield",
+      "file": "10-pichu-roy-battlefield.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "410ed845b3a94fc2d59121ce595675410e507f0c9ba128bfb18cd0b6d39ad640",
+        "bytes": 2748143,
+        "version": [
+          2,
+          0,
+          1
+        ],
+        "stage": 31,
+        "ports": [
+          "P3",
+          "P4"
+        ],
+        "physical_frames": 11843,
+        "surviving_frames": 11843,
+        "discarded_frames": 0,
+        "selected_frames": 11843,
+        "first_frame": -123,
+        "last_frame": 11719,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    }
+  ]
+}
