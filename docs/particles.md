@@ -49,6 +49,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Shard | files/EfCoData.dat offset 0x17d20; full aliases in particle_sources.jsonl | Analytic shard appearance and lifetime fade | Implemented visual redesign |
 | Shockwave | files/EfCoData.dat offset 0x20d60; full aliases in particle_sources.jsonl | Analytic shockwave appearance and lifetime fade | Implemented visual redesign |
 | Energy Burst | files/EfCoData.dat offset 0x48da0; full aliases in particle_sources.jsonl | Analytic energy burst appearance and lifetime fade | Implemented visual redesign |
+| Glint | files/EfCoData.dat offset 0x511e0; full aliases in particle_sources.jsonl | Analytic glint appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and

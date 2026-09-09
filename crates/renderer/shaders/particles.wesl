@@ -1,3 +1,4 @@
+import package::glint;
 import package::energy_burst;
 import package::shockwave;
 import package::shard;
@@ -55,6 +56,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 11u: { field = glint::shade(in.uv, in.age, in.seed, footprint); }
         case 10u: { field = energy_burst::shade(in.uv, in.age, in.seed, footprint); }
         case 9u: { field = shockwave::shade(in.uv, in.age, in.seed, footprint); }
         case 8u: { field = shard::shade(in.uv, in.age, in.seed, footprint); }
@@ -71,6 +73,6 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let alpha = clamp(field.a * in.color.a * lifetime, 0.0, 1.0);
     // Emissive particles use source alpha zero with premultiplied blending:
     // source RGB adds while destination color and alpha remain intact.
-    let emissive = in.effect == 10u || in.effect == 7u || in.effect == 5u || in.effect == 4u || in.effect == 3u || in.effect == 2u;
+    let emissive = in.effect == 11u || in.effect == 10u || in.effect == 7u || in.effect == 5u || in.effect == 4u || in.effect == 3u || in.effect == 2u;
     return vec4f(field.rgb * in.color.rgb * alpha, select(alpha, 0.0, emissive));
 }

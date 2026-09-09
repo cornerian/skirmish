@@ -20,6 +20,7 @@ pub enum ParticleEffect {
     Shard,
     Shockwave,
     EnergyBurst,
+    Glint,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
