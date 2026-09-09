@@ -26,6 +26,13 @@ arithmetic used by the slice. Generated cases also exercise directed crossings,
 adjacency/tie order, collision-box state mutations and subdivision thresholds.
 Match integration tests cover slopes, walls, ceilings, platforms, swept attack
 history and bone-sampled environmental geometry using synthetic resources.
+The file-backed replay harness also advances the actual native match and reports
+the first differing selected Slippi post-field. Its synthetic recordings verify
+the harness, including negative cases; they are not independent gameplay oracles.
+See [the integration/conformance coverage map](testing.md) for passing,
+unimplemented and reference-blocked tests. Function-parity unit tests remain at
+retained C/Rust boundaries; refactored subsystems use observable integration
+contracts.
 
 These tests run natively and require no game image or original executable. Gekko
 paired-single operations, fused arithmetic, the original math library, floating
@@ -76,10 +83,11 @@ and input/executable hashes even when no successful comparison report is produce
 2. Complete the native game simulation and native gameplay resources, recording
    their provenance and hashes. No ISO, DOL, emulator or GameCube runtime may be
    required for building, running or testing the project.
-3. Connect a future Slippi importer to the streaming `skirmish-replay` validator
-   and a complete native simulator checkpoint. Apply frame inputs and compare
-   the simulated next observation with the recorded next frame. Initial state
-   reconstruction and observation coverage must be explicit.
+3. Expand the existing Peppi-to-native-match checkpoint harness beyond its
+   experimental two-player input policy and six selected post fields. Apply
+   each frame's inputs and compare the simulated next observation with the
+   recorded post-frame. Initial state reconstruction and observation coverage
+   must be explicit.
 4. Capture fighter/item/stage state, RNG state and call order, hitboxes and
    hurtboxes, collisions, action transitions, camera/animation, sound commands,
    saves and scene/menu changes. Validate video/audio separately with specified

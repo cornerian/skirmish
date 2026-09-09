@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::{Attributes, Movement, decrement_toward_zero};
+use physics::{Attributes, Movement, decrement_toward_zero};
 use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]

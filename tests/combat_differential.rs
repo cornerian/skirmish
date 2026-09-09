@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::combat::*;
+use physics::combat::*;
 use proptest::prelude::*;
 use std::sync::Mutex;
 

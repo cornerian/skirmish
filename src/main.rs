@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use skirmish::{inventory, match_trace, runner, trace};
+use sha2::{Digest, Sha256};
+use skirmish::{inventory, match_trace, runner, slippi, trace};
 use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter},
@@ -20,6 +21,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Compare native match frames with Slippi observations from explicit initialization.
+    ValidateReplay {
+        path: PathBuf,
+        #[arg(long)]
+        initialization: PathBuf,
+        #[arg(long)]
+        finalized_only: bool,
+    },
+    /// Parse a completed Slippi replay with Peppi and summarize its timeline.
+    InspectReplay {
+        path: PathBuf,
+        /// Include only frames explicitly finalized by Slippi >=3.7 bookends.
+        #[arg(long)]
+        finalized_only: bool,
+    },
     /// Run the synthetic headless match fixture to completion; emit a JSONL trace.
     DemoMatch {
         #[arg(long, default_value_t = 0)]
@@ -61,9 +77,57 @@ enum Commands {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Commands::ValidateReplay {
+            path,
+            initialization,
+            finalized_only,
+        } => {
+            let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
+            let bytes = fs::read(initialization)?;
+            let initial: skirmish::replay_match::Initialization = serde_json::from_slice(&bytes)?;
+            let mut game = skirmish::replay_match::initialize(&initial)?;
+            let checkpoint = skirmish::replay::Checkpoint {
+                next_frame: initial.next_frame,
+                state: game.checkpoint(),
+            };
+            let policy = if finalized_only {
+                slippi::Timeline::FinalizedOnly
+            } else {
+                slippi::Timeline::LastRecorded
+            };
+            let report = skirmish::replay_match::validate(
+                &replay,
+                &mut game,
+                &checkpoint,
+                initial.ports,
+                policy,
+            )?;
+            let mut output = serde_json::to_value(&report)?;
+            output["initialization_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            anyhow::ensure!(
+                report.is_match(),
+                "replay validation did not match; see JSON outcome"
+            );
+        }
+        Commands::InspectReplay {
+            path,
+            finalized_only,
+        } => {
+            let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
+            let policy = if finalized_only {
+                slippi::Timeline::FinalizedOnly
+            } else {
+                slippi::Timeline::LastRecorded
+            };
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&replay.summary(policy)?)?
+            );
+        }
         Commands::DemoMatch { seed } => {
             let data = serde_json::from_str(include_str!(
-                "../crates/skirmish-match/tests/fixtures/integration-match.json"
+                "../crates/arena/tests/fixtures/integration-match.json"
             ))?;
             match_trace::run(
                 data,

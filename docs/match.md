@@ -1,6 +1,6 @@
 # Native match slice
 
-`skirmish-match` now runs an **experimental two-player match** from reset through
+`arena` now runs an **experimental two-player match** from reset through
 countdown, per-frame movement, a bone-animated jab, contact, damage, hitlag,
 knockback, stock loss, respawn and termination. The CLI's demonstration uses an
 explicitly synthetic dataset, not Fox or a certified Melee matchup. Neither
@@ -43,17 +43,23 @@ values, and restoration rejects different resource/rule identities. Persistent
 checkpoint encoding is a later versioned interface.
 
 Clones share only immutable native resources. Each branch owns its mutable state;
-stepping errors leave it unchanged. The crate implements `skirmish-replay`'s
+stepping errors leave it unchanged. The crate implements `replay`'s
 `FrameStepper`, so streaming expected observations and counterfactual branches
-already use this match implementation. Replay observations still do not supply
-all hidden state. Slippi parsing, player observations, batched Python/Gym
-interfaces, rewards and coaching value estimation remain separate work.
+already use this match implementation. The `validate-replay` command applies
+Peppi-imported inputs to real `Match::step` calls from an explicitly initialized
+checkpoint. It compares position, facing, percent, stocks and airborne state;
+see the [file-backed comparison contract](replays.md) for the required embedded
+resources, seed, port mapping, frame label and warmup inputs. Comparison covers
+the complete selected suffix and stops at the first mismatch or unsupported
+condition. It does not restore hidden state from replay observations or certify
+the match's unported Melee behavior. Batched Python/Gym interfaces, rewards and
+coaching value estimation remain separate work.
 
 ## Physics and execution order
 
 Bone hierarchy evaluation, local/world transforms, parent-scale compensation,
 bone-attached capsules, swept capsule intersection, walking and jump launch
-arithmetic live in `melee-physics`. The native match schema carries all pose
+arithmetic live in `physics`. The native match schema carries all pose
 samples for its jab, including startup/recovery frames. The same evaluated pose
 places both hurtboxes and hitboxes; rendering is not involved. Local native
 coordinates use +X forward, +Y up and +Z depth; resource imports must convert
@@ -86,7 +92,7 @@ contacts project the final collision point onto the contacted surface and stop
 inward velocity in this experimental profile. Platforms permit
 upward passage and descending landings; intentional platform dropping has no
 input transition yet. Full corner resolution and squeeze response are unported,
-although reusable squeeze arithmetic is available in `melee-physics::ecb`.
+although reusable squeeze arithmetic is available in `physics::ecb`.
 
 An active hitbox carries its previous and current world centers. New activation,
 a disabled slot or a changed group resets its sweep. Hitlag still updates these

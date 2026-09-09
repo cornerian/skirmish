@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::damage::*;
+use physics::damage::*;
 use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]

@@ -1,0 +1,19 @@
+[package]
+name = "replay"
+version = "0.1.0"
+edition = "2024"
+description = "Streaming checkpoint-based frame validation for future replay adapters"
+publish = false
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+physics = { path = "../physics" }
+runtime = { path = "../runtime" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

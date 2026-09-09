@@ -1,42 +1,172 @@
-# Replay validation integration
+# Slippi replay import and validation
 
-The `skirmish-replay` library is the seam between a future replay importer and the
-headless game simulation. It has no replay-file or rendering dependency. The
-importer will supply a stream of expected transitions; the simulator will supply
-checkpoint restoration and one-frame advancement.
+`peppi-adapter` imports completed `.slp` files through **Peppi 2.1.2**. It keeps
+Peppi's match settings, metadata, Gecko bytes and Arrow frame columns, then builds
+an index selecting the surviving timeline. The parser, native physics libraries
+and experimental headless match run on modern machines without an ISO, DOL,
+emulator or GameCube runtime.
 
-Each transition explicitly labels the frame **after** applying its input. A
-checkpoint records the next expected frame, including negative frame numbers.
-The validator requires consecutive frames and stops at the first source error,
-simulation error or observation difference. It never treats an empty stream or a
-matching prefix followed by an error as a successful replay. A completed run
-establishes agreement for the observations supplied by that stream.
+Inspect a replay from the repository root:
 
-The initial checkpoint must contain complete simulation state. A future Slippi
-importer must not turn a subset of observed fighter fields into an allegedly
-complete checkpoint. Start from deterministic game initialization, or restore a
-checkpoint produced by the validated simulator/reference. Replay available inputs
-to reach a later frame. Missing asset data, hidden state, RNG call order and scene
-initialization must remain explicit unsupported conditions until implemented.
+```xonsh
+$CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
+cargo run --locked --bin skirmish -- inspect-replay /path/to/replay.slp
+cargo run --locked --bin skirmish -- inspect-replay /path/to/replay.slp --finalized-only
+```
 
-The importer is responsible for normalizing rollback/repeated frames into its
-chosen final timeline and documenting input-to-observation timing. Keep the raw
-replay hash, format/parser version, match settings, asset hashes and initialization
-procedure with each validation run. Import and validate one transition at a time
-so large replay corpora do not require loading their contents into memory.
+The JSON summary records the exact file's SHA-256 and byte count, parser/format
+versions, stage, physical player ports, recorded/surviving/discarded frame counts,
+selected frame range and finalization watermark. Ports retain their original
+identities: a game on P1/P3 has zero-based ports 0/2, not an invented contiguous
+player mapping. Followers remain distinct actors on their leader's port.
+Import errors exit unsuccessfully without a success summary.
 
-An observation adapter projects simulator state into the exact fields available
-in the replay. Compare integer/enum values directly and float fields by raw bits
-using the library's comparators. If a comparison deliberately tolerates numerical
-differences or observes fewer fields, record that policy with the result; it does
-not establish exact or complete state equivalence.
+## Accepted files and memory use
 
-For a failure, retain the initial checkpoint or its reproducible construction,
-inputs through the failing frame, expected and actual observations, and the
-reported field difference. This becomes a small regression case. Later coaching
-and RL rollouts can restore the same checkpoint for alternate input sequences
-without making observation comparison depend on presentation.
+The importer accepts completed Slippi **2.0.0 through 3.18.0** files up to
+**512 MiB**, with a nonzero declared raw-event length and a complete `GameEnd`.
+It checks the wrapper, event boundaries, actor routing, paired pre/post events,
+frame continuity and version-dependent columns. Future formats, live files,
+truncated events and unsupported event forms are errors. Recorded absent actors
+remain absent; nullable columns do not become zero-valued fighters.
 
-No Slippi importer, hidden-state reconstruction, playable match simulation or
-training loop is implemented yet. The current tests exercise this integration
-contract using the translated headless primitives.
+Legacy 2.0/2.1 files have no FrameStart records: a new pre-frame ID opens each
+frame, and IDs must advance contiguously from -123 without rollback. Intermittent
+actor absence in these legacy files is rejected because Peppi would shift later
+rows; trailing absence is supported. FrameEnd and item records are absent before
+3.0, and post-frame hurtbox state is absent before 2.1. Version-dependent fields
+remain optional rather than being synthesized.
+
+Peppi parses a whole file into Arrow columns. The input bytes and parsed arrays
+can coexist during import, so the byte limit is not a total-memory limit.
+Transitions are materialized one selected frame at a time from those columns;
+this is not a constant-memory streaming file parser. Process a large corpus one
+file at a time and release each `Replay` before loading the next.
+
+## Timeline and input timing
+
+`Timeline::LastRecorded` selects the last surviving recording of each frame.
+A rollback to an earlier frame removes the old tail before replacement frames
+are appended. Original recorded rows and indices remain accessible through
+`Replay::game()` and `frame_indices()`. Negative frame IDs are preserved.
+
+`Timeline::FinalizedOnly` requires Slippi 3.7 or later and selects only the prefix
+covered by explicit frame-bookend watermarks. `GameEnd` does not finalize the
+remaining tail. A completed replay can therefore have an empty finalized prefix;
+inspection reports zero selected frames, while replay validation rejects an empty
+transition stream. Rewriting already-finalized history is an import error.
+
+Pre/post events with the **same frame ID** produce one
+`replay::Transition<Inputs, Frame>`: apply that frame's inputs, then
+compare its post-frame observation. Actors are identified by `(port, follower)`.
+Peppi's field types and float values are retained, including available raw analog
+samples, processed sticks/triggers, logical buttons and physical buttons.
+Version-dependent fields remain optional. A simulation input adapter must choose
+and document which representation it consumes; import does not silently recalibrate
+already processed sticks or replace missing raw samples with zero.
+
+`Inputs` carries the original pre-frame records for that choice. Those records
+also contain observed state and RNG fields: an adapter must select controller
+inputs explicitly, rather than overwrite simulated position, action or RNG state
+with the reference values. Frame start/end data, items and stage-event observations
+remain available when recorded.
+
+## Compare a file against Skirmish
+
+```xonsh
+cargo run --locked --bin skirmish -- validate-replay /path/to/game.slp --initialization /path/to/init.json
+```
+
+Add `--finalized-only` to use the explicit finalized prefix. The harness restores
+the supplied complete native checkpoint, converts selected replay inputs, calls
+the real `Match::step`, and compares the resulting observations. It starts at the
+declared `next_frame` and continues through the selected timeline's last frame.
+An absent start frame, empty suffix, unsupported input, simulation error or
+observation difference fails; a matching prefix is not silently accepted.
+
+The required initialization JSON has these fields, with no defaults:
+
+| Field | Meaning |
+| --- | --- |
+| `data` | Embedded complete native `MatchData`, in the [match resource format](match.md); not a filename or replay-derived fighter snapshot |
+| `seed` | Explicit unsigned 32-bit seed passed to `Match::new` |
+| `ports` | Two distinct Peppi port names, such as `["P1", "P3"]`, mapping native fighters 0/1 to physical replay ports |
+| `next_frame` | Signed Slippi frame ID whose input is applied by the next native step |
+| `warmup` | Array of native controller pairs applied after initialization and before checkpointing; `[]` means no warmup |
+
+For example, construct the file from an existing native resource bundle in xonsh:
+
+```xonsh
+import json
+from pathlib import Path
+initialization = {
+    'data': json.loads(Path('/path/to/native-match.json').read_text()),
+    'seed': 0,
+    'ports': ['P1', 'P3'],
+    'next_frame': -123,
+    'warmup': [],
+}
+Path('/mnt/shared/tmp/skirmish-replay-init.json').write_text(json.dumps(initialization))
+```
+
+These seed/port/frame choices are explicit example inputs, not values recovered
+from the replay. Resources and warmup must actually establish the native state
+corresponding to the declared frame. Warmup uses `run-match`'s controller-pair
+format; it does not infer earlier actions or hidden state.
+
+Library callers can pass an existing complete in-memory checkpoint to
+`skirmish::replay_match::validate`, together with the `Match`, replay, port mapping
+and timeline policy. Its `next_frame` labels the first post-step observation to
+compare. Persistent checkpoint encoding is not provided.
+
+## Input and observation policy
+
+Native comparison requires exactly two human-controlled leaders in a non-team
+match. Peppi preserves
+Nana/follower data, but this adapter rejects followers. Processed joystick X/Y
+supplies normalized stick input; physical button bits supply A/X/Y. Other buttons,
+C-stick activity and nonzero logical/physical triggers are unsupported errors.
+Raw analog samples remain preserved by the importer but are not substituted into
+this adapter. Pre-frame position, action and RNG never overwrite the simulation.
+
+The named **`fighter-post-v1`** policy compares only these post-frame fields for
+each mapped actor:
+
+| Replay field | Native observation | Comparison |
+| --- | --- | --- |
+| `position.x`, `position.y` | Fighter position | Exact `f32` bits |
+| `direction` | Fighter facing | Exact `f32` bits |
+| `percent` | Damage percent | Exact `f32` bits |
+| `stocks` | Remaining stocks | Exact integer |
+| `airborne` | Inverse of native grounded state | Exact boolean |
+
+Action state, velocities, hitlag and RNG are not compared. Nonempty item and
+dynamic stage-event records are rejected as unsupported simulation. Equality of
+the selected fields does not establish
+equality of hidden state, complete frame behavior or Melee gameplay. The match
+remains an experimental ruleset with incomplete character resources; the current
+Fox subset cannot validate arbitrary real Fox matches.
+
+## Reports and regression cases
+
+Reports identify the observation policy and fields, input policy, replay summary
+and hash, `resources_sha256`, explicit `ports` and `checkpoint_next_frame`. The CLI
+adds `initialization_sha256`, computed over the exact initialization file bytes.
+Its `outcome.status` is:
+
+- `matched`: includes `first_frame`, `last_frame` and `checked_frames`; every frame
+  from the declared start through the selected timeline end matched.
+- `mismatch`: includes `frame`, matched-prefix `checked_frames`, and `difference`
+  containing `port`, `field`, `expected` and `actual` as hexadecimal bit strings.
+- `error`: includes a frame when available, matched-prefix count and the
+  unsupported condition or failed step's explanation.
+
+Mismatch and error reports exit unsuccessfully. File/JSON parsing, initialization
+and preflight checks can fail before a report exists. Keep the report, replay,
+initialization and inputs
+through the failing frame as a regression case. Complete checkpoints also support
+native counterfactual branches without depending on rendering.
+
+The file-backed harness tests write synthetic `.slp` files, run the actual native
+simulator and verify successful comparisons and deliberate corruptions. They test
+the comparison path and failure reporting, not fidelity to recorded Melee gameplay.

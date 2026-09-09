@@ -9,7 +9,7 @@ fn stdin_adapter_matches_the_scripted_demo_and_rejects_malformed_input() {
     use std::{io::Write, process::Stdio};
     let fixture = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/crates/skirmish-match/tests/fixtures/integration-match.json"
+        "/crates/arena/tests/fixtures/integration-match.json"
     );
     let mut game = skirmish::game::Match::new(data(), 0).unwrap();
     let mut inputs = vec![];
@@ -60,7 +60,7 @@ fn stdin_adapter_matches_the_scripted_demo_and_rejects_malformed_input() {
 
 fn data() -> MatchData {
     serde_json::from_str(include_str!(
-        "../crates/skirmish-match/tests/fixtures/integration-match.json"
+        "../crates/arena/tests/fixtures/integration-match.json"
     ))
     .unwrap()
 }

@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::bones::{
+use physics::bones::{
     Bone, BoneCapsule, IDENTITY, LocalTransform, Matrix, Pose, Vector, concat, srt,
     transform_point, transform_vector,
 };

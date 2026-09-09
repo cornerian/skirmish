@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_input::{ClampRegion, DEFAULT_REGION, PadStatus, StickRegion, clamp};
+use input::{ClampRegion, DEFAULT_REGION, PadStatus, StickRegion, clamp};
 use proptest::prelude::*;
 use std::sync::Mutex;
 

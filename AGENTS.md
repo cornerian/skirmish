@@ -32,6 +32,12 @@ owned by the resource task.
   `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`.
 - C reference tests must use upstream code, with ABI adaptations documented.
   Host C agreement does not establish PowerPC or whole-game equivalence.
+- Prefer integration tests of input-to-observable behavior across subsystem
+  boundaries while refactoring. Add focused original-C unit/differential tests
+  where a Rust function deliberately retains exact source-function parity,
+  especially arithmetic edge cases; do not mirror refactored implementation
+  structure in unit tests. Missing behavior and missing independent fixtures
+  must be reported separately from passing coverage.
 - Commit and push substantial verified milestones to `origin/main`, as requested.
   The old history is archived on `archive/pre-rust-rewrite-20260909`; `main`
   starts with a fresh root commit, per the user's explicit instruction.

@@ -3,7 +3,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::stage::*;
+use physics::stage::*;
 use proptest::prelude::*;
 
 #[repr(C)]

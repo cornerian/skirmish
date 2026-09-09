@@ -4,7 +4,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 
-use melee_physics::{
+use physics::{
     Attributes, Movement,
     locomotion::{JumpAttributes, WalkParameters, jump_velocity, walk},
 };

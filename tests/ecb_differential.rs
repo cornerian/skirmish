@@ -1,7 +1,7 @@
 //! Native ECB arithmetic/state comparisons; stage callbacks are outside scope.
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
-use melee_physics::ecb::*;
+use physics::ecb::*;
 use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]
