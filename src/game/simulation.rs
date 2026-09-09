@@ -60,6 +60,7 @@ fn spawn(
         },
         aerial: aerial::State::default(),
         clank: clank::State::default(),
+        grab: grab::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -227,6 +228,14 @@ pub(crate) fn advance(
         )?;
     }
 
+    let released = grab::update_pairs(data, state)?;
+    for player in 0..2 {
+        if released[player] {
+            active[player] = false;
+            frozen[player] = true;
+        }
+    }
+
     for player in 0..2 {
         if !active[player] {
             continue;
@@ -251,6 +260,7 @@ pub(crate) fn advance(
             collision::begin_pass(fighter, &data.fighters[player], &data.stage, velocity_y);
         }
     }
+    grab::synchronize_actions(state);
 
     for player in 0..2 {
         if !active[player] {
@@ -258,6 +268,17 @@ pub(crate) fn advance(
         }
         let fighter = &mut state.fighters[player];
         let input = inputs[player];
+        if fighter.grab.captor.is_some() {
+            fighter.nudge = [0.0; 2];
+            staling::flush(
+                fighter,
+                &data.fighters[player],
+                data.rules.staling.as_ref(),
+                &mut state.attack_instances,
+            )?;
+            fighter.previous_input = input;
+            continue;
+        }
         if fighter.damage_elapsed >= 0 {
             fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
         }
@@ -286,6 +307,8 @@ pub(crate) fn advance(
         )?;
         fighter.previous_input = input;
     }
+    grab::release_broken_pairs(state);
+    grab::attach_all(data, state)?;
 
     // Contact decisions are collected from the same post-movement state. Apply
     // damage afterward so a lower port cannot suppress a simultaneous trade.
@@ -293,6 +316,15 @@ pub(crate) fn advance(
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
+    grab::scan(data, state, frozen)?;
+    for player in 0..2 {
+        staling::flush(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            data.rules.staling.as_ref(),
+            &mut state.attack_instances,
+        )?;
+    }
     let mut swept = [[None; 4]; 2];
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
@@ -315,6 +347,7 @@ pub(crate) fn advance(
         if frozen[attacker]
             || data.fighters[attacker].attack(source.action).is_none()
             || target.invincibility > 0
+            || target.grab.captor.is_some()
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
         {
@@ -413,18 +446,37 @@ pub(crate) fn advance(
 
     clank::finish(data, state, newly_hit)?;
 
+    let blast_knockouts: [bool; 2] = core::array::from_fn(|player| {
+        let fighter = &state.fighters[player];
+        let [left, right, bottom, top] = data.stage.blast;
+        let [x, y] = fighter.position;
+        let top_eligible = data
+            .rules
+            .top_ko_min_knockback
+            .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
+        !matches!(fighter.action, Action::Respawn | Action::Eliminated)
+            && (x < left || x > right || y < bottom || y > top && top_eligible)
+    });
+    for (player, &knocked_out) in blast_knockouts.iter().enumerate() {
+        if knocked_out {
+            grab::break_for_player(state, player);
+        }
+    }
+    for player in 0..2 {
+        staling::flush(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            data.rules.staling.as_ref(),
+            &mut state.attack_instances,
+        )?;
+    }
+
     for (player, fighter) in state.fighters.iter_mut().enumerate() {
         if !matches!(fighter.action, Action::Respawn | Action::Eliminated) {
             shield::finish_frame(fighter, data.rules.shield.as_ref(), shield_contact[player]);
-            let [left, right, bottom, top] = data.stage.blast;
-            let [x, y] = fighter.position;
             // Ordinary supported branch of ftCo_800D3158. Scripted death
             // overrides and star/screen animation selection remain unported.
-            let top_eligible = data
-                .rules
-                .top_ko_min_knockback
-                .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
-            if x < left || x > right || y < bottom || (y > top && top_eligible) {
+            if blast_knockouts[player] {
                 // ftCo_800D34E0 resets only the deceased player's queue.
                 fighter.staling.queue.reset();
                 fighter.stocks -= 1;
@@ -538,8 +590,9 @@ fn update_nudge(
             player_id: player as u8,
             floor: fighter.ground_line,
             follower_of: None,
-            inactive: matches!(fighter.action, Action::Respawn | Action::Eliminated),
-            holds_victim: false,
+            inactive: matches!(fighter.action, Action::Respawn | Action::Eliminated)
+                || fighter.grab.captor.is_some(),
+            holds_victim: fighter.grab.victim.is_some(),
             nudge_disabled: attributes.nudge_disabled,
             hitlag: fighter.hitlag > 0.0,
             overlap_disabled: attributes.overlap_disabled,
@@ -599,6 +652,7 @@ fn update_animation(
     input: Controller,
 ) -> (bool, bool, bool) {
     let attrs = &data.movement;
+    grab::update_fighter_animation(f, data);
     match f.action {
         Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
             f,
@@ -657,6 +711,9 @@ fn update_actions(
     clank_owns: bool,
     shield_owns: bool,
 ) {
+    if grab::update_actions(f, data, rules.grab.as_ref(), input) {
+        return;
+    }
     if clank_owns {
         return;
     }
@@ -786,7 +843,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
 }
 
 pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
-    let local = if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
+    let local = if let Some(pose) = grab::pose(fighter, data) {
+        pose
+    } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
     } else if data.attack(fighter.action).is_some() {
         &attack_frame(fighter, data)?.bones

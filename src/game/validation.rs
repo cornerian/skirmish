@@ -166,6 +166,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.grab, &fighter.grab) {
+            (Some(rules), Some(parameters)) => grab::validate(rules, parameters, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "grab rules require parameters for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("grab parameters require common rules".into()));
+            }
+            (None, None) => {}
+        }
         if let Some(rules) = &rules.shield {
             shield::validate(rules, fighter)?;
         } else {
@@ -410,7 +422,7 @@ fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
 
 pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
     for (player, input) in input.iter().enumerate() {
-        if input.buttons & !(BUTTON_A | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R) != 0
+        if input.buttons & !(BUTTON_A | BUTTON_Z | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R) != 0
             || input
                 .stick
                 .iter()
@@ -425,7 +437,11 @@ pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
 }
 
 pub(crate) fn state(state: &State) -> Result<(), Error> {
-    for f in &state.fighters {
+    for (player, f) in state.fighters.iter().enumerate() {
+        require(
+            grab::valid_relationship(&state.fighters, player),
+            "invalid paired capture state",
+        )?;
         require(
             f.staling.transitions.is_empty(),
             "unflushed attack identity transition",

@@ -183,5 +183,10 @@
     "fixture": "tests/oracle/original/down_attack.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownAttack.c",
     "sha256": "2a9fde40a5d8262befa31df1b2eeca7d4ae827091bf089fcc161b2ae14684c48"
+  },
+  {
+    "fixture": "tests/oracle/original/throw_input.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Throw.c",
+    "sha256": "5ff98ff23893109eeb38450325a26fccbce81c869e4db3fc59ab813ed42f9a02"
   }
 ]

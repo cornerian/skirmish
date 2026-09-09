@@ -96,6 +96,8 @@ pub struct Rules {
     pub clank: Option<super::clank::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nudge: Option<super::nudge::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grab: Option<super::grab::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -159,6 +161,8 @@ pub struct FighterData {
     pub shield: Option<super::shield::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nudge: Option<super::nudge::Attributes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grab: Option<super::grab::Parameters>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,

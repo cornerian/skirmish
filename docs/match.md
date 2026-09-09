@@ -161,6 +161,15 @@ at or above its inclusive threshold retains tumble eligibility through
 DamageFall until floor contact. Tech rolls, wall/ceiling responses, bounces,
 get-up choices and action-specific poses remain separate work.
 
+Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
+catch entry, sampled bone-attached grab capsules, paired pull/hold states and
+forward/back/up/down throws. Captured fighters remain attached through explicit
+holder/victim bone anchors. The shared input history applies the original throw
+direction priority, and each supplied release event enters the ordinary damage
+pipeline. Pair ownership is checkpointed and cleared transactionally on release
+or stock loss. Pummels, mash escape, dash/tether variants, throw staling and
+capture-contact interference remain unported.
+
 ## Explicit movement data
 
 `fighters[].locomotion` supplies thresholds, stick-age windows, dash/run
@@ -196,8 +205,9 @@ a jab, all five ordinary aerials with landing/autocancel/L-cancel, ordinary
 damage/armor, integral fixed-angle launch and angle 361. Aerial resources and
 callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
-break and dizzy recovery. Inputs do not yet reproduce the full PAD-to-fighter
-history. Grabs, specials, ledge actions, running turns and character
+break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
+standing catches, paired holds and four-direction throws. Inputs do not yet
+reproduce the full PAD-to-fighter history. Specials, ledge actions, running turns and character
 multijumps remain unported. Some accepted stick/button combinations consequently
 have no action in this experimental profile.
 
@@ -212,7 +222,8 @@ unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,
-throws and other special launch-angle behaviors. Outside supplied attack and landing poses,
+grab escapes/pummels and other special launch-angle behaviors. Outside supplied attack, catch,
+throw, and landing poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
 damage collision require those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

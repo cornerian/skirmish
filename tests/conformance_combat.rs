@@ -4,6 +4,8 @@
 //! Run with `cargo test --test conformance_combat -- --ignored`; these gaps fail
 //! until implemented. Unsupported inputs/schema are failures, never passing skips.
 
+#[path = "support/grab.rs"]
+mod grab_resources;
 #[path = "support/conformance.rs"]
 mod support;
 
@@ -199,11 +201,10 @@ fn holding_shield_takes_contact_stun_without_percent_damage() {
 }
 
 #[test]
-#[ignore = "unimplemented: grab capture, throw input and victim release"]
 fn grab_then_forward_throw_damages_and_launches_the_captured_victim() {
     // ft/kinds/ftCommon/ftCo_Catch.c, ftCo_CatchWait.c and
     // ftCo_Throw.c::ftCo_800DD1E4 turn directional input into a captured-victim throw.
-    let mut data = close_data();
+    let mut data = grab_resources::profile(close_data());
     data.stage.spawns = [[-0.5, 0.0], [0.5, 0.0]];
     data.rules.knockback_speed = 0.15;
     let mut game = Match::new(data, 0).unwrap();

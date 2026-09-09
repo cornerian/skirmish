@@ -8,6 +8,7 @@ pub mod clank;
 mod collision;
 pub mod damage;
 pub mod data;
+pub mod grab;
 pub mod hitboxes;
 pub mod locomotion;
 pub mod nudge;
@@ -23,6 +24,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 pub const BUTTON_A: u16 = 0x100;
+pub const BUTTON_Z: u16 = 0x10;
 pub const BUTTON_L: u16 = 0x40;
 pub const BUTTON_R: u16 = 0x20;
 pub const BUTTON_X: u16 = 0x400;
@@ -84,6 +86,19 @@ pub enum Action {
     Pass,
     Fall,
     Jab,
+    Catch,
+    CatchPull,
+    CatchWait,
+    ThrowF,
+    ThrowB,
+    ThrowHi,
+    ThrowLw,
+    CapturePulled,
+    CaptureWait,
+    ThrownF,
+    ThrownB,
+    ThrownHi,
+    ThrownLw,
     AttackAirN,
     AttackAirF,
     AttackAirB,
@@ -134,6 +149,8 @@ pub struct Fighter {
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
     pub clank: clank::State,
+    /// Paired capture ownership is privileged deterministic physics state.
+    pub grab: grab::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -197,6 +214,10 @@ pub enum Event {
         /// Slot indices and suppression flags in native player order.
         slots: [usize; 2],
         suppressed: [bool; 2],
+    },
+    Grabbed {
+        holder: usize,
+        victim: usize,
     },
     Landed {
         player: usize,

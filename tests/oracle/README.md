@@ -94,3 +94,10 @@ delegation boundary, before the submenu's own initialization side effects.
 ftCo_DownAttack.c. The adapter supplies only the input-lock result, current and
 previous physical-L/R press ages, and the two common-data boundaries. Match
 tests own floor contact and the subsequent Passive/Down action graph.
+
+`throw_input` preserves ftCo_Throw.c and selects the three complete static-inline
+main-stick crossing predicates used by `ftCo_800DD1E4`. The host adapter supplies
+only the current/previous stick samples and each common-data threshold. The Rust
+selector composes those exact predicates with C-stick freshness and facing;
+native match tests own catch contact, direction priority, bone attachment,
+scripted release and the following damage lifecycle.

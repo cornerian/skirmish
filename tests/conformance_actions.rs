@@ -4,6 +4,8 @@
 
 #[path = "support/aerial.rs"]
 mod aerial_resources;
+#[path = "support/grab.rs"]
+mod grab_resources;
 use aerial_resources::conformance as support;
 
 use skirmish::game::{BUTTON_A, BUTTON_X, Controller, Match, State};
@@ -157,7 +159,7 @@ fn digital_shoulder_raises_shield_and_release_lowers_it() {
 }
 
 fn grabbed_game() -> Match {
-    let mut data = data();
+    let mut data = grab_resources::profile(data());
     data.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
     let mut game = Match::new(data, 0).unwrap();
     step(&mut game, input(BUTTON_Z, [0.0; 2]));
@@ -179,7 +181,6 @@ fn grabbed_game() -> Match {
 // src/melee/ft/kinds/ftCommon/{ftCo_Catch,ftCo_CatchPull,ftCo_CapturePulled}.c;
 // Fighter_Spaghetti_8006AD10 expands physical Z to A plus HSD_PAD_LR.
 #[test]
-#[ignore = "unimplemented: Z macro, catch collision, paired capture and held-victim states"]
 fn grab_contact_places_attacker_and_victim_in_paired_hold_states() {
     let game = grabbed_game();
     assert_eq!(game.state().fighters[1].percent, 0.0);
@@ -190,7 +191,6 @@ fn grab_contact_places_attacker_and_victim_in_paired_hold_states() {
 // src/melee/ft/kinds/ftCommon/{ftCo_Throw,ftCo_Thrown}.c: direction selection,
 // throw animation event, and release apply damage/knockback to the held fighter.
 #[test]
-#[ignore = "unimplemented: grab hold, throw actions and scripted victim release"]
 fn forward_throw_releases_the_victim_with_damage_and_knockback() {
     let mut game = grabbed_game();
     let state = step(&mut game, input(0, [1.0, 0.0]));
