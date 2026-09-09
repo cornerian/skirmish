@@ -61,6 +61,8 @@ pub enum JumpInput {
 pub struct State {
     pub tilt_x_age: u8,
     pub tilt_y_age: u8,
+    /// Fighter x67F: age of a rising logical shoulder input, including analog.
+    pub trigger_age: u8,
     pub jumps_used: u8,
     pub jump_input: JumpInput,
     pub turn_frames: f32,
@@ -76,6 +78,7 @@ impl Default for State {
         Self {
             tilt_x_age: 254,
             tilt_y_age: 254,
+            trigger_age: 255,
             jumps_used: 0,
             jump_input: JumpInput::Buttons,
             turn_frames: 0.0,
@@ -230,9 +233,9 @@ fn ground_jump(f: &mut Fighter, data: &FighterData, input: Controller) {
     enter(f, Action::Jump);
 }
 
-pub fn update_actions(f: &mut Fighter, data: &FighterData, input: Controller) {
+pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Controller) -> bool {
     let Some(p) = data.locomotion.as_ref() else {
-        return;
+        return false;
     };
     if !f.grounded && f.locomotion.jumps_used == 0 {
         f.locomotion.jumps_used = 1;
@@ -276,6 +279,18 @@ pub fn update_actions(f: &mut Fighter, data: &FighterData, input: Controller) {
         Action::Pass if f.action_frame >= p.pass_animation_frames => enter(f, Action::Fall),
         _ => {}
     }
+    just_turned
+}
+
+pub(crate) fn update_actions(
+    f: &mut Fighter,
+    data: &FighterData,
+    input: Controller,
+    just_turned: bool,
+) {
+    let Some(p) = data.locomotion.as_ref() else {
+        return;
+    };
     let grounded_action = f.grounded
         && matches!(
             f.action,
@@ -315,21 +330,8 @@ pub fn update_actions(f: &mut Fighter, data: &FighterData, input: Controller) {
     } else if matches!(
         f.action,
         Action::Jump | Action::Fall | Action::JumpAerial | Action::Pass
-    ) && !f.grounded
-        && f.locomotion.jumps_used < p.max_jumps
-        && jump_input(f, p, input, false).is_some()
-    {
-        f.ground_velocity = 0.0;
-        f.ecb_lock = 10;
-        f.ecb.bottom_locked = true;
-        f.velocity = [
-            input.stick[0] * p.air_jump_horizontal_multiplier,
-            data.movement.jump_vertical_velocity * p.air_jump_vertical_multiplier,
-        ];
-        f.fast_fall = false;
-        f.locomotion.jumps_used += 1;
-        f.locomotion.tilt_y_age = 254;
-        enter(f, Action::JumpAerial);
+    ) {
+        try_aerial_jump(f, data, input);
     }
     match f.action {
         Action::Wait | Action::Walk => {
@@ -394,6 +396,30 @@ pub fn update_actions(f: &mut Fighter, data: &FighterData, input: Controller) {
         }
         _ => {}
     }
+}
+
+pub(crate) fn try_aerial_jump(f: &mut Fighter, data: &FighterData, input: Controller) -> bool {
+    let Some(p) = &data.locomotion else {
+        return false;
+    };
+    if f.grounded
+        || f.locomotion.jumps_used >= p.max_jumps
+        || jump_input(f, p, input, false).is_none()
+    {
+        return false;
+    }
+    f.ground_velocity = 0.0;
+    f.ecb_lock = 10;
+    f.ecb.bottom_locked = true;
+    f.velocity = [
+        input.stick[0] * p.air_jump_horizontal_multiplier,
+        data.movement.jump_vertical_velocity * p.air_jump_vertical_multiplier,
+    ];
+    f.fast_fall = false;
+    f.locomotion.jumps_used += 1;
+    f.locomotion.tilt_y_age = 254;
+    enter(f, Action::JumpAerial);
+    true
 }
 
 pub fn pass_request(

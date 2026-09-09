@@ -129,10 +129,6 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
-        require(
-            rules.staling.is_none() || fighter.jab.move_id.is_some_and(|id| id != 0),
-            "staling requires an explicit nonzero attack move_id",
-        )?;
         if let Some(rules) = &rules.shield {
             shield::validate(rules, fighter)?;
         } else {
@@ -222,52 +218,114 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             )?;
             validate_shape(hurt.physics(), &pose)?;
         }
-        require(
-            !fighter.jab.frames.is_empty() && fighter.jab.frames.len() <= 4096,
-            "jab must supply 1..4096 complete physics frames",
-        )?;
-        for frame in &fighter.jab.frames {
+        if let Some(p) = &fighter.aerials {
             require(
-                frame.bones.len() == fighter.bones.len(),
-                "animation changes bone count",
+                p.selection
+                    .thresholds
+                    .into_iter()
+                    .all(|x| x > 0.0 && x <= 1.0)
+                    && (0.0..=core::f32::consts::FRAC_PI_2).contains(&p.selection.vertical_angle)
+                    && (0..=255).contains(&p.l_cancel_window)
+                    && p.l_cancel_divisor.is_finite()
+                    && p.l_cancel_divisor > 0.0,
+                "invalid aerial selection or L-cancel parameters",
             )?;
-            require(
-                frame
-                    .bones
-                    .iter()
-                    .zip(&fighter.bones)
-                    .all(|(a, b)| a.parent == b.parent && a.classical_scale == b.classical_scale),
-                "animation changes skeleton topology",
-            )?;
-            let pose = validate_bones(&frame.bones)?;
-            for hurt in &fighter.hurtboxes {
-                validate_shape(hurt.physics(), &pose)?;
+            for movement in &p.moves {
+                require(
+                    movement.flags.len() == movement.attack.frames.len()
+                        && movement.landing_lag > 0.0
+                        && movement.landing_lag <= 1_000_000.0
+                        && movement.landing_lag / p.l_cancel_divisor < 2_147_483_648.0
+                        && (0.0..=4095.0).contains(&movement.landing_animation_end)
+                        && !movement.landing_poses.is_empty()
+                        && movement.landing_poses.len() <= 4096
+                        && (movement.landing_animation_end as usize) < movement.landing_poses.len(),
+                    "aerials require command flags, finite landing lag and complete landing poses",
+                )?;
+                for sample in &movement.landing_poses {
+                    validate_animation_pose(sample, fighter)?;
+                }
+                let cancelled = crate::fighter::aerial::landing_lag(
+                    movement.landing_lag,
+                    0,
+                    p.l_cancel_window,
+                    p.l_cancel_divisor,
+                )
+                .map_err(|e| Error::Data(e.to_string()))?;
+                require(
+                    [movement.landing_lag, cancelled].into_iter().all(|lag| {
+                        let rate = crate::fighter::aerial::landing_animation_rate(
+                            movement.landing_animation_end,
+                            lag,
+                        );
+                        rate.is_finite() && rate > 0.0
+                    }),
+                    "aerial landing animation rate must be finite and positive",
+                )?;
             }
-            require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
-            for hit in &frame.hitboxes {
-                require(
-                    hit.bone < frame.bones.len()
-                        && hit.group < 16
-                        && finite(hit.center)
-                        && nonnegative([hit.radius])
-                        && hit.damage <= 999
-                        && (-1000..=1000).contains(&hit.shield_damage)
-                        && hit.growth <= 1000
-                        && hit.fixed <= 1000
-                        && hit.base <= 1000
-                        && (0.0..=361.0).contains(&hit.angle_degrees)
-                        && hit.angle_degrees.fract() == 0.0,
-                    "invalid or unsupported hitbox",
-                )?;
-                validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
-                require(
-                    hit.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base < 1_000_000.0,
-                    "hitlag exceeds supported counter range",
-                )?;
+        }
+        for attack in core::iter::once(&fighter.jab).chain(
+            fighter
+                .aerials
+                .iter()
+                .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
+        ) {
+            require(
+                rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),
+                "staling requires an explicit nonzero attack move_id",
+            )?;
+            require(
+                !attack.frames.is_empty() && attack.frames.len() <= 4096,
+                "attack must supply 1..4096 complete physics frames",
+            )?;
+            for frame in &attack.frames {
+                let pose = validate_animation_pose(&frame.bones, fighter)?;
+                require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
+                for hit in &frame.hitboxes {
+                    require(
+                        hit.bone < frame.bones.len()
+                            && hit.group < 16
+                            && finite(hit.center)
+                            && nonnegative([hit.radius])
+                            && hit.damage <= 999
+                            && (-1000..=1000).contains(&hit.shield_damage)
+                            && hit.growth <= 1000
+                            && hit.fixed <= 1000
+                            && hit.base <= 1000
+                            && (0.0..=361.0).contains(&hit.angle_degrees)
+                            && hit.angle_degrees.fract() == 0.0,
+                        "invalid or unsupported hitbox",
+                    )?;
+                    validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
+                    require(
+                        hit.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base
+                            < 1_000_000.0,
+                        "hitlag exceeds supported counter range",
+                    )?;
+                }
             }
         }
     }
     Ok(())
+}
+
+fn validate_animation_pose(bones: &[Bone], fighter: &FighterData) -> Result<Pose, Error> {
+    require(
+        bones.len() == fighter.bones.len(),
+        "animation changes bone count",
+    )?;
+    require(
+        bones
+            .iter()
+            .zip(&fighter.bones)
+            .all(|(a, b)| a.parent == b.parent && a.classical_scale == b.classical_scale),
+        "animation changes skeleton topology",
+    )?;
+    let pose = validate_bones(bones)?;
+    for hurt in &fighter.hurtboxes {
+        validate_shape(hurt.physics(), &pose)?;
+    }
+    Ok(pose)
 }
 
 fn validate_bones(bones: &[Bone]) -> Result<Pose, Error> {
@@ -363,6 +421,8 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.locomotion.turn_frames,
                 f.locomotion.run_brake_frames,
                 f.locomotion.dash_initial_delta,
+                f.aerial.landing_elapsed,
+                f.aerial.landing_rate,
             ])
             .chain(f.locomotion.pass_delay)
             .chain(f.staling.hits.iter().flatten().map(|hit| hit.damage))

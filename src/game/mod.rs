@@ -3,6 +3,7 @@
 //! See `docs/match.md` for the explicit scheduler and unsupported gameplay rules.
 #![forbid(unsafe_code)]
 
+pub mod aerial;
 mod collision;
 pub mod damage;
 pub mod data;
@@ -81,6 +82,16 @@ pub enum Action {
     Pass,
     Fall,
     Jab,
+    AttackAirN,
+    AttackAirF,
+    AttackAirB,
+    AttackAirHi,
+    AttackAirLw,
+    LandingAirN,
+    LandingAirF,
+    LandingAirB,
+    LandingAirHi,
+    LandingAirLw,
     Damage,
     Landing,
     Respawn,
@@ -106,6 +117,7 @@ pub struct Fighter {
     pub ecb_lock: u8,
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
+    pub aerial: aerial::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,

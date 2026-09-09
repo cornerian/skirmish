@@ -48,6 +48,15 @@ cargo test --locked --test conformance_resources -- --ignored
 
 ## Coverage map
 
+`game_aerial_actions` supplies explicit invented resources for five ordinary
+aerials and their landing animations. It covers both-facing selection, fresh
+versus held C-stick, attack/jump priority, interrupt and landing flags, animated
+contacts and one-shot facing changes through hitlag, checkpoint restoration,
+strict aggregate-trigger L-cancel timing and invalid-resource rejection. Its
+neutral/directional conformance cases run normally. `replay_match` also reads a
+synthetic Peppi file through aerial and landing transitions, and detects a
+changed C-stick at the first affected frame.
+
 `fighter::aerial` isolates ordinary C-stick freshness, main/C-stick aerial
 selection, folded stick angles and landing arithmetic. `aerial_differential`
 uses unchanged original function bodies and explicit synthetic coefficients;

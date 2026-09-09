@@ -60,8 +60,8 @@ pub(crate) fn transition(fighter: &mut Fighter, action: Action) {
     fighter.staling.transitions.push(action);
 }
 
-/// The current native slice maps Jab to its supplied identity and other motions
-/// to source sentinel1. Additional supported attacks must extend this lookup.
+/// Supported attacks use their explicit resource identity; other motions use
+/// source sentinel 1. Every caller uses the same attack lookup as pose sampling.
 pub(crate) fn flush(
     fighter: &mut Fighter,
     data: &FighterData,
@@ -70,11 +70,11 @@ pub(crate) fn flush(
 ) -> Result<(), Error> {
     for action in fighter.staling.transitions.drain(..) {
         if rules.is_some() {
-            let move_id = match action {
-                Action::Jab => data.jab.move_id.ok_or_else(|| {
+            let move_id = match data.attack(action) {
+                Some(attack) => attack.move_id.ok_or_else(|| {
                     Error::Data("staling requires an explicit attack move_id".into())
                 })?,
-                _ => 1,
+                None => 1,
             };
             fighter.staling.identity.change_move(move_id, counter);
         }

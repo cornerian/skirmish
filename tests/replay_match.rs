@@ -10,6 +10,8 @@ use skirmish::{
 };
 use std::{fs, process::Command};
 
+#[path = "support/aerial.rs"]
+mod aerial_support;
 #[path = "../crates/peppi-adapter/tests/support/mod.rs"]
 mod support;
 
@@ -168,6 +170,46 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
     assert_eq!(report.resources_sha256.len(), 64);
+}
+
+#[test]
+fn file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_diverges() {
+    let mut data = aerial_support::data();
+    data.stage.spawns[0] = [-10.0, 4.0];
+    data.fighters[0].movement.gravity = 0.5;
+    data.fighters[0].movement.terminal_velocity = 2.0;
+    data.fighters[0].aerials.as_mut().unwrap().moves[1].flags[0].reverse_facing = true;
+    let initialization = Initialization {
+        data,
+        seed: 42,
+        ports: PORTS,
+        next_frame: FIRST,
+        warmup: vec![],
+    };
+    let mut inputs = vec![IDLE; 56];
+    inputs[2][0].cstick = [1.0, 0.0];
+    inputs[2][0].trigger = 0.25;
+    let mut game = replay_match::initialize(&initialization).unwrap();
+    let states: Vec<_> = inputs
+        .iter()
+        .map(|&input| game.step(input).unwrap().clone())
+        .collect();
+    for action in [Action::AttackAirF, Action::LandingAirF, Action::Wait] {
+        assert!(states.iter().any(|s| s.fighters[0].action == action));
+    }
+    let recording = Recording {
+        initialization,
+        inputs,
+        states,
+    };
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.cstick.x.set(2, Some(-1.0));
+    });
+    assert!(
+        matches!(recording.compare(&changed).outcome, Outcome::Mismatch { frame, checked_frames: 2, .. } if frame == FIRST + 2)
+    );
 }
 
 #[test]

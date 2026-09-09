@@ -156,6 +156,18 @@ pub struct FighterData {
     pub bones: Vec<Bone>,
     pub hurtboxes: Vec<Capsule>,
     pub jab: Attack,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aerials: Option<super::aerial::Parameters>,
+}
+
+impl FighterData {
+    pub(crate) fn attack(&self, action: super::Action) -> Option<&Attack> {
+        if action == super::Action::Jab {
+            return Some(&self.jab);
+        }
+        let index = super::aerial::attack_index(action)?;
+        Some(&self.aerials.as_ref()?.moves[index].attack)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

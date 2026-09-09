@@ -184,10 +184,12 @@ contacts, while the original eligibility callback runs earlier in fighter update
 ## Explicit coverage limits
 
 The match supports the supplied movement profiles, airborne drift/fast fall,
-a single jab, ordinary damage/armor, integral fixed-angle launch and angle 361.
-Its inputs do not yet reproduce the full PAD-to-fighter input history. The
-optional [shield profile](shield.md) adds ordinary raise/hold/release, stun,
-recoil, break and dizzy recovery. Grabs, specials, aerial attacks, ledge actions, running turns and character
+a jab, all five ordinary aerials with landing/autocancel/L-cancel, ordinary
+damage/armor, integral fixed-angle launch and angle 361. Aerial resources and
+callback limits are described in [aerials.md](aerials.md). The optional
+[shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
+break and dizzy recovery. Inputs do not yet reproduce the full PAD-to-fighter
+history. Grabs, specials, ledge actions, running turns and character
 multijumps remain unported. Some accepted stick/button combinations consequently
 have no action in this experimental profile.
 
@@ -198,7 +200,7 @@ implement techs, bounces or knockdown.
 
 Combat omits priority/clanks, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,
-throws and other special launch-angle behaviors. Outside jab,
+throws and other special launch-angle behaviors. Outside supplied attack and landing poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
 damage collision require those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

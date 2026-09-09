@@ -2,8 +2,9 @@
 //! these assert action/lifecycle semantics, not authentic character numerics.
 //! Every ignored test must become a normal passing test when its gap is ported.
 
-#[path = "support/conformance.rs"]
-mod support;
+#[path = "support/aerial.rs"]
+mod aerial_resources;
+use aerial_resources::conformance as support;
 
 use skirmish::game::{BUTTON_A, BUTTON_X, Controller, Match, State};
 use support::{action, data, game, idle, step};
@@ -98,9 +99,8 @@ fn fresh_jump_press_in_air_restores_upward_velocity() {
 
 // src/melee/ft/kinds/ftCommon/ftCo_AttackAir.c: neutral selection and entry.
 #[test]
-#[ignore = "unimplemented: aerial attack dispatch and native aerial action resources"]
 fn neutral_attack_in_air_selects_neutral_aerial() {
-    let mut game = airborne_game();
+    let mut game = aerial_resources::game();
     step(&mut game, idle());
     let state = step(&mut game, input(BUTTON_A, [0.0; 2]));
     assert_eq!(action(&state, 0), "attack_air_n");
@@ -110,7 +110,6 @@ fn neutral_attack_in_air_selects_neutral_aerial() {
 // src/melee/ft/kinds/ftCommon/ftCo_AttackAir.c: GetMsidFromCStick uses the
 // main stick when the C-stick did not initiate the attack.
 #[test]
-#[ignore = "unimplemented: directional aerial attack selection"]
 fn directional_aerials_select_forward_back_up_and_down_states() {
     for (stick, expected) in [
         ([1.0, 0.0], "attack_air_f"),
@@ -118,7 +117,7 @@ fn directional_aerials_select_forward_back_up_and_down_states() {
         ([0.0, 1.0], "attack_air_hi"),
         ([0.0, -1.0], "attack_air_lw"),
     ] {
-        let mut game = airborne_game();
+        let mut game = aerial_resources::game();
         step(&mut game, idle());
         let state = step(&mut game, input(BUTTON_A, stick));
         assert_eq!(action(&state, 0), expected);

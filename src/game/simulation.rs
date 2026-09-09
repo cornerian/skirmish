@@ -53,6 +53,7 @@ fn spawn(
             health: data.rules.shield.as_ref().map_or(0.0, |r| r.maximum_health),
             ..Default::default()
         },
+        aerial: aerial::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -79,6 +80,7 @@ fn spawn(
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
+    fighter.aerial = aerial::State::default();
     staling::transition(fighter, action);
     fighter.action = action;
     fighter.action_frame = 0;
@@ -159,6 +161,7 @@ pub(crate) fn advance(
                     &stage,
                     player,
                     &mut state.events,
+                    &data.fighters[player],
                 )?;
             }
             staling::flush(
@@ -197,6 +200,7 @@ pub(crate) fn advance(
             &stage,
             player,
             &mut state.events,
+            &data.fighters[player],
         )?;
         staling::flush(
             fighter,
@@ -216,7 +220,7 @@ pub(crate) fn advance(
     let mut swept = [[None; 4]; 2];
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
-        let frame = if fighter.action == Action::Jab {
+        let frame = if data.fighters[player].attack(fighter.action).is_some() {
             Some(attack_frame(fighter, &data.fighters[player])?)
         } else {
             None
@@ -229,7 +233,7 @@ pub(crate) fn advance(
         let victim = 1 - attacker;
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
         if frozen[attacker]
-            || source.action != Action::Jab
+            || data.fighters[attacker].attack(source.action).is_none()
             || target.invincibility > 0
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
@@ -414,6 +418,11 @@ fn advance_ecb_lock(fighter: &mut Fighter) {
 // Input sampling continues during hitlag; SDI/jump transitions consume the
 // same history, so old held inputs cannot become fresh after a state change.
 fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+    f.locomotion.trigger_age = if input.shield_held() && !f.previous_input.shield_held() {
+        0
+    } else {
+        f.locomotion.trigger_age.saturating_add(1)
+    };
     let thresholds = data
         .locomotion
         .as_ref()
@@ -486,11 +495,18 @@ fn update_action(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Cont
         }
         _ => {}
     }
+    // Anim transitions install the destination state's input callback before
+    // dispatch. This includes fresh aerial input on the ground-jump launch.
+    let just_turned = locomotion::update_animation(f, data, input);
+    aerial::update_animation(f, data);
     if shield::update(f, data, rules.shield.as_ref(), input) {
         return;
     }
+    if aerial::update(f, data, input) {
+        return;
+    }
     if data.locomotion.is_some() {
-        locomotion::update_actions(f, data, input);
+        locomotion::update_actions(f, data, input, just_turned);
         return;
     }
     let pressed = input.buttons & !f.previous_input.buttons;
@@ -591,8 +607,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
 }
 
 pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
-    let local = if fighter.action == Action::Jab {
+    let local = if data.attack(fighter.action).is_some() {
         &attack_frame(fighter, data)?.bones
+    } else if aerial::landing_index(fighter.action).is_some() {
+        aerial::landing_pose(fighter, data)
+            .ok_or_else(|| Error::Data("landing pose is outside supplied samples".into()))?
     } else {
         &data.bones
     };
@@ -607,7 +626,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
-    data.jab
+    data.attack(fighter.action)
+        .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames
         .get(fighter.action_frame as usize)
         .ok_or_else(|| Error::Physics("attack pose frame is outside the supplied animation".into()))

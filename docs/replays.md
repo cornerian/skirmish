@@ -130,7 +130,7 @@ Derived main-stick, C-stick and logical-trigger flags are accepted; a logical
 trigger flag without analog pressure or digital L/R is rejected. Other buttons
 remain unsupported. Raw stick and physical analog samples remain preserved by
 the importer, but do not replace processed input. This channel support enables
-C-stick ASDI; it does not establish shield or aerial-action coverage. Pre-frame
+C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v1`** policy compares only these post-frame fields for

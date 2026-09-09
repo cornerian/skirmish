@@ -137,6 +137,7 @@ pub(crate) fn resolve(
     stage: &stage::Stage<'_>,
     player: usize,
     events: &mut Vec<Event>,
+    data: &FighterData,
 ) -> Result<(), Error> {
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
@@ -280,7 +281,7 @@ pub(crate) fn resolve(
             f.skip_floor = None;
             if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
                 simulation::enter(f, Action::ShieldBreakDown);
-            } else if f.action != Action::Damage {
+            } else if f.action != Action::Damage && !super::aerial::land(f, data)? {
                 simulation::enter(f, Action::Landing);
             }
             events.push(Event::Landed { player });
