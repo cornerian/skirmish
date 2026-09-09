@@ -41,6 +41,8 @@ struct GpuScene {
     center: Vec3,
     radius: f32,
     particles: ParticleRenderer,
+    #[cfg(test)]
+    timestamps: Option<(wgpu::QuerySet, u32)>,
 }
 
 impl GpuScene {
@@ -52,6 +54,8 @@ impl GpuScene {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Skirmish renderer"),
+                #[cfg(test)]
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 ..Default::default()
             })
             .await
@@ -343,6 +347,8 @@ impl GpuScene {
             center,
             radius,
             particles,
+            #[cfg(test)]
+            timestamps: None,
         })
     }
 
@@ -394,6 +400,14 @@ impl GpuScene {
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene"),
+            #[cfg(test)]
+            timestamp_writes: self.timestamps.as_ref().map(|(queries, frame)| {
+                wgpu::RenderPassTimestampWrites {
+                    query_set: queries,
+                    beginning_of_pass_write_index: Some(frame * 2),
+                    end_of_pass_write_index: Some(frame * 2 + 1),
+                }
+            }),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
                 depth_slice: None,
@@ -869,6 +883,177 @@ mod tests {
             assert_eq!(baseline, capture(&scene, &[particle]));
             assert!(first.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
         }
+    }
+
+    #[test]
+    #[ignore = "GPU performance probe; run explicitly with --release --nocapture"]
+    fn gpu_particle_budget_probe() {
+        use crate::particles::{MAX_PARTICLES, ParticleEffect};
+        use clap::ValueEnum;
+        pollster::block_on(async {
+            let instance = wgpu::Instance::new(
+                wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
+            );
+            let adapter = request_adapter(&instance, None).await.unwrap();
+            let scene = Scene {
+                meshes: vec![],
+                textures: vec![],
+                warnings: vec![],
+            };
+            let mut gpu = GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb)
+                .await
+                .unwrap();
+            let color = gpu
+                .device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("particle performance probe"),
+                    size: extent(1024, 768),
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+                .create_view(&Default::default());
+            let depth = depth_view(&gpu.device, 1024, 768);
+            let mut results = Vec::new();
+            for (scenario, count, half_size, overlap) in [
+                ("empty", 0, 0.018, false),
+                ("small_512", 512, 0.018, false),
+                ("small_8192", MAX_PARTICLES, 0.018, false),
+                ("overlap_256", 256, 0.75, true),
+            ] {
+                let queries = gpu
+                    .device
+                    .features()
+                    .contains(wgpu::Features::TIMESTAMP_QUERY)
+                    .then(|| {
+                        gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
+                            label: Some("particle pass timings"),
+                            ty: wgpu::QueryType::Timestamp,
+                            count: 136,
+                        })
+                    });
+                let effects = ParticleEffect::value_variants();
+                let mut samples: Vec<_> = (0..count)
+                    .map(|i| {
+                        let mut p = Particle::preview(effects[i % effects.len()], 0.35);
+                        p.position = [
+                            (i % 128) as f32 / 127.0 * 3.0 - 1.5,
+                            (i / 128) as f32 / 63.0 * 3.0 - 1.5,
+                            0.0,
+                        ];
+                        if overlap {
+                            p.position = [
+                                (i % 16) as f32 / 15.0 * 0.8 - 0.4,
+                                (i / 16) as f32 / 15.0 * 0.8 - 0.4,
+                                0.0,
+                            ];
+                        }
+                        p.half_size = [half_size; 2];
+                        p.seed = i as u32;
+                        p
+                    })
+                    .collect();
+                let mut milliseconds = Vec::new();
+                for frame in 0..68 {
+                    gpu.timestamps = queries.as_ref().map(|q| (q.clone(), frame));
+                    let start = std::time::Instant::now();
+                    for p in &mut samples {
+                        p.age = 0.2 + frame as f32 * 0.008;
+                    }
+                    gpu.particles.set_particles(&samples).unwrap();
+                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                    gpu.draw(&mut encoder, &color, &depth, [1024, 768], [0.0, 0.0, 1.0]);
+                    let submitted = gpu.queue.submit([encoder.finish()]);
+                    gpu.device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: Some(submitted),
+                            timeout: Some(Duration::from_secs(30)),
+                        })
+                        .unwrap();
+                    if frame >= 8 {
+                        milliseconds.push(start.elapsed().as_secs_f64() * 1000.0);
+                    }
+                }
+                milliseconds.sort_by(f64::total_cmp);
+                let gpu_times = if let Some(queries) = &queries {
+                    let mut times = query_milliseconds(&gpu, queries).await;
+                    times.sort_by(f64::total_cmp);
+                    Some(
+                        serde_json::json!({"mean_ms": times.iter().sum::<f64>() / times.len() as f64,
+                        "median_ms": times[30], "p95_ms": times[56]}),
+                    )
+                } else {
+                    None
+                };
+                results.push(serde_json::json!({"scenario":scenario, "particles":count, "half_size":half_size,
+                    "mean_ms":milliseconds.iter().sum::<f64>() / milliseconds.len() as f64,
+                    "median_ms":milliseconds[30], "p95_ms":milliseconds[56],
+                    "gpu_render_pass": gpu_times}));
+            }
+            let report = serde_json::json!({"adapter":gpu.adapter_name,
+                "debug_assertions":cfg!(debug_assertions), "dimensions":[1024,768],
+                "method":"Wall time includes CPU staging, depth sort, command encoding and synchronized GPU completion. Optional GPU timestamps measure the render pass including target clears. Eight warmup plus sixty measured frames. Small scenarios tile quads over a 3x3 world area; overlap uses a 0.8x0.8 area with larger quads. Neither is maximum full-screen overdraw.",
+                "results":results});
+            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            if let Ok(path) = std::env::var("SKIRMISH_PARTICLE_BENCHMARK_OUTPUT") {
+                std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+            }
+        });
+    }
+
+    async fn query_milliseconds(gpu: &GpuScene, queries: &wgpu::QuerySet) -> Vec<f64> {
+        let resolve = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("timestamp resolve"),
+            size: 136 * 8,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("timestamp readback"),
+            size: 136 * 8,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        encoder.resolve_query_set(queries, 0..136, &resolve, 0);
+        encoder.copy_buffer_to_buffer(&resolve, 0, &readback, 0, 136 * 8);
+        let submission = gpu.queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        readback
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+        gpu.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(30)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let mapped = readback.slice(..).get_mapped_range().unwrap();
+        let period = f64::from(gpu.queue.get_timestamp_period()) / 1e6;
+        let times = mapped
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .skip(8)
+            .map(|pair| {
+                let start = u64::from_le_bytes(pair[..8].try_into().unwrap());
+                let end = u64::from_le_bytes(pair[8..].try_into().unwrap());
+                assert!(end >= start);
+                (end - start) as f64 * period
+            })
+            .collect();
+        drop(mapped);
+        readback.unmap();
+        times
     }
 
     #[test]

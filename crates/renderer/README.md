@@ -17,7 +17,9 @@ the workspace's version control and build output.
 
 ## Run
 
-Procedural particle previews use `--particle smoke`. See the
+Procedural particle previews use `--particle smoke`, `--particle lightning`,
+or any of the 29 shader families listed by `--help`. Their source catalog covers
+337 unique exported particle frames and 593 aliases. See the
 [WESL particle API, coverage and cost](../../docs/particles.md).
 
 Use stable Rust and Cargo from the Skirmish workspace root. Install SDL3; the

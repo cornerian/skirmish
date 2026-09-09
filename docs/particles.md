@@ -32,9 +32,9 @@ allocations. Noise is capped at three bands and attenuated above the pixel
 footprint. Transparent scene meshes currently draw before particles: their
 mutual transparency ordering is not solved by the particle sort.
 
-This is a bounded rendering design, not a measured frame-time guarantee. GPU
-cost depends on projected area and overlap; overlapping large quads still cost
-fill rate. The preview permits checking distant and enlarged effects by zooming.
+GPU cost depends on projected area and overlap; overlapping large quads still
+cost fill rate. The preview permits checking distant and enlarged effects by
+zooming. Measurements below are specific to the recorded adapter and workload.
 
 ## Effect coverage
 
@@ -102,3 +102,44 @@ At the pinned revision it finds 579 selected API references and 339 distinct
 literal dispatch/generator/bank keys. These are source references, not 339
 distinct particle appearances: data-driven entries remain outside that count.
 The audit preserves dynamic expressions and source locations for follow-up.
+
+## Verification and performance
+
+The 2026-09-09 run is archived at
+`/mnt/archive/runs/skirmish-wesl-particles-20260909-v1`. Its manifest records
+source hashes, the upstream revision, per-effect commits, commands and test
+counts. It includes the 29 native GPU captures, a contact sheet, logs and the
+benchmark's JSON output. No original particle textures are included in that run
+or required to reproduce the shaders.
+
+Formatting, 341 workspace tests, 481 tests with `c-oracle`, and workspace Clippy
+with all targets/features passed. Each ordinary suite ignored 32 tests,
+including incomplete conformance scenarios and graphics probes. The combined
+particle GPU probe separately checked every shader's visible output, lifetime,
+determinism, opaque occlusion and clipping, plus transparency sort order. Scene
+and menu GPU captures passed. The SDL particle preview presented three frames
+on the NVIDIA GeForce RTX 4090 and exited normally.
+
+The release probe uses all 29 effects round-robin at 1024×768. It excludes device
+and pipeline creation, warms up eight frames, then measures 60. Wall time
+includes CPU staging, sorting, upload submission, drawing and synchronous GPU
+completion. Optional GPU timestamps measure the render pass including clears;
+they are enabled only in test builds. Small quads tile a 3×3 world-space area;
+the overlapping case clusters larger quads in a 0.8×0.8 area.
+
+| Workload | Mean wall time | Mean GPU render pass |
+| --- | --- | --- |
+| Empty target | 0.055 ms | 0.001 ms |
+| 512 small particles | 0.078 ms | 0.005 ms |
+| 8,192 small particles | 0.334 ms | 0.014 ms |
+| 256 overlapping larger particles | 0.244 ms | 0.159 ms |
+
+These are microbenchmarks, not whole-game frame times or a maximum-overdraw
+guarantee. Driver scheduling affects wall time; the archived GPU timestamp
+measurements distinguish render work from that overhead.
+
+```xonsh
+$CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-wesl-particles-target'
+$SKIRMISH_PARTICLE_BENCHMARK_OUTPUT = '/tmp/particle-benchmark.json'
+cargo test --locked --release -p renderer --lib gpu_particle_budget_probe -- --ignored --nocapture
+```
