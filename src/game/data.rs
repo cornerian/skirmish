@@ -70,6 +70,8 @@ pub struct Floor {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rules {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub staling: Option<crate::fighter::stale::Rules>,
     pub stocks: u8,
     pub countdown_frames: u32,
     pub time_limit_frames: u32,
@@ -240,6 +242,9 @@ impl Capsule {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Attack {
+    /// Native move-table identity. Sentinel1 is exempt from stale-move damage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_id: Option<u16>,
     /// Exactly one physics-pose sample per simulation frame, including recovery.
     /// No implicit interpolation or fallback for missing samples.
     pub frames: Vec<AttackFrame>,

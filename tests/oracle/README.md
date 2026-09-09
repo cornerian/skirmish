@@ -34,3 +34,10 @@ coefficients. C-stick override, LR callbacks and collision-flag side effects are
 disabled; static collision response is tested through the native match instead.
 The horizontal stick-age branch is an exact excerpt of `Fighter_procInput`,
 verified against the preserved source before host compilation.
+
+`stale_queue` and `stale_damage` preserve plstale.c and ft_0881.c. Their selected
+whole functions use minimal host Fighter/table layouts and thread-local player,
+coefficient, debug and instance globals. The damage function's unused instance
+argument is retained. The core tests cover fighter-owned updates; item ownership
+routing is not included. Native match tests exercise creation-time hitbox damage
+caching and the separate unstaled integer knockback term.

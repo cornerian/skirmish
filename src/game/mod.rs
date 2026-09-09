@@ -9,6 +9,7 @@ pub mod data;
 pub mod hitboxes;
 pub mod locomotion;
 mod simulation;
+pub mod staling;
 mod validation;
 
 use crate::{collision::ecb, replay::FrameStepper};
@@ -111,6 +112,7 @@ pub struct Fighter {
     /// Attack hit-group history is checkpointed, not inferred from observations.
     pub hit_groups: u16,
     pub hitboxes: [hitboxes::Track; 4],
+    pub staling: staling::State,
     pub previous_input: Controller,
 }
 
@@ -169,6 +171,7 @@ pub struct State {
     pub phase: Phase,
     pub fighters: [Fighter; 2],
     pub rng_seed: u32,
+    pub attack_instances: crate::fighter::stale::InstanceCounter,
     pub events: Vec<Event>,
 }
 

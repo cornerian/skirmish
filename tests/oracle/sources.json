@@ -113,5 +113,15 @@
     "fixture": "tests/oracle/original/mpcoll.c",
     "upstream": "src/melee/mp/mpcoll.c",
     "sha256": "a89b65abe1203137f2efdc66de1b1280c15b6a4632991e06022dba4979c74172"
+  },
+  {
+    "fixture": "tests/oracle/original/stale_queue.c",
+    "upstream": "src/melee/pl/plstale.c",
+    "sha256": "7a93b42a63a16c9f1c3b367f8d7198b432d1f35a80dce1ea6fc666f2ca920a10"
+  },
+  {
+    "fixture": "tests/oracle/original/stale_damage.c",
+    "upstream": "src/melee/ft/ft_0881.c",
+    "sha256": "811b429ea6572f10249e31db3a9ea9c5a458bbb2187af8215c678907c9395d62"
   }
 ]

@@ -23,6 +23,7 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
             spawn(data, 1, data.rules.stocks, 0)?,
         ],
         rng_seed: seed,
+        attack_instances: crate::fighter::stale::InstanceCounter::default(),
         events: vec![],
     })
 }
@@ -63,6 +64,7 @@ fn spawn(
         fast_fall: false,
         hit_groups: 0,
         hitboxes: [hitboxes::Track::default(); 4],
+        staling: staling::State::default(),
         previous_input: Controller::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], &data.stage)?;
@@ -73,6 +75,7 @@ fn spawn(
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
+    staling::transition(fighter, action);
     fighter.action = action;
     fighter.action_frame = 0;
     // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
@@ -153,6 +156,12 @@ pub(crate) fn advance(
                     &mut state.events,
                 )?;
             }
+            staling::flush(
+                fighter,
+                &data.fighters[player],
+                data.rules.staling.as_ref(),
+                &mut state.attack_instances,
+            )?;
             fighter.previous_input = input;
             frozen[player] = true;
             continue;
@@ -184,6 +193,12 @@ pub(crate) fn advance(
             player,
             &mut state.events,
         )?;
+        staling::flush(
+            fighter,
+            &data.fighters[player],
+            data.rules.staling.as_ref(),
+            &mut state.attack_instances,
+        )?;
         fighter.previous_input = input;
     }
 
@@ -202,6 +217,7 @@ pub(crate) fn advance(
             None
         };
         swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
+        staling::sample(&mut fighter.staling, frame, data.rules.staling.as_ref())?;
     }
     let mut hits = Vec::with_capacity(2);
     for attacker in 0..2 {
@@ -249,20 +265,34 @@ pub(crate) fn advance(
                 }
             }
             if collided {
-                hits.push((attacker, hit));
+                let staled = source.staling.hits[slot]
+                    .ok_or_else(|| Error::Physics("active hitbox has no damage sample".into()))?;
+                hits.push((attacker, hit, staled));
                 break;
             }
         }
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.
-    for &(attacker, hit) in &hits {
+    for &(attacker, hit, _) in &hits {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
     }
     let mut newly_hit = [false; 2];
-    for (attacker, hit) in hits {
+    for (attacker, hit, staled) in hits {
         newly_hit[1 - attacker] = true;
-        damage::apply_hit(data, state, attacker, hit)?;
+        damage::apply_hit(data, state, attacker, hit, staled)?;
+        if data.rules.staling.is_some() {
+            state.fighters[attacker]
+                .staling
+                .queue
+                .record(staled.identity, false);
+        }
+        staling::flush(
+            &mut state.fighters[1 - attacker],
+            &data.fighters[1 - attacker],
+            data.rules.staling.as_ref(),
+            &mut state.attack_instances,
+        )?;
     }
 
     for (player, fighter) in state.fighters.iter_mut().enumerate() {
@@ -276,6 +306,8 @@ pub(crate) fn advance(
                 .top_ko_min_knockback
                 .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
             if x < left || x > right || y < bottom || (y > top && top_eligible) {
+                // ftCo_800D34E0 resets only the deceased player's queue.
+                fighter.staling.queue.reset();
                 fighter.stocks -= 1;
                 fighter.velocity = [0.0; 2];
                 fighter.knockback = [0.0; 2];
@@ -294,6 +326,12 @@ pub(crate) fn advance(
                     player,
                     stocks: fighter.stocks,
                 });
+                staling::flush(
+                    fighter,
+                    &data.fighters[player],
+                    data.rules.staling.as_ref(),
+                    &mut state.attack_instances,
+                )?;
                 continue;
             }
             if !frozen[player] {

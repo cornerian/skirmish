@@ -48,6 +48,13 @@ cargo test --locked --test conformance_resources -- --ignored
 
 ## Coverage map
 
+The stale-move batch enables repeated-jab conformance. `stale_differential`
+compares original queue, identity and damage functions, including the tenth
+slot's duplicate suppression, nine-entry weighting, holes, 16-bit wrap, debug
+bypass and exceptional float behavior. `game_staling` checks percent versus
+knockback damage, hitbox caching and instance deduplication, simultaneous trades,
+death/reset lifecycle and checkpoint replay with wholly synthetic resources.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets

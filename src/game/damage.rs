@@ -121,6 +121,7 @@ pub(crate) fn apply_hit(
     state: &mut State,
     attacker: usize,
     hit: &Hitbox,
+    staled: super::staling::Hit,
 ) -> Result<(), Error> {
     let victim = 1 - attacker;
     let rules = &data.rules;
@@ -134,10 +135,10 @@ pub(crate) fn apply_hit(
         },
         combat::DamageState {
             percent: target.percent,
-            pending_damage: hit.damage as f32,
+            pending_damage: staled.damage,
             count_override: None,
         },
-        hit.damage,
+        staled.base_damage,
         combat::KnockbackModifiers {
             stage: 1.0,
             attack: 1.0,
@@ -164,10 +165,10 @@ pub(crate) fn apply_hit(
                 armor.minimum_knockback,
             )
         });
-    let attacker_hitlag =
-        combat::hitlag(hit.damage as i32, false, 1.0, &rules.hitlag.physics()).map_err(physics)?;
+    let attacker_hitlag = combat::hitlag(staled.damage as i32, false, 1.0, &rules.hitlag.physics())
+        .map_err(physics)?;
     let hitlag = combat::hitlag(
-        hit.damage as i32,
+        staled.damage as i32,
         matches!(target.action, Action::Squat | Action::SquatWait),
         1.0,
         &rules.hitlag.physics(),
@@ -207,7 +208,7 @@ pub(crate) fn apply_hit(
     }
     state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     let target = &mut state.fighters[victim];
-    target.percent = (target.percent + hit.damage as f32).min(999.0);
+    target.percent = (target.percent + staled.damage).min(999.0);
     target.hitlag = target.hitlag.max(hitlag);
     target.hitstun = hitstun as u32;
     target.velocity = [0.0; 2];
@@ -234,7 +235,7 @@ pub(crate) fn apply_hit(
     state.events.push(Event::Hit {
         attacker,
         victim,
-        damage: hit.damage as f32,
+        damage: staled.damage,
         knockback,
     });
     Ok(())

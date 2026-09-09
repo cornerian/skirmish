@@ -76,6 +76,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     }
     let rules = &data.rules;
     damage::validate_rules(&rules.damage)?;
+    if let Some(staling) = &rules.staling {
+        super::staling::validate(staling)?;
+    }
     require(
         rules
             .top_ko_min_knockback
@@ -126,6 +129,10 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        require(
+            rules.staling.is_none() || fighter.jab.move_id.is_some_and(|id| id != 0),
+            "staling requires an explicit nonzero attack move_id",
+        )?;
         if let Some(parameters) = &fighter.locomotion {
             locomotion::validate(parameters)?;
             require(
@@ -308,6 +315,10 @@ pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
 
 pub(crate) fn state(state: &State) -> Result<(), Error> {
     for f in &state.fighters {
+        require(
+            f.staling.transitions.is_empty(),
+            "unflushed attack identity transition",
+        )?;
         if f.position
             .into_iter()
             .chain(f.velocity)
@@ -345,6 +356,7 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.locomotion.dash_initial_delta,
             ])
             .chain(f.locomotion.pass_delay)
+            .chain(f.staling.hits.iter().flatten().map(|hit| hit.damage))
             .any(|v| !v.is_finite())
         {
             return Err(Error::NonFinite);

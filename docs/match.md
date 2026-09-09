@@ -122,6 +122,23 @@ ordinary armor subtracts the larger channel without changing percent damage.
 Grounded launch projection and the complete damage callback
 sequence remain unported.
 
+Optional `rules.staling` supplies the nine original common-data penalties and
+the debug bypass flag; each supported `Attack` then requires an explicit
+`move_id`. The source multiplier starts at 1.0: this ordinary uncharged/unscaled
+path has no fresh-move bonus. A ten-slot ring deduplicates move/instance pairs,
+while damage scans only the newest nine entries, stopping at an empty slot.
+Hitbox activation, a group change or a changed base damage samples its staled
+damage. Continuing slots retain that value through contact and hitlag. Percent
+and pending damage use the staled float; knockback's attack-damage term retains
+the original integer, as in `ftColl_8007ABD0`. The frame-resource representation
+does not encode arbitrary same-value damage-command reissues or item ownership.
+
+Stale queues, hitbox damage caches and the match-wide nonzero 16-bit instance
+sequence are checkpointed. Native motion transitions allocate identities in the
+experimental scheduler's order; the complete original callback allocation order
+is not claimed. A KO clears only the deceased player's queue, preserving the
+global counter and other players' histories; match reset starts both fresh.
+
 Movement and displacement share the source stick-age timers, sampled once per
 active frame including hitlag. When both optional profiles are supplied, their
 axis thresholds must agree; inconsistent resources are rejected at load time.
@@ -171,7 +188,7 @@ fighter push/nudge remain unported. Respawn delay/invincibility are configured i
 policies, without the original rebirth platform. Damage landing does not yet
 implement techs, bounces or knockdown.
 
-Combat omits stale moves, priority/clanks, dynamic metal/state knockback modifiers,
+Combat omits priority/clanks, dynamic metal/state knockback modifiers,
 vulnerability/target flags, shield responses, throws and other special launch-angle behaviors. Outside jab,
 fighters currently use a static supplied pose; authentic walking, jumping and
 damage collision require those animation resources. The schema exposes ordinary

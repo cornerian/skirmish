@@ -60,11 +60,18 @@ fn jab(game: &mut Match) -> State {
 }
 
 #[test]
-#[ignore = "unimplemented: stale-move queue and repeat-hit damage scaling"]
 fn repeated_jab_is_weaker_than_the_fresh_hit() {
     // pl/plstale.c::plStale_UpdateStaleMovesFromFighter and ft/ft_0881.c
     // apply attack-instance history to later damage from the same move.
-    let mut game = Match::new(close_data(), 0).unwrap();
+    let mut data = close_data();
+    data.rules.staling = Some(skirmish::fighter::stale::Rules {
+        penalties: [0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02],
+        debug_bypass: false,
+    });
+    for fighter in &mut data.fighters {
+        fighter.jab.move_id = Some(10);
+    }
+    let mut game = Match::new(data, 0).unwrap();
     let first = jab(&mut game).fighters[1].percent;
     until(
         &mut game,
