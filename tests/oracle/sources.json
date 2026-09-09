@@ -193,5 +193,10 @@
     "fixture": "tests/oracle/original/ledge_option.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c",
     "sha256": "7e6c054dea388508689b0eea87b899246961a260f762055be40a9d7e7b68c274"
+  },
+  {
+    "fixture": "tests/oracle/original/rebirth.c",
+    "upstream": "src/melee/ft/ft_0D4D.c",
+    "sha256": "e820dee162afc842ec4e3dab7aecd8a22331d9ebf9c484362de8e005735eb296"
   }
 ]

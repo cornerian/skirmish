@@ -138,6 +138,13 @@ checkpoint replay, KO cleanup and invalid resources. `ledge_differential`
 compares the complete retained `ftCo_8009AAFC` callback, including its strict
 float branches and drop-cooldown side effect, against pinned C.
 
+The [rebirth profile](rebirth.md) promotes the stock-loss platform conformance
+scenario. `game_rebirth` covers both slots, reset/event state, each travel frame,
+static waiting, timeout and button/trigger/main-stick/C-stick releases,
+invulnerability, checkpoint replay and invalid resources. `rebirth_differential`
+compares the two complete original leader physics callbacks bit for bit while
+retaining their distinct floating-point operand order.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets

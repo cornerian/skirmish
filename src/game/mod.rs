@@ -13,6 +13,7 @@ pub mod hitboxes;
 pub mod ledge;
 pub mod locomotion;
 pub mod nudge;
+pub mod rebirth;
 pub mod shield;
 mod simulation;
 pub mod staling;
@@ -106,6 +107,8 @@ pub enum Action {
     CliffJump,
     CliffAttack,
     CliffEscape,
+    Rebirth,
+    RebirthWait,
     AttackAirN,
     AttackAirF,
     AttackAirB,

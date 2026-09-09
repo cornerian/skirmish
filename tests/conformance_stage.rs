@@ -1,5 +1,7 @@
 //! Required integration behavior still absent from the experimental scheduler.
 //! Run explicitly with `cargo test --test conformance_stage -- --ignored`.
+#[path = "support/rebirth.rs"]
+mod rebirth_resources;
 #[path = "support/reference_scenario.rs"]
 mod reference;
 #[path = "support/conformance.rs"]
@@ -105,9 +107,8 @@ fn ordinary_jump_above_the_upper_blast_line_preserves_the_stock() {
 // src/melee/ft/ft_0D4D.c: rebirth waits above the stage on its platform, with an
 // invulnerable fighter; it does not immediately respawn grounded at the spawn.
 #[test]
-#[ignore = "unimplemented: rebirth platform lifecycle"]
 fn lost_stock_returns_on_an_airborne_rebirth_platform() {
-    let mut data = data();
+    let mut data = rebirth_resources::profile(data());
     data.stage.floor.left = -5.0;
     data.stage.floor.right = 5.0;
     data.stage.spawns = [[4.0, 0.0], [-4.0, 0.0]];

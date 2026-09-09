@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 rebirth-platform batch is recorded at:
+
+`/mnt/archive/runs/skirmish-rebirth-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. The stock-loss platform scenario now passes, with focused
+integration coverage for both player slots, exact target travel, wait/release,
+invulnerability, checkpoint restoration and invalid resources. Two complete
+original leader physics callbacks are compared bit for bit. The conformance
+audit now has 2 executable unimplemented scenarios and 13 cases blocked on
+independent reference fixtures.
+
 The 2026-09-09 static ledge-action batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ledge-20260909`

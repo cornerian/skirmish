@@ -9,6 +9,7 @@ pub mod ledge;
 pub mod locomotion;
 pub mod movement;
 pub mod nudge;
+pub mod rebirth;
 pub mod shield;
 pub mod stale;
 

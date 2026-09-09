@@ -108,3 +108,12 @@ flag, X value, precomputed angle, facing, common angle boundary and cooldowns.
 Stub transitions report climb or fall while the original callback owns every
 comparison, return value and cooldown write. Native match tests own endpoint
 eligibility, bone attachment and the six-state action lifecycle.
+
+`rebirth` preserves ft_0D4D.c and selects complete `ftCo_Rebirth_Phys` and
+`ftCo_RebirthWait_Phys`. The host adapter exercises their ordinary leader
+branches with an already-resolved platform target and sampled current position.
+Differential tests compare both velocity components bit for bit across arbitrary
+binary32 positions and every positive signed frame count, including the two
+callbacks' distinct multiplication order. Native match tests own stock loss,
+entry, platform wait, input/timeout release and invulnerability; follower
+velocity copying and moving stage spawn offsets remain outside this adapter.

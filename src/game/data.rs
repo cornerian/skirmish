@@ -77,6 +77,8 @@ pub struct Rules {
     pub time_limit_frames: u32,
     pub respawn_frames: u32,
     pub respawn_invincibility_frames: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebirth: Option<super::rebirth::Rules>,
     pub friction_above_walk: f32,
     pub walk_accel_taper_gain: f32,
     pub fast_fall_threshold: f32,

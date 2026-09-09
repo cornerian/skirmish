@@ -476,7 +476,10 @@ pub(crate) fn scan(
             || source.grab != State::default()
             || target.grab != State::default()
             || target.invincibility > 0
-            || matches!(target.action, Action::Respawn | Action::Eliminated)
+            || matches!(
+                target.action,
+                Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
+            )
             || parameters.catch.grounded_targets_only && !target.grounded
         {
             continue;

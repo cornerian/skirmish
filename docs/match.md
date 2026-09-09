@@ -178,6 +178,14 @@ checkpointed; damage and stock loss clear ownership. The [ledge profile](ledges.
 documents its explicit resource schema and remaining dynamic-stage and
 character-specific limits.
 
+Optional [`rules.rebirth`](rebirth.md) replaces the compatibility grounded
+respawn with an airborne entry, exact remaining-frame travel to a supplied
+static platform, an invulnerable wait, and input/timeout release to `Fall`.
+Both player slots, action/timer state, post-release invincibility and checkpoint
+branches are covered by the native match tests. The [rebirth profile](rebirth.md)
+records the exact C arithmetic boundaries and remaining dynamic-stage, follower
+and action-dispatch gaps.
+
 ## Explicit movement data
 
 `fighters[].locomotion` supplies thresholds, stick-age windows, dash/run
@@ -224,9 +232,10 @@ Moving stages/remapping and full ECB corner/squeeze response remain unported.
 Ledge actions currently require static marked endpoints and supplied generic
 poses; percent-dependent variants and ledge trumping remain unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the
-ledge-specific backward-push map branch remain unported. Respawn delay and
-invincibility are configured integration policies without the original rebirth
-platform. The optional [damage-floor profile](damage-floor.md) supplies neutral
+ledge-specific backward-push map branch remain unported. The optional
+[rebirth profile](rebirth.md) supplies the ordinary leader's static airborne
+platform lifecycle; moving-stage offsets, Nana coordination and the full
+priority action graph remain unported. The optional [damage-floor profile](damage-floor.md) supplies neutral
 tech and knockdown recovery; bounces, tech rolls and wall/ceiling techs remain
 unported.
 

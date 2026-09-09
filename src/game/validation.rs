@@ -91,6 +91,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             "invalid fighter nudge rules",
         )?;
     }
+    if let Some(rebirth) = &rules.rebirth {
+        super::rebirth::validate(rebirth, rules.respawn_invincibility_frames)?;
+    }
     require(
         rules
             .top_ko_min_knockback

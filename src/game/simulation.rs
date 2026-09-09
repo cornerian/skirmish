@@ -160,6 +160,14 @@ pub(crate) fn advance(
                     fighter.stocks,
                     data.rules.respawn_invincibility_frames,
                 )?;
+                if let Some(rules) = &data.rules.rebirth {
+                    rebirth::enter(
+                        fighter,
+                        rules,
+                        player,
+                        data.rules.respawn_invincibility_frames,
+                    );
+                }
                 state.events.push(Event::Respawned { player });
             } else {
                 fighter.action_frame += 1;
@@ -220,6 +228,7 @@ pub(crate) fn advance(
             &data.fighters[player],
             &data.rules,
             &geometry,
+            player,
             inputs[player],
         )?;
         update_nudge(
@@ -272,6 +281,27 @@ pub(crate) fn advance(
         let input = inputs[player];
         if fighter.grab.captor.is_some() {
             fighter.nudge = [0.0; 2];
+            staling::flush(
+                fighter,
+                &data.fighters[player],
+                data.rules.staling.as_ref(),
+                &mut state.attack_instances,
+            )?;
+            fighter.previous_input = input;
+            continue;
+        }
+        if rebirth::owns_action(fighter.action) {
+            let rules = data
+                .rules
+                .rebirth
+                .as_ref()
+                .ok_or_else(|| Error::Data("rebirth state requires explicit rules".into()))?;
+            rebirth::move_fighter(fighter, rules, player);
+            collision::sample(
+                fighter,
+                &data.fighters[player],
+                &pose(fighter, &data.fighters[player])?,
+            )?;
             staling::flush(
                 fighter,
                 &data.fighters[player],
@@ -369,6 +399,7 @@ pub(crate) fn advance(
             || target.grab.captor.is_some()
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
+            || rebirth::invulnerable(target.action)
         {
             continue;
         }
@@ -473,8 +504,10 @@ pub(crate) fn advance(
             .rules
             .top_ko_min_knockback
             .is_none_or(|minimum| fighter.grounded || fighter.knockback[1] > minimum);
-        !matches!(fighter.action, Action::Respawn | Action::Eliminated)
-            && (x < left || x > right || y < bottom || y > top && top_eligible)
+        !matches!(
+            fighter.action,
+            Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
+        ) && (x < left || x > right || y < bottom || y > top && top_eligible)
     });
     for (player, &knocked_out) in blast_knockouts.iter().enumerate() {
         if knocked_out {
@@ -586,7 +619,7 @@ fn update_nudge(
     };
     if matches!(
         state.fighters[subject].action,
-        Action::Respawn | Action::Eliminated
+        Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
     ) {
         return Ok(());
     }
@@ -610,8 +643,10 @@ fn update_nudge(
             player_id: player as u8,
             floor: fighter.ground_line,
             follower_of: None,
-            inactive: matches!(fighter.action, Action::Respawn | Action::Eliminated)
-                || fighter.grab.captor.is_some()
+            inactive: matches!(
+                fighter.action,
+                Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
+            ) || fighter.grab.captor.is_some()
                 || ledge::attached(fighter),
             holds_victim: fighter.grab.victim.is_some(),
             nudge_disabled: attributes.nudge_disabled,
@@ -671,9 +706,16 @@ fn update_animation(
     data: &FighterData,
     rules: &Rules,
     geometry: &StageGeometry,
+    player: usize,
     input: Controller,
 ) -> Result<(bool, bool, bool), Error> {
     let attrs = &data.movement;
+    rebirth::update_animation(
+        f,
+        rules.rebirth.as_ref(),
+        player,
+        rules.respawn_invincibility_frames,
+    );
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     grab::update_fighter_animation(f, data);
     match f.action {
@@ -734,6 +776,14 @@ fn update_actions(
     clank_owns: bool,
     shield_owns: bool,
 ) {
+    if rebirth::update_actions(
+        f,
+        rules.rebirth.as_ref(),
+        input,
+        rules.respawn_invincibility_frames,
+    ) {
+        return;
+    }
     if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
         return;
     }
