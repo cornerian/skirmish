@@ -24,8 +24,13 @@ pub enum ImportAction {
 
 enum Message {
     Progress(Progress),
-    Finished(Result<PathBuf, String>),
+    Finished(Result<PathBuf, ImportError>),
     Picked(Result<Option<PathBuf>, String>),
+}
+
+struct ImportError {
+    message: String,
+    manual_search: bool,
 }
 
 pub struct AssetImportMenu {
@@ -129,9 +134,17 @@ impl AssetImportMenu {
                         let _ = sender.send(Message::Progress(progress));
                     })
                     .map(|bundle| bundle.root().to_owned())
-                    .map_err(|error| format!("{error:#}"))
+                    .map_err(|error| ImportError {
+                        manual_search: error.is::<assets::IsoNotFound>(),
+                        message: format!("{error:#}"),
+                    })
                 }))
-                .unwrap_or_else(|_| Err("Import stopped unexpectedly. Retry the import.".into()));
+                .unwrap_or_else(|_| {
+                    Err(ImportError {
+                        message: "Import stopped unexpectedly. Retry the import.".into(),
+                        manual_search: false,
+                    })
+                });
                 let _ = sender.send(Message::Finished(result));
             }) {
             Ok(worker) => self.worker = Some(worker),
@@ -215,8 +228,11 @@ impl AssetImportMenu {
                             path.display()
                         ),
                         Err(error) => {
-                            eprintln!("Asset import: {error}");
-                            error
+                            if error.manual_search {
+                                self.selected = 1;
+                            }
+                            eprintln!("Asset import: {}", error.message);
+                            error.message
                         }
                     };
                 }

@@ -6,6 +6,8 @@ procedural artwork such as smoke and particles. Skirmish's current priority is
 native headless gameplay and physics. These are consumer requirements, not a
 final export schema or a request to rearrange the resource project's directories.
 The current experimental `MatchData` fixture format is not the full asset format.
+The [canonical asset tree](asset-tree.md) specifies categories, current consumers,
+and completeness requirements, with an exhaustive linked source inventory.
 The optional in-game importer installs original disc files; conversion remains
 separate from that player-facing installation step.
 

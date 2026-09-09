@@ -62,6 +62,9 @@ Without `--scene`, the window starts on the interactive menu. Choose
 its original files using the built-in Rust importer. Players need no terminal,
 Python, Bun, or Dolphin. The [in-game import guide](docs/asset-import.md) explains
 storage, validation, and the remaining visual/gameplay conversion work.
+The [canonical asset tree](docs/asset-tree.md) defines resource categories and
+consumers; its [complete source inventory](docs/asset-source-tree.md) lists all
+1,209 supported disc files.
 F1 switches menus and scene on
 the same graphics surface. The [renderer crate](crates/renderer/README.md) documents controls,
 offscreen capture, requirements, and material approximation limits. It does not

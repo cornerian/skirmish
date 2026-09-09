@@ -25,6 +25,7 @@ peppi-adapter = { path = "crates/peppi-adapter" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+xxhash-rust = { version = "0.8.18", features = ["xxh3"] }
 sdl3 = { version = "0.20", optional = true }
 thiserror = "2"
 tempfile = "3"
@@ -40,6 +41,9 @@ tempfile = "3"
 
 [profile.release]
 overflow-checks = true
+
+[profile.dev.package.xxhash-rust]
+opt-level = 3
 
 [lints.rust]
 unsafe_code = "deny"

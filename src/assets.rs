@@ -14,6 +14,8 @@ use std::{
 };
 
 pub const ISO_SHA256: &str = "0de05981a34156b9cedcef73c73d4244ac05cf6149ab3c9cfed917698819e464";
+pub const ISO_SIZE: u64 = 1_459_978_240;
+pub const ISO_XXH3_128: u128 = 0xa661231bb4bee1822b3451322e008583;
 pub const BUNDLE_NAME: &str = "melee-usa-1.02";
 const SCHEMA: &str = "skirmish-iso-import-v1";
 const CHUNK: usize = 1024 * 1024;
@@ -32,6 +34,14 @@ pub enum Source {
     Search(Vec<PathBuf>),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "No valid Melee USA 1.02 ISO found ({rejected} rejected). Choose ISO file to browse manually."
+)]
+pub struct IsoNotFound {
+    pub rejected: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetFile {
     pub path: String,
@@ -44,6 +54,8 @@ pub struct AssetFile {
 struct Manifest {
     schema: String,
     iso_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    iso_xxh3_128: Option<String>,
     files: Vec<AssetFile>,
     limitations: Vec<String>,
 }
@@ -308,11 +320,16 @@ fn validate_iso(
     progress: &mut impl FnMut(Progress),
 ) -> Result<(File, Vec<AssetFile>)> {
     let mut stream = File::open(path).context("Opening ISO")?;
-    let entries = read_entries(&mut stream)?;
+    check_cancel(cancel)?;
     let size = stream.metadata()?.len();
+    ensure!(
+        size == ISO_SIZE,
+        "ISO size does not match the unmodified Melee USA 1.02 image"
+    );
+    let entries = read_entries(&mut stream)?;
     stream.rewind()?;
     let mut previous = None;
-    let digest = hash_stream(&mut stream, cancel, |bytes| {
+    let digest = fingerprint(&mut stream, cancel, |bytes| {
         let percent = (bytes.saturating_mul(100) / size.max(1)).min(100) as u8;
         if previous != Some(percent) {
             progress(Progress::Validating { percent });
@@ -320,10 +337,31 @@ fn validate_iso(
         }
     })?;
     ensure!(
-        digest == ISO_SHA256,
-        "ISO checksum does not match the unmodified Melee USA 1.02 image"
+        digest == ISO_XXH3_128,
+        "ISO fingerprint does not match the unmodified Melee USA 1.02 image"
     );
     Ok((stream, entries))
+}
+
+fn fingerprint(
+    stream: &mut impl Read,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64),
+) -> Result<u128> {
+    let mut hash = xxhash_rust::xxh3::Xxh3::new();
+    let mut buffer = vec![0; CHUNK];
+    let mut total = 0;
+    loop {
+        check_cancel(cancel)?;
+        let count = stream.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+        total += count as u64;
+        progress(total);
+    }
+    Ok(hash.digest128())
 }
 
 fn find_iso(
@@ -376,9 +414,7 @@ fn find_iso(
         }
     }
     check_cancel(cancel)?;
-    bail!(
-        "No valid Melee USA 1.02 ISO found ({rejected} rejected). Use Choose ISO file to select one."
-    )
+    Err(IsoNotFound { rejected }.into())
 }
 
 /// Import on a worker thread. A private staging folder and an exclusive install
@@ -470,7 +506,7 @@ fn install(
     }
     check_cancel(cancel)?;
     let manifest = Manifest {
-        schema: SCHEMA.into(), iso_sha256: ISO_SHA256.into(), files: entries,
+        schema: SCHEMA.into(), iso_sha256: ISO_SHA256.into(), iso_xxh3_128: Some(format!("{ISO_XXH3_128:032x}")), files: entries,
         limitations: vec!["Original game files only; visual conversion, animation and native gameplay resource conversion are not implemented by this importer.".into()],
     };
     let mut file = File::create_new(staging.path().join("manifest.json"))?;
@@ -494,6 +530,34 @@ fn install(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn fast_fingerprint_streams_all_bytes_and_honors_cancellation() {
+        let bytes = vec![0xa5; CHUNK + 19];
+        let cancel = AtomicBool::new(false);
+        let mut consumed = 0;
+        assert_eq!(
+            fingerprint(&mut Cursor::new(&bytes), &cancel, |n| consumed = n).unwrap(),
+            xxhash_rust::xxh3::xxh3_128(&bytes)
+        );
+        assert_eq!(consumed, bytes.len() as u64);
+        assert!(
+            fingerprint(&mut Cursor::new(&bytes), &cancel, |_| {
+                cancel.store(true, Ordering::Relaxed);
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn wrong_size_candidates_are_rejected_without_hashing() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("wrong-size.iso");
+        fs::write(&path, disc().into_inner()).unwrap();
+        let mut progress = Vec::new();
+        assert!(validate_iso(&path, &AtomicBool::new(false), &mut |p| progress.push(p)).is_err());
+        assert!(progress.is_empty());
+    }
 
     fn fixture(names: &[&str]) -> Vec<u8> {
         let mut raw = vec![0; 0x900];

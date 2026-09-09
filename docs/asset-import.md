@@ -7,7 +7,8 @@ The file picker uses the operating system's normal dialog; automatic search and
 drag-and-drop remain available if the desktop does not provide a file picker.
 
 The native Rust importer supports the unmodified Melee USA 1.02 image only.
-It checks the full SHA-256 before extracting all 1,209 game files. Other games,
+It rejects incorrect file sizes and headers first, then identifies the complete
+image with streaming **XXH3-128** before extracting all 1,209 game files. Other games,
 regions, revisions, modified images, and truncated images are rejected. It does
 not download a disc, mount it, launch an emulator, or invoke Python/Bun/Dolphin.
 The same game executable contains the importer and the progress screen.
@@ -17,6 +18,21 @@ On this development machine it also checks `/mnt/archive/datasets/melee` and
 `/mnt/shared/Games` when those directories exist. Directory symlinks and
 inaccessible paths are skipped; uppercase `.ISO` filenames are accepted.
 Choosing a file avoids searching these folders.
+If automatic search finds no valid image, **Choose ISO file...** becomes the
+selected action. Press Enter/A to open manual browsing; the error remains visible.
+
+The reference XXH3-128 is `a661231bb4bee1822b3451322e008583`, measured from the
+independently SHA-256-verified source image. XXH3 is a fast noncryptographic
+identity/integrity check, not an authenticity signature. The manifest records
+the XXH3 fingerprint and the known reference SHA-256; per-file SHA-256 hashes
+remain compatible with existing installed bundles. The developer helper
+`cargo run --locked --example iso_fingerprint -- /path/to/game.iso` measures
+full-file XXH3 time. A warm local read of the 1,459,978,240-byte reference image
+took 0.199 seconds here; cold storage and other machines will differ. The hash
+dependency is optimized in development builds as well as release builds.
+
+See the [canonical asset tree](asset-tree.md) for the categorized decoded-output
+contract and the [complete source tree](asset-source-tree.md) for every input file.
 
 Search, hashing, extraction, and installed-file verification run on a worker
 thread while the SDL window continues processing events. **Cancel import** or

@@ -105,3 +105,30 @@ fn import_screen_layout_and_busy_controls_fit_small_and_portrait_windows() {
     );
     screen.cancel();
 }
+
+#[test]
+fn failed_automatic_search_selects_manual_browsing() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut screen = AssetImportMenu::new(Ok(temp.path().join("assets")), vec![temp.path().into()]);
+    screen.start_search();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while screen.busy() && Instant::now() < deadline {
+        screen.poll();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!screen.busy());
+    assert_eq!(screen.view().selected_label, "Choose ISO file...");
+    assert!(
+        screen
+            .view()
+            .status
+            .unwrap()
+            .lines
+            .join("")
+            .contains("No valid Melee")
+    );
+    assert_eq!(
+        screen.tick([pad::A as u32, 0, 0, 0]),
+        Some(ImportAction::Browse)
+    );
+}
