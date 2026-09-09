@@ -4,8 +4,8 @@
 //! it does not calculate time of impact. In particular, its nearly parallel
 //! branch chooses an endpoint of the first segment, even when a generic geometry
 //! library would choose a closer interior point. These source rules are retained.
-//! The separate matrix-dependent hurt/shield routine `lbColl_80006E58` is not
-//! implemented here. Both endpoints and radii must already be in world space.
+//! The matrix-dependent hurt/shield routine lives in [`super::shield`]. Both
+//! endpoints and radii here must already be in world space.
 
 use crate::fighter::combat::Capsule;
 
@@ -61,15 +61,15 @@ fn point_segment_dimensions(
     }
 }
 
-fn sub(a: Vector, b: Vector) -> Vector {
+pub(super) fn sub(a: Vector, b: Vector) -> Vector {
     core::array::from_fn(|i| a[i] - b[i])
 }
 
-fn dot(a: Vector, b: Vector) -> f32 {
+pub(super) fn dot(a: Vector, b: Vector) -> f32 {
     a[2] * b[2] + (a[0] * b[0] + a[1] * b[1])
 }
 
-fn approximately_zero(value: f32) -> bool {
+pub(super) fn approximately_zero(value: f32) -> bool {
     value < 0.00001 && value > -0.00001
 }
 
@@ -81,6 +81,15 @@ fn approximately_zero(value: f32) -> bool {
 #[allow(clippy::neg_cmp_op_on_partial_ord, clippy::manual_range_contains)]
 pub fn capsule_capsule(a: &Capsule, b: &Capsule, closest: &mut ClosestPair) -> bool {
     let radius = a.radius + b.radius;
+    if !passes_broadphase(a, b, radius) {
+        return false;
+    }
+    *closest = closest_axes(a, b);
+    let separation = sub(closest.first, closest.second);
+    !(radius * radius < dot(separation, separation))
+}
+
+pub(super) fn passes_broadphase(a: &Capsule, b: &Capsule, radius: f32) -> bool {
     for i in 0..3 {
         let (low, high) = if a.start[i] > a.end[i] {
             (a.end[i] - radius, a.start[i] + radius)
@@ -91,7 +100,12 @@ pub fn capsule_capsule(a: &Capsule, b: &Capsule, closest: &mut ClosestPair) -> b
             return false;
         }
     }
+    true
+}
 
+/// Shared verbatim arithmetic in lbColl_80006094 and lbColl_80006E58.
+#[allow(clippy::manual_range_contains)]
+pub(super) fn closest_axes(a: &Capsule, b: &Capsule) -> ClosestPair {
     let da = sub(a.end, a.start);
     let db = sub(b.end, b.start);
     let offset = sub(a.start, b.start);
@@ -151,10 +165,10 @@ pub fn capsule_capsule(a: &Capsule, b: &Capsule, closest: &mut ClosestPair) -> b
             }
         }
     }
-    closest.first = core::array::from_fn(|i| da[i] * s + a.start[i]);
-    closest.second = core::array::from_fn(|i| db[i] * t + b.start[i]);
-    let separation = sub(closest.first, closest.second);
-    !(radius * radius < dot(separation, separation))
+    ClosestPair {
+        first: core::array::from_fn(|i| da[i] * s + a.start[i]),
+        second: core::array::from_fn(|i| db[i] * t + b.start[i]),
+    }
 }
 
 #[cfg(test)]

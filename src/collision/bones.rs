@@ -9,7 +9,8 @@
 //! JOBJ_CLASSICAL_SCALE. Quaternion joints, animation sampling, RObj/IK constraints,
 //! dirty flags, independent matrices, and AObj translation overrides are unported.
 //! Callers provide a sampled pose. Collision radii use a caller-provided scalar;
-//! nonuniformly transformed ellipsoids and the original narrow phase are separate.
+//! matrix-dependent hurt/shield radii use the original narrow phase in
+//! [`super::shield`].
 
 extern crate alloc;
 use alloc::{vec, vec::Vec};

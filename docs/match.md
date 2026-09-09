@@ -104,8 +104,14 @@ although reusable squeeze arithmetic is available in `collision::ecb`.
 An active hitbox carries its previous and current world centers. New activation,
 a disabled slot or a changed group resets its sweep. Hitlag still updates these
 centers, preventing reuse of an old movement segment. Contacts use the source
-isotropic capsule solver, including its unusual near-parallel endpoint choice;
-the full matrix-dependent hurt/shield narrow phase remains unported.
+isotropic capsule solver, including its unusual near-parallel endpoint choice.
+The reusable `collision::shield` helper separately ports `lbColl_80006E58` and
+the ordinary geometric branch of `lbColl_80007BCC`: transformed hurt volumes
+retain directional radii, contact position, overlap and the original broadphase.
+It accepts caller-prepared world endpoints and matrices; bone caching, forced
+hits and shield gameplay integration remain outside that helper. Its C oracle
+uses the SDK scalar matrix-vector routine in place of paired-single assembly,
+so passing comparisons establish native scalar agreement only.
 
 Damage rules explicitly supply DI limits, angle-361 coefficients and the
 knockback replacement window. Optional `rules.damage.displacement` supplies
