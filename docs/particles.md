@@ -46,6 +46,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Impact | files/EfCaData.dat offset 0x4e60; full aliases in particle_sources.jsonl | Analytic impact appearance and lifetime fade | Implemented visual redesign |
 | Vortex | files/EfCoData.dat offset 0x11d00; full aliases in particle_sources.jsonl | Analytic vortex appearance and lifetime fade | Implemented visual redesign |
 | Lightning | files/EfCoData.dat offset 0x15d00; full aliases in particle_sources.jsonl | Analytic lightning appearance and lifetime fade | Implemented visual redesign |
+| Shard | files/EfCoData.dat offset 0x17d20; full aliases in particle_sources.jsonl | Analytic shard appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and
