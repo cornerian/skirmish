@@ -13,6 +13,7 @@ pub enum ParticleEffect {
     Fire,
     Glow,
     Embers,
+    Sparkles,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
@@ -85,7 +86,7 @@ pub struct ParticleRenderer {
     binding: wgpu::BindGroup,
     buffer: wgpu::Buffer,
     particles: Vec<Particle>,
-    order: Vec<usize>,
+    order: Vec<(f32, usize)>,
     instances: Vec<Instance>,
 }
 
@@ -198,18 +199,14 @@ impl ParticleRenderer {
             self.particles
                 .iter()
                 .enumerate()
-                .filter_map(|(i, p)| (p.age > 0.0 && p.age < 1.0 && p.color[3] > 0.0).then_some(i)),
+                .filter(|(_, p)| p.age > 0.0 && p.age < 1.0 && p.color[3] > 0.0)
+                .map(|(i, p)| (view.transform_point3(Vec3::from(p.position)).z, i)),
         );
         // Unstable sort needs no scratch allocation; input index breaks depth ties.
-        self.order.sort_unstable_by(|&a, &b| {
-            let depth = |i: usize| {
-                view.transform_point3(Vec3::from(self.particles[i].position))
-                    .z
-            };
-            depth(a).total_cmp(&depth(b)).then(a.cmp(&b))
-        });
+        self.order
+            .sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         self.instances.clear();
-        for &i in &self.order {
+        for &(_, i) in &self.order {
             let p = self.particles[i];
             let (sin, cos) = p.rotation.sin_cos();
             self.instances.push(Instance {

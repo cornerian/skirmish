@@ -42,6 +42,7 @@ fill rate. The preview permits checking distant and enlarged effects by zooming.
 | Fire | EfCaData particle frames at offsets 0xcf00, 0xdf00, 0xef00, visually inspected in the existing decoded export | Tapered silhouette, upward noise advection, hot core, cool edge and dissipating tip | Implemented redesign; emitter timing remains caller-owned |
 | Glow | EfCaData offset 0x9c0 and aliases in particle_sources.jsonl | Radial core, halo and filtered rays with additive light | Implemented visual redesign |
 | Embers | files/EfCaData.dat offset 0x1a00; full aliases in particle_sources.jsonl | Analytic embers appearance and lifetime fade | Implemented visual redesign |
+| Sparkles | files/EfCaData.dat offset 0x4a20; full aliases in particle_sources.jsonl | Analytic sparkles appearance and lifetime fade | Implemented visual redesign |
 
 The source texture SHA-256 values for those two aliases are
 `f43fd5bcaff5ddb9bc5647a73fc76dca39bc4eee4db1e89c6b51233d36aae80f` and

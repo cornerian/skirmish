@@ -23,7 +23,9 @@ fn turbulence(p: vec2f, footprint: f32, seed: u32) -> f32 {
     var amplitude = 0.55;
     for (var octave = 0u; octave < 3u; octave++) {
         let weight = 1.0 - smoothstep(0.25, 0.7, footprint * frequency);
-        sum += (noise(p * frequency, seed + octave) - 0.5) * amplitude * weight;
+        if weight > 0.0 {
+            sum += (noise(p * frequency, seed + octave) - 0.5) * amplitude * weight;
+        }
         frequency *= 2.0;
         amplitude *= 0.5;
     }

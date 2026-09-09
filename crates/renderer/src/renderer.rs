@@ -807,6 +807,17 @@ mod tests {
             pollster::block_on(render_rgba(scene, None, particles, 257, 193)).unwrap()
         };
         let background = capture(&empty, &[]);
+        let mut near = Particle::preview(ParticleEffect::Smoke, 0.35);
+        near.position[2] = 0.2;
+        near.color = [1.0, 0.2, 0.1, 0.8];
+        let mut far = near;
+        far.position[2] = -0.2;
+        far.color = [0.1, 0.2, 1.0, 0.8];
+        assert_eq!(
+            capture(&empty, &[near, far]),
+            capture(&empty, &[far, near]),
+            "transparency order must use camera depth, not submission order"
+        );
         use clap::ValueEnum;
         let selected = std::env::var("SKIRMISH_PARTICLE_CHECK").ok();
         for &effect in ParticleEffect::value_variants() {
