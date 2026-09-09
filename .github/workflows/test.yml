@@ -4,7 +4,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/skirmish-target
+      CARGO_TARGET_DIR: /tmp/skirmish-target
       PROPTEST_RNG_SEED: "68492137"
     steps:
       - uses: actions/checkout@v4

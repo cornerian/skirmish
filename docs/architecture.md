@@ -5,9 +5,14 @@ independent games, decisions at every frame, and reproducible counterfactual
 rollouts from a recorded state. The implementation therefore separates reusable
 numerics, gameplay state, environment adapters and presentation.
 
+Builds, execution and tests target modern machines directly. An ISO, DOL,
+emulator or GameCube runtime must never be a dependency. Native resources will
+carry the gameplay data; unresolved data and rules must not be silently filled
+with approximate defaults to make a match appear playable.
+
 `crates/melee-runtime` is an independent library project for the translated HAL
-and Metrowerks algorithms. `crates/melee-physics` will contain the isolated fighter
-movement routines as they are ported. Cargo workspace packages keep builds and
+and Metrowerks algorithms. `crates/melee-physics` contains 25 isolated fighter
+movement routines. Cargo workspace packages keep builds and
 tests reproducible while giving each library a separate dependency boundary.
 They can later move to separate Git repositories without changing their APIs.
 

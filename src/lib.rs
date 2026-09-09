@@ -5,4 +5,7 @@
 pub mod inventory;
 pub mod runner;
 pub mod trace;
-pub use melee_runtime::{bytecode, ctype, mbstring, random, spline};
+pub use melee_input as input;
+pub use melee_physics as physics;
+pub use melee_runtime::{bytecode, ctype, id, mbstring, quaternion, random, spline};
+pub use skirmish_replay as replay;

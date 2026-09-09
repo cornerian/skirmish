@@ -17,14 +17,16 @@ c-oracle = ["dep:cc"]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 melee-runtime = { path = "crates/melee-runtime" }
+melee-physics = { path = "crates/melee-physics" }
+melee-input = { path = "crates/melee-input" }
+skirmish-replay = { path = "crates/skirmish-replay" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha1 = "0.10"
 sha2 = "0.10"
-wait-timeout = "0.2"
 
 [build-dependencies]
 cc = { version = "1", optional = true }
+serde_json = "1"
 
 [dev-dependencies]
 proptest = "1"

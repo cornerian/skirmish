@@ -9,13 +9,18 @@ No finite test suite proves equivalence for all possible game executions.
 `cargo test --features c-oracle` compiles small, verbatim upstream C snapshots
 with documented host ABI adaptations and tests translated functions against
 them. Integer outputs and eligible floating-point results are compared by bits.
+Bytecode transcendental comparisons use 2e-6 absolute/relative tolerance;
+quaternion transcendental comparisons use 4e-6. These are host-library checks,
+not exact equivalence claims. Special NaN results in numerical kernels compare
+NaN classification; storage and trace comparisons preserve payload bits.
 The normal Rust tests cover malformed input and new safe API contracts too.
 Source snapshots are identified by SHA-256 and a pinned upstream Git revision.
 
-These tests compare against host-compiled C, not the GameCube executable. Gekko
+These tests run natively and require no game image or original executable. Gekko
 paired-single operations, fused arithmetic, the original math library, floating
-point status, hardware timing and memory-mapped peripherals require a PowerPC
-reference run. A host `libm` result must not be treated as proof of target parity.
+point status and hardware timing are migration concerns: preserve their gameplay
+effects through native code, explicit compatibility functions and observable
+regressions. Host `libm` agreement alone is not proof of full-game parity.
 
 ## Executable comparison protocol
 
@@ -47,17 +52,23 @@ extra records fail even when both sides make the same mistake. Float fields
 must use bit strings (`f32:XXXXXXXX` / `f64:XXXXXXXXXXXXXXXX`); preserve signed
 zero and NaN payloads. Normalize pointers to stable object IDs. Do not omit a
 divergent field to make a comparison pass. Use `compare-traces` for existing files.
+Decimal float observations are rejected recursively; integer JSON observations
+retain their full signed/unsigned 64-bit range. Failed runs retain their invocation
+and input/executable hashes even when no successful comparison report is produced.
 
 ## Full-game gate, pending
 
-1. Supply a local GALE01 1.02 `main.dol` and game assets; validate the DOL using
-   `skirmish verify-dol`. Expected SHA-1:
-   `08e0bf20134dfcb260699671004527b2d6bb1a45`.
-2. Build the pinned upstream checkout following its own instructions. Keep the
-   original executable, built reference and assets outside Git, with hashes.
-3. Implement a deterministic Dolphin/hardware adapter and a completed Rust game
-   adapter. Neither full-game adapter exists yet. Both must expose the same
-   logical state and all externally visible events at fixed simulation steps.
+1. Continue extracting original C function groups into native test adapters with
+   explicit data and dependencies. Generate valid states and operation sequences;
+   compare every observable mutation after every call. Invalid C/ABI domains must
+   be excluded or tested only against the new checked Rust API.
+2. Complete the native game simulation and native gameplay resources, recording
+   their provenance and hashes. No ISO, DOL, emulator or GameCube runtime may be
+   required for building, running or testing the project.
+3. Connect a future Slippi importer to the streaming `skirmish-replay` validator
+   and a complete native simulator checkpoint. Apply frame inputs and compare
+   the simulated next observation with the recorded next frame. Initial state
+   reconstruction and observation coverage must be explicit.
 4. Capture fighter/item/stage state, RNG state and call order, hitboxes and
    hurtboxes, collisions, action transitions, camera/animation, sound commands,
    saves and scene/menu changes. Validate video/audio separately with specified

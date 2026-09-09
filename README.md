@@ -22,11 +22,12 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 ```
 
-`/tmp/skirmish-target` is a fallback when shared storage is unavailable. No game
-image is required for the host tests. The reference GameCube build needs your
-Melee 1.02 GALE01 `main.dol`; it and game assets must stay outside this repository.
+`/tmp/skirmish-target` is a fallback when shared storage is unavailable. Building,
+running and testing this project **must never require an ISO, DOL, emulator or
+GameCube runtime**. It targets native execution on modern machines. Game data
+will use native resources; missing data remains an explicit migration task.
 Tests against host-compiled C establish agreement for the tested functions and
-inputs, not full-game or PowerPC equivalence.
+inputs; full-game equivalence remains unverified.
 
 ## Current translation
 
@@ -41,12 +42,23 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `melee-runtime::mbstring` | MSL wide-to-byte conversion and low-byte terminators |
 | `melee-runtime::bytecode` | All implemented HSD bytecode opcodes, stack operations, branching, arithmetic and RNG |
 | `melee-runtime::spline` | Hermite, linear/Bezier/B-spline/cardinal points and arc-length inversion |
+| `melee-runtime::id` | Object-ID lookup, replacement, removal and default-table reset using `HashMap` |
+| `melee-runtime::quaternion` | Six matrix, axis/Euler rotation, multiplication and interpolation routines, using scalar `glam` plus compatibility wrappers |
+| `melee-physics` | 25 gravity, friction, acceleration, drift, knockback-decay and ground-projection functions in a standalone `no_std` library |
+| `melee-input` | Original controller stick/trigger clamping and four-port processing with owned calibration in a `no_std` library |
+| `skirmish-replay` | Streaming checkpoint/step/observation validation machinery for a future Slippi importer |
 
-The remaining game, engine, SDK and platform code is unported. Bytecode
-transcendental tests allow a documented host-library tolerance; integer and
+The remaining game, engine, SDK and platform code is unported. Transcendental
+tests allow a documented host-library tolerance; integer and
 eligible floating-point operations use exact comparisons. This is not a playable
 game or an RL environment yet.
 
 See [headless architecture](docs/architecture.md) and
-[equivalence testing](docs/equivalence.md). Independent library projects live under
+[equivalence testing](docs/equivalence.md), plus the
+[replay integration contract](docs/replays.md). Independent library projects live under
 `crates/`; rendering and training/coaching adapters are kept outside the runtime.
+
+`skirmish-probe` is a headless RNG executable for testing the comparison harness.
+The suite compiles a separate executable from original C, compares it with the
+Rust executable at two C optimization levels, and verifies that deliberate
+divergence, input mutation, nonzero exit and timeout all fail. It is not a game.

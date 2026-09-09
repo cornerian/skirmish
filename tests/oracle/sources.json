@@ -33,5 +33,25 @@
     "fixture": "tests/oracle/original/spline.c",
     "upstream": "src/sysdolphin/baselib/spline.c",
     "sha256": "736ab29868437a263bcdbdaefdf973c75e9fa4ff3d86a3baf548f3396d415c50"
+  },
+  {
+    "fixture": "tests/oracle/original/id.c",
+    "upstream": "src/sysdolphin/baselib/id.c",
+    "sha256": "4a97a6c75c848ca98f01298aa9a8c15715dfba597ef0c644c2779310a3a2e3bc"
+  },
+  {
+    "fixture": "tests/oracle/original/quaternion.c",
+    "upstream": "src/sysdolphin/baselib/quatlib.c",
+    "sha256": "4646bd1134c634c768d26f1096ab960fbbbdb213a9b9db5cc0682e3d48eda7ad"
+  },
+  {
+    "fixture": "tests/oracle/original/ftcommon.c",
+    "upstream": "src/melee/ft/ftcommon.c",
+    "sha256": "43dff29e65d9c38c0b480d59510258d3a3b6f4aebf0b67d3b385e40ef560114d"
+  },
+  {
+    "fixture": "tests/oracle/original/PadClamp.c",
+    "upstream": "extern/dolphin/src/dolphin/pad/PadClamp.c",
+    "sha256": "80bae8c313d8ad603eb0708ded09cb0130a49865a0579179e2ef1c2060f41f34"
   }
 ]

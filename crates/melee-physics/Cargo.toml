@@ -1,0 +1,12 @@
+[package]
+name = "melee-physics"
+version = "0.1.0"
+edition = "2024"
+description = "Exact scalar movement helpers from doldecomp/melee, independent of rendering"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

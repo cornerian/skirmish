@@ -1,6 +1,5 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use sha1::{Digest, Sha1};
 use skirmish::{inventory, runner, trace};
 use std::{
     fs::{self, File},
@@ -43,8 +42,6 @@ enum Commands {
         #[arg(long, default_value_t = 60)]
         timeout_seconds: u64,
     },
-    /// Validate the original GALE01 1.02 main.dol when it becomes available.
-    VerifyDol { path: PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -78,16 +75,6 @@ fn main() -> Result<()> {
                 Duration::from_secs(timeout_seconds),
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        Commands::VerifyDol { path } => {
-            let mut hash = Sha1::new();
-            std::io::copy(&mut File::open(path).context("open main.dol")?, &mut hash)?;
-            let actual = format!("{:x}", hash.finalize());
-            ensure!(
-                actual == "08e0bf20134dfcb260699671004527b2d6bb1a45",
-                "expected GALE01 1.02 main.dol; found SHA-1 {actual}"
-            );
-            println!("Verified GALE01 1.02 main.dol ({actual})");
         }
     }
     Ok(())

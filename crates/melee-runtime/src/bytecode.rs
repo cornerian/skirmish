@@ -6,7 +6,7 @@
 //! Integer arithmetic wraps as on PowerPC. Invalid float casts and integer
 //! division, which are undefined in the reference C, return explicit errors.
 
-use crate::random::HsdRng;
+use crate::{compat, random::HsdRng};
 
 const DEG_TO_RAD: f64 = 0.017453292519943295;
 const RAD_TO_DEG: f64 = 57.29577951308232;
@@ -168,30 +168,11 @@ fn binary(opcode: u8, left: u32, right: u32, rng: &mut HsdRng, pc: usize) -> Res
         0x1f => i.checked_div(j).ok_or(Error::InvalidDivision(pc))? as u32,
         0x20 => i.checked_rem(j).ok_or(Error::InvalidDivision(pc))? as u32,
         0x21 => libm::powf(a, b).to_bits(),
-        // C's conditional assignment preserves the left NaN and signed zero.
-        0x22 => {
-            if a > b {
-                right
-            } else {
-                left
-            }
-        }
-        0x23 => {
-            if a < b {
-                right
-            } else {
-                left
-            }
-        }
+        0x22 => compat::min(a, b).to_bits(),
+        0x23 => compat::max(a, b).to_bits(),
         0x24 => i.min(j) as u32,
         0x25 => i.max(j) as u32,
-        0x26 => {
-            if b == 0.0 {
-                (if a >= 0.0 { 90.0_f32 } else { -90.0_f32 }).to_bits()
-            } else {
-                degrees(libm::atan2f(a, b))
-            }
-        }
+        0x26 => compat::atan2_degrees(a, b).to_bits(),
         0x27 => i.wrapping_add(rng.randi(j.wrapping_sub(i).wrapping_add(1))) as u32,
         0x29 => u32::from(i < j),
         0x2a => u32::from(i > j),

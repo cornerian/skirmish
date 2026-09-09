@@ -9,9 +9,9 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Duration,
+    thread,
+    time::{Duration, Instant},
 };
-use wait_timeout::ChildExt;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -58,18 +58,27 @@ fn execute(
         .stderr(Stdio::from(File::create(stderr)?))
         .spawn()
         .with_context(|| format!("start {}", adapter.program.display()))?;
-    let status = match child.wait_timeout(timeout) {
-        Ok(Some(status)) => status,
-        outcome => {
-            let _ = child.kill();
-            let _ = child.wait();
-            match outcome {
-                Err(error) => return Err(error.into()),
-                _ => bail!(
-                    "{} exceeded deadline {timeout:?}; see {}",
-                    adapter.program.display(),
-                    stderr.display()
-                ),
+    // std avoids installing a process-global SIGCHLD handler in callers.
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < timeout => {
+                thread::sleep(
+                    Duration::from_millis(5).min(timeout.saturating_sub(started.elapsed())),
+                );
+            }
+            outcome => {
+                let _ = child.kill();
+                let _ = child.wait();
+                match outcome {
+                    Err(error) => return Err(error.into()),
+                    _ => bail!(
+                        "{} exceeded deadline {timeout:?}; see {}",
+                        adapter.program.display(),
+                        stderr.display()
+                    ),
+                }
             }
         }
     };
@@ -84,7 +93,7 @@ fn execute(
 
 /// Output directory must be new, so evidence from a previous run cannot be reused.
 /// Programs receive identical stdin bytes and must emit the documented JSONL
-/// protocol. This does not supply a Dolphin adapter or a completed Rust game.
+/// protocol. This does not supply a completed Rust game.
 pub fn compare_binaries(
     reference: Adapter,
     candidate: Adapter,
@@ -101,6 +110,16 @@ pub fn compare_binaries(
     let input_sha256 = hash(&shared_input)?;
     let reference_sha256 = hash(&reference.program)?;
     let candidate_sha256 = hash(&candidate.program)?;
+    // Save provenance before execution so failing comparisons remain reproducible.
+    fs::write(
+        output.join("invocation.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "reference": &reference, "candidate": &candidate,
+            "input_sha256": &input_sha256,
+            "reference_sha256": &reference_sha256, "candidate_sha256": &candidate_sha256,
+            "timeout_ms": timeout.as_millis(),
+        }))?,
+    )?;
     let left = output.join("reference.jsonl");
     let right = output.join("candidate.jsonl");
     execute(

@@ -41,9 +41,68 @@ fn read_record(reader: &mut impl BufRead, line: &mut usize) -> Result<Option<Rec
         return Ok(None);
     }
     *line += 1;
-    let record =
+    let record: Record =
         serde_json::from_str(&text).with_context(|| format!("invalid trace line {line}"))?;
+    validate_observations(&record).with_context(|| format!("invalid trace line {line}"))?;
     Ok(Some(record))
+}
+
+fn validate_value(value: &Value, path: &str) -> Result<()> {
+    match value {
+        Value::Number(number) => ensure!(
+            !number.is_f64(),
+            "{path}: decimal floats are forbidden; encode exact f32:/f64: bits"
+        ),
+        Value::String(value) => {
+            for (prefix, width) in [("f32:", 8), ("f64:", 16)] {
+                if let Some(bits) = value.strip_prefix(prefix) {
+                    ensure!(
+                        bits.len() == width && bits.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                        "{path}: {prefix} requires exactly {width} hexadecimal digits"
+                    );
+                }
+            }
+        }
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_value(value, &format!("{path}/{index}"))?;
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                validate_value(value, &format!("{path}/{key}"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_observations(record: &Record) -> Result<()> {
+    let (fields, path) = match record {
+        Record::Header { initial_state, .. } => {
+            (vec![("initial_state", initial_state)], "header".into())
+        }
+        Record::Frame {
+            frame,
+            inputs,
+            state,
+            events,
+        } => {
+            let path = format!("frame {frame}");
+            for (index, event) in events.iter().enumerate() {
+                validate_value(event, &format!("{path}/events/{index}"))?;
+            }
+            (vec![("inputs", inputs), ("state", state)], path)
+        }
+        Record::End { .. } => return Ok(()),
+    };
+    for (field, values) in fields {
+        for (key, value) in values {
+            validate_value(value, &format!("{path}/{field}/{key}"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Returns the first differing semantic field, ignoring JSON object key order.
