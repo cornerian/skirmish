@@ -70,6 +70,7 @@ fn spawn(
         damage_angle_flag: 0,
         damage_angle_timer: 0,
         di_pending: false,
+        tumbling: false,
         invincibility,
         short_hop: false,
         fast_fall: false,
@@ -96,6 +97,9 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
+    if !matches!(action, Action::Damage | Action::DamageFall) {
+        fighter.tumbling = false;
+    }
 }
 
 pub(crate) fn advance(
@@ -186,6 +190,7 @@ pub(crate) fn advance(
                     player,
                     &mut state.events,
                     &data.fighters[player],
+                    &data.rules,
                 )?;
             }
             staling::flush(
@@ -271,6 +276,7 @@ pub(crate) fn advance(
             player,
             &mut state.events,
             &data.fighters[player],
+            &data.rules,
         )?;
         staling::flush(
             fighter,
@@ -548,6 +554,12 @@ fn update_nudge(
 // Input sampling continues during hitlag; SDI/jump transitions consume the
 // same history, so old held inputs cannot become fresh after a state change.
 fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+    if input.buttons & !f.previous_input.buttons & (BUTTON_L | BUTTON_R) != 0 {
+        f.locomotion.previous_tech_press_age = f.locomotion.tech_press_age;
+        f.locomotion.tech_press_age = 0;
+    } else {
+        f.locomotion.tech_press_age = f.locomotion.tech_press_age.saturating_add(1);
+    }
     f.locomotion.trigger_age = if input.shield_held() && !f.previous_input.shield_held() {
         0
     } else {
@@ -597,14 +609,6 @@ fn update_animation(
             },
         ),
         Action::Landing if f.action_frame >= attrs.landing_frames => enter(f, Action::Wait),
-        Action::Damage if f.hitstun == 0 => enter(
-            f,
-            if f.grounded {
-                Action::Wait
-            } else {
-                Action::Fall
-            },
-        ),
         Action::JumpSquat
             if data.locomotion.is_none() && f.action_frame >= attrs.jump_startup_frames =>
         {
@@ -630,6 +634,7 @@ fn update_animation(
         }
         _ => {}
     }
+    damage::update_animation(f, &rules.damage);
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);

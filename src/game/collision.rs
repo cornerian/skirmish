@@ -138,6 +138,7 @@ pub(crate) fn resolve(
     player: usize,
     events: &mut Vec<Event>,
     data: &FighterData,
+    rules: &Rules,
 ) -> Result<(), Error> {
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
@@ -237,7 +238,7 @@ pub(crate) fn resolve(
             // Ground-to-air conversion consumes the grounded jump slot, even
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
-            if f.action != Action::Damage {
+            if !matches!(f.action, Action::Damage | Action::DamageFall) {
                 simulation::enter(f, Action::Fall);
             }
         }
@@ -281,7 +282,9 @@ pub(crate) fn resolve(
             f.skip_floor = None;
             if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
                 simulation::enter(f, Action::ShieldBreakDown);
-            } else if f.action != Action::Damage && !super::aerial::land(f, data)? {
+            } else if matches!(f.action, Action::Damage | Action::DamageFall) {
+                super::damage::land(f, &rules.damage);
+            } else if !super::aerial::land(f, data)? {
                 simulation::enter(f, Action::Landing);
             }
             events.push(Event::Landed { player });

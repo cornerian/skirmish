@@ -178,5 +178,10 @@
     "fixture": "tests/oracle/original/dolphin_pad.h",
     "upstream": "extern/dolphin/include/dolphin/pad.h",
     "sha256": "d5fec142b1165aea3764fffe7e66c241ede2c2c31b16cbed05b5c0bccacdd947"
+  },
+  {
+    "fixture": "tests/oracle/original/down_attack.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownAttack.c",
+    "sha256": "2a9fde40a5d8262befa31df1b2eeca7d4ae827091bf089fcc161b2ae14684c48"
   }
 ]

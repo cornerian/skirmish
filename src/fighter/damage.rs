@@ -219,6 +219,20 @@ pub fn subtract_armor(knockback: f32, armor: [f32; 2], minimum: f32) -> f32 {
     if reduced < minimum { minimum } else { reduced }
 }
 
+/// `ftCo_800986B0`: buffered physical-L/R tech eligibility. The current byte
+/// age is promoted to float; the previous byte and repeat boundary stay ints.
+pub fn can_tech(
+    input_locked: bool,
+    press_age: u8,
+    previous_press_age: u8,
+    window: f32,
+    repeat_lockout: i32,
+) -> bool {
+    !input_locked
+        && f32::from(press_age) < window
+        && i32::from(previous_press_age) >= repeat_lockout
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +274,13 @@ mod tests {
             [(-0.0_f32).to_bits(), 0]
         );
         assert_eq!(decay_air_knockback([0.5, 0.0], 1.0), [0.0; 2]);
+    }
+
+    #[test]
+    fn tech_gate_uses_strict_window_and_inclusive_repeat_boundary() {
+        assert!(can_tech(false, 2, 7, 3.0, 7));
+        assert!(!can_tech(false, 3, 7, 3.0, 7));
+        assert!(!can_tech(false, 2, 6, 3.0, 7));
+        assert!(!can_tech(true, 0, 255, 3.0, 7));
     }
 }

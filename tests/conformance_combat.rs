@@ -264,6 +264,15 @@ fn held_stick_adds_exit_displacement_without_a_new_tilt() {
 
 fn downward_hit() -> Match {
     let mut data = close_data();
+    data.rules.damage.floor_response = Some(skirmish::game::damage::FloorResponseRules {
+        tumble_knockback_threshold: 20.0,
+        tech_window: 20.0,
+        tech_repeat_lockout: 40,
+        passive_frames: 4,
+        down_bound_frames: 4,
+        down_wait_frames: 4,
+        down_stand_frames: 4,
+    });
     data.stage.spawns[1][1] = 2.0;
     data.rules.knockback_speed = 0.15;
     for frame in &mut data.fighters[0].jab.frames {
@@ -279,7 +288,6 @@ fn downward_hit() -> Match {
 }
 
 #[test]
-#[ignore = "unimplemented: buffered shield-button tech at floor impact"]
 fn a_recent_shield_press_techs_the_tumbling_landing() {
     // ft/kinds/ftCommon/ftCo_Passive.c::ftCo_800987D0 enters Passive
     // from eligible damage-floor contact instead of DownBound.
@@ -303,7 +311,6 @@ fn a_recent_shield_press_techs_the_tumbling_landing() {
 }
 
 #[test]
-#[ignore = "unimplemented: unteched tumble landing enters knockdown"]
 fn no_tech_input_enters_down_bound_or_down_wait_on_impact() {
     // ft/kinds/ftCommon/ftCo_DownBound.c::ftCo_800978D4 and
     // ftCo_Down.c keep a tumbling landing in knockdown before a get-up transition.

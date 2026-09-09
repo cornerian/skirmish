@@ -23,6 +23,21 @@ pub struct CombatRules {
     /// None retains the explicitly incomplete legacy match profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub displacement: Option<HitlagDisplacementRules>,
+    /// Explicit damage-floor state profile. None preserves the legacy slice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_response: Option<FloorResponseRules>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloorResponseRules {
+    pub tumble_knockback_threshold: f32,
+    pub tech_window: f32,
+    pub tech_repeat_lockout: i32,
+    pub passive_frames: u32,
+    pub down_bound_frames: u32,
+    pub down_wait_frames: u32,
+    pub down_stand_frames: u32,
 }
 
 /// Native common-data coefficients. Main-stick SDI/ASDI only; the current
@@ -108,6 +123,25 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
     {
         return Err(Error::Data(
             "invalid explicit hitlag displacement rules".into(),
+        ));
+    }
+    if let Some(profile) = &rules.floor_response
+        && (![profile.tumble_knockback_threshold, profile.tech_window]
+            .into_iter()
+            .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value))
+            || profile.tech_window > 255.0
+            || !(0..=255).contains(&profile.tech_repeat_lockout)
+            || [
+                profile.passive_frames,
+                profile.down_bound_frames,
+                profile.down_wait_frames,
+                profile.down_stand_frames,
+            ]
+            .into_iter()
+            .any(|frames| frames == 0 || frames >= 1_000_000))
+    {
+        return Err(Error::Data(
+            "invalid explicit damage-floor response rules".into(),
         ));
     }
     Ok(())
@@ -232,6 +266,11 @@ pub(crate) fn apply_hit(
     }
     // A zero-hitlag hit has no expiry callback in the examined upstream path.
     target.di_pending = target.hitlag > 0.0;
+    target.tumbling = rules
+        .damage
+        .floor_response
+        .as_ref()
+        .is_some_and(|profile| knockback >= profile.tumble_knockback_threshold);
     state.events.push(Event::Hit {
         attacker,
         victim,
@@ -239,6 +278,72 @@ pub(crate) fn apply_hit(
         knockback,
     });
     Ok(())
+}
+
+/// Priority-1 portions of the ordinary tumble, knockdown and neutral-tech
+/// graph. Durations are explicit resources because animation data is not yet
+/// available for every fighter.
+pub(crate) fn update_animation(fighter: &mut Fighter, rules: &CombatRules) {
+    let Some(profile) = &rules.floor_response else {
+        if fighter.action == Action::Damage && fighter.hitstun == 0 {
+            super::simulation::enter(
+                fighter,
+                if fighter.grounded {
+                    Action::Wait
+                } else {
+                    Action::Fall
+                },
+            );
+        }
+        return;
+    };
+    let next = match fighter.action {
+        Action::Damage if fighter.hitstun == 0 => Some(if fighter.grounded {
+            Action::Wait
+        } else if fighter.tumbling {
+            Action::DamageFall
+        } else {
+            Action::Fall
+        }),
+        Action::Passive if fighter.action_frame >= profile.passive_frames => Some(Action::Wait),
+        Action::DownBound if fighter.action_frame >= profile.down_bound_frames => {
+            Some(Action::DownWait)
+        }
+        Action::DownWait if fighter.action_frame >= profile.down_wait_frames => {
+            Some(Action::DownStand)
+        }
+        Action::DownStand if fighter.action_frame >= profile.down_stand_frames => {
+            Some(Action::Wait)
+        }
+        _ => None,
+    };
+    if let Some(action) = next {
+        super::simulation::enter(fighter, action);
+    }
+}
+
+/// Damage-floor callback shared by Damage and DamageFall. False leaves a
+/// non-tumbling or profile-free damage action under its existing policy.
+pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules) -> bool {
+    let Some(profile) = &rules.floor_response else {
+        return false;
+    };
+    if !fighter.tumbling {
+        return false;
+    }
+    let action = if damage::can_tech(
+        false,
+        fighter.locomotion.tech_press_age,
+        fighter.locomotion.previous_tech_press_age,
+        profile.tech_window,
+        profile.tech_repeat_lockout,
+    ) {
+        Action::Passive
+    } else {
+        Action::DownBound
+    };
+    super::simulation::enter(fighter, action);
+    true
 }
 
 /// Called on frozen damage frames after the timer decrement, while it remains

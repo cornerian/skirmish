@@ -40,7 +40,8 @@ simulator state; it is not a player-information observation policy. `reset(seed)
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
-time, swept hitbox centers, ECB interpolation history, stage contacts, stocks,
+time, tumble eligibility, physical-L/R tech ages, swept hitbox centers, ECB
+interpolation history, stage contacts, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
 random events and consumes no RNG draws. Checkpoints are opaque in-memory
 values, and restoration rejects different resource/rule identities. Persistent
@@ -153,9 +154,12 @@ global counter and other players' histories; match reset starts both fresh.
 Movement and displacement share the source stick-age timers, sampled once per
 active frame including hitlag. When both optional profiles are supplied, their
 axis thresholds must agree; inconsistent resources are rejected at load time.
-The current damage floor response grounds the fighter and clears knockback;
-source tech/down callbacks remain outside this collision-clamped displacement
-behavior.
+Optional [`rules.damage.floor_response`](damage-floor.md) adds source-gated
+neutral techs plus the complete configured DownBound/DownWait/DownStand recovery
+chain. Physical-L/R ages are sampled during hitlag and ordinary frames. Damage
+at or above its inclusive threshold retains tumble eligibility through
+DamageFall until floor contact. Tech rolls, wall/ceiling responses, bounces,
+get-up choices and action-specific poses remain separate work.
 
 ## Explicit movement data
 
@@ -202,8 +206,9 @@ remain unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the
 ledge-specific backward-push map branch remain unported. Respawn delay and
 invincibility are configured integration policies without the original rebirth
-platform. Damage landing does not yet
-implement techs, bounces or knockdown.
+platform. The optional [damage-floor profile](damage-floor.md) supplies neutral
+tech and knockdown recovery; bounces, tech rolls and wall/ceiling techs remain
+unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

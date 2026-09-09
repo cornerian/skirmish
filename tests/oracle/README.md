@@ -89,3 +89,8 @@ It retains the accessed integer widths and copies the original menu enums from
 audio, object allocation, and scene scheduling are no-ops; external submenu
 initializers record their identity. Callback comparisons therefore stop at the
 delegation boundary, before the submenu's own initialization side effects.
+
+`down_attack` selects complete `ftCo_800986B0` buffered-tech eligibility from
+ftCo_DownAttack.c. The adapter supplies only the input-lock result, current and
+previous physical-L/R press ages, and the two common-data boundaries. Match
+tests own floor contact and the subsequent Passive/Down action graph.

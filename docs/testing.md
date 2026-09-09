@@ -90,6 +90,14 @@ group history, resource rejection and restored recovery. These fixtures are
 synthetic. Items, capture rules, Slash RNG and the full original graph remain
 outside the declared profile.
 
+The [damage-floor profile](damage-floor.md) promotes both tumble-landing
+conformance scenarios. `game_damage_floor` exercises buffered neutral tech,
+repeat lockout, exact configured knockdown/recovery durations, non-tumble
+landings, DamageFall carry, invalid data, checkpoint replay and reset.
+`damage_floor_differential` compares the retained eligibility predicate with
+the complete pinned original C function over generated timer, boundary and lock
+inputs.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -119,7 +127,7 @@ explicitly disable unrelated state/environment branches.
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions`: individual ledge scenarios |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
-| Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release, hitlag displacement, landing responses |
+| Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release and implemented hitlag/floor responses |
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
 | Moving platforms/remapping, ECB corner and squeeze response | `conformance_stage`: independent reference cases |
 | Conditional top KOs and rebirth platform | `conformance_stage`: ordinary upper-boundary jump and stock-loss lifecycle |
