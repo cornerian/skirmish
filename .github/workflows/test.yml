@@ -14,5 +14,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo test --locked --workspace
       - run: cargo test --locked --workspace --features c-oracle
+      - run: cargo run --locked --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-debug.jsonl"
       - run: cargo test --locked --workspace --release --features c-oracle
+      - run: |
+          cargo run --locked --release --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-release.jsonl"
+          cargo run --locked --bin skirmish -- compare-traces "$RUNNER_TEMP/skirmish-debug.jsonl" "$RUNNER_TEMP/skirmish-release.jsonl"
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use skirmish::{inventory, runner, trace};
+use skirmish::{inventory, match_trace, runner, trace};
 use std::{
     fs::{self, File},
-    io::BufReader,
+    io::{self, BufRead, BufReader, BufWriter},
     path::PathBuf,
     time::Duration,
 };
@@ -20,6 +20,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Run the synthetic headless match fixture to completion; emit a JSONL trace.
+    DemoMatch {
+        #[arg(long, default_value_t = 0)]
+        seed: u32,
+    },
+    /// Run an experimental native resource bundle with JSONL controller-pair inputs.
+    RunMatch {
+        #[arg(long)]
+        data: PathBuf,
+        /// Read controller pairs from this file; defaults to stdin for trace adapters.
+        #[arg(long)]
+        inputs: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        seed: u32,
+    },
     /// Inventory tracked upstream C, C++, headers and assembly with content hashes.
     Inventory { upstream: PathBuf },
     /// Compare complete semantic JSONL traces without comparing machine code.
@@ -46,6 +61,36 @@ enum Commands {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Commands::DemoMatch { seed } => {
+            let data = serde_json::from_str(include_str!(
+                "../crates/skirmish-match/tests/fixtures/integration-match.json"
+            ))?;
+            match_trace::run(
+                data,
+                seed,
+                |state| Ok(match_trace::demo_input(state)),
+                BufWriter::new(io::stdout().lock()),
+            )?;
+        }
+        Commands::RunMatch { data, inputs, seed } => {
+            let data = serde_json::from_slice(&fs::read(data)?)?;
+            let input: Box<dyn BufRead> = match inputs {
+                Some(path) => Box::new(BufReader::new(File::open(path)?)),
+                None => Box::new(BufReader::new(io::stdin())),
+            };
+            let mut lines = input.lines();
+            match_trace::run(
+                data,
+                seed,
+                |_| {
+                    lines
+                        .next()
+                        .map(|line| Ok(serde_json::from_str(&line?)?))
+                        .transpose()
+                },
+                BufWriter::new(io::stdout().lock()),
+            )?;
+        }
         Commands::Inventory { upstream } => println!(
             "{}",
             serde_json::to_string_pretty(&inventory::inventory(&upstream)?)?

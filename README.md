@@ -44,14 +44,23 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `melee-runtime::spline` | Hermite, linear/Bezier/B-spline/cardinal points and arc-length inversion |
 | `melee-runtime::id` | Object-ID lookup, replacement, removal and default-table reset using `HashMap` |
 | `melee-runtime::quaternion` | Six matrix, axis/Euler rotation, multiplication and interpolation routines, using scalar `glam` plus compatibility wrappers |
-| `melee-physics` | 25 gravity, friction, acceleration, drift, knockback-decay and ground-projection functions in a standalone `no_std` library |
+| `melee-physics` | Movement, walking/jump launch, skeletal poses and bone-attached shapes, capsule/sphere contacts, knockback and hitlag in a standalone `no_std` library (poses use `alloc`) |
 | `melee-input` | Original controller stick/trigger clamping and four-port processing with owned calibration in a `no_std` library |
 | `skirmish-replay` | Streaming checkpoint/step/observation validation machinery for a future Slippi importer |
+| `skirmish-match` | Experimental native two-player match: frame stepping, bone-animated jab, damage, hitlag, KOs, stocks, respawn, timeout, checkpoints and replay-stepper integration |
 
-The remaining game, engine, SDK and platform code is unported. Transcendental
+Most game, engine, SDK and platform code remains unported. Transcendental
 tests allow a documented host-library tolerance; integer and
-eligible floating-point operations use exact comparisons. This is not a playable
-game or an RL environment yet.
+eligible floating-point operations use exact comparisons. The match slice uses
+an explicitly synthetic fixture; a faithful Melee matchup and a training adapter
+are not implemented yet.
+
+Run a complete native headless demonstration with
+`cargo run --locked --bin skirmish -- demo-match`. It emits a semantic JSONL trace
+of a scripted jab sequence through stock loss, respawn and a winner. Bones and
+collision run in physics; there is no rendering dependency. See the
+[match API, native-data format and coverage limits](docs/match.md). Real Fox and
+stage data subsets are preserved with [provenance and missing fields](docs/native-data.md).
 
 See [headless architecture](docs/architecture.md) and
 [equivalence testing](docs/equivalence.md), plus the

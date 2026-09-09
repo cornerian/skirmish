@@ -1,0 +1,3 @@
+# Preserve provenance-checked upstream bytes, including original whitespace.
+tests/oracle/original/* -text -whitespace
+tests/fixtures/native-data/* -text

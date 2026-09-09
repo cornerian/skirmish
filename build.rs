@@ -5,59 +5,75 @@ fn main() {
 
 #[cfg(feature = "c-oracle")]
 fn build_oracle() {
-    use std::{env, fs, path::PathBuf};
+    use std::{collections::BTreeMap, env, fs, path::PathBuf};
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     println!("cargo:rerun-if-changed=tests/oracle");
-    for entry in fs::read_dir("tests/oracle/original").expect("C reference snapshots") {
-        let path = entry.unwrap().path();
-        if path.extension().is_some_and(|ext| ext == "c") {
-            let source = fs::read_to_string(&path).unwrap();
-            let source = if path.file_stem().unwrap() == "ftcommon" {
-                let names: Vec<String> = serde_json::from_str(
-                    &fs::read_to_string("tests/oracle/physics.functions.json").unwrap(),
-                )
-                .unwrap();
-                names
-                    .iter()
-                    .map(|name| extract_function(&source, name))
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-            } else {
-                source
-            };
-            let mut adapted = source
-                .lines()
-                .filter(|line| !line.trim_start().starts_with("#include"))
+    let originals: BTreeMap<String, PathBuf> = fs::read_dir("tests/oracle/original")
+        .expect("C reference snapshots")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
+        .map(|path| (path.file_stem().unwrap().to_str().unwrap().to_owned(), path))
+        .collect();
+    let aliases: BTreeMap<String, String> =
+        serde_json::from_str(&fs::read_to_string("tests/oracle/adapters.json").unwrap()).unwrap();
+    let mut adapters = originals.clone();
+    for (alias, source) in aliases {
+        assert!(
+            alias.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+            "invalid adapter name"
+        );
+        let path = originals
+            .get(&source)
+            .expect("adapter must reference an original snapshot");
+        assert!(
+            adapters.insert(alias, path.clone()).is_none(),
+            "duplicate adapter name"
+        );
+    }
+    for (adapter, path) in adapters {
+        let source = fs::read_to_string(&path).unwrap();
+        let selection = if adapter == "ftcommon" {
+            PathBuf::from("tests/oracle/physics.functions.json")
+        } else {
+            PathBuf::from("tests/oracle").join(format!("{adapter}.functions.json"))
+        };
+        let source = if selection.exists() {
+            let names: Vec<String> =
+                serde_json::from_str(&fs::read_to_string(selection).unwrap()).unwrap();
+            names
+                .iter()
+                .map(|name| extract_function(&source, name))
                 .collect::<Vec<_>>()
-                .join("\n");
-            // Replace the GameCube pointer-sized stack storage with explicit
-            // 32-bit union members on the 64-bit host. Algorithms are unchanged.
-            if path.file_stem().unwrap() == "bytecode" {
-                adapted = adapted
-                    .replace("stack->data", "stack->data.u")
-                    .replace("list->data", "list->data.u")
-                    .replace("((ByteCodeVal*) &stack->data.u)->i", "stack->data.i")
-                    .replace("((ByteCodeVal*) &stack->data.u)->f", "stack->data.f")
-                    .replace(
-                        "((ByteCodeVal*) &args[operand])->i",
-                        "float_bits(args[operand])",
-                    )
-                    .replace("*(void**) &fv", "float_bits(fv)")
-                    .replace("*(void**) &f0", "float_bits(f0)")
-                    .replace("(void*)", "(uint32_t)");
-            }
-            fs::write(
-                out.join(format!(
-                    "{}_original.inc",
-                    path.file_stem().unwrap().to_str().unwrap()
-                )),
-                adapted,
-            )
-            .unwrap();
+                .join("\n\n")
+        } else {
+            source
+        };
+        let mut adapted = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("#include"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Replace the GameCube pointer-sized stack storage with explicit
+        // 32-bit union members on the 64-bit host. Algorithms are unchanged.
+        if path.file_stem().unwrap() == "bytecode" {
+            adapted = adapted
+                .replace("stack->data", "stack->data.u")
+                .replace("list->data", "list->data.u")
+                .replace("((ByteCodeVal*) &stack->data.u)->i", "stack->data.i")
+                .replace("((ByteCodeVal*) &stack->data.u)->f", "stack->data.f")
+                .replace(
+                    "((ByteCodeVal*) &args[operand])->i",
+                    "float_bits(args[operand])",
+                )
+                .replace("*(void**) &fv", "float_bits(fv)")
+                .replace("*(void**) &f0", "float_bits(f0)")
+                .replace("(void*)", "(uint32_t)");
         }
+        fs::write(out.join(format!("{adapter}_original.inc")), adapted).unwrap();
     }
     let mut build = cc::Build::new();
     build
+        .std("gnu11")
         .include(out)
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-ffp-contract=off")

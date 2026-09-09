@@ -20,6 +20,7 @@ melee-runtime = { path = "crates/melee-runtime" }
 melee-physics = { path = "crates/melee-physics" }
 melee-input = { path = "crates/melee-input" }
 skirmish-replay = { path = "crates/skirmish-replay" }
+skirmish-match = { path = "crates/skirmish-match" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

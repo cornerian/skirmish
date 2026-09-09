@@ -53,5 +53,45 @@
     "fixture": "tests/oracle/original/PadClamp.c",
     "upstream": "extern/dolphin/src/dolphin/pad/PadClamp.c",
     "sha256": "80bae8c313d8ad603eb0708ded09cb0130a49865a0579179e2ef1c2060f41f34"
+  },
+  {
+    "fixture": "tests/oracle/original/hsd_mtx.c",
+    "upstream": "src/sysdolphin/baselib/mtx.c",
+    "sha256": "f310c0e473efa52037f5ddaaaa415f1b705915c853b3a071241ede2a548941ac"
+  },
+  {
+    "fixture": "tests/oracle/original/sdk_mtx.c",
+    "upstream": "extern/dolphin/src/dolphin/mtx/mtx.c",
+    "sha256": "594e946b2686708a44f50683acb142c7f7e138eac520905e11f089e333414caa"
+  },
+  {
+    "fixture": "tests/oracle/original/sdk_mtxvec.c",
+    "upstream": "extern/dolphin/src/dolphin/mtx/mtxvec.c",
+    "sha256": "41335e9824650e3ac56f620774028bba01d539ed8384b2c89d9e5bb3ed597184"
+  },
+  {
+    "fixture": "tests/oracle/original/combat_knockback.c",
+    "upstream": "src/melee/ft/ftcoll.c",
+    "sha256": "f376f14500c1e018fd022b45563ac8163d0aba043f1817f8e1b2eeba651f16e7"
+  },
+  {
+    "fixture": "tests/oracle/original/combat_collision.c",
+    "upstream": "src/melee/lb/lbcollision.c",
+    "sha256": "59705ddc7a8a20fe40598b9e97251bb5cbd3f4ede890e3f6fa3ed5bc34dbd36b"
+  },
+  {
+    "fixture": "tests/oracle/original/combat_hitstun.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Damage.c",
+    "sha256": "8865a532b8bbbdd7464f95b9bd291b13fdf570aa3e554dc3171d91a4a1952b13"
+  },
+  {
+    "fixture": "tests/oracle/original/ftjump.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
+    "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
+  },
+  {
+    "fixture": "tests/oracle/original/ftwalk.c",
+    "upstream": "src/melee/ft/ftwalkcommon.c",
+    "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
   }
 ]

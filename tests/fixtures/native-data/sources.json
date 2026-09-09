@@ -1,0 +1,157 @@
+{
+  "libmelee_commit": "1da979657122facd0750ea99cf6858255e198326",
+  "sources": [
+    {
+      "file": "characterdata.csv",
+      "url": "https://raw.githubusercontent.com/altf4/libmelee/1da979657122facd0750ea99cf6858255e198326/melee/characterdata.csv",
+      "sha256": "d7c3bd38386f8fb9a97df98fc1e31370d1634bc9164e11e1e72055c3d43c788a",
+      "bytes": 1874,
+      "retrieved": "2026-09-09T01:53:58.022525+00:00",
+      "etag": "\"34c94aafebe0869770f4e0f53ce98932e5cdaae713dc95d4ea22f601744d0cb7\"",
+      "last_modified": null,
+      "id": "libmelee-characterdata",
+      "license": "LGPL-3.0 as published; see LICENSE-libmelee.txt",
+      "revision": "1da979657122facd0750ea99cf6858255e198326"
+    },
+    {
+      "file": "framedata.csv",
+      "url": "https://raw.githubusercontent.com/altf4/libmelee/1da979657122facd0750ea99cf6858255e198326/melee/framedata.csv",
+      "sha256": "8e0d811290b511902076c0011db1a0116356a7ddaa68dfa369ea4f5dcdc93777",
+      "bytes": 6663335,
+      "retrieved": "2026-09-09T01:53:58.619262+00:00",
+      "etag": "\"7af3826cf46a1b7e519eeb7919dd91ef80d51ee061ee92e52f338caa89dfba62\"",
+      "last_modified": null,
+      "id": "libmelee-framedata",
+      "license": "LGPL-3.0 as published; see LICENSE-libmelee.txt",
+      "revision": "1da979657122facd0750ea99cf6858255e198326"
+    },
+    {
+      "file": "stages.py",
+      "url": "https://raw.githubusercontent.com/altf4/libmelee/1da979657122facd0750ea99cf6858255e198326/melee/stages.py",
+      "sha256": "d9667ca77b61e51744ef793b0ce942baa66ab869494d1a1e4a8cd445af5ea5ce",
+      "bytes": 8457,
+      "retrieved": "2026-09-09T01:53:58.820611+00:00",
+      "etag": "\"8cc9a11bd1a1c003afedcd1a5bea5a6a3b6516f03ad5cd5164d68321003f1867\"",
+      "last_modified": null,
+      "id": "libmelee-stages",
+      "license": "LGPL-3.0 as published; see LICENSE-libmelee.txt",
+      "revision": "1da979657122facd0750ea99cf6858255e198326"
+    },
+    {
+      "file": "LICENSE-libmelee.txt",
+      "url": "https://raw.githubusercontent.com/altf4/libmelee/1da979657122facd0750ea99cf6858255e198326/LICENSE.txt",
+      "sha256": "c011ab8ee407a146225305a9038baf0f3bd80883507fd3d34da2823c5dcb4e5a",
+      "bytes": 7361,
+      "retrieved": "2026-09-09T01:53:58.995866+00:00",
+      "etag": "\"3e98bbaf14004c03b76912f9c00aa33c64b2b099f3fe1e91eabebe5fc1e0bb2b\"",
+      "last_modified": null,
+      "id": "libmelee-license",
+      "license": "LGPL-3.0 as published; see LICENSE-libmelee.txt",
+      "revision": "1da979657122facd0750ea99cf6858255e198326"
+    },
+    {
+      "file": "Fox.json",
+      "url": "https://melee.theshoemaker.de/dat-dumps/Fox.json",
+      "sha256": "4533034a5db1b2d7949763b196f5a9cb2361b567da8ba6f8ad7c5a898a55e98f",
+      "bytes": 1442739,
+      "retrieved": "2026-09-09T01:54:00.659123+00:00",
+      "etag": "\"1603b3-56da7dbe90200\"",
+      "last_modified": "Sat, 02 Jun 2018 12:30:00 GMT",
+      "id": "publisher-fox-dump",
+      "license": "No dataset license specified in inspected publisher pages/repositories; numerical excerpts with attribution."
+    },
+    {
+      "file": "Fox.framedata.json",
+      "url": "https://melee.theshoemaker.de/framedata-json-fullhitboxes/Fox.framedata.json",
+      "sha256": "4c2e8a8e6e97f6defa07800d564667ee59572fec62ef7b4c8a74efc17d9f46b4",
+      "bytes": 117067,
+      "retrieved": "2026-09-09T01:54:01.669521+00:00",
+      "etag": "\"1c94b-56f7875859280\"",
+      "last_modified": "Mon, 25 Jun 2018 14:47:22 GMT",
+      "id": "publisher-fox-framedata",
+      "license": "No dataset license specified in inspected publisher pages/repositories; numerical excerpts with attribution."
+    },
+    {
+      "id": "libmelee-capture-code",
+      "file": "framedata.py",
+      "url": "https://raw.githubusercontent.com/altf4/libmelee/1da979657122facd0750ea99cf6858255e198326/melee/framedata.py",
+      "revision": "1da979657122facd0750ea99cf6858255e198326",
+      "sha256": "719fdc568f7ee4c9a7b329b3da30679da8c9cf3d91decd1f69b36b65de229487",
+      "bytes": 50081,
+      "license": "LGPL-3.0 as published; source inspected, not vendored."
+    }
+  ],
+  "schema": "skirmish-native-source-provenance-v1",
+  "scope": "Small source evidence fixtures; not complete or fidelity-verified native match resources.",
+  "upstream_layout_revision": "0bac93a5ee2f985dac6220bd36ed7078ae6ac0c9",
+  "fixtures": [
+    {
+      "file": "fox-native-subset.json",
+      "source_id": "publisher-fox-dump",
+      "selection": "nodes[0].data.attributes indices0..37,57..62; subactions[46]; animationFiles[43]. Field names mapped by byte offset to pinned ftCo_DatAttrs. f32 bits derived by IEEE754 binary32 conversion; raw command bytes concatenated unchanged.",
+      "sha256": "d9aa7cd2283f34dae4356b10d2b18be2585f0ad05c80a71d1d2bc29ea8be6924",
+      "bytes": 15120
+    },
+    {
+      "file": "fox-jab1-processed.json",
+      "source_id": "publisher-fox-framedata",
+      "selection": "jab1 object, unchanged within provenance wrapper.",
+      "sha256": "ca549adac11a0aa15c0e7eb814c9e79ef47b4991022fa782bc7607cf9edd897f",
+      "bytes": 1636
+    },
+    {
+      "file": "fox-jab1-captured.csv",
+      "source_id": "libmelee-framedata",
+      "selection": "Original header and exact rows whose character=1,action=44, preserving original numeric text and line endings.",
+      "sha256": "11acbbf3b8db09791603586e72b7b03d6ca98fd5bf585683ef58560af689f7cd",
+      "bytes": 2010
+    },
+    {
+      "file": "final-destination-bounds.json",
+      "source_id": "libmelee-stages",
+      "selection": "FINAL_DESTINATION entries from BLASTZONES,EDGE_GROUND_POSITION,EDGE_POSITION; labels express source documentation; absent geometry is null.",
+      "sha256": "6e3bc7ee5ddc7e98c6309790f4e5d83e445e57dad4e40bd7744caff6377927cb",
+      "bytes": 651
+    },
+    {
+      "file": "LICENSE-libmelee.txt",
+      "source_id": "libmelee-license",
+      "selection": "Verbatim original license.",
+      "sha256": "c011ab8ee407a146225305a9038baf0f3bd80883507fd3d34da2823c5dcb4e5a",
+      "bytes": 7361
+    }
+  ],
+  "conflicts": [
+    {
+      "field": "jab1.hitbox.size_and_offsets",
+      "publisher_decode": "raw integer /255",
+      "upstream_decode": "raw integer multiplied by f32 constant0.003906f",
+      "raw_size": 852,
+      "publisher_size": 3.3411764705882354,
+      "libmelee_captured_size": 3.3279118538,
+      "resolution": "Keep raw bytes; apply pinned upstream semantics. Never use publisher parsed size/offset fields as authoritative."
+    },
+    {
+      "field": "jab1.iasa",
+      "publisher_command_frame": 16,
+      "libmelee_first_true_frame": 8,
+      "resolution": "Unresolved; do not combine timing sources into a verified action."
+    },
+    {
+      "field": "jab1.animation_length",
+      "publisher_animation_numFrames": 18,
+      "publisher_totalFrames": 17,
+      "resolution": "Distinct source conventions retained without claiming equivalent timing."
+    }
+  ],
+  "coverage_gaps": [
+    "complete_bone_hierarchy_and_bind_pose",
+    "bone_animation_tracks",
+    "hurtbox_capsules_and_bone_attachments",
+    "environment_collision_boxes",
+    "complete_action_and_command_coverage",
+    "full_stage_collision_mesh",
+    "verified_same_game_revision_across_sources",
+    "complete_native_simulator_checkpoint"
+  ]
+}

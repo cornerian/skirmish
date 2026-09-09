@@ -1,0 +1,725 @@
+{
+  "schema": 1,
+  "profile": "integration_fixture",
+  "provenance": "Wholly synthetic native integration-test fixture authored for Skirmish. All fighter, stage, bone, animation, collision and rule values are invented to exercise orchestration; none claim to represent a Melee character, stage or match.",
+  "stage": {
+    "name": "Synthetic flat test stage",
+    "floor": {
+      "left": -8.0,
+      "right": 8.0,
+      "y": 0.0
+    },
+    "blast": [
+      -12.0,
+      12.0,
+      -8.0,
+      25.0
+    ],
+    "spawns": [
+      [
+        -2.0,
+        0.0
+      ],
+      [
+        2.0,
+        0.0
+      ]
+    ]
+  },
+  "fighters": [
+    {
+      "name": "Synthetic A",
+      "movement": {
+        "ground_max_horizontal_velocity": 3.0,
+        "air_max_horizontal_velocity": 3.0,
+        "air_drift_stick_mul": 0.1,
+        "aerial_drift_base": 0.05,
+        "air_drift_max": 1.5,
+        "aerial_friction": 0.1,
+        "gravity": 0.2,
+        "terminal_velocity": 2.0,
+        "fast_fall_velocity": 3.0,
+        "ground_friction": 0.2,
+        "walk_acceleration_mul": 0.3,
+        "walk_acceleration_base": 0.1,
+        "walk_max_velocity": 1.5,
+        "jump_startup_frames": 2,
+        "jump_vertical_velocity": 2.4,
+        "short_hop_vertical_velocity": 1.2,
+        "jump_horizontal_velocity": 0.5,
+        "jump_horizontal_max": 1.5,
+        "jump_momentum_multiplier": 0.5,
+        "landing_frames": 2
+      },
+      "weight": 100.0,
+      "bones": [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "hurtboxes": [
+        {
+          "bone": 1,
+          "start": [
+            0.0,
+            -0.8,
+            0.0
+          ],
+          "end": [
+            0.0,
+            0.8,
+            0.0
+          ],
+          "radius": 0.4
+        }
+      ],
+      "jab": {
+        "frames": [
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  1.5,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  1.5707963267948966
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": [
+              {
+                "group": 0,
+                "bone": 1,
+                "center": [
+                  0.0,
+                  -1.0,
+                  0.0
+                ],
+                "radius": 1.25,
+                "damage": 10,
+                "angle_degrees": 30.0,
+                "growth": 50,
+                "fixed": 0,
+                "base": 30
+              }
+            ]
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  1.5,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  1.5707963267948966
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": [
+              {
+                "group": 0,
+                "bone": 1,
+                "center": [
+                  0.0,
+                  -1.0,
+                  0.0
+                ],
+                "radius": 1.25,
+                "damage": 10,
+                "angle_degrees": 30.0,
+                "growth": 50,
+                "fixed": 0,
+                "base": 30
+              }
+            ]
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Synthetic B",
+      "movement": {
+        "ground_max_horizontal_velocity": 3.0,
+        "air_max_horizontal_velocity": 3.0,
+        "air_drift_stick_mul": 0.1,
+        "aerial_drift_base": 0.05,
+        "air_drift_max": 1.5,
+        "aerial_friction": 0.1,
+        "gravity": 0.2,
+        "terminal_velocity": 2.0,
+        "fast_fall_velocity": 3.0,
+        "ground_friction": 0.2,
+        "walk_acceleration_mul": 0.3,
+        "walk_acceleration_base": 0.1,
+        "walk_max_velocity": 1.5,
+        "jump_startup_frames": 2,
+        "jump_vertical_velocity": 2.4,
+        "short_hop_vertical_velocity": 1.2,
+        "jump_horizontal_velocity": 0.5,
+        "jump_horizontal_max": 1.5,
+        "jump_momentum_multiplier": 0.5,
+        "landing_frames": 2
+      },
+      "weight": 100.0,
+      "bones": [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "hurtboxes": [
+        {
+          "bone": 1,
+          "start": [
+            0.0,
+            -0.8,
+            0.0
+          ],
+          "end": [
+            0.0,
+            0.8,
+            0.0
+          ],
+          "radius": 0.4
+        }
+      ],
+      "jab": {
+        "frames": [
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  1.5,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  1.5707963267948966
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": [
+              {
+                "group": 0,
+                "bone": 1,
+                "center": [
+                  0.0,
+                  -1.0,
+                  0.0
+                ],
+                "radius": 1.25,
+                "damage": 10,
+                "angle_degrees": 30.0,
+                "growth": 50,
+                "fixed": 0,
+                "base": 30
+              }
+            ]
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  1.5,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  1.5707963267948966
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": [
+              {
+                "group": 0,
+                "bone": 1,
+                "center": [
+                  0.0,
+                  -1.0,
+                  0.0
+                ],
+                "radius": 1.25,
+                "damage": 10,
+                "angle_degrees": 30.0,
+                "growth": 50,
+                "fixed": 0,
+                "base": 30
+              }
+            ]
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          },
+          {
+            "bones": [
+              {
+                "parent": null,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              {
+                "parent": 0,
+                "classical_scale": false,
+                "translation": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              }
+            ],
+            "hitboxes": []
+          }
+        ]
+      }
+    }
+  ],
+  "rules": {
+    "stocks": 2,
+    "countdown_frames": 2,
+    "time_limit_frames": 600,
+    "respawn_frames": 3,
+    "respawn_invincibility_frames": 3,
+    "friction_above_walk": 1.0,
+    "walk_accel_taper_gain": 1.0,
+    "fast_fall_threshold": 0.7,
+    "knockback_decay": 0.1,
+    "knockback_speed": 0.15,
+    "hitstun_scale": 0.4,
+    "knockback": {
+      "weight_scale": 0.01,
+      "weight_base": 2.0,
+      "maximum": 100.0,
+      "percent_scale": 0.1,
+      "damage_percent_scale": 0.02,
+      "fixed_damage": 1.0,
+      "growth_scale": 1.0,
+      "growth_base": 2.0
+    },
+    "hitlag": {
+      "damage_scale": 0.1,
+      "base": 2.0,
+      "crouch_multiplier": 1.0
+    }
+  }
+}

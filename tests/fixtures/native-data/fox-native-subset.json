@@ -1,0 +1,587 @@
+{
+  "schema": "skirmish-native-source-evidence-v1",
+  "fighter": "Fox",
+  "complete_simulation_resource": false,
+  "game_revision_verified": false,
+  "source_id": "publisher-fox-dump",
+  "historical_source_label": "PlFx.dat",
+  "attribute_layout_revision": "0bac93a5ee2f985dac6220bd36ed7078ae6ac0c9",
+  "attribute_layout_path": "src/melee/ft/types.h:ftCo_DatAttrs",
+  "attributes": [
+    {
+      "index": 0,
+      "offset": "0x000",
+      "upstream_field": "walk_accel_mul",
+      "publisher_name": "initialWalkVelocity",
+      "value": 0.20000000298023224,
+      "type": "float",
+      "bits": "f32:3e4ccccd"
+    },
+    {
+      "index": 1,
+      "offset": "0x004",
+      "upstream_field": "walk_accel_base",
+      "publisher_name": "walkAcceleration",
+      "value": 0.10000000149011612,
+      "type": "float",
+      "bits": "f32:3dcccccd"
+    },
+    {
+      "index": 2,
+      "offset": "0x008",
+      "upstream_field": "walk_max_vel",
+      "publisher_name": "walkMaximumVelocity",
+      "value": 1.600000023841858,
+      "type": "float",
+      "bits": "f32:3fcccccd"
+    },
+    {
+      "index": 3,
+      "offset": "0x00c",
+      "upstream_field": "slow_walk_max",
+      "publisher_name": "walkAnimationSpeed",
+      "value": 0.23000000417232513,
+      "type": "float",
+      "bits": "f32:3e6b851f"
+    },
+    {
+      "index": 4,
+      "offset": "0x010",
+      "upstream_field": "mid_walk_point",
+      "publisher_name": "midWalkPoint",
+      "value": 0.5699999928474426,
+      "type": "float",
+      "bits": "f32:3f11eb85"
+    },
+    {
+      "index": 5,
+      "offset": "0x014",
+      "upstream_field": "fast_walk_min",
+      "publisher_name": "fastWalkMin",
+      "value": 0.9200000166893005,
+      "type": "float",
+      "bits": "f32:3f6b851f"
+    },
+    {
+      "index": 6,
+      "offset": "0x018",
+      "upstream_field": "ground_friction",
+      "publisher_name": "friction",
+      "value": 0.07999999821186066,
+      "type": "float",
+      "bits": "f32:3da3d70a"
+    },
+    {
+      "index": 7,
+      "offset": "0x01c",
+      "upstream_field": "dash_initial_velocity",
+      "publisher_name": "dashInitialVelocity",
+      "value": 1.899999976158142,
+      "type": "float",
+      "bits": "f32:3ff33333"
+    },
+    {
+      "index": 8,
+      "offset": "0x020",
+      "upstream_field": "dash_accel_mul",
+      "publisher_name": "dashAndRunAccelerationA",
+      "value": 0.10000000149011612,
+      "type": "float",
+      "bits": "f32:3dcccccd"
+    },
+    {
+      "index": 9,
+      "offset": "0x024",
+      "upstream_field": "dash_accel_base",
+      "publisher_name": "dashAndRunAccelerationB",
+      "value": 0.019999999552965164,
+      "type": "float",
+      "bits": "f32:3ca3d70a"
+    },
+    {
+      "index": 10,
+      "offset": "0x028",
+      "upstream_field": "dash_max_velocity",
+      "publisher_name": "dashAndRunTerminalVelocity",
+      "value": 2.200000047683716,
+      "type": "float",
+      "bits": "f32:400ccccd"
+    },
+    {
+      "index": 11,
+      "offset": "0x02c",
+      "upstream_field": "run_animation_scaling",
+      "publisher_name": "runAnimationScaling",
+      "value": 1.7280000448226929,
+      "type": "float",
+      "bits": "f32:3fdd2f1b"
+    },
+    {
+      "index": 12,
+      "offset": "0x030",
+      "upstream_field": "max_run_brake_frames",
+      "publisher_name": "runAcceleration",
+      "value": 30.0,
+      "type": "float",
+      "bits": "f32:41f00000"
+    },
+    {
+      "index": 13,
+      "offset": "0x034",
+      "upstream_field": "ground_max_horizontal_velocity",
+      "publisher_name": "?",
+      "value": 3.0,
+      "type": "float",
+      "bits": "f32:40400000"
+    },
+    {
+      "index": 14,
+      "offset": "0x038",
+      "upstream_field": "jump_startup_time",
+      "publisher_name": "jumpStartup",
+      "value": 3.0,
+      "type": "float",
+      "bits": "f32:40400000"
+    },
+    {
+      "index": 15,
+      "offset": "0x03c",
+      "upstream_field": "jump_h_initial_velocity",
+      "publisher_name": "jumpHInitialVelocity",
+      "value": 0.7200000286102295,
+      "type": "float",
+      "bits": "f32:3f3851ec"
+    },
+    {
+      "index": 16,
+      "offset": "0x040",
+      "upstream_field": "jump_v_initial_velocity",
+      "publisher_name": "jumpVInitialVelocity",
+      "value": 3.680000066757202,
+      "type": "float",
+      "bits": "f32:406b851f"
+    },
+    {
+      "index": 17,
+      "offset": "0x044",
+      "upstream_field": "ground_to_air_jump_momentum_multiplier",
+      "publisher_name": "groundAirJumpMomentumMultiplier",
+      "value": 0.8299999833106995,
+      "type": "float",
+      "bits": "f32:3f547ae1"
+    },
+    {
+      "index": 18,
+      "offset": "0x048",
+      "upstream_field": "jump_h_max_velocity",
+      "publisher_name": "jumpHMaximumVelocity",
+      "value": 1.7000000476837158,
+      "type": "float",
+      "bits": "f32:3fd9999a"
+    },
+    {
+      "index": 19,
+      "offset": "0x04c",
+      "upstream_field": "hop_v_initial_velocity",
+      "publisher_name": "shorthopVInitialVelocity",
+      "value": 2.0999999046325684,
+      "type": "float",
+      "bits": "f32:40066666"
+    },
+    {
+      "index": 20,
+      "offset": "0x050",
+      "upstream_field": "air_jump_v_multiplier",
+      "publisher_name": "airJumpMultiplier",
+      "value": 1.2000000476837158,
+      "type": "float",
+      "bits": "f32:3f99999a"
+    },
+    {
+      "index": 21,
+      "offset": "0x054",
+      "upstream_field": "air_jump_h_multiplier",
+      "publisher_name": "doubleJumpMomentum",
+      "value": 0.8999999761581421,
+      "type": "float",
+      "bits": "f32:3f666666"
+    },
+    {
+      "index": 22,
+      "offset": "0x058",
+      "upstream_field": "max_jumps",
+      "publisher_name": "numberOfJumps",
+      "value": 2,
+      "type": "int"
+    },
+    {
+      "index": 23,
+      "offset": "0x05c",
+      "upstream_field": "gravity",
+      "publisher_name": "gravity",
+      "value": 0.23000000417232513,
+      "type": "float",
+      "bits": "f32:3e6b851f"
+    },
+    {
+      "index": 24,
+      "offset": "0x060",
+      "upstream_field": "terminal_velocity",
+      "publisher_name": "terminalVelocity",
+      "value": 2.799999952316284,
+      "type": "float",
+      "bits": "f32:40333333"
+    },
+    {
+      "index": 25,
+      "offset": "0x064",
+      "upstream_field": "air_drift_stick_mul",
+      "publisher_name": "airMobilityA",
+      "value": 0.05999999865889549,
+      "type": "float",
+      "bits": "f32:3d75c28f"
+    },
+    {
+      "index": 26,
+      "offset": "0x068",
+      "upstream_field": "aerial_drift_base",
+      "publisher_name": "airMobilityB",
+      "value": 0.019999999552965164,
+      "type": "float",
+      "bits": "f32:3ca3d70a"
+    },
+    {
+      "index": 27,
+      "offset": "0x06c",
+      "upstream_field": "air_drift_max",
+      "publisher_name": "maxAerialHVelocity",
+      "value": 0.8299999833106995,
+      "type": "float",
+      "bits": "f32:3f547ae1"
+    },
+    {
+      "index": 28,
+      "offset": "0x070",
+      "upstream_field": "aerial_friction",
+      "publisher_name": "airFriction",
+      "value": 0.019999999552965164,
+      "type": "float",
+      "bits": "f32:3ca3d70a"
+    },
+    {
+      "index": 29,
+      "offset": "0x074",
+      "upstream_field": "fast_fall_velocity",
+      "publisher_name": "fastFallTerminalVelocity",
+      "value": 3.4000000953674316,
+      "type": "float",
+      "bits": "f32:4059999a"
+    },
+    {
+      "index": 30,
+      "offset": "0x078",
+      "upstream_field": "air_max_horizontal_velocity",
+      "publisher_name": "?",
+      "value": 3.0,
+      "type": "float",
+      "bits": "f32:40400000"
+    },
+    {
+      "index": 31,
+      "offset": "0x07c",
+      "upstream_field": "jab_2_input_window",
+      "publisher_name": "jab2Window?",
+      "value": 30.0,
+      "type": "float",
+      "bits": "f32:41f00000"
+    },
+    {
+      "index": 32,
+      "offset": "0x080",
+      "upstream_field": "jab_3_input_window",
+      "publisher_name": "jab3Window?",
+      "value": 0.0,
+      "type": "float",
+      "bits": "f32:00000000"
+    },
+    {
+      "index": 33,
+      "offset": "0x084",
+      "upstream_field": "standing_turn_frames",
+      "publisher_name": "turnDuration",
+      "value": 4.0,
+      "type": "float",
+      "bits": "f32:40800000"
+    },
+    {
+      "index": 34,
+      "offset": "0x088",
+      "upstream_field": "weight",
+      "publisher_name": "weight",
+      "value": 75.0,
+      "type": "float",
+      "bits": "f32:42960000"
+    },
+    {
+      "index": 35,
+      "offset": "0x08c",
+      "upstream_field": "model_scaling",
+      "publisher_name": "modelScaling",
+      "value": 0.9599999785423279,
+      "type": "float",
+      "bits": "f32:3f75c28f"
+    },
+    {
+      "index": 36,
+      "offset": "0x090",
+      "upstream_field": "initial_shield_size",
+      "publisher_name": "shieldSize",
+      "value": 14.375,
+      "type": "float",
+      "bits": "f32:41660000"
+    },
+    {
+      "index": 37,
+      "offset": "0x094",
+      "upstream_field": "shield_break_initial_velocity",
+      "publisher_name": "shieldBreakInitialVelocity",
+      "value": 3.299999952316284,
+      "type": "float",
+      "bits": "f32:40533333"
+    },
+    {
+      "index": 57,
+      "offset": "0x0e4",
+      "upstream_field": "normal_landing_lag",
+      "publisher_name": "normalLandingLag",
+      "value": 4.0,
+      "type": "float",
+      "bits": "f32:40800000"
+    },
+    {
+      "index": 58,
+      "offset": "0x0e8",
+      "upstream_field": "landingairn_lag",
+      "publisher_name": "nairLandingLag",
+      "value": 15.0,
+      "type": "float",
+      "bits": "f32:41700000"
+    },
+    {
+      "index": 59,
+      "offset": "0x0ec",
+      "upstream_field": "landingairf_lag",
+      "publisher_name": "fairLandingLag",
+      "value": 22.0,
+      "type": "float",
+      "bits": "f32:41b00000"
+    },
+    {
+      "index": 60,
+      "offset": "0x0f0",
+      "upstream_field": "landingairb_lag",
+      "publisher_name": "bairLandingLag",
+      "value": 20.0,
+      "type": "float",
+      "bits": "f32:41a00000"
+    },
+    {
+      "index": 61,
+      "offset": "0x0f4",
+      "upstream_field": "landingairhi_lag",
+      "publisher_name": "uairLandingLag",
+      "value": 18.0,
+      "type": "float",
+      "bits": "f32:41900000"
+    },
+    {
+      "index": 62,
+      "offset": "0x0f8",
+      "upstream_field": "landingairlw_lag",
+      "publisher_name": "dairLandingLag",
+      "value": 18.0,
+      "type": "float",
+      "bits": "f32:41900000"
+    }
+  ],
+  "jab1": {
+    "subaction_index": 46,
+    "publisher_subaction": {
+      "shortName": "Attack11",
+      "name": "PlyFox5K_Share_ACTION_Attack11_figatree",
+      "animOffset": 197728,
+      "animSize": 8220,
+      "animationFile": 43,
+      "eventsOffset": 17712,
+      "events": [
+        {
+          "commandId": "0xd0",
+          "name": "continuationControl?",
+          "length": 4,
+          "bytes": "d0 00 00 03"
+        },
+        {
+          "commandId": "0x8",
+          "name": "waitUntil",
+          "length": 4,
+          "bytes": "08 00 00 02",
+          "fields": {
+            "frame": 2
+          }
+        },
+        {
+          "commandId": "0x2c",
+          "name": "hitbox",
+          "length": 20,
+          "bytes": "2c 00 c8 04 03 54 04 a8 00 00 00 00 23 19 00 13 00 00 00 07",
+          "fields": {
+            "id": 0,
+            "bone": 25,
+            "damage": 4,
+            "size": 3.3411764705882354,
+            "z": 4.674509803921569,
+            "y": 0.0,
+            "x": 0.0,
+            "angle": 70,
+            "kbGrowth": 100,
+            "weightDepKb": 0,
+            "hitboxInteraction": 3,
+            "baseKb": 0,
+            "element": "normal",
+            "shieldDamage": 0,
+            "sfx": 1,
+            "hitGrounded": true,
+            "hitAirborne": true
+          }
+        },
+        {
+          "commandId": "0x2c",
+          "name": "hitbox",
+          "length": 20,
+          "bytes": "2c 80 c8 04 03 54 00 00 00 00 00 00 23 19 00 13 00 00 00 07",
+          "fields": {
+            "id": 1,
+            "bone": 25,
+            "damage": 4,
+            "size": 3.3411764705882354,
+            "z": 0.0,
+            "y": 0.0,
+            "x": 0.0,
+            "angle": 70,
+            "kbGrowth": 100,
+            "weightDepKb": 0,
+            "hitboxInteraction": 3,
+            "baseKb": 0,
+            "element": "normal",
+            "shieldDamage": 0,
+            "sfx": 1,
+            "hitGrounded": true,
+            "hitAirborne": true
+          }
+        },
+        {
+          "commandId": "0x44",
+          "name": "sfx",
+          "length": 12,
+          "bytes": "44 04 00 00 00 00 00 a6 00 00 7f 40"
+        },
+        {
+          "commandId": "0xac",
+          "name": "rumble",
+          "length": 4,
+          "bytes": "ac 01 e0 00"
+        },
+        {
+          "commandId": "0x8",
+          "name": "waitUntil",
+          "length": 4,
+          "bytes": "08 00 00 03",
+          "fields": {
+            "frame": 3
+          }
+        },
+        {
+          "commandId": "0x74",
+          "name": "enableJabFollowup",
+          "length": 4,
+          "bytes": "74 00 00 01"
+        },
+        {
+          "commandId": "0x4",
+          "name": "waitFor",
+          "length": 4,
+          "bytes": "04 00 00 01",
+          "fields": {
+            "frames": 1
+          }
+        },
+        {
+          "commandId": "0x40",
+          "name": "endAllCollisions",
+          "length": 4,
+          "bytes": "40 00 00 00"
+        },
+        {
+          "commandId": "0x8",
+          "name": "waitUntil",
+          "length": 4,
+          "bytes": "08 00 00 06",
+          "fields": {
+            "frame": 6
+          }
+        },
+        {
+          "commandId": "0x74",
+          "name": "enableJabFollowup",
+          "length": 4,
+          "bytes": "74 00 00 00"
+        },
+        {
+          "commandId": "0x8",
+          "name": "waitUntil",
+          "length": 4,
+          "bytes": "08 00 00 10",
+          "fields": {
+            "frame": 16
+          }
+        },
+        {
+          "commandId": "0x5c",
+          "name": "allowIasa",
+          "length": 4,
+          "bytes": "5c 00 00 00"
+        },
+        {
+          "commandId": "0x0",
+          "name": "exit",
+          "length": 4,
+          "bytes": "00 00 00 00"
+        }
+      ]
+    },
+    "publisher_animation_metadata": {
+      "nodes": [
+        {
+          "shortName": "Attack11",
+          "name": "PlyFox5K_Share_ACTION_Attack11_figatree",
+          "rootOffset": 7384,
+          "data": {
+            "numFrames": 18.0,
+            "boneTableOffset": 7308,
+            "animDataOffset": 5124
+          }
+        }
+      ]
+    },
+    "runtime_event_bytes_hex": "d0 00 00 03 08 00 00 02 2c 00 c8 04 03 54 04 a8 00 00 00 00 23 19 00 13 00 00 00 07 2c 80 c8 04 03 54 00 00 00 00 00 00 23 19 00 13 00 00 00 07 44 04 00 00 00 00 00 a6 00 00 7f 40 ac 01 e0 00 08 00 00 03 74 00 00 01 04 00 00 01 40 00 00 00 08 00 00 06 74 00 00 00 08 00 00 10 5c 00 00 00 00 00 00 00",
+    "event_count": 15,
+    "parsed_fields_are_authoritative": false,
+    "missing": [
+      "bone_hierarchy",
+      "bind_pose",
+      "animation_tracks",
+      "hurtbox_capsules",
+      "environment_collision_box"
+    ]
+  }
+}

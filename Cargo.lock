@@ -298,6 +298,9 @@ version = "0.1.0"
 [[package]]
 name = "melee-physics"
 version = "0.1.0"
+dependencies = [
+ "libm",
+]
 
 [[package]]
 name = "melee-runtime"
@@ -542,8 +545,22 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "skirmish-match",
  "skirmish-replay",
  "tempfile",
+]
+
+[[package]]
+name = "skirmish-match"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "melee-physics",
+ "serde",
+ "serde_json",
+ "sha2",
+ "skirmish-replay",
+ "thiserror",
 ]
 
 [[package]]

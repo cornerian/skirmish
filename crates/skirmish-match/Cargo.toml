@@ -1,0 +1,21 @@
+[package]
+name = "skirmish-match"
+version = "0.1.0"
+edition = "2024"
+description = "Experimental deterministic headless match orchestration for Skirmish"
+publish = false
+
+[dependencies]
+melee-physics = { path = "../melee-physics" }
+skirmish-replay = { path = "../skirmish-replay" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+libm = "0.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

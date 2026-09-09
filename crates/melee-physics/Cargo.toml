@@ -5,6 +5,9 @@ edition = "2024"
 description = "Exact scalar movement helpers from doldecomp/melee, independent of rendering"
 publish = false
 
+[dependencies]
+libm = "0.2"
+
 [lints.rust]
 unsafe_code = "forbid"
 

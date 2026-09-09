@@ -1,0 +1,62 @@
+{
+  "schema": "skirmish-native-source-evidence-v1",
+  "source_id": "publisher-fox-framedata",
+  "authoritative_runtime_values": false,
+  "reason": "Size/offset scaling and IASA disagree with upstream decoding or captured libmelee data; retain as evidence only.",
+  "publisher_jab1": {
+    "subactionIndex": 46,
+    "subactionName": "PlyFox5K_Share_ACTION_Attack11_figatree",
+    "totalFrames": 17,
+    "iasa": 16,
+    "hitFrames": [
+      {
+        "start": 2,
+        "end": 3,
+        "hitboxes": [
+          {
+            "id": 0,
+            "bone": 25,
+            "damage": 4,
+            "size": 3.3411764705882354,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 4.674509803921569,
+            "angle": 70,
+            "kbGrowth": 100,
+            "weightDepKb": 0,
+            "hitboxInteraction": 3,
+            "baseKb": 0,
+            "element": "normal",
+            "shieldDamage": 0,
+            "sfx": 1,
+            "hitGrounded": true,
+            "hitAirborne": true,
+            "guid": 0,
+            "groupId": 0
+          },
+          {
+            "id": 1,
+            "bone": 25,
+            "damage": 4,
+            "size": 3.3411764705882354,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "angle": 70,
+            "kbGrowth": 100,
+            "weightDepKb": 0,
+            "hitboxInteraction": 3,
+            "baseKb": 0,
+            "element": "normal",
+            "shieldDamage": 0,
+            "sfx": 1,
+            "hitGrounded": true,
+            "hitAirborne": true,
+            "guid": 1,
+            "groupId": 0
+          }
+        ]
+      }
+    ]
+  }
+}

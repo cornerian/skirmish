@@ -11,8 +11,11 @@ carry the gameplay data; unresolved data and rules must not be silently filled
 with approximate defaults to make a match appear playable.
 
 `crates/melee-runtime` is an independent library project for the translated HAL
-and Metrowerks algorithms. `crates/melee-physics` contains 25 isolated fighter
-movement routines. Cargo workspace packages keep builds and
+and Metrowerks algorithms. `crates/melee-physics` contains scalar movement,
+walking/jump launch, bone hierarchy transforms and combat arithmetic. Bone poses
+and bone-attached hitboxes/hurtboxes are physics data, available headless.
+`crates/skirmish-match` composes an experimental match slice and owns gameplay
+state and frame scheduling. Cargo workspace packages keep builds and
 tests reproducible while giving each library a separate dependency boundary.
 They can later move to separate Git repositories without changing their APIs.
 
@@ -43,5 +46,8 @@ rank the loss in estimated outcome value between the recorded action and its
 alternatives. Report uncertainty and the time horizon with that estimate. A
 replay snapshot alone is not a complete restorable game state; importing it
 requires reconstructing or replaying hidden state and validating against the
-reference. No RL environment, replay importer, full match simulation, or coaching
-model is implemented yet.
+reference. An experimental two-player match now implements reset, frame steps,
+termination and checkpoint branching through the generic replay interface. It
+uses synthetic native resources and a limited ruleset; see
+[the match contract](match.md). A faithful full Melee match, Slippi importer,
+training framework adapter and coaching model remain unimplemented.

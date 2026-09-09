@@ -1,0 +1,20 @@
+{
+  "schema": "skirmish-native-source-evidence-v1",
+  "stage": "Final Destination",
+  "source_id": "libmelee-stages",
+  "complete_simulation_resource": false,
+  "game_revision_verified": false,
+  "blastzone": {
+    "left": -246,
+    "right": 246,
+    "upper": 188,
+    "lower": -140
+  },
+  "positive_standing_edge_x": 85.5656967163,
+  "positive_ledge_hang_center_x": 88.4735488892,
+  "negative_edges_are_symmetric": true,
+  "floor_y": null,
+  "collision_vertices": null,
+  "collision_segments": null,
+  "notes": "Edge constants are observed fighter positions, not full collision geometry; floor height and topology are not supplied by this source."
+}

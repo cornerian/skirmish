@@ -1,9 +1,16 @@
-//! Exact scalar fighter movement routines from Melee's `ftcommon.c`.
+//! Selected native Melee movement, locomotion, bones and combat arithmetic.
 //!
 //! Caller-supplied attributes and floor normals retain the upstream data model.
-//! This crate neither schedules a frame nor supplies character/collision data.
+//! This crate neither schedules a frame nor supplies character/stage resources.
+//! Scalar movement below translates `ftcommon.c`; other modules name their sources.
 #![no_std]
 #![forbid(unsafe_code)]
+
+pub mod bones;
+
+pub mod combat;
+
+pub mod locomotion;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Attributes {
