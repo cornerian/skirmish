@@ -82,6 +82,12 @@ bypass and exceptional float behavior. `game_staling` checks percent versus
 knockback damage, hitbox caching and instance deduplication, simultaneous trades,
 death/reset lifecycle and checkpoint replay with wholly synthetic resources.
 
+The [clank kernels](clanks.md) have original-C mutation comparisons and synthetic
+staling→clash→hitlag→rebound compositions. They preserve victim-group history,
+priority boundaries and old pending responses. The native match clank dispatcher
+and rebound action graph remain unimplemented; their ignored conformance test is
+not promoted by passing these prerequisite tests.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets

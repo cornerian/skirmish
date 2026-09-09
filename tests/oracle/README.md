@@ -56,3 +56,18 @@ the existing ftcoll.c snapshot and GrabMash from ftcommon.c. Minimal layouts and
 thread-local common data replace engine storage. Graphics/audio/statistics calls
 are explicit no-result stubs; their outputs do not feed the compared arithmetic.
 Full shield lifecycle and matrix contacts are exercised through native matches.
+
+The clank adapters select ftColl_8007699C with its complete inlineA0/inlineA1
+helpers, lbColl_80008688, ftCommon_800804A0 and ftCo_Rebound entry/physics from
+exact snapshots. Stable nonzero integer identities replace pointer equality;
+the twelve victim entries, old timers, replacement cursor, both pending response
+accumulators and the second-side candidate mask are compared. The type-3 victim
+path is supported; other victim registration types and the parent pair scan are
+outside these tests. The rebound motion and friction hooks expose scalar outputs
+without claiming the full action graph. Test common data is thread-local.
+
+Clank kernels accept the ordinary non-Slash fighter-hit branch only. Effect and
+audio outputs are omitted. ftColl_800784B4's Slash-vs-Slash branch would consume
+HSD_Randi(3); that branch must preserve its shared RNG consumption before it is
+supported, even in a headless match. These scalar tests do not establish global
+RNG parity of the effect engine. See `docs/clanks.md` for caller responsibilities.

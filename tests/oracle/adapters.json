@@ -10,5 +10,8 @@
   "aerial_angles": "ftcommon",
   "aerial_rate": "aerial_landing",
   "shield_mash": "ftcommon",
-  "shield_environment": "combat_knockback"
+  "shield_environment": "combat_knockback",
+  "clank_response": "combat_knockback",
+  "clank_victims": "combat_collision",
+  "clank_push": "ftcommon"
 }

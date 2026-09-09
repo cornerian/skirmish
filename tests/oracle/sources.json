@@ -143,5 +143,10 @@
     "fixture": "tests/oracle/original/aerial_landing.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_LandingAir.c",
     "sha256": "ac7235335876dfa582015ce27e141e1baaea04abfe07ae20c971e3a2c196edab"
+  },
+  {
+    "fixture": "tests/oracle/original/clank_rebound.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Rebound.c",
+    "sha256": "040104daf2aa67ff7bb8a8207df217cc2e91eeafe97223aef5a9d9adb013003c"
   }
 ]
