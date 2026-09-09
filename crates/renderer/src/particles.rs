@@ -35,6 +35,7 @@ pub enum ParticleEffect {
     MusicNote,
     Splash,
     Leaf,
+    Feather,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
