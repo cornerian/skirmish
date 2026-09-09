@@ -1,11 +1,13 @@
 # Resource integration
 
-Resource extraction is handled by a separate task in `melee-assets`. That task
-owns export organization, vector conversion where appropriate, and future
+Resource conversion is handled by the separate `skirmish-assets` project. It
+owns converted export organization, vector conversion where appropriate, and future
 procedural artwork such as smoke and particles. Skirmish's current priority is
 native headless gameplay and physics. These are consumer requirements, not a
 final export schema or a request to rearrange the resource project's directories.
 The current experimental `MatchData` fixture format is not the full asset format.
+The optional in-game importer installs original disc files; conversion remains
+separate from that player-facing installation step.
 
 ## Gameplay and presentation
 
@@ -30,8 +32,10 @@ Exports should identify resources independently of directory placement. A
 versioned manifest can resolve stable resource IDs to paths relative to the
 bundle root, allowing the producing task to organize directories sensibly.
 Skirmish must not depend on a particular developer's checkout path, an extraction
-tool at runtime, or an ISO/DOL. A bundle resolver is still to be implemented;
-this document does not imply that one exists already.
+tool at runtime, or an ISO/DOL. The optional [in-game importer](asset-import.md)
+now installs original files, and `assets::AssetBundle` resolves their exact disc
+identifiers with path containment and integrity checks. It does not implement a
+converted gameplay/visual bundle resolver; that integration remains outstanding.
 
 For gameplay resources, retain:
 

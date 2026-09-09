@@ -29,7 +29,12 @@ cargo run --locked -p renderer --bin skirmish-renderer
 ```
 
 Use `/tmp/skirmish-target` when the shared temporary directory is unavailable.
-The default view remains the static scene. It supports arrows to orbit, `+`/`-`
+The default window opens the main menu, including **Import Game Assets**.
+This native screen provides automatic ISO search, an OS file picker, drag-and-drop,
+progress, cancellation, and persistent original-file storage. See the
+[import guide](../../docs/asset-import.md) for coverage and storage details.
+An explicit `--scene` starts in the static scene unless `--menus` is also supplied.
+The scene supports arrows to orbit, `+`/`-`
 to zoom, `R` to reset the camera, Space to play a quiet synthetic cue, and Escape
 to exit. Press F1 to switch between scene and menus using the same window and
 graphics surface. `Q` quits from either view. `--no-audio` prevents audio device

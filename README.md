@@ -57,7 +57,12 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 Start the native graphics preview with
 `cargo run --locked -p renderer --bin skirmish-renderer`. It includes a procedural
 demo; `--scene /path/to/scene.json` loads a `skirmish-visual-v1` asset export.
-Add `--menus` to start in the interactive menu; F1 switches menus and scene on
+Without `--scene`, the window starts on the interactive menu. Choose
+**Import Game Assets** to discover or select a local USA 1.02 ISO and install
+its original files using the built-in Rust importer. Players need no terminal,
+Python, Bun, or Dolphin. The [in-game import guide](docs/asset-import.md) explains
+storage, validation, and the remaining visual/gameplay conversion work.
+F1 switches menus and scene on
 the same graphics surface. The [renderer crate](crates/renderer/README.md) documents controls,
 offscreen capture, requirements, and material approximation limits. It does not
 yet present live matches or implement original game rendering.

@@ -86,6 +86,25 @@ impl UiFrame {
             }
         }
 
+        if let Some(status) = &view.status {
+            canvas.rect([48.0, 419.0, 864.0, 166.0], PANEL);
+            for (index, line) in status.lines.iter().take(6).enumerate() {
+                canvas.text(line, [64.0, 432.0 + index as f32 * 22.0], 1.5, TEXT);
+            }
+            if let Some(percent) = status.percent {
+                canvas.rect([64.0, 573.0, 832.0, 4.0], BORDER);
+                canvas.rect(
+                    [
+                        64.0,
+                        573.0,
+                        832.0 * f32::from(percent.min(100)) / 100.0,
+                        4.0,
+                    ],
+                    ACCENT,
+                );
+            }
+        }
+
         canvas.rect([48.0, 602.0, 864.0, 1.0], BORDER);
         canvas.text(
             "ARROWS / D-PAD  Move    ENTER / A  Select",
@@ -94,7 +113,11 @@ impl UiFrame {
             TEXT,
         );
         canvas.text(
-            "ESC / B  Back    F1  Scene preview",
+            if view.status.is_some() {
+                "ESC / B  Back or cancel    Q  Quit"
+            } else {
+                "ESC / B  Back    F1  Scene preview"
+            },
             [48.0, 654.0],
             1.5,
             MUTED,

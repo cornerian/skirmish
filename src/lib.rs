@@ -2,6 +2,7 @@
 //!
 //! This crate does not yet implement the complete game.
 
+pub mod assets;
 pub mod bytecode;
 pub mod collision;
 pub mod controller;

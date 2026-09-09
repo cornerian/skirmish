@@ -13,12 +13,15 @@ pub enum MenuEvent {
     Navigation(Action),
     Resumed,
     QuitRequested,
+    ImportAssetsRequested,
 }
 
 #[derive(Clone, Debug)]
 pub struct MenuSession {
     state: MenuState,
     controllers: Controllers,
+    asset_entry: bool,
+    asset_selected: bool,
 }
 
 impl Default for MenuSession {
@@ -36,7 +39,14 @@ impl MenuSession {
         Self {
             state,
             controllers: Controllers::default(),
+            asset_entry: false,
+            asset_selected: false,
         }
+    }
+
+    /// Add a native host utility without changing the translated game menus.
+    pub fn enable_asset_import(&mut self) {
+        self.asset_entry = true;
     }
 
     /// Advance one simulation tick, independently of the number of rendered frames.
@@ -44,6 +54,34 @@ impl MenuSession {
     pub fn tick(&mut self, held: [u32; 4]) -> Option<MenuEvent> {
         let frames = self.controllers.poll(held);
         let buttons = input::decode(input::aggregate(&frames));
+        let state = self.state.snapshot();
+        if self.asset_entry
+            && state.menu == Menu::Main
+            && state.pending.is_none()
+            && state.cooldown == 0
+        {
+            if self.asset_selected {
+                if buttons & input::CONFIRM != 0 {
+                    return Some(MenuEvent::ImportAssetsRequested);
+                }
+                if buttons & (input::UP | input::DOWN | BACK) != 0 {
+                    let selection = if buttons & input::UP != 0 { 4 } else { 0 };
+                    self.state = MenuState::at(Menu::Main, selection, state.unlocks).ok()?;
+                    self.asset_selected = false;
+                    return Some(MenuEvent::Navigation(Action::Moved));
+                }
+                return None;
+            }
+            if buttons & (input::CONFIRM | BACK) == 0
+                && ((state.selection == 4
+                    && buttons & input::DOWN != 0
+                    && buttons & input::UP == 0)
+                    || (state.selection == 0 && buttons & input::UP != 0))
+            {
+                self.asset_selected = true;
+                return Some(MenuEvent::Navigation(Action::Moved));
+            }
+        }
         if self.state.snapshot().pending.is_some() {
             return (buttons & BACK != 0 && self.resume()).then_some(MenuEvent::Resumed);
         }
@@ -65,6 +103,12 @@ impl MenuSession {
         self.controllers.poll([0; 4]);
     }
 
+    /// Synchronize input when returning from a host screen without executing
+    /// that screen's closing button in the game menu.
+    pub fn synchronize_input(&mut self, held: [u32; 4]) {
+        self.controllers.poll(held);
+    }
+
     /// Return from a leaf while retaining controller history, preventing held
     /// Confirm or Back from becoming a new press on the originating branch.
     pub fn resume(&mut self) -> bool {
@@ -72,7 +116,21 @@ impl MenuSession {
     }
 
     pub fn view(&self) -> MenuView {
-        MenuView::from(self.snapshot())
+        let mut view = MenuView::from(self.snapshot());
+        if self.asset_entry && view.menu == Menu::Main && view.pending.is_none() {
+            if self.asset_selected {
+                for row in &mut view.rows {
+                    row.selected = false;
+                }
+                view.selected_label = "Import Game Assets";
+            }
+            view.rows.push(MenuRow {
+                index: 5,
+                label: "Import Game Assets",
+                selected: self.asset_selected,
+            });
+        }
+        view
     }
 }
 
@@ -92,6 +150,13 @@ pub struct MenuView {
     pub rows: Vec<MenuRow>,
     pub pending: Option<Destination>,
     pub selected_label: &'static str,
+    pub status: Option<MenuStatus>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MenuStatus {
+    pub lines: Vec<String>,
+    pub percent: Option<u8>,
 }
 
 impl From<Snapshot> for MenuView {
@@ -130,6 +195,7 @@ impl From<Snapshot> for MenuView {
             rows,
             pending: state.pending,
             selected_label,
+            status: None,
         }
     }
 }

@@ -517,6 +517,22 @@ impl WindowRenderer {
         self.presentation.window().id()
     }
 
+    pub fn choose_iso(
+        &self,
+        callback: sdl3::dialog::DialogCallback,
+    ) -> Result<(), sdl3::dialog::DialogError> {
+        sdl3::dialog::show_open_file_dialog(
+            &[sdl3::dialog::DialogFileFilter {
+                name: "GameCube ISO",
+                pattern: "iso;ISO",
+            }],
+            None::<&std::path::Path>,
+            false,
+            self.presentation.window(),
+            callback,
+        )
+    }
+
     pub fn pixel_size(&self) -> (u32, u32) {
         self.presentation.window().size_in_pixels()
     }

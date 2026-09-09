@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use menus::Unlocks;
 use renderer::{
+    asset_menu::{AssetImportMenu, ImportAction},
     audio::AudioOutput,
     controls::{ControllerPorts, KeyboardInput},
     menu::{FixedMenuClock, MenuEvent, MenuSession},
@@ -17,7 +18,7 @@ use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
 };
-use skirmish::controller::host::ControllerHub;
+use skirmish::{assets, controller::host::ControllerHub};
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -34,6 +35,12 @@ struct Cli {
     /// Start in the interactive menu. F1 toggles menus and scene preview.
     #[arg(long)]
     menus: bool,
+    /// Open the in-game asset import screen.
+    #[arg(long)]
+    import_assets: bool,
+    /// Override the player asset storage directory (normally the OS app-data folder).
+    #[arg(long, value_name = "DIRECTORY")]
+    asset_dir: Option<PathBuf>,
     /// Make All-Star available in the menu preview.
     #[arg(long)]
     all_star: bool,
@@ -63,6 +70,8 @@ struct App {
     keyboard: KeyboardInput,
     menu: MenuSession,
     menu_active: bool,
+    asset_menu: AssetImportMenu,
+    import_active: bool,
     clock: FixedMenuClock,
     reset_elapsed: bool,
     orbit: [f32; 3],
@@ -76,6 +85,17 @@ struct App {
 }
 
 impl App {
+    fn update_menu(&mut self) {
+        self.renderer.set_menu(self.menu_active.then(|| {
+            if self.import_active {
+                self.asset_menu.view()
+            } else {
+                self.menu.view()
+            }
+        }));
+        self.dirty = true;
+    }
+
     fn event(&mut self, event: Event) {
         match event {
             Event::Quit { .. } | Event::AppTerminating { .. } => self.quit = true,
@@ -90,6 +110,7 @@ impl App {
                     self.keyboard.clear();
                     self.ports.release();
                     self.menu.release_input();
+                    self.asset_menu.release_input();
                 }
                 WindowEvent::FocusGained => {
                     self.focused = true;
@@ -101,6 +122,7 @@ impl App {
                     self.keyboard.clear();
                     self.ports.release();
                     self.menu.release_input();
+                    self.asset_menu.release_input();
                     self.clock.reset();
                     self.reset_elapsed = true;
                 }
@@ -127,16 +149,14 @@ impl App {
                 repeat,
                 ..
             } if window_id == self.renderer.window_id() && self.focused => {
-                if !repeat && code == Scancode::F1 {
+                if !repeat && code == Scancode::F1 && !self.import_active {
                     self.menu_active = !self.menu_active;
                     self.keyboard.clear();
                     self.ports.release();
                     self.menu.release_input();
                     self.clock.reset();
                     self.reset_elapsed = true;
-                    self.renderer
-                        .set_menu(self.menu_active.then(|| self.menu.view()));
-                    self.dirty = true;
+                    self.update_menu();
                 } else if !repeat && code == Scancode::Q {
                     self.quit = true;
                 } else if self.menu_active {
@@ -151,6 +171,19 @@ impl App {
                 ..
             } if window_id == self.renderer.window_id() => {
                 self.keyboard.key(code, false, false);
+            }
+            Event::DropFile {
+                window_id,
+                filename,
+                ..
+            } if window_id == self.renderer.window_id() && !self.asset_menu.busy() => {
+                self.menu_active = true;
+                self.import_active = true;
+                self.asset_menu.start(assets::Source::File(filename.into()));
+                self.keyboard.clear();
+                self.ports.release();
+                self.asset_menu.release_input();
+                self.update_menu();
             }
             _ => {}
         }
@@ -196,13 +229,42 @@ impl App {
             }
             held[0] |= self.keyboard.sample();
         }
+        if self.import_active {
+            let before = self.asset_menu.view();
+            match self.asset_menu.tick(held) {
+                Some(ImportAction::Search) => self.asset_menu.start_search(),
+                Some(ImportAction::Browse) => {
+                    let callback = self.asset_menu.dialog_callback();
+                    if let Err(error) = self.renderer.choose_iso(callback) {
+                        self.asset_menu.dialog_failed(error);
+                    }
+                }
+                Some(ImportAction::Cancel) => self.asset_menu.cancel(),
+                Some(ImportAction::Back) => {
+                    self.import_active = false;
+                    // Retain the current Confirm/Back edge in the originating
+                    // menu, so closing this screen cannot immediately quit.
+                    self.menu.synchronize_input(held);
+                }
+                None => {}
+            }
+            if !self.import_active || before != self.asset_menu.view() {
+                self.update_menu();
+            }
+            return;
+        }
         if let Some(event) = self.menu.tick(held) {
             if matches!(event, MenuEvent::QuitRequested) {
                 self.quit = true;
             } else {
+                if matches!(event, MenuEvent::ImportAssetsRequested) {
+                    self.import_active = true;
+                    // Consume the opening press without selecting Search.
+                    self.asset_menu.release_input();
+                    self.asset_menu.tick(held);
+                }
                 self.cue();
-                self.renderer.set_menu(Some(self.menu.view()));
-                self.dirty = true;
+                self.update_menu();
             }
         }
     }
@@ -235,6 +297,9 @@ impl App {
             }
             if self.quit {
                 break;
+            }
+            if self.asset_menu.poll() && self.import_active {
+                self.update_menu();
             }
             let now = Instant::now();
             // Activation events can arrive after an inactive 250 ms wait.
@@ -314,12 +379,22 @@ fn main() -> Result<()> {
     for warning in &scene.warnings {
         eprintln!("warning: {warning}");
     }
-    let menu = MenuSession::new(Unlocks {
+    let mut menu = MenuSession::new(Unlocks {
         all_star: cli.all_star,
         sound_test: cli.sound_test,
     });
+    menu.enable_asset_import();
     if let Some(output) = &cli.headless {
-        if cli.menus {
+        if cli.import_assets {
+            let import = AssetImportMenu::new(
+                Ok(cli
+                    .asset_dir
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("assets"))),
+                vec![],
+            );
+            render_menu_headless(&scene, &import.view(), cli.width, cli.height, output)?;
+        } else if cli.menus {
             render_menu_headless(&scene, &menu.view(), cli.width, cli.height, output)?;
         } else {
             render_headless(&scene, cli.width, cli.height, output)?;
@@ -349,7 +424,34 @@ fn main() -> Result<()> {
         "SDL3 host: F1 toggles menus/scene. Menus: arrows/D-pad, Enter/A selects, Esc/B backs. Q quits."
     );
     println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
-    renderer.set_menu(cli.menus.then(|| menu.view()));
+    let menu_active = cli.menus || cli.import_assets || cli.scene.is_none();
+    let asset_destination = cli.asset_dir.map(Ok).unwrap_or_else(|| {
+        sdl3::filesystem::get_pref_path("Skirmish", "Skirmish")
+            .map(|path| path.join("assets").join(assets::BUNDLE_NAME))
+            .map_err(|error| format!("Asset storage is unavailable: {error}"))
+    });
+    let mut search_roots = Vec::new();
+    if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
+        let home = PathBuf::from(home);
+        search_roots.extend([
+            home.join("Downloads"),
+            home.join("Games"),
+            home.join("Desktop"),
+        ]);
+    }
+    for path in ["/mnt/archive/datasets/melee", "/mnt/shared/Games"] {
+        if std::path::Path::new(path).is_dir() {
+            search_roots.push(path.into());
+        }
+    }
+    let asset_menu = AssetImportMenu::new(asset_destination, search_roots);
+    renderer.set_menu(menu_active.then(|| {
+        if cli.import_assets {
+            asset_menu.view()
+        } else {
+            menu.view()
+        }
+    }));
     let events = sdl.event_pump().context("creating shared SDL event pump")?;
     let controllers = match ControllerHub::with_sdl(&sdl) {
         Ok(hub) => Some(hub),
@@ -376,7 +478,9 @@ fn main() -> Result<()> {
         ports: ControllerPorts::default(),
         keyboard: KeyboardInput::default(),
         menu,
-        menu_active: cli.menus,
+        menu_active,
+        asset_menu,
+        import_active: cli.import_assets,
         clock: FixedMenuClock::default(),
         reset_elapsed: true,
         orbit: [0.0, 0.0, 1.0],

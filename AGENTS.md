@@ -9,10 +9,13 @@ Hard requirement: native modern-machine builds, execution, and tests must never
 require an ISO, DOL, emulator, or GameCube runtime. Use native game resources,
 host-compiled original C, generated scenarios and future replay observations.
 
-Resource extraction and visual conversion are owned by a separate task/project,
-`melee-assets`. Keep this task focused on native gameplay and physics; consume
-its exports as they become available without duplicating extraction or
-reorganizing its directories. Vector artwork and procedural visual effects are
+Visual conversion and reconstruction are owned by the separate resource project,
+`skirmish-assets`. The user explicitly requested the optional in-game Rust ISO
+importer: original-file discovery, verification, extraction, storage, and its
+graphical menu belong here. It must not make normal builds, tests, or gameplay
+require a disc. Consume the resource project's converted exports as they become
+available without duplicating its conversion pipeline or reorganizing its
+directories. Vector artwork and procedural visual effects are
 presentation resources. Bone animation, collision geometry, action scripts and
 gameplay-affecting effects must retain their simulation semantics. See
 `docs/resources.md` for the consumer requirements; the final export layout is
