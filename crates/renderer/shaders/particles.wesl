@@ -1,3 +1,4 @@
+import package::vortex;
 import package::impact;
 import package::sparkles;
 import package::embers;
@@ -50,6 +51,7 @@ fn fs_main(in: Output) -> @location(0) vec4f {
     let footprint = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
     var field: vec4f;
     switch in.effect {
+        case 6u: { field = vortex::shade(in.uv, in.age, in.seed, footprint); }
         case 5u: { field = impact::shade(in.uv, in.age, in.seed, footprint); }
         case 4u: { field = sparkles::shade(in.uv, in.age, in.seed, footprint); }
         case 3u: { field = embers::shade(in.uv, in.age, in.seed, footprint); }
