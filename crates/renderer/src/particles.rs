@@ -33,6 +33,7 @@ pub enum ParticleEffect {
     Coin,
     Rainbow,
     MusicNote,
+    Splash,
 }
 
 /// A current presentation sample. No gameplay clocks or RNG are advanced here.
