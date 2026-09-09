@@ -8,6 +8,8 @@ mod aerial_resources;
 mod grab_resources;
 #[path = "support/ledge.rs"]
 mod ledge_resources;
+#[path = "support/special.rs"]
+mod special_resources;
 use aerial_resources::conformance as support;
 
 use skirmish::game::{BUTTON_A, BUTTON_X, Controller, Match, State};
@@ -131,18 +133,16 @@ fn directional_aerials_select_forward_back_up_and_down_states() {
 // src/melee/ft/kinds/ftCommon/ftCo_Attack100.c routes neutral B to callbacks;
 // e.g. src/melee/ft/kinds/ftCaptain/ftcaptainspecialn.c provides SpecialN.
 #[test]
-#[ignore = "unimplemented: B input, character special callbacks and special action resources"]
 fn grounded_neutral_b_enters_a_character_special() {
-    let mut game = game();
+    let mut game = Match::new(special_resources::profile(data()), 0).unwrap();
     let state = step(&mut game, input(BUTTON_B, [0.0; 2]));
     assert!(action(&state, 0).starts_with("special"));
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_SpecialAir.c dispatches aerial specials.
 #[test]
-#[ignore = "unimplemented: airborne B input and aerial special dispatch"]
 fn airborne_neutral_b_enters_an_aerial_special() {
-    let mut game = airborne_game();
+    let mut game = special_resources::airborne_game(data());
     let state = step(&mut game, input(BUTTON_B, [0.0; 2]));
     assert!(action(&state, 0).starts_with("special_air"));
     assert!(!state.fighters[0].grounded);

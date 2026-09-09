@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 neutral-special batch is recorded at:
+
+`/mnt/archive/runs/skirmish-specials-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Both formerly ignored neutral-special scenarios now pass, with
+focused integration coverage for input priority and rearming, both player slots,
+ground/air physics and terrain conversion, bone-attached combat, checkpoints and
+invalid resources. The exact neutral input predicate is compared with complete
+pinned C. The conformance audit now has no executable unimplemented scenarios;
+13 cases remain blocked on independent reference fixtures.
+
 The 2026-09-09 rebirth-platform batch is recorded at:
 
 `/mnt/archive/runs/skirmish-rebirth-20260909`

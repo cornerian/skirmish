@@ -11,6 +11,7 @@ pub mod movement;
 pub mod nudge;
 pub mod rebirth;
 pub mod shield;
+pub mod special;
 pub mod stale;
 
 pub use movement::{Attributes, Movement, decrement_toward_zero};

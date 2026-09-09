@@ -69,6 +69,10 @@ pub(crate) fn landing_index(action: Action) -> Option<usize> {
     LANDINGS.iter().position(|&a| a == action)
 }
 
+pub(crate) fn interruptible(fighter: &Fighter) -> bool {
+    attack_index(fighter.action).is_some() && fighter.aerial.allow_interrupt
+}
+
 fn commands(f: &mut Fighter, movement: &Move) {
     if f.aerial.applied_frame == Some(f.action_frame) {
         return;

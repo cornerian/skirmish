@@ -198,5 +198,10 @@
     "fixture": "tests/oracle/original/rebirth.c",
     "upstream": "src/melee/ft/ft_0D4D.c",
     "sha256": "e820dee162afc842ec4e3dab7aecd8a22331d9ebf9c484362de8e005735eb296"
+  },
+  {
+    "fixture": "tests/oracle/original/special_input.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_0D67.c",
+    "sha256": "30fc5f74f8f8f04eb988f47fdb897359b5cd6dc08d1de5d09bc2162807562614"
   }
 ]

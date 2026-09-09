@@ -16,6 +16,7 @@ pub mod nudge;
 pub mod rebirth;
 pub mod shield;
 mod simulation;
+pub mod special;
 pub mod staling;
 mod validation;
 
@@ -26,6 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 pub const BUTTON_A: u16 = 0x100;
+pub const BUTTON_B: u16 = 0x200;
 pub const BUTTON_Z: u16 = 0x10;
 pub const BUTTON_L: u16 = 0x40;
 pub const BUTTON_R: u16 = 0x20;
@@ -109,6 +111,8 @@ pub enum Action {
     CliffEscape,
     Rebirth,
     RebirthWait,
+    SpecialN,
+    SpecialAirN,
     AttackAirN,
     AttackAirF,
     AttackAirB,

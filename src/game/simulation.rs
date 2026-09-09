@@ -716,6 +716,7 @@ fn update_animation(
         player,
         rules.respawn_invincibility_frames,
     );
+    special::update_animation(f, data.special.as_ref());
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     grab::update_fighter_animation(f, data);
     match f.action {
@@ -787,10 +788,13 @@ fn update_actions(
     if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
         return;
     }
-    if grab::update_actions(f, data, rules.grab.as_ref(), input) {
+    if clank_owns {
         return;
     }
-    if clank_owns {
+    if special::update_actions(f, data.special.as_ref(), input) {
+        return;
+    }
+    if grab::update_actions(f, data, rules.grab.as_ref(), input) {
         return;
     }
     if shield::update_actions(f, data, rules.shield.as_ref(), input, shield_owns) {

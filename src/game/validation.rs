@@ -328,6 +328,15 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 )?;
             }
         }
+        if let Some(p) = &fighter.special {
+            require(
+                p.neutral_thresholds
+                    .into_iter()
+                    .all(|threshold| threshold.is_finite() && threshold > 0.0 && threshold <= 1.0)
+                    && p.ground.frames.len() == p.air.frames.len(),
+                "specials require valid neutral thresholds and paired frame counts",
+            )?;
+        }
         for attack in core::iter::once(&fighter.jab)
             .chain(
                 fighter
@@ -336,6 +345,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
             )
             .chain(fighter.ledge.iter().map(|p| &p.attack.attack))
+            .chain(fighter.special.iter().flat_map(|p| [&p.ground, &p.air]))
         {
             require(
                 rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),
@@ -440,7 +450,9 @@ fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
 
 pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
     for (player, input) in input.iter().enumerate() {
-        if input.buttons & !(BUTTON_A | BUTTON_Z | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R) != 0
+        if input.buttons
+            & !(BUTTON_A | BUTTON_B | BUTTON_Z | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R)
+            != 0
             || input
                 .stick
                 .iter()

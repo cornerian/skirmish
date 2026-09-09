@@ -145,6 +145,13 @@ invulnerability, checkpoint replay and invalid resources. `rebirth_differential`
 compares the two complete original leader physics callbacks bit for bit while
 retaining their distinct floating-point operand order.
 
+The [neutral-special profile](specials.md) promotes both remaining executable
+action conformance scenarios. `game_special` covers strict fresh-B selection for
+both slots, priority over competing inputs, rearming, sampled combat, air
+physics, landing conversion, checkpoints and malformed resources.
+`special_differential` compares the complete source neutral-input predicate over
+generated button, stick and threshold values.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -169,7 +176,7 @@ explicitly disable unrelated state/environment branches.
 | --- | --- |
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
-| Grounded and airborne specials | `conformance_actions`: neutral-B dispatch |
+| Grounded and airborne neutral specials | `conformance_actions` and `game_special` (implemented paired profile) |
 | Grab and throw | `conformance_actions` and `conformance_combat`: paired capture and throw release (implemented) |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |

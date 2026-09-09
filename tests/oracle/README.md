@@ -117,3 +117,9 @@ binary32 positions and every positive signed frame count, including the two
 callbacks' distinct multiplication order. Native match tests own stock loss,
 entry, platform wait, input/timeout release and invulnerability; follower
 velocity copying and moving stage spawn offsets remain outside this adapter.
+
+`special_input` preserves the complete `ftCo_800D67C4` neutral-special input
+predicate. The host adapter supplies the fresh button mask, main stick and two
+common-data thresholds. Generated comparisons retain its strict axis bounds and
+comparison-based ABS behavior. Native match tests own action priority, grounded
+and airborne animation, contact, terrain conversion and input rearming.

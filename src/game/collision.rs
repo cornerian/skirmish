@@ -239,7 +239,9 @@ pub(crate) fn resolve(
             // Ground-to-air conversion consumes the grounded jump slot, even
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
-            if !matches!(f.action, Action::Damage | Action::DamageFall) {
+            if !super::special::transfer_ground_air(f, false)
+                && !matches!(f.action, Action::Damage | Action::DamageFall)
+            {
                 simulation::enter(f, Action::Fall);
             }
         }
@@ -285,7 +287,9 @@ pub(crate) fn resolve(
                 simulation::enter(f, Action::ShieldBreakDown);
             } else if matches!(f.action, Action::Damage | Action::DamageFall) {
                 super::damage::land(f, &rules.damage);
-            } else if !super::aerial::land(f, data)? {
+            } else if !super::special::transfer_ground_air(f, true)
+                && !super::aerial::land(f, data)?
+            {
                 simulation::enter(f, Action::Landing);
             }
             events.push(Event::Landed { player });

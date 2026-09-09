@@ -178,6 +178,13 @@ checkpointed; damage and stock loss clear ownership. The [ledge profile](ledges.
 documents its explicit resource schema and remaining dynamic-stage and
 character-specific limits.
 
+Optional [`fighters[].special`](specials.md) supplies paired sampled ground and
+air neutral-special animations. Fresh neutral B dispatch, action priority,
+terrain conversion, completion and bone-attached combat all run in the headless
+match. The [neutral-special profile](specials.md) records the exact source input
+boundary and the character-specific effects and directional specials that are
+still pending.
+
 Optional [`rules.rebirth`](rebirth.md) replaces the compatibility grounded
 respawn with an airborne entry, exact remaining-frame travel to a supplied
 static platform, an invulnerable wait, and input/timeout release to `Fall`.
@@ -224,9 +231,11 @@ callback limits are described in [aerials.md](aerials.md). The optional
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
 standing catches, paired holds and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
-and drop. Inputs do not yet reproduce the full PAD-to-fighter history. Specials, running turns and character
-multijumps remain unported. Some accepted stick/button combinations consequently
-have no action in this experimental profile.
+and drop. The optional [neutral-special profile](specials.md) adds paired ground
+and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
+history. Directional specials, character-specific special state, running turns
+and character multijumps remain unported. Some accepted stick/button
+combinations consequently have no action in this experimental profile.
 
 Moving stages/remapping and full ECB corner/squeeze response remain unported.
 Ledge actions currently require static marked endpoints and supplied generic

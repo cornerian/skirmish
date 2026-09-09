@@ -169,6 +169,8 @@ pub struct FighterData {
     pub grab: Option<super::grab::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ledge: Option<super::ledge::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub special: Option<super::special::Parameters>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
@@ -185,6 +187,13 @@ impl FighterData {
         }
         if action == super::Action::CliffAttack {
             return Some(&self.ledge.as_ref()?.attack.attack);
+        }
+        if let Some(attack) = self
+            .special
+            .as_ref()
+            .and_then(|parameters| super::special::attack(action, parameters))
+        {
+            return Some(attack);
         }
         let index = super::aerial::attack_index(action)?;
         Some(&self.aerials.as_ref()?.moves[index].attack)
