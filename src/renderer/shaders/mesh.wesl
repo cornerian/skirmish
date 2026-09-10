@@ -10,9 +10,35 @@ struct Camera {
 
 struct Material {
     color: vec4f,
+    alpha_test: vec4u,
 }
 
 @group(2) @binding(0) var<uniform> material: Material;
+
+fn gx_compare(value: u32, reference: u32, comparison: u32) -> bool {
+    if comparison == 0u { return false; }
+    if comparison == 1u { return value < reference; }
+    if comparison == 2u { return value == reference; }
+    if comparison == 3u { return value <= reference; }
+    if comparison == 4u { return value > reference; }
+    if comparison == 5u { return value != reference; }
+    if comparison == 6u { return value >= reference; }
+    return true;
+}
+
+fn gx_alpha_passes(alpha: f32, control: vec4u) -> bool {
+    // The export stores GX byte references. Quantize this preview's floating-point
+    // texture/vertex alpha at the comparison boundary; upstream TEV math remains
+    // an approximation rather than bit-exact GX fixed-point evaluation.
+    let value = u32(clamp(alpha * 255.0 + 0.5, 0.0, 255.0));
+    let left = gx_compare(value, control.y, control.x);
+    let right = gx_compare(value, control.w & 255u, control.z);
+    let operation = control.w >> 8u;
+    if operation == 0u { return left && right; }
+    if operation == 1u { return left || right; }
+    if operation == 2u { return left != right; }
+    return left == right;
+}
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -40,6 +66,6 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let vertex_color = in.color * material.color;
     let color = textureSample(color_texture, color_sampler, in.uv) * vertex_color;
-    if color.a < 0.01 { discard; }
+    if !gx_alpha_passes(color.a, material.alpha_test) { discard; }
     return vec4f(color.rgb * inspection_light(in.normal), color.a);
 }

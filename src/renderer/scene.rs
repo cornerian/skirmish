@@ -128,6 +128,313 @@ impl RenderMode {
     }
 }
 
+/// GX comparison function shared by depth and alpha tests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PeCompare {
+    Never = 0,
+    Less = 1,
+    Equal = 2,
+    LessEqual = 3,
+    Greater = 4,
+    NotEqual = 5,
+    GreaterEqual = 6,
+    Always = 7,
+}
+
+impl PeCompare {
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn test(self, value: u8, reference: u8) -> bool {
+        match self {
+            Self::Never => false,
+            Self::Less => value < reference,
+            Self::Equal => value == reference,
+            Self::LessEqual => value <= reference,
+            Self::Greater => value > reference,
+            Self::NotEqual => value != reference,
+            Self::GreaterEqual => value >= reference,
+            Self::Always => true,
+        }
+    }
+
+    fn from_code(code: u8) -> Result<Self> {
+        Ok(match code {
+            0 => Self::Never,
+            1 => Self::Less,
+            2 => Self::Equal,
+            3 => Self::LessEqual,
+            4 => Self::Greater,
+            5 => Self::NotEqual,
+            6 => Self::GreaterEqual,
+            7 => Self::Always,
+            _ => bail!("GX comparison code {code} is outside 0..=7"),
+        })
+    }
+}
+
+/// GX boolean operation joining two alpha comparisons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PeAlphaOp {
+    And = 0,
+    Or = 1,
+    Xor = 2,
+    Xnor = 3,
+}
+
+impl PeAlphaOp {
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    const fn combine(self, left: bool, right: bool) -> bool {
+        match self {
+            Self::And => left && right,
+            Self::Or => left || right,
+            Self::Xor => left != right,
+            Self::Xnor => left == right,
+        }
+    }
+
+    fn from_code(code: u8) -> Result<Self> {
+        Ok(match code {
+            0 => Self::And,
+            1 => Self::Or,
+            2 => Self::Xor,
+            3 => Self::Xnor,
+            _ => bail!("GX alpha operation code {code} is outside 0..=3"),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PeBlendMode {
+    None = 0,
+    Blend = 1,
+    Logic = 2,
+    Subtract = 3,
+}
+
+impl PeBlendMode {
+    fn from_code(code: u8) -> Result<Self> {
+        Ok(match code {
+            0 => Self::None,
+            1 => Self::Blend,
+            2 => Self::Logic,
+            3 => Self::Subtract,
+            _ => bail!("GX blend mode code {code} is outside 0..=3"),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PeBlendFactor {
+    Zero = 0,
+    One = 1,
+    SourceColor = 2,
+    InverseSourceColor = 3,
+    SourceAlpha = 4,
+    InverseSourceAlpha = 5,
+    DestinationAlpha = 6,
+    InverseDestinationAlpha = 7,
+}
+
+impl PeBlendFactor {
+    fn from_code(code: u8) -> Result<Self> {
+        Ok(match code {
+            0 => Self::Zero,
+            1 => Self::One,
+            2 => Self::SourceColor,
+            3 => Self::InverseSourceColor,
+            4 => Self::SourceAlpha,
+            5 => Self::InverseSourceAlpha,
+            6 => Self::DestinationAlpha,
+            7 => Self::InverseDestinationAlpha,
+            _ => bail!("GX blend factor code {code} is outside 0..=7"),
+        })
+    }
+}
+
+/// Validated GX logic-op byte. Logic blending is retained but not rendered yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct PeLogicOp(u8);
+
+impl PeLogicOp {
+    pub const fn new(code: u8) -> Option<Self> {
+        if code <= 15 { Some(Self(code)) } else { None }
+    }
+
+    pub const fn code(self) -> u8 {
+        self.0
+    }
+
+    fn from_code(code: u8) -> Result<Self> {
+        Self::new(code).with_context(|| format!("GX logic operation code {code} is outside 0..=15"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PeBlendState {
+    pub mode: PeBlendMode,
+    pub source_factor: PeBlendFactor,
+    pub destination_factor: PeBlendFactor,
+    pub logic_operation: PeLogicOp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PeDepthState {
+    pub test_enabled: bool,
+    pub write_enabled: bool,
+    pub comparison: PeCompare,
+    /// True when GX compares depth before texture evaluation and alpha testing.
+    pub compare_before_texture: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PeDestinationAlpha {
+    pub enabled: bool,
+    pub value: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PeAlphaTest {
+    pub comparison0: PeCompare,
+    pub reference0: u8,
+    pub operation: PeAlphaOp,
+    pub comparison1: PeCompare,
+    pub reference1: u8,
+}
+
+impl PeAlphaTest {
+    pub const fn passes(self, alpha: u8) -> bool {
+        self.operation.combine(
+            self.comparison0.test(alpha, self.reference0),
+            self.comparison1.test(alpha, self.reference1),
+        )
+    }
+
+    pub fn can_reject(self) -> bool {
+        (u8::MIN..=u8::MAX).any(|alpha| !self.passes(alpha))
+    }
+
+    const fn always() -> Self {
+        Self {
+            comparison0: PeCompare::Always,
+            reference0: 0,
+            operation: PeAlphaOp::And,
+            comparison1: PeCompare::Always,
+            reference1: 0,
+        }
+    }
+}
+
+/// Effective HSD pixel-engine state, independent of the GPU backend.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PixelEngineState {
+    pub explicit_descriptor: bool,
+    pub color_write: bool,
+    pub alpha_write: bool,
+    pub destination_alpha: PeDestinationAlpha,
+    pub blend: PeBlendState,
+    pub depth: PeDepthState,
+    pub alpha_test: PeAlphaTest,
+    pub dither: bool,
+}
+
+impl PixelEngineState {
+    /// Reproduces HSD_SetupPEMode defaults when no explicit PE descriptor exists.
+    pub const fn from_render_mode(render_mode: RenderMode) -> Self {
+        let bits = render_mode.bits();
+        let blended = bits & 0x4000_0000 != 0;
+        let depth_write = bits & 0x2000_0000 == 0;
+        let texture_edge = blended && depth_write;
+        let alpha_test = if texture_edge {
+            PeAlphaTest {
+                comparison0: PeCompare::Greater,
+                reference0: 0,
+                operation: PeAlphaOp::And,
+                comparison1: PeCompare::Greater,
+                reference1: 0,
+            }
+        } else {
+            PeAlphaTest::always()
+        };
+        Self {
+            explicit_descriptor: false,
+            color_write: true,
+            alpha_write: false,
+            destination_alpha: PeDestinationAlpha {
+                enabled: false,
+                value: 0,
+            },
+            blend: PeBlendState {
+                mode: if blended {
+                    PeBlendMode::Blend
+                } else {
+                    PeBlendMode::None
+                },
+                source_factor: PeBlendFactor::SourceAlpha,
+                destination_factor: PeBlendFactor::InverseSourceAlpha,
+                logic_operation: PeLogicOp(15),
+            },
+            depth: PeDepthState {
+                test_enabled: true,
+                write_enabled: depth_write,
+                comparison: if bits & 0x0800_0000 != 0 {
+                    PeCompare::Always
+                } else {
+                    PeCompare::LessEqual
+                },
+                compare_before_texture: !texture_edge,
+            },
+            alpha_test,
+            dither: false,
+        }
+    }
+
+    /// Rejects PE behavior that the portable wgpu renderer cannot reproduce.
+    pub fn validate_supported(self) -> Result<()> {
+        ensure!(
+            !self.destination_alpha.enabled,
+            "GX destination-alpha override is not supported"
+        );
+        ensure!(!self.dither, "GX pixel-engine dithering is not supported");
+        ensure!(
+            self.blend.mode != PeBlendMode::Logic,
+            "GX logic blending is not supported"
+        );
+        ensure!(
+            !(self.depth.compare_before_texture
+                && self.depth.write_enabled
+                && self.alpha_test.can_reject()),
+            "GX depth-before-texture with depth writes and a rejecting alpha test is not portable"
+        );
+        Ok(())
+    }
+
+    fn flags(self) -> u8 {
+        u8::from(self.color_write)
+            | (u8::from(self.alpha_write) << 1)
+            | (u8::from(self.destination_alpha.enabled) << 2)
+            | (u8::from(self.depth.compare_before_texture) << 3)
+            | (u8::from(self.depth.test_enabled) << 4)
+            | (u8::from(self.depth.write_enabled) << 5)
+            | (u8::from(self.dither) << 6)
+    }
+
+    fn same_behavior(mut self, mut other: Self) -> bool {
+        self.explicit_descriptor = false;
+        other.explicit_descriptor = false;
+        self == other
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Material {
     /// Exact source MObj descriptor when exported; absent for legacy/procedural scenes.
@@ -136,6 +443,8 @@ pub struct Material {
     pub texture_source_id: Option<TextureSourceId>,
     /// Fixed source pass and the remaining original MObj render flags.
     pub render_mode: Option<RenderMode>,
+    /// Effective exported pixel-engine state; absent only for legacy/procedural scenes.
+    pub pixel_engine: Option<PixelEngineState>,
     pub color: [f32; 4],
     pub texture: Option<usize>,
     pub cull_mode: CullMode,
@@ -278,6 +587,51 @@ struct RawTexture {
     height: u32,
 }
 
+#[derive(Deserialize)]
+struct RawPixelEngine {
+    pe_flags: u8,
+    explicit_descriptor: bool,
+    color_write: bool,
+    alpha_write: bool,
+    destination_alpha: RawDestinationAlpha,
+    blend: RawBlendState,
+    depth: RawDepthState,
+    alpha_test: RawAlphaTest,
+    dither: bool,
+}
+
+#[derive(Deserialize)]
+struct RawDestinationAlpha {
+    enabled: bool,
+    value: u8,
+}
+
+#[derive(Deserialize)]
+struct RawBlendState {
+    #[serde(rename = "type")]
+    mode: u8,
+    src_factor: u8,
+    dst_factor: u8,
+    logic_op: u8,
+}
+
+#[derive(Deserialize)]
+struct RawDepthState {
+    test: bool,
+    write: bool,
+    compare: u8,
+    before_texture: bool,
+}
+
+#[derive(Deserialize)]
+struct RawAlphaTest {
+    compare0: u8,
+    reference0: u8,
+    op: u8,
+    compare1: u8,
+    reference1: u8,
+}
+
 impl Scene {
     /// Read the native JSON export and only the PNGs used by its first texture stages.
     /// Relative PNG paths resolve against the scene directory; absolute paths are
@@ -374,7 +728,7 @@ impl Scene {
             camera: None,
             clear_color: [0.018, 0.025, 0.045, 1.0],
         };
-        scene.warnings.push("Textured Lambert preview: GX TEV operations, alpha tests, custom blending/depth state, source lighting, animation and skinning are not reproduced.".into());
+        scene.warnings.push("Textured Lambert preview: GX TEV operations and fixed-point precision, source lighting, animation and skinning are not reproduced.".into());
         for mut raw in document.meshes {
             let count = raw.positions.len();
             validate_attribute(&raw.positions, count, &raw.name, "positions")?;
@@ -441,6 +795,8 @@ impl Scene {
                     })
                 })
                 .transpose()?;
+            let pixel_engine = pixel_engine_state(&raw.material, render_mode)
+                .with_context(|| format!("{}: invalid pixel-engine state", raw.name))?;
             let mut color = raw.color.unwrap_or([1.; 4]);
             if let Some(diffuse) = raw.material.get("diffuse").filter(|v| !v.is_null()) {
                 color = serde_json::from_value(diffuse.clone())
@@ -620,6 +976,7 @@ impl Scene {
                     source_id: material_source_id,
                     texture_source_id,
                     render_mode,
+                    pixel_engine,
                     color,
                     texture,
                     cull_mode,
@@ -662,6 +1019,7 @@ impl Scene {
                 source_id: None,
                 texture_source_id: None,
                 render_mode: None,
+                pixel_engine: None,
                 color: [1.; 4],
                 texture: Some(0),
                 cull_mode: CullMode::Back,
@@ -713,6 +1071,7 @@ impl Scene {
                 source_id: None,
                 texture_source_id: None,
                 render_mode: None,
+                pixel_engine: None,
                 color: [0.2, 0.24, 0.32, 1.],
                 texture: Some(0),
                 cull_mode: CullMode::Back,
@@ -844,6 +1203,86 @@ fn validate_attribute<const N: usize>(
         "{name}: nonfinite {attribute}"
     );
     Ok(())
+}
+
+fn pixel_engine_state(
+    material: &Value,
+    render_mode: Option<RenderMode>,
+) -> Result<Option<PixelEngineState>> {
+    const FIELDS: [&str; 9] = [
+        "pe_flags",
+        "explicit_descriptor",
+        "color_write",
+        "alpha_write",
+        "destination_alpha",
+        "blend",
+        "depth",
+        "alpha_test",
+        "dither",
+    ];
+    let present = FIELDS
+        .iter()
+        .filter(|field| material.get(**field).is_some_and(|value| !value.is_null()))
+        .count();
+    if present == 0 {
+        return Ok(render_mode.map(PixelEngineState::from_render_mode));
+    }
+    ensure!(
+        present == FIELDS.len(),
+        "pixel-engine fields must be all present or all absent ({present}/{} present)",
+        FIELDS.len()
+    );
+    let mode = render_mode.context("pixel-engine fields require render_mode")?;
+    let raw: RawPixelEngine =
+        serde_json::from_value(material.clone()).context("decode pixel-engine fields")?;
+    let state = PixelEngineState {
+        explicit_descriptor: raw.explicit_descriptor,
+        color_write: raw.color_write,
+        alpha_write: raw.alpha_write,
+        destination_alpha: PeDestinationAlpha {
+            enabled: raw.destination_alpha.enabled,
+            value: raw.destination_alpha.value,
+        },
+        blend: PeBlendState {
+            mode: PeBlendMode::from_code(raw.blend.mode).context("invalid blend.type")?,
+            source_factor: PeBlendFactor::from_code(raw.blend.src_factor)
+                .context("invalid blend.src_factor")?,
+            destination_factor: PeBlendFactor::from_code(raw.blend.dst_factor)
+                .context("invalid blend.dst_factor")?,
+            logic_operation: PeLogicOp::from_code(raw.blend.logic_op)
+                .context("invalid blend.logic_op")?,
+        },
+        depth: PeDepthState {
+            test_enabled: raw.depth.test,
+            write_enabled: raw.depth.write,
+            comparison: PeCompare::from_code(raw.depth.compare).context("invalid depth.compare")?,
+            compare_before_texture: raw.depth.before_texture,
+        },
+        alpha_test: PeAlphaTest {
+            comparison0: PeCompare::from_code(raw.alpha_test.compare0)
+                .context("invalid alpha_test.compare0")?,
+            reference0: raw.alpha_test.reference0,
+            operation: PeAlphaOp::from_code(raw.alpha_test.op).context("invalid alpha_test.op")?,
+            comparison1: PeCompare::from_code(raw.alpha_test.compare1)
+                .context("invalid alpha_test.compare1")?,
+            reference1: raw.alpha_test.reference1,
+        },
+        dither: raw.dither,
+    };
+    ensure!(
+        state.flags() == raw.pe_flags,
+        "pe_flags {:#04x} contradict decoded pixel-engine fields ({:#04x})",
+        raw.pe_flags,
+        state.flags()
+    );
+    if !state.explicit_descriptor {
+        ensure!(
+            state.same_behavior(PixelEngineState::from_render_mode(mode)),
+            "non-explicit pixel-engine fields contradict render_mode defaults"
+        );
+    }
+    state.validate_supported()?;
+    Ok(Some(state))
 }
 
 fn optional_u32_field(value: &Value, field: &str) -> Result<Option<u32>> {
@@ -1018,6 +1457,27 @@ mod tests {
         Scene::load(&path)
     }
 
+    fn translucent_pe_material(explicit_descriptor: bool) -> Value {
+        json!({
+            "render_mode": 0x6000_0001_u32,
+            "pe_flags": 25,
+            "explicit_descriptor": explicit_descriptor,
+            "color_write": true,
+            "alpha_write": false,
+            "destination_alpha": { "enabled": false, "value": 0 },
+            "blend": { "type": 1, "src_factor": 4, "dst_factor": 5, "logic_op": 15 },
+            "depth": { "test": true, "write": false, "compare": 3, "before_texture": true },
+            "alpha_test": {
+                "compare0": 7,
+                "reference0": 0,
+                "op": 0,
+                "compare1": 7,
+                "reference1": 0
+            },
+            "dither": false
+        })
+    }
+
     #[test]
     fn visual_source_material_texture_and_render_mode_metadata_is_retained() {
         let directory = tempfile::tempdir().unwrap();
@@ -1046,12 +1506,150 @@ mod tests {
         let mode = material.render_mode.unwrap();
         assert_eq!(mode.bits(), render_mode);
         assert_eq!(mode.class(), RenderModeClass::Translucent);
+        assert_eq!(
+            material.pixel_engine,
+            Some(PixelEngineState::from_render_mode(mode))
+        );
         assert_eq!(material.texture, None, "identity survives a missing PNG");
 
         let legacy = load_document(directory.path(), &document(json!({}))).unwrap();
         assert_eq!(legacy.meshes[0].material.source_id, None);
         assert_eq!(legacy.meshes[0].material.texture_source_id, None);
         assert_eq!(legacy.meshes[0].material.render_mode, None);
+        assert_eq!(legacy.meshes[0].material.pixel_engine, None);
+    }
+
+    #[test]
+    fn complete_exported_pixel_engine_state_is_retained() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut material = translucent_pe_material(true);
+        material["blend"]["dst_factor"] = json!(1);
+        material["depth"]["before_texture"] = json!(false);
+        material["pe_flags"] = json!(17);
+        material["alpha_test"] = json!({
+            "compare0": 6,
+            "reference0": 102,
+            "op": 0,
+            "compare1": 3,
+            "reference1": 255
+        });
+
+        let scene = load_document(directory.path(), &document(material)).unwrap();
+        let state = scene.meshes[0].material.pixel_engine.unwrap();
+        assert!(state.explicit_descriptor);
+        assert_eq!(state.blend.destination_factor, PeBlendFactor::One);
+        assert_eq!(state.depth.comparison, PeCompare::LessEqual);
+        assert!(!state.depth.write_enabled);
+        assert!(!state.depth.compare_before_texture);
+        assert!(!state.alpha_test.passes(101));
+        assert!(state.alpha_test.passes(102));
+        assert!(state.alpha_test.passes(103));
+    }
+
+    #[test]
+    fn pixel_engine_fields_are_atomic_and_consistent() {
+        let directory = tempfile::tempdir().unwrap();
+        let partial = json!({"render_mode": 0x6000_0001_u32, "pe_flags": 25});
+        let mut missing_mode = translucent_pe_material(false);
+        missing_mode.as_object_mut().unwrap().remove("render_mode");
+        let mut invalid_factor = translucent_pe_material(false);
+        invalid_factor["blend"]["src_factor"] = json!(8);
+        let mut contradictory_flags = translucent_pe_material(false);
+        contradictory_flags["pe_flags"] = json!(24);
+        let mut contradictory_default = translucent_pe_material(false);
+        contradictory_default["blend"]["dst_factor"] = json!(1);
+        let mut wrong_type = translucent_pe_material(false);
+        wrong_type["depth"]["compare"] = json!("lequal");
+
+        let cases = [
+            (partial, "all present or all absent"),
+            (missing_mode, "require render_mode"),
+            (invalid_factor, "blend factor code 8"),
+            (contradictory_flags, "pe_flags"),
+            (contradictory_default, "contradict render_mode defaults"),
+            (wrong_type, "decode pixel-engine fields"),
+        ];
+        for (material, expected) in cases {
+            let error = load_document(directory.path(), &document(material.clone())).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(expected),
+                "unexpected error for {material}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_pixel_engine_features_are_rejected_explicitly() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut destination_alpha = translucent_pe_material(true);
+        destination_alpha["destination_alpha"]["enabled"] = json!(true);
+        destination_alpha["pe_flags"] = json!(29);
+        let mut dither = translucent_pe_material(true);
+        dither["dither"] = json!(true);
+        dither["pe_flags"] = json!(89);
+        let mut logic = translucent_pe_material(true);
+        logic["blend"]["type"] = json!(2);
+        let mut early_reject = translucent_pe_material(true);
+        early_reject["depth"]["write"] = json!(true);
+        early_reject["pe_flags"] = json!(57);
+        early_reject["alpha_test"]["compare0"] = json!(4);
+
+        let cases = [
+            (destination_alpha, "destination-alpha"),
+            (dither, "dithering"),
+            (logic, "logic blending"),
+            (early_reject, "depth-before-texture"),
+        ];
+        for (material, expected) in cases {
+            let error = load_document(directory.path(), &document(material)).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(expected),
+                "unexpected error: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn gx_alpha_comparisons_and_boolean_operations_use_u8_values() {
+        let comparisons = [
+            (PeCompare::Never, false),
+            (PeCompare::Less, false),
+            (PeCompare::Equal, true),
+            (PeCompare::LessEqual, true),
+            (PeCompare::Greater, false),
+            (PeCompare::NotEqual, false),
+            (PeCompare::GreaterEqual, true),
+            (PeCompare::Always, true),
+        ];
+        for (comparison, expected_at_equal) in comparisons {
+            assert_eq!(comparison.test(102, 102), expected_at_equal);
+        }
+
+        let test = |operation| PeAlphaTest {
+            comparison0: PeCompare::GreaterEqual,
+            reference0: 102,
+            operation,
+            comparison1: PeCompare::LessEqual,
+            reference1: 102,
+        };
+        assert!(test(PeAlphaOp::And).passes(102));
+        assert!(test(PeAlphaOp::Or).passes(101));
+        assert!(!test(PeAlphaOp::Xor).passes(102));
+        assert!(test(PeAlphaOp::Xnor).passes(102));
+
+        let inputs = [(false, false), (false, true), (true, false), (true, true)];
+        let operations = [
+            (PeAlphaOp::And, [false, false, false, true]),
+            (PeAlphaOp::Or, [false, true, true, true]),
+            (PeAlphaOp::Xor, [false, true, true, false]),
+            (PeAlphaOp::Xnor, [true, false, false, true]),
+        ];
+        for (operation, expected) in operations {
+            assert_eq!(
+                inputs.map(|(left, right)| operation.combine(left, right)),
+                expected
+            );
+        }
     }
 
     #[test]

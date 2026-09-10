@@ -1,5 +1,5 @@
 //! Shared GPU path for window presentation and offscreen captures.
-use std::{fs::File, io::BufWriter, path::Path, time::Duration};
+use std::{collections::HashMap, fs::File, io::BufWriter, path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use glam::Vec3;
@@ -8,7 +8,8 @@ use wgpu::util::DeviceExt;
 
 use super::platform::SdlSurface;
 use super::scene::{
-    Camera, CullMode, MaterialSourceId, Mesh, RenderMode, RenderModeClass, Scene, Texture, Vertex,
+    Camera, CullMode, MaterialSourceId, Mesh, PeAlphaTest, PeBlendFactor, PeBlendMode,
+    PeBlendState, PeCompare, PixelEngineState, RenderMode, RenderModeClass, Scene, Texture, Vertex,
 };
 use super::viewport::{PresentationTransform, fitted_viewport};
 
@@ -141,6 +142,11 @@ impl DrawPresentation {
             _ => false,
         }
     }
+
+    fn material_alpha_uses_hsd_byte_storage(&self) -> bool {
+        self.material_render_mode
+            .is_some_and(|mode| !mode.uses_vertex_alpha())
+    }
 }
 
 /// Immutable HSD draw-pass classification, with a legacy inference fallback.
@@ -155,8 +161,6 @@ enum DrawRenderClass {
 }
 
 impl DrawRenderClass {
-    const ALL: [Self; 3] = [Self::Opaque, Self::TextureEdge, Self::Translucent];
-
     fn from_mesh(mesh: &Mesh, textures: &[Texture]) -> Self {
         match mesh.material.render_mode.map(|mode| mode.class()) {
             Some(RenderModeClass::Opaque) => Self::Opaque,
@@ -186,16 +190,15 @@ impl DrawRenderClass {
         }
     }
 
-    const fn uses_blending(self) -> bool {
-        !matches!(self, Self::Opaque)
-    }
-
-    const fn writes_depth(self) -> bool {
-        !matches!(self, Self::Translucent)
-    }
-
-    const fn pipeline_offset(self) -> usize {
-        self as usize * 3
+    fn fallback_pixel_engine(self) -> PixelEngineState {
+        let bits = match self {
+            Self::Opaque => 0,
+            Self::TextureEdge => 0x4000_0000,
+            Self::Translucent => 0x6000_0000,
+        };
+        PixelEngineState::from_render_mode(
+            RenderMode::from_bits(bits).expect("fixed fallback render mode is valid"),
+        )
     }
 }
 
@@ -207,10 +210,199 @@ fn retain_draw(mesh: &Mesh) -> bool {
     !mesh.indices.is_empty() && mesh.material.cull_mode != CullMode::All
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PipelineKey {
+    cull_mode: Option<wgpu::Face>,
+    blend: Option<wgpu::BlendState>,
+    depth_write: bool,
+    depth_compare: wgpu::CompareFunction,
+    write_mask: wgpu::ColorWrites,
+}
+
+impl PipelineKey {
+    fn new(cull_mode: CullMode, state: PixelEngineState) -> Result<Self> {
+        state.validate_supported()?;
+        let write_mask = match (state.color_write, state.alpha_write) {
+            (false, false) => wgpu::ColorWrites::empty(),
+            (true, false) => wgpu::ColorWrites::COLOR,
+            (false, true) => wgpu::ColorWrites::ALPHA,
+            (true, true) => wgpu::ColorWrites::ALL,
+        };
+        let mut blend = gpu_blend_state(state.blend)?;
+        if let Some(blend) = &mut blend {
+            if !state.color_write {
+                blend.color = wgpu::BlendComponent::REPLACE;
+            }
+            if !state.alpha_write {
+                blend.alpha = wgpu::BlendComponent::REPLACE;
+            }
+        }
+        if write_mask.is_empty() {
+            blend = None;
+        }
+        Ok(Self {
+            cull_mode: match cull_mode {
+                CullMode::None | CullMode::All => None,
+                CullMode::Front => Some(wgpu::Face::Front),
+                CullMode::Back => Some(wgpu::Face::Back),
+            },
+            blend,
+            depth_write: state.depth.write_enabled,
+            depth_compare: if state.depth.test_enabled {
+                gpu_compare(state.depth.comparison)
+            } else {
+                wgpu::CompareFunction::Always
+            },
+            write_mask,
+        })
+    }
+}
+
+fn gpu_compare(comparison: PeCompare) -> wgpu::CompareFunction {
+    match comparison {
+        PeCompare::Never => wgpu::CompareFunction::Never,
+        PeCompare::Less => wgpu::CompareFunction::Less,
+        PeCompare::Equal => wgpu::CompareFunction::Equal,
+        PeCompare::LessEqual => wgpu::CompareFunction::LessEqual,
+        PeCompare::Greater => wgpu::CompareFunction::Greater,
+        PeCompare::NotEqual => wgpu::CompareFunction::NotEqual,
+        PeCompare::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
+        PeCompare::Always => wgpu::CompareFunction::Always,
+    }
+}
+
+fn gpu_blend_factor(
+    factor: PeBlendFactor,
+    source_slot: bool,
+    alpha_component: bool,
+) -> wgpu::BlendFactor {
+    match factor {
+        PeBlendFactor::Zero => wgpu::BlendFactor::Zero,
+        PeBlendFactor::One => wgpu::BlendFactor::One,
+        PeBlendFactor::SourceColor if source_slot && alpha_component => wgpu::BlendFactor::DstAlpha,
+        PeBlendFactor::SourceColor if source_slot => wgpu::BlendFactor::Dst,
+        PeBlendFactor::InverseSourceColor if source_slot && alpha_component => {
+            wgpu::BlendFactor::OneMinusDstAlpha
+        }
+        PeBlendFactor::InverseSourceColor if source_slot => wgpu::BlendFactor::OneMinusDst,
+        PeBlendFactor::SourceColor if alpha_component => wgpu::BlendFactor::SrcAlpha,
+        PeBlendFactor::SourceColor => wgpu::BlendFactor::Src,
+        PeBlendFactor::InverseSourceColor if alpha_component => wgpu::BlendFactor::OneMinusSrcAlpha,
+        PeBlendFactor::InverseSourceColor => wgpu::BlendFactor::OneMinusSrc,
+        PeBlendFactor::SourceAlpha => wgpu::BlendFactor::SrcAlpha,
+        PeBlendFactor::InverseSourceAlpha => wgpu::BlendFactor::OneMinusSrcAlpha,
+        PeBlendFactor::DestinationAlpha => wgpu::BlendFactor::DstAlpha,
+        PeBlendFactor::InverseDestinationAlpha => wgpu::BlendFactor::OneMinusDstAlpha,
+    }
+}
+
+fn gpu_blend_state(state: PeBlendState) -> Result<Option<wgpu::BlendState>> {
+    let component = |alpha_component| wgpu::BlendComponent {
+        src_factor: gpu_blend_factor(state.source_factor, true, alpha_component),
+        dst_factor: gpu_blend_factor(state.destination_factor, false, alpha_component),
+        operation: wgpu::BlendOperation::Add,
+    };
+    Ok(match state.mode {
+        PeBlendMode::None => None,
+        PeBlendMode::Blend => Some(wgpu::BlendState {
+            color: component(false),
+            alpha: component(true),
+        }),
+        PeBlendMode::Subtract => Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::ReverseSubtract,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::ReverseSubtract,
+            },
+        }),
+        PeBlendMode::Logic => bail!("GX logic blending is not supported"),
+    })
+}
+
+fn create_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    key: PipelineKey,
+) -> wgpu::RenderPipeline {
+    let attributes =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("inspection mesh"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: key.cull_mode,
+            front_face: wgpu::FrontFace::Ccw,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(key.depth_write),
+            depth_compare: Some(key.depth_compare),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: key.blend,
+                write_mask: key.write_mask,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MaterialUniform {
     color: [f32; 4],
+    alpha_test: [u32; 4],
+}
+
+impl MaterialUniform {
+    fn new(
+        mut color: [f32; 4],
+        alpha_test: PeAlphaTest,
+        material_alpha_uses_hsd_byte_storage: bool,
+    ) -> Self {
+        if material_alpha_uses_hsd_byte_storage {
+            // HSD_SetMaterialColor stores the authored float alpha in an unsigned
+            // byte before channel/TEV evaluation. Preserve that truncation boundary
+            // separately from the preview shader's final TEV-output quantization.
+            color[3] = f32::from((color[3] * 255.0) as u8) / 255.0;
+        }
+        Self {
+            color,
+            alpha_test: [
+                u32::from(alpha_test.comparison0.code()),
+                u32::from(alpha_test.reference0),
+                u32::from(alpha_test.comparison1.code()),
+                u32::from(alpha_test.reference1) | (u32::from(alpha_test.operation.code()) << 8),
+            ],
+        }
+    }
 }
 
 struct Draw {
@@ -221,13 +413,8 @@ struct Draw {
     material_binding: wgpu::BindGroup,
     count: u32,
     texture: usize,
-    cull_pipeline: usize,
-}
-
-impl Draw {
-    fn pipeline(&self) -> usize {
-        self.cull_pipeline + self.presentation.render_class.pipeline_offset()
-    }
+    alpha_test: PeAlphaTest,
+    pipeline: usize,
 }
 
 struct GpuScene {
@@ -440,69 +627,41 @@ impl GpuScene {
             ],
             immediate_size: 0,
         });
-        let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
         let mut pipelines = Vec::new();
-        for render_class in DrawRenderClass::ALL {
-            let targets = [Some(wgpu::ColorTargetState {
-                format,
-                blend: render_class
-                    .uses_blending()
-                    .then_some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })];
-            for cull_mode in [None, Some(wgpu::Face::Front), Some(wgpu::Face::Back)] {
-                pipelines.push(
-                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("inspection mesh"),
-                        layout: Some(&layout),
-                        vertex: wgpu::VertexState {
-                            module: &shader,
-                            entry_point: Some("vs_main"),
-                            compilation_options: Default::default(),
-                            buffers: &[Some(wgpu::VertexBufferLayout {
-                                array_stride: std::mem::size_of::<Vertex>() as u64,
-                                step_mode: wgpu::VertexStepMode::Vertex,
-                                attributes: &attributes,
-                            })],
-                        },
-                        primitive: wgpu::PrimitiveState {
-                            cull_mode,
-                            front_face: wgpu::FrontFace::Ccw,
-                            ..Default::default()
-                        },
-                        depth_stencil: Some(wgpu::DepthStencilState {
-                            format: DEPTH_FORMAT,
-                            depth_write_enabled: Some(render_class.writes_depth()),
-                            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                            stencil: Default::default(),
-                            bias: Default::default(),
-                        }),
-                        multisample: Default::default(),
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: Some("fs_main"),
-                            compilation_options: Default::default(),
-                            targets: &targets,
-                        }),
-                        multiview_mask: None,
-                        cache: None,
-                    }),
-                );
-            }
-        }
+        let mut pipeline_indices = HashMap::new();
         let mut draws = Vec::new();
         for mesh in &scene.meshes {
             if !retain_draw(mesh) {
                 continue;
             }
-            let cull_pipeline = match mesh.material.cull_mode {
-                CullMode::None | CullMode::All => 0,
-                CullMode::Front => 1,
-                CullMode::Back => 2,
+            let presentation = DrawPresentation::from_mesh(mesh, &scene.textures);
+            let pixel_engine = mesh.material.pixel_engine.unwrap_or_else(|| {
+                mesh.material.render_mode.map_or_else(
+                    || presentation.render_class.fallback_pixel_engine(),
+                    PixelEngineState::from_render_mode,
+                )
+            });
+            let pipeline_key = PipelineKey::new(mesh.material.cull_mode, pixel_engine)
+                .with_context(|| format!("{} has unsupported pixel-engine state", mesh.name))?;
+            let pipeline = if let Some(&index) = pipeline_indices.get(&pipeline_key) {
+                index
+            } else {
+                let index = pipelines.len();
+                pipelines.push(create_pipeline(
+                    &device,
+                    &layout,
+                    &shader,
+                    format,
+                    pipeline_key,
+                ));
+                pipeline_indices.insert(pipeline_key, index);
+                index
             };
-            let uniform = MaterialUniform {
-                color: mesh.material.color,
-            };
+            let uniform = MaterialUniform::new(
+                mesh.material.color,
+                pixel_engine.alpha_test,
+                presentation.material_alpha_uses_hsd_byte_storage(),
+            );
             let material = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("{} material", mesh.name)),
                 contents: bytemuck::bytes_of(&uniform),
@@ -519,7 +678,7 @@ impl GpuScene {
                 }],
             });
             draws.push(Draw {
-                presentation: DrawPresentation::from_mesh(mesh, &scene.textures),
+                presentation,
                 vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&mesh.name),
                     contents: bytemuck::cast_slice(&mesh.vertices),
@@ -534,7 +693,8 @@ impl GpuScene {
                 material_binding,
                 count: mesh.indices.len() as u32,
                 texture: mesh.material.texture.unwrap_or(scene.textures.len()),
-                cull_pipeline,
+                alpha_test: pixel_engine.alpha_test,
+                pipeline,
             });
         }
         if let Some(error) = scope.pop().await {
@@ -596,9 +756,11 @@ impl GpuScene {
                 self.queue.write_buffer(
                     &draw.material,
                     0,
-                    bytemuck::bytes_of(&MaterialUniform {
-                        color: draw.presentation.state.material_color,
-                    }),
+                    bytemuck::bytes_of(&MaterialUniform::new(
+                        draw.presentation.state.material_color,
+                        draw.alpha_test,
+                        draw.presentation.material_alpha_uses_hsd_byte_storage(),
+                    )),
                 );
             }
             matched += 1;
@@ -693,7 +855,7 @@ impl GpuScene {
         }
         pass.set_bind_group(0, &self.camera_binding, &[]);
         for draw in order {
-            pass.set_pipeline(&self.pipelines[draw.pipeline()]);
+            pass.set_pipeline(&self.pipelines[draw.pipeline]);
             pass.set_bind_group(1, &self.textures[draw.texture], &[]);
             pass.set_bind_group(2, &draw.material_binding, &[]);
             pass.set_vertex_buffer(0, draw.vertices.slice(..));
@@ -1040,7 +1202,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use super::super::scene::RenderMode;
+    use super::super::scene::{PeAlphaOp, RenderMode};
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1048,7 +1210,7 @@ mod tests {
     // caller selects both with the default multi-threaded Rust test harness.
     static GPU_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    async fn read_material_uniform(gpu: &GpuScene, draw_index: usize) -> Result<[f32; 4]> {
+    async fn read_material_uniform(gpu: &GpuScene, draw_index: usize) -> Result<MaterialUniform> {
         let size = std::mem::size_of::<MaterialUniform>() as u64;
         let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("material test readback"),
@@ -1073,10 +1235,10 @@ mod tests {
             .recv_timeout(Duration::from_secs(30))
             .context("waiting for material test readback")??;
         let mapped = buffer.slice(..).get_mapped_range()?;
-        let color = bytemuck::from_bytes::<MaterialUniform>(&mapped).color;
+        let uniform = *bytemuck::from_bytes::<MaterialUniform>(&mapped);
         drop(mapped);
         buffer.unmap();
-        Ok(color)
+        Ok(uniform)
     }
 
     fn exported_mesh(
@@ -1125,6 +1287,7 @@ mod tests {
                     source_id: Some(MaterialSourceId::new(100)),
                     texture_source_id: None,
                     render_mode: None,
+                    pixel_engine: None,
                     color,
                     texture: None,
                     cull_mode: CullMode::None,
@@ -1159,7 +1322,158 @@ mod tests {
         )
         .validate(&module)
         .expect("shader validates without optional GPU capabilities");
-        assert_eq!(std::mem::size_of::<MaterialUniform>(), 16);
+        assert_eq!(std::mem::size_of::<MaterialUniform>(), 32);
+    }
+
+    #[test]
+    fn gx_blend_factors_map_by_operand_slot_and_component() {
+        let cases = [
+            (PeBlendFactor::Zero, [wgpu::BlendFactor::Zero; 4]),
+            (PeBlendFactor::One, [wgpu::BlendFactor::One; 4]),
+            (
+                PeBlendFactor::SourceColor,
+                [
+                    wgpu::BlendFactor::Dst,
+                    wgpu::BlendFactor::DstAlpha,
+                    wgpu::BlendFactor::Src,
+                    wgpu::BlendFactor::SrcAlpha,
+                ],
+            ),
+            (
+                PeBlendFactor::InverseSourceColor,
+                [
+                    wgpu::BlendFactor::OneMinusDst,
+                    wgpu::BlendFactor::OneMinusDstAlpha,
+                    wgpu::BlendFactor::OneMinusSrc,
+                    wgpu::BlendFactor::OneMinusSrcAlpha,
+                ],
+            ),
+            (PeBlendFactor::SourceAlpha, [wgpu::BlendFactor::SrcAlpha; 4]),
+            (
+                PeBlendFactor::InverseSourceAlpha,
+                [wgpu::BlendFactor::OneMinusSrcAlpha; 4],
+            ),
+            (
+                PeBlendFactor::DestinationAlpha,
+                [wgpu::BlendFactor::DstAlpha; 4],
+            ),
+            (
+                PeBlendFactor::InverseDestinationAlpha,
+                [wgpu::BlendFactor::OneMinusDstAlpha; 4],
+            ),
+        ];
+        for (
+            factor,
+            [
+                source_color,
+                source_alpha,
+                destination_color,
+                destination_alpha,
+            ],
+        ) in cases
+        {
+            assert_eq!(gpu_blend_factor(factor, true, false), source_color);
+            assert_eq!(gpu_blend_factor(factor, true, true), source_alpha);
+            assert_eq!(gpu_blend_factor(factor, false, false), destination_color);
+            assert_eq!(gpu_blend_factor(factor, false, true), destination_alpha);
+        }
+    }
+
+    #[test]
+    fn pipeline_keys_deduplicate_only_immutable_gpu_state() {
+        let mode = RenderMode::from_bits(0x6000_0000).unwrap();
+        let standard = PixelEngineState::from_render_mode(mode);
+        let mut metadata_only = standard;
+        metadata_only.explicit_descriptor = true;
+        metadata_only.depth.compare_before_texture = false;
+        metadata_only.alpha_test = PeAlphaTest {
+            comparison0: PeCompare::GreaterEqual,
+            reference0: 102,
+            operation: PeAlphaOp::And,
+            comparison1: PeCompare::LessEqual,
+            reference1: 255,
+        };
+        let standard_key = PipelineKey::new(CullMode::Back, standard).unwrap();
+        assert_eq!(
+            standard_key,
+            PipelineKey::new(CullMode::Back, metadata_only).unwrap(),
+            "alpha-test controls and equivalent early/late depth metadata stay per draw"
+        );
+        assert_eq!(standard_key.write_mask, wgpu::ColorWrites::COLOR);
+        let standard_blend = standard_key.blend.unwrap();
+        assert_eq!(standard_blend.color.src_factor, wgpu::BlendFactor::SrcAlpha);
+        assert_eq!(
+            standard_blend.color.dst_factor,
+            wgpu::BlendFactor::OneMinusSrcAlpha
+        );
+        assert_eq!(standard_blend.alpha, wgpu::BlendComponent::REPLACE);
+
+        let mut additive = standard;
+        additive.blend.destination_factor = PeBlendFactor::One;
+        let mut keys = std::collections::HashSet::new();
+        keys.insert(standard_key);
+        keys.insert(PipelineKey::new(CullMode::Back, standard).unwrap());
+        keys.insert(PipelineKey::new(CullMode::Back, additive).unwrap());
+        keys.insert(PipelineKey::new(CullMode::None, additive).unwrap());
+        assert_eq!(keys.len(), 3, "the menu PE census has three GPU keys");
+
+        let mut subtract = standard;
+        subtract.blend.mode = PeBlendMode::Subtract;
+        subtract.blend.source_factor = PeBlendFactor::Zero;
+        subtract.blend.destination_factor = PeBlendFactor::InverseDestinationAlpha;
+        let subtract = PipelineKey::new(CullMode::Back, subtract)
+            .unwrap()
+            .blend
+            .unwrap();
+        assert_eq!(
+            subtract.color,
+            wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::ReverseSubtract,
+            }
+        );
+
+        let mut depth_disabled_a = standard;
+        depth_disabled_a.depth.test_enabled = false;
+        depth_disabled_a.depth.comparison = PeCompare::Never;
+        let mut depth_disabled_b = depth_disabled_a;
+        depth_disabled_b.depth.comparison = PeCompare::Greater;
+        assert_eq!(
+            PipelineKey::new(CullMode::Back, depth_disabled_a).unwrap(),
+            PipelineKey::new(CullMode::Back, depth_disabled_b).unwrap()
+        );
+
+        let opaque_mode = RenderMode::from_bits(0).unwrap();
+        let opaque_a = PixelEngineState::from_render_mode(opaque_mode);
+        let mut opaque_b = opaque_a;
+        opaque_b.blend.source_factor = PeBlendFactor::Zero;
+        opaque_b.blend.destination_factor = PeBlendFactor::One;
+        assert_eq!(
+            PipelineKey::new(CullMode::Back, opaque_a).unwrap(),
+            PipelineKey::new(CullMode::Back, opaque_b).unwrap(),
+            "disabled blend factors must not produce extra pipelines"
+        );
+    }
+
+    #[test]
+    fn material_uniform_packs_gx_alpha_test_and_truncates_material_alpha() {
+        let alpha_test = PeAlphaTest {
+            comparison0: PeCompare::GreaterEqual,
+            reference0: 102,
+            operation: PeAlphaOp::Xnor,
+            comparison1: PeCompare::LessEqual,
+            reference1: 255,
+        };
+        let uniform = MaterialUniform::new([0.25, 0.5, 0.75, 1.0], alpha_test, true);
+        assert_eq!(uniform.color, [0.25, 0.5, 0.75, 1.0]);
+        assert_eq!(uniform.alpha_test, [6, 102, 3, 255 | (3 << 8)]);
+
+        let half_alpha = MaterialUniform::new([1.0, 1.0, 1.0, 0.5], alpha_test, true);
+        assert_eq!(half_alpha.color[3], 127.0 / 255.0);
+
+        let legacy_half_alpha = MaterialUniform::new([1.0, 1.0, 1.0, 0.5], alpha_test, false);
+        assert_eq!(legacy_half_alpha.color[3], 0.5);
     }
 
     #[test]
@@ -1342,19 +1656,23 @@ mod tests {
     #[test]
     fn source_render_mode_selects_three_fixed_gpu_passes() {
         let cases = [
-            (0x0000_0011, DrawRenderClass::Opaque, false, true, 0),
-            (0x4000_0011, DrawRenderClass::TextureEdge, true, true, 3),
-            (0x6000_0011, DrawRenderClass::Translucent, true, false, 6),
+            (0x0000_0011, DrawRenderClass::Opaque, false, true),
+            (0x4000_0011, DrawRenderClass::TextureEdge, true, true),
+            (0x6000_0011, DrawRenderClass::Translucent, true, false),
         ];
-        for (bits, expected, blending, depth_write, pipeline_offset) in cases {
+        for (bits, expected, blending, depth_write) in cases {
             let mut mesh = exported_mesh(7, None, false, [1.0, 1.0, 1.0, 0.25]);
             mesh.material.render_mode = RenderMode::from_bits(bits);
             let class = exported_presentation(&mesh).render_class;
+            let key = PipelineKey::new(
+                mesh.material.cull_mode,
+                PixelEngineState::from_render_mode(mesh.material.render_mode.unwrap()),
+            )
+            .unwrap();
 
             assert_eq!(class, expected);
-            assert_eq!(class.uses_blending(), blending);
-            assert_eq!(class.writes_depth(), depth_write);
-            assert_eq!(class.pipeline_offset(), pipeline_offset);
+            assert_eq!(key.blend.is_some(), blending);
+            assert_eq!(key.depth_write, depth_write);
         }
     }
 
@@ -1438,6 +1756,65 @@ mod tests {
             .count();
         assert!(foreground > 500, "only {foreground} non-background pixels");
         assert!(image.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
+    fn gpu_alpha_test_uses_the_gx_u8_boundary() {
+        let _guard = GPU_TEST_LOCK.lock().unwrap();
+        let scene = |alpha, reference| {
+            let mut scene = solid_quad_scene([1.0, 0.0, 0.0, alpha]);
+            let mode = RenderMode::from_bits(0x6000_0000).unwrap();
+            let mut state = PixelEngineState::from_render_mode(mode);
+            state.explicit_descriptor = true;
+            state.depth.compare_before_texture = false;
+            state.alpha_test = PeAlphaTest {
+                comparison0: PeCompare::GreaterEqual,
+                reference0: reference,
+                operation: PeAlphaOp::And,
+                comparison1: PeCompare::LessEqual,
+                reference1: 255,
+            };
+            scene.meshes[0].material.render_mode = Some(mode);
+            scene.meshes[0].material.pixel_engine = Some(state);
+            scene
+        };
+        let (below, boundary, truncated_half) = pollster::block_on(async {
+            Ok::<_, anyhow::Error>((
+                render_rgba(&scene(101.0 / 255.0, 102), 257, 193).await?,
+                render_rgba(&scene(102.0 / 255.0, 102), 257, 193).await?,
+                render_rgba(&scene(0.5, 128), 257, 193).await?,
+            ))
+        })
+        .unwrap();
+
+        let below_red = below
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[0] > 0)
+            .count();
+        let boundary_red = boundary
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[0] > 0)
+            .count();
+        let truncated_half_red = truncated_half
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[0] > 0)
+            .count();
+        assert_eq!(below_red, 0, "alpha byte 101 must fail GEQUAL 102");
+        assert!(
+            boundary_red > 500,
+            "only {boundary_red} pixels passed at alpha byte 102"
+        );
+        assert_eq!(
+            truncated_half_red, 0,
+            "material alpha 0.5 truncates to byte 127 and must fail GEQUAL 128"
+        );
     }
 
     #[test]
@@ -1529,10 +1906,9 @@ mod tests {
                 gpu.draws[quad].presentation.state.material_color,
                 [0.0, 1.0, 0.0, 1.0]
             );
-            assert_eq!(
-                read_material_uniform(&gpu, quad).await?,
-                [0.0, 1.0, 0.0, 1.0]
-            );
+            let uniform = read_material_uniform(&gpu, quad).await?;
+            assert_eq!(uniform.color, [0.0, 1.0, 0.0, 1.0]);
+            assert_eq!(uniform.alpha_test, [7, 0, 7, 0]);
             let green = capture_gpu_rgba(&gpu, 257, 193).await?;
             Ok::<_, anyhow::Error>((red, green))
         })
