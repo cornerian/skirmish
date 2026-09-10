@@ -166,7 +166,7 @@ The 2026-09-09 static ledge-action batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ledge-20260909`
 
-It validates the composed tree after the native asset-import commit with
+It validates the historical composed tree at that revision with
 formatting, strict all-target/all-feature Clippy, native workspace tests and
 original-C differential tests in debug and release modes. Six formerly ignored
 ledge scenarios now pass, with focused integration coverage for endpoint

@@ -20,14 +20,9 @@ runtime/
 │   ├── checker-cube           # Scene::demo(), 6 authored quad faces
 │   ├── floor                  # Scene::demo(), authored floor quad
 │   └── procedural-checker     # Scene::demo(), generated 8×8 RGBA texture
-├── interface/
-│   ├── menu-panels-and-rows    # UiFrame::menu(), generated colored geometry
-│   ├── menu-labels            # menus catalog + native import-screen labels
-│   └── bitmap-glyphs          # font8x8 BASIC_FONTS, rendered as geometry
 ├── shaders/
 │   ├── mesh.wesl              # mesh vertex/fragment entry points
-│   ├── lighting.wesl          # shared lighting functions
-│   └── ui.wesl                # menu geometry/glyph shader
+│   └── lighting.wesl          # shared lighting functions
 ├── audio/
 │   └── navigation-cue         # AudioOutput/Mixer, synthesized 180 ms cue
 └── gameplay/
@@ -35,11 +30,10 @@ runtime/
 ```
 
 Implementations: [scene assets](../src/renderer/scene.rs),
-[UI geometry/glyphs](../src/renderer/ui.rs),
 [audio cue](../src/renderer/audio.rs), [shaders](../src/renderer/shaders),
 and [demo match data](../tests/fixtures/game/integration-match.json).
 Build-time linked WGSL is derived from the listed WESL sources, not an additional
-authored asset. Menus have no original artwork or background music wired in yet.
+authored asset. The direct Melee UI path consumes original menu exports separately.
 
 The renderer additionally consumes the user-selected `skirmish-visual-v1` scene
 JSON and its referenced PNG textures. `run-match` consumes the selected native
@@ -101,11 +95,11 @@ they must not replace the source identities or imply that unknown assets are kno
 ```
 
 This tree is a **contract**, not a statement that every decoder already exists.
-The in-game Rust importer currently installs `disc/files` and its manifest.
+The independent extraction crate can install `disc/files` and its manifest.
 The offline resource pipeline already exports image PNGs, static model scenes,
 material references, and reconstructed fonts. Its existing catalogs under
 `skirmish-assets/catalog` enumerate those outputs and aliases; their presence
-does not imply that the native importer already produces them.
+does not imply that the extraction crate already produces them.
 
 Audio is not assumed to live inside every DAT. The supported image uses separate
 HPS music files and SSM sound banks, and these must also be decoded and indexed.

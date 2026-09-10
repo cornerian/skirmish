@@ -2,8 +2,22 @@
 use std::collections::HashSet;
 
 use crate::controller::host::{Button, ControllerId, ControllerInfo, ControllerState};
-use menus::input::pad;
 use sdl3::keyboard::Scancode;
+
+/// Dolphin/HSD digital button bits supplied to the original menu runtime.
+pub mod pad {
+    pub const LEFT: u32 = 1;
+    pub const RIGHT: u32 = 1 << 1;
+    pub const DOWN: u32 = 1 << 2;
+    pub const UP: u32 = 1 << 3;
+    pub const A: u32 = 1 << 8;
+    pub const B: u32 = 1 << 9;
+    pub const START: u32 = 1 << 12;
+    pub const STICK_UP: u32 = 1 << 16;
+    pub const STICK_DOWN: u32 = 1 << 17;
+    pub const STICK_LEFT: u32 = 1 << 18;
+    pub const STICK_RIGHT: u32 = 1 << 19;
+}
 
 /// Retains a short key tap until the next menu tick and ignores OS key repeat.
 #[derive(Default)]
@@ -41,21 +55,21 @@ impl KeyboardInput {
 
 fn key_button(code: Scancode) -> u32 {
     match code {
-        Scancode::Up => pad::UP as u32,
-        Scancode::Down => pad::DOWN as u32,
-        Scancode::Left => pad::LEFT as u32,
-        Scancode::Right => pad::RIGHT as u32,
-        Scancode::Return | Scancode::KpEnter | Scancode::Space | Scancode::Z => pad::A as u32,
-        Scancode::Escape | Scancode::Backspace | Scancode::X => pad::B as u32,
+        Scancode::Up => pad::UP,
+        Scancode::Down => pad::DOWN,
+        Scancode::Left => pad::LEFT,
+        Scancode::Right => pad::RIGHT,
+        Scancode::Return | Scancode::KpEnter | Scancode::Space | Scancode::Z => pad::A,
+        Scancode::Escape | Scancode::Backspace | Scancode::X => pad::B,
         _ => 0,
     }
 }
 
 fn controller_button(button: Button) -> u32 {
-    let mapped = match button {
+    match button {
         Button::South => pad::A,
-        // SDL maps the GameCube's physical B to West. Accept it alongside the
-        // conventional East cancel button for this menu presentation only.
+        // SDL maps the GameCube's physical B to West. Retain both physical
+        // positions while adapting devices to the original HSD button word.
         Button::East | Button::West => pad::B,
         Button::Start => pad::START,
         Button::DPadUp => pad::UP,
@@ -63,8 +77,7 @@ fn controller_button(button: Button) -> u32 {
         Button::DPadLeft => pad::LEFT,
         Button::DPadRight => pad::RIGHT,
         _ => 0,
-    };
-    mapped as u32
+    }
 }
 
 /// Stable menu ports across hot-plug events. Disconnecting a device releases its
@@ -111,13 +124,13 @@ impl ControllerPorts {
             self.directions[port] = axis(
                 state.left_stick[0],
                 self.directions[port],
-                pad::STICK_LEFT as u32,
-                pad::STICK_RIGHT as u32,
+                pad::STICK_LEFT,
+                pad::STICK_RIGHT,
             ) | axis(
                 state.left_stick[1],
                 self.directions[port],
-                pad::STICK_UP as u32,
-                pad::STICK_DOWN as u32,
+                pad::STICK_UP,
+                pad::STICK_DOWN,
             );
             buttons | self.directions[port]
         })
@@ -145,45 +158,19 @@ fn axis(value: i16, previous: u32, negative: u32, positive: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::menu::{MenuEvent, MenuSession};
-    use menus::{Action, Menu, MenuState, Unlocks};
 
     #[test]
     fn short_key_taps_survive_until_one_tick_and_focus_loss_releases_everything() {
         let mut input = KeyboardInput::default();
         input.key(Scancode::Return, true, false);
         input.key(Scancode::Return, false, false);
-        assert_eq!(input.sample(), pad::A as u32);
+        assert_eq!(input.sample(), pad::A);
         assert_eq!(input.sample(), 0);
         input.key(Scancode::Down, true, false);
         input.key(Scancode::Return, true, true);
-        assert_eq!(input.sample(), pad::DOWN as u32);
+        assert_eq!(input.sample(), pad::DOWN);
         input.clear();
         assert_eq!(input.sample(), 0);
-    }
-
-    #[test]
-    fn standard_and_gamecube_back_buttons_return_from_a_selected_menu() {
-        for back in [Button::East, Button::West] {
-            let mut session =
-                MenuSession::from_state(MenuState::at(Menu::Main, 0, Unlocks::default()).unwrap());
-            assert_eq!(
-                session.tick([controller_button(Button::South), 0, 0, 0]),
-                Some(MenuEvent::Navigation(Action::Entered(Menu::OnePlayer)))
-            );
-            assert_eq!(session.view().title, "1-P Mode");
-            // Release Confirm and allow the translated transition cooldown.
-            for _ in 0..5 {
-                session.tick([0; 4]);
-            }
-            assert_eq!(
-                session.tick([controller_button(back), 0, 0, 0]),
-                Some(MenuEvent::Navigation(Action::Returned(Menu::Main))),
-                "{back:?} must return to the parent menu"
-            );
-            assert_eq!(session.view().menu, Menu::Main);
-            assert_eq!(session.view().selected_label, "1-P Mode");
-        }
     }
 
     fn device(id: u32, x: i16) -> (ControllerInfo, ControllerState) {
@@ -206,7 +193,7 @@ mod tests {
     #[test]
     fn unplugging_one_pad_does_not_move_another_and_new_pads_reuse_free_ports() {
         let mut ports = ControllerPorts::default();
-        let right = pad::STICK_RIGHT as u32;
+        let right = pad::STICK_RIGHT;
         assert_eq!(
             ports.sample(&[device(10, 20_000), device(20, 20_000)]),
             [right, right, 0, 0]
@@ -214,7 +201,7 @@ mod tests {
         assert_eq!(ports.sample(&[device(20, 20_000)]), [0, right, 0, 0]);
         assert_eq!(
             ports.sample(&[device(20, 20_000), device(30, -20_000)]),
-            [pad::STICK_LEFT as u32, right, 0, 0]
+            [pad::STICK_LEFT, right, 0, 0]
         );
         assert_eq!(ports.sample(&[]), [0; 4]);
     }
@@ -230,7 +217,7 @@ mod tests {
             (-17_000, pad::STICK_LEFT),
             (0, 0),
         ] {
-            assert_eq!(ports.sample(&[device(1, x)])[0], expected as u32);
+            assert_eq!(ports.sample(&[device(1, x)])[0], expected);
         }
     }
 }

@@ -8,8 +8,8 @@ final export schema or a request to rearrange the resource project's directories
 The current experimental `MatchData` fixture format is not the full asset format.
 The [canonical asset tree](asset-tree.md) specifies categories, current consumers,
 and completeness requirements, with an exhaustive linked source inventory.
-The optional in-game importer installs original disc files; conversion remains
-separate from that player-facing installation step.
+The independent extraction crate can install original disc files; conversion
+remains separate from that storage step.
 
 ## Gameplay and presentation
 
@@ -33,9 +33,8 @@ state, event ordering and gameplay RNG consumption unchanged.
 Exports should identify resources independently of directory placement. A
 versioned manifest can resolve stable resource IDs to paths relative to the
 bundle root, allowing the producing task to organize directories sensibly.
-Skirmish must not depend on a particular developer's checkout path, an extraction
-tool at runtime, or an ISO/DOL. The optional [in-game importer](asset-import.md)
-now installs original files, and `extraction::AssetBundle` resolves their exact disc
+Skirmish must not depend on a particular developer's checkout path or an ISO/DOL.
+The independent `extraction::AssetBundle` API can install and resolve exact disc
 identifiers with path containment and integrity checks. It does not implement a
 converted gameplay/visual bundle resolver; that integration remains outstanding.
 

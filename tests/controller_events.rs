@@ -18,7 +18,7 @@ fn push_application_events(events: &sdl3::EventSubsystem) {
             which: 0,
             raw: 0,
         })
-        .expect("push menu key event");
+        .expect("push application key event");
     events
         .push_event(Event::Quit { timestamp: 2 })
         .expect("push quit event");
@@ -34,7 +34,7 @@ fn assert_application_events(events: &mut sdl3::EventPump) {
                 ..
             }
         )),
-        "controller polling consumed the menu key event: {pending:?}"
+        "controller polling consumed the application key event: {pending:?}"
     );
     assert!(
         pending

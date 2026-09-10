@@ -29,26 +29,10 @@ fn help_is_available_without_a_display() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("skirmish-renderer"), "{stdout}");
     assert!(stdout.contains("--headless"), "{stdout}");
-    assert!(stdout.contains("--menus"), "{stdout}");
     assert!(stdout.contains("--melee-menu-assets"), "{stdout}");
     assert!(stdout.contains("--no-audio"), "{stdout}");
+    assert!(!stdout.contains("--menus"), "{stdout}");
     assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn direct_melee_assets_reject_the_legacy_menu_overlay_before_loading_assets() {
-    let output = cli_without_display()
-        .args([
-            "--melee-menu-assets",
-            "does-not-need-to-exist.json",
-            "--menus",
-        ])
-        .output()
-        .unwrap();
-    assert_usage_error(&output, "--menus");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--melee-menu-assets"), "{stderr}");
-    assert!(!stderr.contains("loading Melee menu assets"), "{stderr}");
 }
 
 #[test]
@@ -146,7 +130,7 @@ fn dummy_video_driver_fails_with_a_clear_error_before_graphics_startup() {
         cli_without_display()
             .env("SDL_VIDEODRIVER", "dummy")
             .env_remove("WGPU_BACKEND")
-            .args(["--no-audio", "--menus", "--frames", "1"]),
+            .args(["--no-audio", "--frames", "1"]),
         "dummy SDL startup",
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -165,7 +149,7 @@ fn dummy_video_driver_fails_with_a_clear_error_before_graphics_startup() {
     );
 }
 
-fn assert_window_smoke(menus: bool) {
+fn assert_window_smoke() {
     let mut command = Command::new(env!("CARGO_BIN_EXE_skirmish-renderer"));
     command.args([
         "--no-audio",
@@ -176,9 +160,6 @@ fn assert_window_smoke(menus: bool) {
         "--frames",
         "2",
     ]);
-    if menus {
-        command.arg("--menus");
-    }
     let output = output_with_timeout(&mut command, "SDL window smoke test");
     assert!(
         output.status.success(),
@@ -194,11 +175,5 @@ fn assert_window_smoke(menus: bool) {
 #[test]
 #[ignore = "requires a window compositor and a graphics adapter"]
 fn window_smoke_exits_after_presenting_the_requested_frames() {
-    assert_window_smoke(false);
-}
-
-#[test]
-#[ignore = "requires a window compositor and a graphics adapter"]
-fn menu_window_smoke_exits_after_presenting_the_requested_frames() {
-    assert_window_smoke(true);
+    assert_window_smoke();
 }

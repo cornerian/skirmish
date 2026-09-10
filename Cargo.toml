@@ -18,8 +18,6 @@ renderer = [
     "controller-input",
     "dep:bytemuck",
     "dep:cpal",
-    "dep:extraction",
-    "dep:font8x8",
     "dep:png",
     "dep:pollster",
     "dep:rtrb",
@@ -38,23 +36,8 @@ path = "examples/controllers.rs"
 required-features = ["controller-input"]
 
 [[test]]
-name = "renderer_asset_import"
-path = "tests/renderer_asset_import.rs"
-required-features = ["renderer"]
-
-[[test]]
 name = "renderer_cli"
 path = "tests/renderer_cli.rs"
-required-features = ["renderer"]
-
-[[test]]
-name = "renderer_menu"
-path = "tests/renderer_menu.rs"
-required-features = ["renderer"]
-
-[[test]]
-name = "renderer_menu_capture"
-path = "tests/renderer_menu_capture.rs"
 required-features = ["renderer"]
 
 [[test]]
@@ -67,12 +50,9 @@ anyhow = "1"
 bytemuck = { version = "1", features = ["derive"], optional = true }
 clap = { version = "4", features = ["derive"] }
 cpal = { version = "0.18.2", optional = true }
-extraction = { path = "crates/extraction", optional = true }
-font8x8 = { version = "0.3", optional = true }
 glam = { version = "0.33", default-features = false, features = ["scalar-math", "libm"] }
 libm = "0.2"
 melee-ui-sys = { path = "crates/melee-ui-sys", features = ["source"], optional = true }
-menus = { path = "crates/menus" }
 replay = { path = "crates/replay" }
 peppi-adapter = { path = "crates/peppi-adapter" }
 png = { version = "0.18.1", optional = true }

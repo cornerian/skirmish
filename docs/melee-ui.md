@@ -63,5 +63,6 @@ now verified through the original callback: `MENU_KIND_VS` requests frame 400
 and settles into its frame-500 idle loop after 51 callback invocations. The
 remaining handoff is the full input/content path: after its 20-frame entrance cooldown,
 Main selection 1 enters `MENU_KIND_VS`; confirming the default Melee entry later
-requests `GM_VS`. Any temporary **Original scene pending** label refers to that
-unconnected scene handoff, not an unavailable VS mode or missing assets.
+requests `GM_VS`. The removed translated preview's **Original scene pending**
+label was only an unconnected host handoff; it was never evidence that VS mode
+or its assets were unavailable.

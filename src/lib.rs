@@ -12,7 +12,6 @@ pub mod id;
 pub mod inventory;
 pub mod match_trace;
 pub mod mbstring;
-pub mod menu_cli;
 pub mod quaternion;
 pub mod random;
 #[cfg(feature = "renderer")]
@@ -22,6 +21,5 @@ pub mod replay_observation;
 pub mod runner;
 pub mod spline;
 pub mod trace;
-pub use menus;
 pub use peppi_adapter as slippi;
 pub use replay;

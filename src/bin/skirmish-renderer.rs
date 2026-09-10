@@ -5,20 +5,14 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use extraction::{self, Source};
-use menus::Unlocks;
 use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
 };
-use skirmish::controller::host::ControllerHub;
 use skirmish::renderer::{
-    asset_menu::{AssetImportMenu, ImportAction},
     audio::AudioOutput,
-    controls::{ControllerPorts, KeyboardInput},
-    gpu::{WindowRenderer, render_headless, render_menu_headless},
+    gpu::{WindowRenderer, render_headless},
     melee,
-    menu::{FixedMenuClock, MenuEvent, MenuSession},
     scene::Scene,
 };
 
@@ -28,31 +22,16 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 #[command(
     name = "skirmish-renderer",
     version,
-    about = "Skirmish SDL3 menus and wgpu scene preview"
+    about = "Skirmish SDL3/wgpu scene and direct Melee UI host"
 )]
 struct Cli {
     /// Load a native scene export instead of the built-in demonstration.
     #[arg(long, value_name = "PATH")]
     scene: Option<PathBuf>,
     /// Load the four MnMaAll roots selected by the original main-menu source.
-    /// This development view is a static default pose until JObj animation is connected.
+    /// This development view executes the currently connected original source slice.
     #[arg(long, value_name = "SCENE.json", conflicts_with = "scene")]
     melee_menu_assets: Option<PathBuf>,
-    /// Start in the translated menu preview. F1 toggles it and scene preview.
-    #[arg(long, conflicts_with = "melee_menu_assets")]
-    menus: bool,
-    /// Open the in-game asset import screen.
-    #[arg(long)]
-    import_assets: bool,
-    /// Override the player asset storage directory (normally the OS app-data folder).
-    #[arg(long, value_name = "DIRECTORY")]
-    asset_dir: Option<PathBuf>,
-    /// Make All-Star available in the menu preview.
-    #[arg(long)]
-    all_star: bool,
-    /// Make Sound Test available in the menu preview.
-    #[arg(long)]
-    sound_test: bool,
     /// Render one PNG without opening SDL or an audio device.
     #[arg(long, value_name = "OUTPUT.png", conflicts_with = "frames")]
     headless: Option<PathBuf>,
@@ -68,51 +47,10 @@ struct Cli {
     no_audio: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PresentationMode {
-    Legacy,
-    DirectMelee,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OverlayKind {
-    None,
-    LegacyMenu,
-    AssetImport,
-}
-
-impl PresentationMode {
-    const fn overlay(self, legacy_menu_active: bool, import_active: bool) -> OverlayKind {
-        if import_active {
-            OverlayKind::AssetImport
-        } else {
-            match (self, legacy_menu_active) {
-                (Self::Legacy, true) => OverlayKind::LegacyMenu,
-                _ => OverlayKind::None,
-            }
-        }
-    }
-
-    const fn allows_legacy_toggle(self, import_active: bool) -> bool {
-        matches!(self, Self::Legacy) && !import_active
-    }
-}
-
 struct App {
     renderer: WindowRenderer,
     audio: Option<AudioOutput>,
-    controllers: Option<ControllerHub>,
-    ports: ControllerPorts,
-    keyboard: KeyboardInput,
-    menu: MenuSession,
-    presentation_mode: PresentationMode,
-    legacy_menu_active: bool,
-    asset_menu: AssetImportMenu,
-    import_active: bool,
-    clock: FixedMenuClock,
-    reset_elapsed: bool,
     orbit: [f32; 3],
-    focused: bool,
     visible: bool,
     quit: bool,
     dirty: bool,
@@ -122,25 +60,6 @@ struct App {
 }
 
 impl App {
-    fn overlay_kind(&self) -> OverlayKind {
-        self.presentation_mode
-            .overlay(self.legacy_menu_active, self.import_active)
-    }
-
-    fn menu_input_active(&self) -> bool {
-        self.overlay_kind() != OverlayKind::None
-    }
-
-    fn update_menu(&mut self) {
-        let view = match self.overlay_kind() {
-            OverlayKind::None => None,
-            OverlayKind::LegacyMenu => Some(self.menu.view()),
-            OverlayKind::AssetImport => Some(self.asset_menu.view()),
-        };
-        self.renderer.set_menu(view);
-        self.dirty = true;
-    }
-
     fn event(&mut self, event: Event) {
         match event {
             Event::Quit { .. } | Event::AppTerminating { .. } => self.quit = true,
@@ -150,32 +69,15 @@ impl App {
                 ..
             } if window_id == self.renderer.window_id() => match win_event {
                 WindowEvent::CloseRequested => self.quit = true,
-                WindowEvent::FocusLost => {
-                    self.focused = false;
-                    self.keyboard.clear();
-                    self.ports.release();
-                    self.menu.release_input();
-                    self.asset_menu.release_input();
-                }
-                WindowEvent::FocusGained => {
-                    self.focused = true;
-                }
                 // Occlusion can follow an Exposed event during a Wayland
                 // resize, whose requested frame must still be presented.
                 WindowEvent::Hidden | WindowEvent::Minimized => {
                     self.visible = false;
-                    self.keyboard.clear();
-                    self.ports.release();
-                    self.menu.release_input();
-                    self.asset_menu.release_input();
-                    self.clock.reset();
-                    self.reset_elapsed = true;
                 }
                 WindowEvent::Shown
                 | WindowEvent::Restored
                 | WindowEvent::Maximized
                 | WindowEvent::Exposed => {
-                    self.reset_elapsed |= !self.visible;
                     self.visible = true;
                     self.dirty = true;
                 }
@@ -193,49 +95,12 @@ impl App {
                 scancode: Some(code),
                 repeat,
                 ..
-            } if window_id == self.renderer.window_id() && self.focused => {
-                if !repeat
-                    && code == Scancode::F1
-                    && self
-                        .presentation_mode
-                        .allows_legacy_toggle(self.import_active)
-                {
-                    self.legacy_menu_active = !self.legacy_menu_active;
-                    self.keyboard.clear();
-                    self.ports.release();
-                    self.menu.release_input();
-                    self.clock.reset();
-                    self.reset_elapsed = true;
-                    self.update_menu();
-                } else if !repeat && code == Scancode::Q {
+            } if window_id == self.renderer.window_id() => {
+                if !repeat && code == Scancode::Q {
                     self.quit = true;
-                } else if self.menu_input_active() {
-                    self.keyboard.key(code, true, repeat);
                 } else {
                     self.scene_key(code, repeat);
                 }
-            }
-            Event::KeyUp {
-                window_id,
-                scancode: Some(code),
-                ..
-            } if window_id == self.renderer.window_id() => {
-                self.keyboard.key(code, false, false);
-            }
-            Event::DropFile {
-                window_id,
-                filename,
-                ..
-            } if window_id == self.renderer.window_id() && !self.asset_menu.busy() => {
-                if self.presentation_mode == PresentationMode::Legacy {
-                    self.legacy_menu_active = true;
-                }
-                self.import_active = true;
-                self.asset_menu.start(Source::File(filename.into()));
-                self.keyboard.clear();
-                self.ports.release();
-                self.asset_menu.release_input();
-                self.update_menu();
             }
             _ => {}
         }
@@ -266,61 +131,6 @@ impl App {
         }
     }
 
-    fn tick_menu(&mut self) {
-        let mut held = [0; 4];
-        if self.focused {
-            if let Some(controllers) = &mut self.controllers {
-                match controllers.poll() {
-                    Ok(devices) => held = self.ports.sample(&devices),
-                    Err(error) => {
-                        eprintln!("warning: controller input unavailable: {error}");
-                        self.controllers = None;
-                        self.ports.release();
-                    }
-                }
-            }
-            held[0] |= self.keyboard.sample();
-        }
-        if self.import_active {
-            let before = self.asset_menu.view();
-            match self.asset_menu.tick(held) {
-                Some(ImportAction::Search) => self.asset_menu.start_search(),
-                Some(ImportAction::Browse) => {
-                    let callback = self.asset_menu.dialog_callback();
-                    if let Err(error) = self.renderer.choose_iso(callback) {
-                        self.asset_menu.dialog_failed(error);
-                    }
-                }
-                Some(ImportAction::Cancel) => self.asset_menu.cancel(),
-                Some(ImportAction::Back) => {
-                    self.import_active = false;
-                    // Retain the current Confirm/Back edge in the originating
-                    // menu, so closing this screen cannot immediately quit.
-                    self.menu.synchronize_input(held);
-                }
-                None => {}
-            }
-            if !self.import_active || before != self.asset_menu.view() {
-                self.update_menu();
-            }
-            return;
-        }
-        if let Some(event) = self.menu.tick(held) {
-            if matches!(event, MenuEvent::QuitRequested) {
-                self.quit = true;
-            } else {
-                if matches!(event, MenuEvent::ImportAssetsRequested) {
-                    self.import_active = true;
-                    // Consume the opening press without selecting Search.
-                    self.asset_menu.release_input();
-                    self.asset_menu.tick(held);
-                }
-                self.cue();
-                self.update_menu();
-            }
-        }
-    }
-
     fn check_audio(&mut self) {
         if let Some(audio) = &self.audio
             && audio.error_count() > 0
@@ -337,7 +147,6 @@ impl App {
 
     fn run(mut self, mut events: sdl3::EventPump) -> Result<()> {
         let mut pending = None;
-        let mut last_update = Instant::now();
         while !self.quit {
             // This is the sole event consumer. The event returned by waiting is
             // dispatched too, rather than being lost before the next poll.
@@ -350,31 +159,7 @@ impl App {
             if self.quit {
                 break;
             }
-            if self.asset_menu.poll() && self.import_active {
-                self.update_menu();
-            }
             let now = Instant::now();
-            // Activation events can arrive after an inactive 250 ms wait.
-            // That inactive time must not advance the newly resumed menu.
-            let elapsed = if std::mem::take(&mut self.reset_elapsed) {
-                Duration::ZERO
-            } else {
-                now.duration_since(last_update)
-            };
-            last_update = now;
-            if self.menu_input_active() && self.drawable() {
-                for _ in 0..self.clock.advance(elapsed) {
-                    self.tick_menu();
-                    if self.quit {
-                        break;
-                    }
-                }
-            } else {
-                self.clock.reset();
-            }
-            if self.quit {
-                break;
-            }
             self.check_audio();
             if self.drawable()
                 && now >= self.next_frame
@@ -399,17 +184,8 @@ impl App {
                 }
             }
             let mut wait = Duration::from_millis(250);
-            if self.drawable() {
-                if self.menu_input_active() {
-                    wait = wait.min(
-                        self.clock
-                            .until_next_tick()
-                            .saturating_sub(last_update.elapsed()),
-                    );
-                }
-                if self.dirty || self.frame_limit.is_some() {
-                    wait = wait.min(self.next_frame.saturating_duration_since(Instant::now()));
-                }
+            if self.drawable() && (self.dirty || self.frame_limit.is_some()) {
+                wait = wait.min(self.next_frame.saturating_duration_since(Instant::now()));
             }
             // SDL waits in integer milliseconds. Round up to avoid busy polling
             // for the fractional millisecond at the end of a 60 Hz tick.
@@ -422,11 +198,6 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let presentation_mode = if cli.melee_menu_assets.is_some() {
-        PresentationMode::DirectMelee
-    } else {
-        PresentationMode::Legacy
-    };
     let scene = match (&cli.scene, &cli.melee_menu_assets) {
         (Some(path), None) => {
             Scene::load(path).with_context(|| format!("loading scene from {}", path.display()))?
@@ -439,26 +210,8 @@ fn main() -> Result<()> {
     for warning in &scene.warnings {
         eprintln!("warning: {warning}");
     }
-    let mut menu = MenuSession::new(Unlocks {
-        all_star: cli.all_star,
-        sound_test: cli.sound_test,
-    });
-    menu.enable_asset_import();
     if let Some(output) = &cli.headless {
-        if cli.import_assets {
-            let import = AssetImportMenu::new(
-                Ok(cli
-                    .asset_dir
-                    .clone()
-                    .unwrap_or_else(|| PathBuf::from("assets"))),
-                vec![],
-            );
-            render_menu_headless(&scene, &import.view(), cli.width, cli.height, output)?;
-        } else if cli.menus {
-            render_menu_headless(&scene, &menu.view(), cli.width, cli.height, output)?;
-        } else {
-            render_headless(&scene, cli.width, cli.height, output)?;
-        }
+        render_headless(&scene, cli.width, cli.height, output)?;
         println!(
             "Rendered {}x{} to {}",
             cli.width,
@@ -478,54 +231,15 @@ fn main() -> Result<()> {
         .metal_view()
         .build()
         .context("creating SDL window")?;
-    let mut renderer = pollster::block_on(WindowRenderer::new(window, &scene))?;
+    let renderer = pollster::block_on(WindowRenderer::new(window, &scene))?;
     println!("Graphics adapter: {}", renderer.adapter_name());
-    match presentation_mode {
-        PresentationMode::Legacy => println!(
-            "SDL3 host: F1 toggles menus/scene. Menus: arrows/D-pad, Enter/A selects, Esc/B backs. Q quits."
-        ),
-        PresentationMode::DirectMelee => println!(
-            "SDL3 host: direct Melee asset scene; translated menu overlay and F1 toggle are disabled. Q quits."
-        ),
+    if cli.melee_menu_assets.is_some() {
+        println!("SDL3 host: direct Melee UI development scene. Q quits.");
+    } else {
+        println!("SDL3 host: scene preview. Q quits.");
     }
     println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
-    let legacy_menu_active = presentation_mode == PresentationMode::Legacy
-        && (cli.menus || cli.import_assets || cli.scene.is_none());
-    let asset_destination = cli.asset_dir.map(Ok).unwrap_or_else(|| {
-        sdl3::filesystem::get_pref_path("Skirmish", "Skirmish")
-            .map(|path| path.join("assets").join(extraction::BUNDLE_NAME))
-            .map_err(|error| format!("Asset storage is unavailable: {error}"))
-    });
-    let mut search_roots = Vec::new();
-    if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
-        let home = PathBuf::from(home);
-        search_roots.extend([
-            home.join("Downloads"),
-            home.join("Games"),
-            home.join("Desktop"),
-        ]);
-    }
-    for path in ["/mnt/archive/datasets/melee", "/mnt/shared/Games"] {
-        if std::path::Path::new(path).is_dir() {
-            search_roots.push(path.into());
-        }
-    }
-    let asset_menu = AssetImportMenu::new(asset_destination, search_roots);
-    renderer.set_menu(
-        match presentation_mode.overlay(legacy_menu_active, cli.import_assets) {
-            OverlayKind::None => None,
-            OverlayKind::LegacyMenu => Some(menu.view()),
-            OverlayKind::AssetImport => Some(asset_menu.view()),
-        },
-    );
     let events = sdl.event_pump().context("creating shared SDL event pump")?;
-    let controllers = match ControllerHub::with_sdl(&sdl) {
-        Ok(hub) => Some(hub),
-        Err(error) => {
-            eprintln!("warning: controllers unavailable: {error}");
-            None
-        }
-    };
     let audio = if cli.no_audio {
         None
     } else {
@@ -540,18 +254,7 @@ fn main() -> Result<()> {
     App {
         renderer,
         audio,
-        controllers,
-        ports: ControllerPorts::default(),
-        keyboard: KeyboardInput::default(),
-        menu,
-        presentation_mode,
-        legacy_menu_active,
-        asset_menu,
-        import_active: cli.import_assets,
-        clock: FixedMenuClock::default(),
-        reset_elapsed: true,
         orbit: [0.0, 0.0, 1.0],
-        focused: true,
         visible: true,
         quit: false,
         dirty: true,
@@ -560,25 +263,4 @@ fn main() -> Result<()> {
         frame_limit: cli.frames,
     }
     .run(events)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{OverlayKind, PresentationMode};
-
-    #[test]
-    fn direct_melee_mode_never_selects_the_legacy_menu_overlay() {
-        let direct = PresentationMode::DirectMelee;
-        assert_eq!(direct.overlay(false, false), OverlayKind::None);
-        assert_eq!(direct.overlay(true, false), OverlayKind::None);
-        assert!(!direct.allows_legacy_toggle(false));
-    }
-
-    #[test]
-    fn direct_melee_mode_keeps_asset_import_separate_and_temporary() {
-        let direct = PresentationMode::DirectMelee;
-        assert_eq!(direct.overlay(false, true), OverlayKind::AssetImport);
-        assert_eq!(direct.overlay(true, true), OverlayKind::AssetImport);
-        assert_eq!(direct.overlay(true, false), OverlayKind::None);
-    }
 }

@@ -6,8 +6,8 @@ use glam::Vec3;
 use sdl3::video::Window;
 use wgpu::util::DeviceExt;
 
+use super::platform::SdlSurface;
 use super::scene::{Camera, CullMode, Scene, Texture, Vertex};
-use super::{menu::MenuView, platform::SdlSurface, ui::UiRenderer};
 
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -550,8 +550,6 @@ pub struct WindowRenderer {
     config: wgpu::SurfaceConfiguration,
     depth: wgpu::TextureView,
     gpu: GpuScene,
-    ui: UiRenderer,
-    menu: Option<MenuView>,
     suspended: bool,
 }
 
@@ -580,18 +578,11 @@ impl WindowRenderer {
             .min(gpu.device.limits().max_texture_dimension_2d);
         surface.configure(&gpu.device, &config);
         let depth = depth_view(&gpu.device, config.width, config.height);
-        let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let ui = UiRenderer::new(&gpu.device, config.format);
-        if let Some(error) = scope.pop().await {
-            bail!("creating menu graphics resources: {error}");
-        }
         Ok(Self {
             presentation,
             config,
             depth,
             gpu,
-            ui,
-            menu: None,
             suspended: width == 0 || height == 0,
         })
     }
@@ -604,37 +595,8 @@ impl WindowRenderer {
         self.presentation.window().id()
     }
 
-    pub fn choose_iso(
-        &self,
-        callback: sdl3::dialog::DialogCallback,
-    ) -> Result<(), sdl3::dialog::DialogError> {
-        sdl3::dialog::show_open_file_dialog(
-            &[sdl3::dialog::DialogFileFilter {
-                name: "GameCube ISO",
-                pattern: "iso;ISO",
-            }],
-            None::<&std::path::Path>,
-            false,
-            self.presentation.window(),
-            callback,
-        )
-    }
-
     pub fn pixel_size(&self) -> (u32, u32) {
         self.presentation.window().size_in_pixels()
-    }
-
-    pub fn set_menu(&mut self, view: Option<MenuView>) {
-        if let Some(view) = &view {
-            self.ui.prepare(
-                &self.gpu.device,
-                &self.gpu.queue,
-                view,
-                self.config.width,
-                self.config.height,
-            );
-        }
-        self.menu = view;
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -649,15 +611,6 @@ impl WindowRenderer {
             .surface()
             .configure(&self.gpu.device, &self.config);
         self.depth = depth_view(&self.gpu.device, self.config.width, self.config.height);
-        if let Some(view) = &self.menu {
-            self.ui.prepare(
-                &self.gpu.device,
-                &self.gpu.queue,
-                view,
-                self.config.width,
-                self.config.height,
-            );
-        }
     }
 
     /// Returns false when presentation must be retried after a transient surface event.
@@ -699,9 +652,6 @@ impl WindowRenderer {
             [self.config.width, self.config.height],
             [yaw, pitch, zoom],
         );
-        if self.menu.is_some() {
-            draw_menu(&self.ui, &mut encoder, &target);
-        }
         self.gpu.queue.submit([encoder.finish()]);
         self.gpu.queue.present(frame);
         if reconfigure {
@@ -709,40 +659,19 @@ impl WindowRenderer {
                 .surface()
                 .configure(&self.gpu.device, &self.config);
         }
-        // A replacement swapchain needs its own frame, including when an
-        // otherwise idle menu received a suboptimal first surface texture.
+        // A replacement swapchain needs its own frame after a suboptimal first
+        // surface texture.
         Ok(!reconfigure)
     }
 }
 
 /// Render with the same shaders and draw path, without opening a window or audio device.
 pub fn render_headless(scene: &Scene, width: u32, height: u32, output: &Path) -> Result<()> {
-    render_headless_view(scene, None, width, height, output)
-}
-
-/// Captures a menu through the same GPU overlay used by the SDL window.
-pub fn render_menu_headless(
-    scene: &Scene,
-    menu: &MenuView,
-    width: u32,
-    height: u32,
-    output: &Path,
-) -> Result<()> {
-    render_headless_view(scene, Some(menu), width, height, output)
-}
-
-fn render_headless_view(
-    scene: &Scene,
-    menu: Option<&MenuView>,
-    width: u32,
-    height: u32,
-    output: &Path,
-) -> Result<()> {
     ensure!(
         (1..=8192).contains(&width) && (1..=8192).contains(&height),
         "capture dimensions must be 1..=8192"
     );
-    let rgba = pollster::block_on(render_rgba(scene, menu, width, height))?;
+    let rgba = pollster::block_on(render_rgba(scene, width, height))?;
     let file = File::create(output).with_context(|| format!("creating {}", output.display()))?;
     let mut encoder = png::Encoder::new(BufWriter::new(file), width, height);
     encoder.set_color(png::ColorType::Rgba);
@@ -753,12 +682,7 @@ fn render_headless_view(
     Ok(())
 }
 
-async fn render_rgba(
-    scene: &Scene,
-    menu: Option<&MenuView>,
-    width: u32,
-    height: u32,
-) -> Result<Vec<u8>> {
+async fn render_rgba(scene: &Scene, width: u32, height: u32) -> Result<Vec<u8>> {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = request_adapter(&instance, None).await?;
@@ -796,11 +720,6 @@ async fn render_rgba(
         [width, height],
         [0.0, 0.0, 1.0],
     );
-    if let Some(menu) = menu {
-        let mut ui = UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8UnormSrgb);
-        ui.prepare(&gpu.device, &gpu.queue, menu, width, height);
-        draw_menu(&ui, &mut encoder, &texture.create_view(&Default::default()));
-    }
     encoder.copy_texture_to_buffer(
         texture.as_image_copy(),
         wgpu::TexelCopyBufferInfo {
@@ -840,23 +759,6 @@ async fn render_rgba(
     Ok(rgba)
 }
 
-fn draw_menu(ui: &UiRenderer, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("menu overlay"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        ..Default::default()
-    });
-    ui.draw(&mut pass);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -893,7 +795,7 @@ mod tests {
     #[test]
     #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
     fn gpu_capture_draws_geometry_and_unpads_rows() {
-        let image = pollster::block_on(render_rgba(&Scene::demo(), None, 257, 193)).unwrap();
+        let image = pollster::block_on(render_rgba(&Scene::demo(), 257, 193)).unwrap();
         assert_eq!(image.len(), 257 * 193 * 4);
         let background = &image[..4];
         let foreground = image

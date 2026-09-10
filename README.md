@@ -49,27 +49,21 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `fighter` | Movement, locomotion, neutral-special input, blast-death selection, fixed/contact-relative knockback, DI, hitlag, prone damage, damage reflection and floor/wall-tech selection |
 | `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze, swept capsules and matrix-aware [hurtbox contact](docs/hurtbox-contact.md) with frame-sampled eligibility |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
-| `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
 | `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
-| `renderer` feature and module | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
+| `renderer` feature and module | SDL3 window/events, wgpu scene presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
 `cargo run --locked --features renderer --bin skirmish-renderer`. It includes a procedural
 demo; `--scene /path/to/scene.json` loads a `skirmish-visual-v1` asset export.
-Without `--scene`, the window starts on the interactive menu. Choose
-**Import Game Assets** to discover or select a local USA 1.02 ISO and install
-its original files using the built-in Rust importer. Players need no terminal,
-Python, Bun, or Dolphin. The [in-game import guide](docs/asset-import.md) explains
-storage, validation, and the remaining visual/gameplay conversion work.
+Without `--scene`, the window shows the procedural demo.
 The [canonical asset tree](docs/asset-tree.md) defines resource categories and
 consumers; its [complete source inventory](docs/asset-source-tree.md) lists all
 1,209 supported disc files.
 The [direct Melee UI runtime](docs/melee-ui.md) records the native `mnmain.c`
 source boundary, the first exact-root render, and the remaining HSD integration.
-F1 switches menus and scene on
-the same graphics surface. The [renderer module](docs/renderer.md) documents controls,
+The [renderer module](docs/renderer.md) documents controls,
 offscreen capture, requirements, and material approximation limits. It does not
 yet present live matches or implement original game rendering.
 
@@ -106,12 +100,6 @@ ordinary four-sided squeeze and deterministic shape restoration.
 The [damage-surface profile](docs/damage-surfaces.md) composes exact reflection
 and wall-tech input arithmetic with wall/ceiling ECB contacts, headless tech
 motion and configured action timing.
-
-Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
-This terminal preview supports navigation and confirm/back. The renderer adds
-graphical navigation; original menu artwork and destination screens remain
-unported. `run-menus` accepts controller frames and
-emits reproducible traces. See [menu controls and coverage](docs/menus.md).
 
 Inspect a completed Slippi replay with
 `cargo run --locked --bin skirmish -- inspect-replay /path/to/game.slp`.

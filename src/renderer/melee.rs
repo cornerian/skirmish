@@ -91,7 +91,7 @@ pub fn load_main_menu_default_pose(path: &Path) -> Result<Scene> {
             panel.versus_idle_frame,
             panel.transition_callbacks,
         ),
-        (None, None, None) => "Pinned Melee source was not found at build time; the serialized menu preview remains available, but the native source slice was not linked."
+        (None, None, None) => "Pinned Melee source was not found at build time; the serialized asset scene remains available, but the native source slice was not linked."
             .into(),
         _ => "Pinned Melee source availability was internally inconsistent."
             .into(),
