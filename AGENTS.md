@@ -24,6 +24,12 @@ only when that is simpler and cleaner than an equivalent Rust implementation.
 Never replace a subsystem with a stub and call it complete; report partial
 coverage explicitly.
 
+Support controller, keyboard, and mouse operation through one canonical menu
+command path. Mouse hit testing must use the authored menu layout after the
+actual viewport transform, including resize and high-DPI behavior; hover and
+click must not grow a second navigation state machine or change canonical menu
+timing and transitions.
+
 Hard requirement: native modern-machine builds, execution, and tests must never
 require an ISO, DOL, emulator, or GameCube runtime. Use native game resources,
 host-compiled original C, generated scenarios and future replay observations.
