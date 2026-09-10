@@ -259,6 +259,20 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 "shield attributes require common shield rules",
             )?;
         }
+        match (&rules.tilt, &fighter.tilts) {
+            (Some(rules), Some(parameters)) => {
+                tilt::validate(rules, parameters, fighter, data.rules.staling.is_some())?
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "tilt rules require attacks for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("tilt attacks require common rules".into()));
+            }
+            (None, None) => {}
+        }
         match (&rules.escape_air, &fighter.escape_air) {
             (Some(rules), Some(parameters)) => escape_air::validate(rules, parameters, fighter)?,
             (Some(_), None) => {
@@ -534,6 +548,20 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .iter()
                     .flat_map(|p| [&p.face_up.attack, &p.face_down.attack]),
             )
+            .chain(fighter.tilts.iter().flat_map(|p| {
+                [
+                    p.forward.high.as_ref(),
+                    p.forward.high_slight.as_ref(),
+                    Some(&p.forward.straight),
+                    p.forward.low_slight.as_ref(),
+                    p.forward.low.as_ref(),
+                    Some(&p.up),
+                    Some(&p.down),
+                ]
+                .into_iter()
+                .flatten()
+                .map(|attack| &attack.attack)
+            }))
         {
             require(
                 rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),

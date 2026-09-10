@@ -3,7 +3,7 @@
 //! Parameters are supplied resources, not character presets. Animation lengths
 //! and script events are explicit; animation poses and other character-specific
 //! interrupt chains remain absent.
-use super::{Action, BUTTON_A, BUTTON_X, BUTTON_Y, Controller, Error, Fighter, data::FighterData};
+use super::{Action, BUTTON_X, BUTTON_Y, Controller, Error, Fighter, data::FighterData};
 use crate::fighter::{Movement, locomotion as math};
 use serde::{Deserialize, Serialize};
 
@@ -428,14 +428,16 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
 pub(crate) fn update_actions(
     f: &mut Fighter,
     data: &FighterData,
+    tilt_rules: Option<&super::tilt::Rules>,
     input: Controller,
     just_turned: bool,
 ) {
     let Some(p) = data.locomotion.as_ref() else {
         return;
     };
+    let interruptible_tilt = super::tilt::interrupt_chain(f, data).is_some();
     let grounded_action = f.grounded
-        && matches!(
+        && (matches!(
             f.action,
             Action::Wait
                 | Action::Walk
@@ -447,18 +449,9 @@ pub(crate) fn update_actions(
                 | Action::Squat
                 | Action::SquatWait
                 | Action::SquatRv
-        );
+        ) || interruptible_tilt);
     if grounded_action {
-        if input.buttons & !f.previous_input.buttons & BUTTON_A != 0
-            && matches!(
-                f.action,
-                Action::Wait | Action::Walk | Action::Turn | Action::Squat | Action::SquatWait
-            )
-        {
-            if f.action == Action::Turn && !f.locomotion.turn_has_turned {
-                f.facing = -f.facing;
-            }
-            enter(f, Action::Jab);
+        if super::tilt::update_ground_attacks(f, data, tilt_rules, input) {
             return;
         }
         if let Some(source) = jump_input(
@@ -481,7 +474,9 @@ pub(crate) fn update_actions(
         try_aerial_jump(f, data, input);
     }
     match f.action {
-        Action::Wait | Action::Walk => {
+        // Interruptible tilts hand their frame to the same dash, squat, turn
+        // and walk checks as Wait.
+        action if matches!(action, Action::Wait | Action::Walk) || interruptible_tilt => {
             if try_dash(f, p, input) {
                 return;
             }

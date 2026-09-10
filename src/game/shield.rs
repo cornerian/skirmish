@@ -398,7 +398,7 @@ pub(crate) fn update_actions(
         return Ok(true);
     }
     if f.grounded
-        && matches!(
+        && (matches!(
             f.action,
             Action::Wait
                 | Action::Walk
@@ -407,7 +407,7 @@ pub(crate) fn update_actions(
                 | Action::Turn
                 | Action::Squat
                 | Action::SquatWait
-        )
+        ) || super::tilt::interrupt_chain(f, data) == Some(super::tilt::Chain::Wait))
         && input.buttons & !f.previous_input.buttons & super::BUTTON_A == 0
     {
         let pressed = input.buttons & !f.previous_input.buttons;

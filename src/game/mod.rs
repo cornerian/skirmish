@@ -23,6 +23,7 @@ mod simulation;
 pub mod special;
 pub mod stage_motion;
 pub mod staling;
+pub mod tilt;
 mod validation;
 pub mod wall_jump;
 
@@ -104,6 +105,13 @@ pub enum Action {
     FallSpecial,
     LandingFallSpecial,
     Jab,
+    AttackS3Hi,
+    AttackS3HiS,
+    AttackS3S,
+    AttackS3LwS,
+    AttackS3Lw,
+    AttackHi3,
+    AttackLw3,
     Catch,
     CatchDash,
     CatchPull,
@@ -211,6 +219,7 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
+    pub tilt: tilt::State,
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,

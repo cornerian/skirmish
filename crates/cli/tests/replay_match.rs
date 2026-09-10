@@ -31,6 +31,8 @@ mod ledge_support;
 mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
+#[path = "../../../tests/support/tilt.rs"]
+mod tilt_support;
 
 const FIRST: i32 = -123;
 const PORTS: [Port; 2] = [Port::P1, Port::P3];
@@ -888,6 +890,93 @@ fn file_backed_air_dodges_match_and_detect_their_first_changed_trigger_frame() {
                     checked_frames,
                     ..
                 } if frame == FIRST + row as i32 && checked_frames == row as u64
+            ),
+            "{}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn file_backed_tilts_match_and_detect_their_first_changed_attack_frame() {
+    let data = tilt_support::profile(shield_drop_data());
+    struct Case {
+        name: &'static str,
+        stick: [f32; 2],
+        checks: &'static [(usize, Action, u16, u32)],
+        repeat: bool,
+    }
+    let cases = [
+        Case {
+            name: "straight forward tilt",
+            stick: [1.0, 0.0],
+            checks: &[(0, Action::AttackS3S, 53, 55), (7, Action::Wait, 14, 2)],
+            repeat: false,
+        },
+        Case {
+            name: "high forward tilt",
+            stick: [1.0, 0.5],
+            checks: &[(0, Action::AttackS3Hi, 51, 53)],
+            repeat: false,
+        },
+        Case {
+            name: "up tilt",
+            stick: [0.0, 1.0],
+            checks: &[(0, Action::AttackHi3, 56, 58), (6, Action::Wait, 14, 2)],
+            repeat: false,
+        },
+        Case {
+            name: "down tilt with a buffered repeat",
+            stick: [0.0, -1.0],
+            checks: &[
+                (0, Action::AttackLw3, 57, 59),
+                (3, Action::AttackLw3, 57, 59),
+                (9, Action::SquatRv, 41, 34),
+                (12, Action::Wait, 14, 2),
+            ],
+            repeat: true,
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 14];
+        inputs[0][0].buttons = BUTTON_A;
+        inputs[0][0].stick = case.stick;
+        if case.repeat {
+            // Released on row 1, pressed again on row 2 before the repeat flag.
+            inputs[2][0].buttons = BUTTON_A;
+        }
+        let recording = Recording::from_script(data.clone(), 47, inputs);
+        for &(row, action, state, animation) in case.checks {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "{} row {row}", case.name);
+            assert_eq!(observation::action_state(fighter, Some(2)), Some(state));
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation)
+            );
+        }
+        if case.repeat {
+            assert_eq!(
+                recording.states[3].fighters[0].action_frame, 1,
+                "{}",
+                case.name
+            );
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let changed = recording.bytes(support::Fixture::default(), |frames| {
+            frames.ports[0].leader.pre.buttons.set(0, Some(0));
+            frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        });
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame: FIRST,
+                    checked_frames: 0,
+                    ..
+                }
             ),
             "{}",
             case.name

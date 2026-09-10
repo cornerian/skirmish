@@ -293,5 +293,20 @@
     "fixture": "tests/oracle/original/fall_special.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FallSpecial.c",
     "sha256": "6b981881df052b3eef9a246efa4fb9ea18cc713673c18161b8634eb9edf29789"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_s3.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS3.c",
+    "sha256": "52c2bd587d26bfb3a2f90cbd1bcbd4b2479be44a339671fa8599eda500fb892c"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_hi3.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi3.c",
+    "sha256": "d6523b738a84ae1cc9a223eec45e6b8f22b3e66c0d42adb2d9a8fac03a3664e4"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_lw3.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw3.c",
+    "sha256": "bc2a3450b48af01ebfbf13eb52bc64849d99d4826793fb7c178678695caa01df"
   }
 ]

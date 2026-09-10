@@ -1,6 +1,6 @@
 //! Resource-driven neutral-special action pair for headless matches.
 
-use super::{Action, Controller, Fighter, data::Attack};
+use super::{Action, Controller, Fighter, data::Attack, data::FighterData};
 use crate::fighter::special::neutral_input;
 use serde::{Deserialize, Serialize};
 
@@ -38,19 +38,15 @@ pub(crate) fn update_animation(fighter: &mut Fighter, parameters: Option<&Parame
     }
 }
 
-pub(crate) fn update_actions(
-    fighter: &mut Fighter,
-    parameters: Option<&Parameters>,
-    input: Controller,
-) -> bool {
-    let Some(parameters) = parameters else {
+pub(crate) fn update_actions(fighter: &mut Fighter, data: &FighterData, input: Controller) -> bool {
+    let Some(parameters) = data.special.as_ref() else {
         return false;
     };
     if owns_action(fighter.action) {
         return true;
     }
     let ground = fighter.grounded
-        && matches!(
+        && (matches!(
             fighter.action,
             Action::Wait
                 | Action::Walk
@@ -61,7 +57,7 @@ pub(crate) fn update_actions(
                 | Action::Squat
                 | Action::SquatWait
                 | Action::SquatRv
-        );
+        ) || super::tilt::interrupt_chain(fighter, data) == Some(super::tilt::Chain::Wait));
     let air = !fighter.grounded
         && (super::damage::wall_tech_interruptible(fighter)
             || super::damage::damage_air_interruptible(fighter)

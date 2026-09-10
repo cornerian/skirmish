@@ -112,6 +112,8 @@ pub struct Rules {
     pub escape: Option<super::escape::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape_air: Option<super::escape_air::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tilt: Option<super::tilt::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -204,6 +206,8 @@ pub struct FighterData {
     pub jab: Attack,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aerials: Option<super::aerial::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tilts: Option<super::tilt::Parameters>,
 }
 
 impl FighterData {
@@ -215,6 +219,9 @@ impl FighterData {
     ) -> Option<&Attack> {
         if action == super::Action::Jab {
             return Some(&self.jab);
+        }
+        if super::tilt::owns_action(action) {
+            return super::tilt::attack(self.tilts.as_ref()?, action);
         }
         if action == super::Action::CliffAttack {
             return Some(super::ledge::attack(self.ledge.as_ref()?, slow_ledge));

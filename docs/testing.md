@@ -25,9 +25,10 @@ B through neutral-special combat, physical Z through grab/capture and physical L
 through shield entry and direct platform drop, processed C-stick through a
 shield jump, fresh main-stick or held C-stick samples through forward and
 backward rolls and a spot dodge, A, Z and buffered late-dash A presses through
-shield grabs, and physical L through a landing air dodge and a FallSpecial
-continuation, then remove or change each recorded input and require divergence
-on that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
+shield grabs, physical L through a landing air dodge and a FallSpecial
+continuation, and A with each stick direction through forward, up and
+repeated down tilts, then remove or change each recorded input and require
+divergence on that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
 and fighter-hit attribution. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. Exact unit cases cover every retained
@@ -312,6 +313,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input, digital/analog shield drops, scheduler transition ownership and checkpoint history |
+| `tilt` | Forward-tilt angle variants and availability fallbacks, facing-relative sticks, up/down/jab order from Wait, Walk, Turn, Squat, SquatWait and SquatRv, scripted interrupt windows opening the Wait chain or the down tilt's narrower chain, Wait/SquatWait endings, the buffered and immediate down-tilt repeat with its stale and action-instance accounting, A-plus-shoulder catches, checkpoint replay and invalid resources |
 | `air_dodge` | Fresh physical L/R entry from Jump, Fall and JumpAerial only, stick-angle launch, strict deadzone, gravity-free decay until the scripted resume, fast-fall re-arming, scripted intangibility, FallSpecial with exhausted jumps and no attacks, special landing rate/duration/input lockout, direct wavedash landing with ground friction, platform pass-through while holding down, priority over aerial attacks and double jumps, checkpoint replay and invalid resources |
 | `shield_grab` | A/Z grabs from GuardOn, Guard and GuardReflect, shoulder requirement, escape-before-grab-before-jump priority, Run and late-Dash buffer arming, per-callback countdown and expiry, Guard exclusion, fresh-shield reset, GuardOff/shield-stun exclusion, checkpoint branches, explicit-rule requirement and invalid rules |
 | `escape` | Fresh main-stick and held C-stick rolls, facing-relative direction, main-stick priority, both spot-dodge channels and their priority over rolls, GuardOff/GuardReflect eligibility, exact sampled root motion and bones, shield clearing, scripted intangibility against hits and grabs, edge departure into Fall, overlap-nudge exemption, checkpoint replay and invalid resources |

@@ -1,5 +1,23 @@
 # Local validation provenance
 
+The 2026-09-10 tilt coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-tilts-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage selects every forward-tilt angle variant and
+its availability fallbacks, orders forward, up, down and jab from each grounded
+state with Turn's post-turn facing, opens the Wait chain or the down tilt's
+narrower chain only on flagged samples, ends in Wait or SquatWait, buffers and
+repeats the down tilt while keeping the entry action instance and restarting
+the stale instance on exit, accepts A with a held shoulder as a catch, restores
+checkpoints and rejects invalid resources. The complete input predicates,
+`decideAngle` and `checkPadA` are compared with pinned C. Peppi-written replays
+match straight, high, up and repeated down tilts, report Slippi states 51..57
+with animation indices 53..59, and detect a removed attack press at its first
+affected frame.
+
 The 2026-09-10 air-dodge coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-air-dodge-20260910-verified`

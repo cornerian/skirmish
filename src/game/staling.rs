@@ -26,7 +26,14 @@ pub struct State {
     pub hits: [Option<Hit>; 4],
     /// Deferred only within one native callback turn. Flushed before contacts
     /// and before publishing a frame/checkpoint, in scheduler order.
-    pub(crate) transitions: Vec<Action>,
+    pub(crate) transitions: Vec<Transition>,
+}
+
+/// `ft_800890D0` on a motion change, or the deferred `ft_800892A0` restart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub(crate) enum Transition {
+    Move(Action),
+    Restart,
 }
 impl Default for State {
     fn default() -> Self {
@@ -57,7 +64,12 @@ pub(crate) fn validate(rules: &Rules) -> Result<(), Error> {
 
 pub(crate) fn transition(fighter: &mut Fighter, action: Action) {
     fighter.staling.hits = [None; 4];
-    fighter.staling.transitions.push(action);
+    fighter.staling.transitions.push(Transition::Move(action));
+}
+
+/// `ft_800892A0`: the current identity restarts its attack instance.
+pub(crate) fn restart_identity(fighter: &mut Fighter) {
+    fighter.staling.transitions.push(Transition::Restart);
 }
 
 /// Supported attacks use their explicit resource identity; other motions use
@@ -70,16 +82,24 @@ pub(crate) fn flush(
     action_counter: &mut crate::fighter::instance::Counter,
 ) -> Result<(), Error> {
     crate::fighter::action_instance::flush(&mut fighter.action_instance, action_counter);
-    for action in fighter.staling.transitions.drain(..) {
-        if rules.is_some() {
-            let move_id = match data.attack(action, fighter.prone, fighter.ledge.slow) {
-                Some(attack) => attack.move_id.ok_or_else(|| {
-                    Error::Data("staling requires an explicit attack move_id".into())
-                })?,
-                None => super::grab::move_id(data.grab.as_ref(), action)?.unwrap_or(1),
-            };
-            fighter.staling.identity.change_move(move_id, counter);
+    for transition in fighter.staling.transitions.drain(..) {
+        if rules.is_none() {
+            continue;
         }
+        let action = match transition {
+            Transition::Move(action) => action,
+            Transition::Restart => {
+                fighter.staling.identity.restart(counter);
+                continue;
+            }
+        };
+        let move_id = match data.attack(action, fighter.prone, fighter.ledge.slow) {
+            Some(attack) => attack
+                .move_id
+                .ok_or_else(|| Error::Data("staling requires an explicit attack move_id".into()))?,
+            None => super::grab::move_id(data.grab.as_ref(), action)?.unwrap_or(1),
+        };
+        fighter.staling.identity.change_move(move_id, counter);
     }
     Ok(())
 }

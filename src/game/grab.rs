@@ -636,8 +636,12 @@ pub(crate) fn update_actions(
         }
         return true;
     }
-    if fighter.grounded && pressed & super::BUTTON_Z != 0 && data.grab.is_some() && rules.is_some()
-    {
+    // ftCo_Catch_CheckInput and ftCo_800D8A38 need a fresh logical A press
+    // with the logical shoulder held; Fighter_procInput folds physical Z into
+    // both bits.
+    let a_pressed = logical_a(controller.buttons) && !logical_a(fighter.previous_input.buttons);
+    let shoulder_held = controller.shield_held() || controller.buttons & super::BUTTON_Z != 0;
+    if fighter.grounded && a_pressed && shoulder_held && data.grab.is_some() && rules.is_some() {
         let action = match fighter.action {
             Action::Dash | Action::Run => Some(Action::CatchDash),
             Action::Turn => {
@@ -647,7 +651,12 @@ pub(crate) fn update_actions(
                 }
                 Some(Action::Catch)
             }
-            Action::Wait | Action::Walk | Action::Squat => Some(Action::Catch),
+            Action::Wait | Action::Walk | Action::Squat | Action::SquatWait | Action::SquatRv => {
+                Some(Action::Catch)
+            }
+            _ if super::tilt::interrupt_chain(fighter, data) == Some(super::tilt::Chain::Wait) => {
+                Some(Action::Catch)
+            }
             _ => None,
         };
         if let Some(action) = action {

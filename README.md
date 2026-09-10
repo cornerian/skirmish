@@ -53,7 +53,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
 | `skirmish-replay` | Concrete Slippi input conversion, observation policy, and native match validation |
 | `skirmish-equivalence` | Semantic traces, process comparison, native match trace adapter, and differential probes |
-| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot/shield catches, stick-directed air dodges with special landings, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout and checkpoints |
+| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated jabs and tilts, standing/dash/pivot/shield catches, stick-directed air dodges with special landings, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout and checkpoints |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
@@ -92,7 +92,9 @@ resource-driven grounded rolls and spot dodges with sampled root motion, bones
 and scripted hurtbox state, and A/Z shield grabs with the dash-grab buffer, all
 with pinned input predicates. The [air-dodge profile](docs/air-dodge.md) adds
 stick-directed EscapeAir with scripted decay, the FallSpecial continuation,
-platform pass-through and the wavedash-capable special landing.
+platform pass-through and the wavedash-capable special landing. The [tilt
+profile](docs/tilts.md) adds forward tilts with their angle variants, up and
+down tilts, the down tilt's buffered repeat and scripted interrupt windows.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.

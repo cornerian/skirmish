@@ -334,7 +334,8 @@ standing, dash, pivot and shield catches with the dash-grab buffer, paired holds
 pummels with captured reaction poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [air-dodge profile](air-dodge.md) adds EscapeAir,
-FallSpecial and the LandingFallSpecial landing. The optional [neutral-special
+FallSpecial and the LandingFallSpecial landing. The optional [tilt
+profile](tilts.md) adds forward, up and down tilts with their input chains. The optional [neutral-special
 profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials and character-specific special state remain
 unported. Some accepted stick/button

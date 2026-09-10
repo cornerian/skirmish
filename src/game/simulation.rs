@@ -82,6 +82,7 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
+        tilt: tilt::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
         ledge: ledge::State::default(),
@@ -131,13 +132,28 @@ fn spawn(
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     let identity =
         crate::fighter::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
-    crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
+    let leaving_down_tilt = fighter.action == Action::AttackLw3;
+    if leaving_down_tilt {
+        // The down tilt's deferred x21EC callback (ft_800892A0 then
+        // ft_80089824) allocates twice with identity 0 before the ordinary
+        // motion-change accounting.
+        crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
+        crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
+    }
+    if action != Action::AttackLw3 {
+        // ftCo_AttackLw3 enters with Ft_MF_SkipAttackCount.
+        crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
+    }
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
     staling::transition(fighter, action);
+    if leaving_down_tilt {
+        // ft_800890D0 runs before the x21EC restart of the stale instance.
+        staling::restart_identity(fighter);
+    }
     fighter.action = action;
     fighter.action_frame = 0;
     // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
@@ -1129,6 +1145,7 @@ fn update_animation(
     damage::update_animation(f, data, &rules.damage, input);
     escape::update_animation(f, data)?;
     escape_air::update_animation(f, data, rules.escape_air.as_ref())?;
+    tilt::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1171,10 +1188,16 @@ fn update_actions(
     if escape::owns_action(f.action) || escape_air::owns_action(f.action) {
         return Ok(());
     }
+    // Uninterruptible tilt frames own dispatch; interruptible ones expose
+    // their source chains below. ftCo_AttackLw3_IASA still runs checkPadA.
+    if tilt::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
+        tilt::update_ground_attacks(f, data, rules.tilt.as_ref(), input);
+        return Ok(());
+    }
     if clank_owns {
         return Ok(());
     }
-    if special::update_actions(f, data.special.as_ref(), input) {
+    if special::update_actions(f, data, input) {
         return Ok(());
     }
     if grab::update_actions(f, data, rules.grab.as_ref(), input) {
@@ -1191,7 +1214,7 @@ fn update_actions(
         return Ok(());
     }
     if data.locomotion.is_some() {
-        locomotion::update_actions(f, data, input, just_turned);
+        locomotion::update_actions(f, data, rules.tilt.as_ref(), input, just_turned);
         return Ok(());
     }
     let pressed = input.buttons & !f.previous_input.buttons;

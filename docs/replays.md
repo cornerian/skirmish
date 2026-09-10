@@ -138,10 +138,11 @@ and spot dodges accept fresh main-stick or held C-stick samples and map to
 Slippi states 233..235 with animation indices 42, 43 and 41. Shield grabs accept
 physical A with a held shoulder or physical Z, and the late-dash buffer yields
 CatchDash. Air dodges map to state 236 (animation 44) with FallSpecial 31 (22)
-and LandingFallSpecial 43 (36). File-backed regressions require changed
+and LandingFallSpecial 43 (36). Tilts map to states 51..57 with animation
+indices 53..59, and a catch now follows physical Z or A with a held shoulder. File-backed regressions require changed
 down-stick, up-C-stick, roll-stick, horizontal/downward C-stick, shield-grab
-button and air-dodge trigger samples to diverge at their first affected
-frames.
+button, air-dodge trigger and tilt attack samples to diverge at their first
+affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each
