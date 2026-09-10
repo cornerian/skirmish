@@ -8,15 +8,28 @@ use clap::Parser;
 use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
+    mouse::MouseButton,
 };
-use skirmish::renderer::{
-    audio::AudioOutput,
-    gpu::{WindowRenderer, render_headless},
-    melee,
-    scene::Scene,
+use skirmish::{
+    controller::host::ControllerHub,
+    menu::{
+        MenuEffect,
+        melee::{main_definition, main_interaction_map},
+    },
+    renderer::{
+        audio::AudioOutput,
+        gpu::{WindowRenderer, render_headless},
+        melee as melee_renderer,
+        menu_host::MenuHost,
+        scene::Scene,
+        viewport::MELEE_AUTHORED_EXTENT,
+    },
 };
 
-const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const FRAME_RATE: u8 = 60;
+const FRAME_BASE_NANOS: u64 = 1_000_000_000 / FRAME_RATE as u64;
+const FRAME_REMAINDER_NANOS: u8 = (1_000_000_000 % FRAME_RATE as u64) as u8;
+const MAX_CATCH_UP_TICKS: u8 = 4;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -50,12 +63,15 @@ struct Cli {
 struct App {
     renderer: WindowRenderer,
     audio: Option<AudioOutput>,
+    controllers: Option<ControllerHub>,
+    menu: Option<MenuHost>,
     orbit: [f32; 3],
     focused: bool,
     visible: bool,
     quit: bool,
     dirty: bool,
     next_frame: Instant,
+    frame_phase: u8,
     presented_frames: u64,
     frame_limit: Option<u64>,
 }
@@ -70,25 +86,47 @@ impl App {
                 ..
             } if window_id == self.renderer.window_id() => match win_event {
                 WindowEvent::CloseRequested => self.quit = true,
-                WindowEvent::FocusLost => self.focused = false,
+                WindowEvent::FocusLost => {
+                    self.focused = false;
+                    if let Some(menu) = &mut self.menu {
+                        menu.clear_input();
+                    }
+                }
                 WindowEvent::FocusGained => self.focused = true,
+                WindowEvent::MouseLeave => {
+                    if let Some(menu) = &mut self.menu {
+                        menu.pointer_leave();
+                    }
+                }
                 // Occlusion can follow an Exposed event during a Wayland
                 // resize, whose requested frame must still be presented.
                 WindowEvent::Hidden | WindowEvent::Minimized => {
                     self.visible = false;
+                    if let Some(menu) = &mut self.menu {
+                        menu.clear_input();
+                    }
                 }
                 WindowEvent::Shown
                 | WindowEvent::Restored
                 | WindowEvent::Maximized
                 | WindowEvent::Exposed => {
+                    let resumed = !self.visible;
                     self.visible = true;
                     self.dirty = true;
+                    if resumed {
+                        self.next_frame = Instant::now();
+                        self.frame_phase = 0;
+                    }
                 }
                 WindowEvent::Resized(_, _)
                 | WindowEvent::PixelSizeChanged(_, _)
                 | WindowEvent::DisplayChanged(_) => {
                     let (width, height) = self.renderer.pixel_size();
                     self.renderer.resize(width, height);
+                    let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
+                    if let Some(menu) = &mut self.menu {
+                        menu.pointer_reproject(transform);
+                    }
                     self.dirty = true;
                 }
                 _ => {}
@@ -101,8 +139,40 @@ impl App {
             } if window_id == self.renderer.window_id() && self.focused => {
                 if !repeat && code == Scancode::Q {
                     self.quit = true;
+                } else if let Some(menu) = &mut self.menu {
+                    menu.key(code, true, repeat);
                 } else {
                     self.scene_key(code, repeat);
+                }
+            }
+            Event::KeyUp {
+                window_id,
+                scancode: Some(code),
+                repeat,
+                ..
+            } if window_id == self.renderer.window_id() => {
+                if let Some(menu) = &mut self.menu {
+                    menu.key(code, false, repeat);
+                }
+            }
+            Event::MouseMotion {
+                window_id, x, y, ..
+            } if window_id == self.renderer.window_id() && self.focused => {
+                let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
+                if let Some(menu) = &mut self.menu {
+                    menu.pointer_motion([x, y], transform);
+                }
+            }
+            Event::MouseButtonDown {
+                window_id,
+                mouse_btn: MouseButton::Left,
+                x,
+                y,
+                ..
+            } if window_id == self.renderer.window_id() && self.focused => {
+                let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
+                if let Some(menu) = &mut self.menu {
+                    menu.pointer_primary_down([x, y], transform);
                 }
             }
             _ => {}
@@ -148,6 +218,53 @@ impl App {
         self.visible && width > 0 && height > 0
     }
 
+    fn advance_frame_deadline(&mut self) {
+        let mut nanos = FRAME_BASE_NANOS;
+        self.frame_phase += FRAME_REMAINDER_NANOS;
+        if self.frame_phase >= FRAME_RATE {
+            self.frame_phase -= FRAME_RATE;
+            nanos += 1;
+        }
+        self.next_frame += Duration::from_nanos(nanos);
+    }
+
+    fn drop_frame_debt(&mut self, now: Instant) {
+        self.next_frame = now;
+        self.frame_phase = 0;
+        self.advance_frame_deadline();
+    }
+
+    fn apply_menu_effects(&mut self, effects: Vec<MenuEffect>) {
+        for effect in effects {
+            match effect {
+                MenuEffect::SelectionChanged {
+                    selected, sound, ..
+                } => {
+                    println!(
+                        "Melee menu selection: {}{}",
+                        selected.as_str(),
+                        sound.map_or_else(String::new, |sound| format!(" (sound {})", sound.0))
+                    );
+                }
+                MenuEffect::ActionRequested {
+                    trigger,
+                    item,
+                    action,
+                } => {
+                    println!(
+                        "Melee menu action: {trigger:?}{} -> {}{}",
+                        item.map_or_else(String::new, |item| format!(" on {}", item.as_str())),
+                        action.destination.as_str(),
+                        action
+                            .sound
+                            .map_or_else(String::new, |sound| format!(" (sound {})", sound.0))
+                    );
+                }
+            }
+            self.dirty = true;
+        }
+    }
+
     fn run(mut self, mut events: sdl3::EventPump) -> Result<()> {
         let mut pending = None;
         while !self.quit {
@@ -164,17 +281,42 @@ impl App {
             }
             let now = Instant::now();
             self.check_audio();
-            if self.drawable()
-                && now >= self.next_frame
-                && (self.dirty || self.frame_limit.is_some())
-            {
+            let frame_due = self.drawable() && now >= self.next_frame;
+            if frame_due {
+                let controller_samples = if let Some(controllers) = &mut self.controllers {
+                    controllers.poll().context("polling menu controllers")?
+                } else {
+                    Vec::new()
+                };
+                let mut due_ticks = 0;
+                while now >= self.next_frame && due_ticks < MAX_CATCH_UP_TICKS {
+                    self.advance_frame_deadline();
+                    due_ticks += 1;
+                }
+                if now >= self.next_frame {
+                    self.drop_frame_debt(now);
+                }
+                for tick in 0..due_ticks {
+                    if let Some(menu) = &mut self.menu {
+                        let effects = if tick + 1 == due_ticks {
+                            menu.tick(&controller_samples, self.focused)
+                        } else {
+                            menu.tick_previous()
+                        };
+                        self.apply_menu_effects(effects);
+                        // The presentation clock will consume every menu tick as
+                        // runtime animation tracks are connected.
+                        self.dirty = true;
+                    }
+                }
+            }
+            if frame_due && (self.dirty || self.frame_limit.is_some() || self.menu.is_some()) {
                 let [yaw, pitch, zoom] = self.orbit;
                 let presented = self
                     .renderer
                     .render(yaw, pitch, zoom)
                     .context("rendering an SDL frame")?;
                 self.dirty = !presented;
-                self.next_frame = Instant::now() + FRAME_INTERVAL;
                 if presented {
                     self.presented_frames += 1;
                     if self
@@ -187,7 +329,8 @@ impl App {
                 }
             }
             let mut wait = Duration::from_millis(250);
-            if self.drawable() && (self.dirty || self.frame_limit.is_some()) {
+            if self.drawable() && (self.dirty || self.frame_limit.is_some() || self.menu.is_some())
+            {
                 wait = wait.min(self.next_frame.saturating_duration_since(Instant::now()));
             }
             // SDL waits in integer milliseconds. Round up to avoid busy polling
@@ -201,11 +344,12 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let melee_mode = cli.melee_menu_assets.is_some();
     let scene = match (&cli.scene, &cli.melee_menu_assets) {
         (Some(path), None) => {
             Scene::load(path).with_context(|| format!("loading scene from {}", path.display()))?
         }
-        (None, Some(path)) => melee::load_main_menu_default_pose(path)
+        (None, Some(path)) => melee_renderer::load_main_menu_default_pose(path)
             .with_context(|| format!("loading Melee menu assets from {}", path.display()))?,
         (None, None) => Scene::demo(),
         (Some(_), Some(_)) => unreachable!("clap rejects conflicting scene arguments"),
@@ -236,13 +380,23 @@ fn main() -> Result<()> {
         .context("creating SDL window")?;
     let renderer = pollster::block_on(WindowRenderer::new(window, &scene))?;
     println!("Graphics adapter: {}", renderer.adapter_name());
-    if cli.melee_menu_assets.is_some() {
-        println!("SDL3 host: direct Melee UI development scene. Q quits.");
+    if melee_mode {
+        println!("SDL3 host: direct Melee UI runtime. Q quits.");
+        println!(
+            "Menu: arrows/stick move, A/Enter confirms, B/Escape backs out, mouse hovers and clicks."
+        );
     } else {
         println!("SDL3 host: scene preview. Q quits.");
+        println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
     }
-    println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
     let events = sdl.event_pump().context("creating shared SDL event pump")?;
+    let controllers = melee_mode
+        .then(|| ControllerHub::with_sdl(&sdl).context("initializing menu controllers"))
+        .transpose()?;
+    let menu = melee_mode
+        .then(|| MenuHost::new(main_definition(), main_interaction_map(), []))
+        .transpose()
+        .context("initializing Melee Main menu")?;
     let audio = if cli.no_audio {
         None
     } else {
@@ -257,12 +411,15 @@ fn main() -> Result<()> {
     App {
         renderer,
         audio,
+        controllers,
+        menu,
         orbit: [0.0, 0.0, 1.0],
         focused: true,
         visible: true,
         quit: false,
         dirty: true,
         next_frame: Instant::now(),
+        frame_phase: 0,
         presented_frames: 0,
         frame_limit: cli.frames,
     }

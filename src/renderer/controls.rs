@@ -220,6 +220,7 @@ impl<const SOURCES: usize> DigitalMenuInput<SOURCES> {
 /// so a stale hover can never activate another item.
 #[derive(Default)]
 pub struct PointerInput {
+    window_point: Option<[f32; 2]>,
     hovered: Option<ItemId>,
     pending_focus: Option<ItemId>,
     pending_click: Option<ItemId>,
@@ -232,6 +233,7 @@ impl PointerInput {
         transform: Option<PresentationTransform>,
         map: &InteractionMap,
     ) {
+        self.window_point = Some(window_point);
         let target = pointer_target(window_point, transform, map);
         if target != self.hovered {
             self.hovered = target.clone();
@@ -245,10 +247,22 @@ impl PointerInput {
         transform: Option<PresentationTransform>,
         map: &InteractionMap,
     ) {
+        self.window_point = Some(window_point);
         let target = pointer_target(window_point, transform, map);
         self.hovered = target.clone();
         self.pending_click = target.clone();
         self.pending_focus = target;
+    }
+
+    /// Re-hit-test the last pointer position after a viewport change.
+    pub fn reproject(&mut self, transform: Option<PresentationTransform>, map: &InteractionMap) {
+        if let Some(window_point) = self.window_point {
+            let target = pointer_target(window_point, transform, map);
+            if target != self.hovered {
+                self.hovered = target.clone();
+                self.pending_focus = target;
+            }
+        }
     }
 
     /// Drain commands for one fixed tick.
@@ -275,9 +289,15 @@ impl PointerInput {
             .collect()
     }
 
-    pub fn clear(&mut self) {
+    /// Forget hover state without discarding an already latched mouse-down.
+    pub fn leave(&mut self) {
+        self.window_point = None;
         self.hovered = None;
         self.pending_focus = None;
+    }
+
+    pub fn clear(&mut self) {
+        self.leave();
         self.pending_click = None;
     }
 }
@@ -573,6 +593,21 @@ mod tests {
     }
 
     #[test]
+    fn pointer_reprojects_its_last_position_after_resize() {
+        let original = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let resized = PresentationTransform::new([1280, 480], [1280, 480], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([10.0, 300.0], original, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+        pointer.reproject(resized, &map);
+        assert!(pointer.sample(true).is_empty());
+        pointer.reproject(original, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+    }
+
+    #[test]
     fn gutters_and_leave_do_not_change_canonical_focus() {
         let transform = PresentationTransform::new([1280, 720], [1280, 720], MELEE_AUTHORED_EXTENT);
         let map = pointer_map();
@@ -602,6 +637,21 @@ mod tests {
             [MenuCommand::Focus("two".into()), MenuCommand::Confirm]
         );
         assert_eq!(pointer.sample(true), [MenuCommand::Focus("one".into())]);
+    }
+
+    #[test]
+    fn latched_mouse_down_survives_leave_until_its_tick() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.primary_down([10.0, 300.0], transform, &map);
+        pointer.leave();
+        assert_eq!(
+            pointer.sample(true),
+            [MenuCommand::Focus("two".into()), MenuCommand::Confirm]
+        );
+        assert!(pointer.sample(true).is_empty());
     }
 
     #[test]

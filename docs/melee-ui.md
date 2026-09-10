@@ -8,6 +8,13 @@ complete `mnmain.c` plus the exact-revision animation and joint-lookup helpers
 for the host, and exposes only functions whose dependencies are already
 implemented. It does not contain a second menu state-machine rewrite.
 
+Main-menu behavior is represented once as validated declarative Rust data and
+a small renderer-independent state machine. The pinned C remains its behavioral
+oracle: item order, descriptions, selection animation ranges, vertical wrap,
+input priority, 20-frame entrance lockout, 5-frame action lockout, cue IDs, and
+destination IDs are covered directly. This is the extensible replacement for
+hard-coded source control flow, not a parallel preview menu.
+
 Set `SKIRMISH_MELEE_SOURCE` to a pinned doldecomp/melee checkout, or keep it at
 the repository's documented `../../External/melee` location. The
 `melee-ui-source` feature executes original scalar menu functions and the exact
@@ -36,8 +43,20 @@ the previous renderer behavior that overlaid all 57 independent archive roots.
 
 ## Current boundary
 
-The output is a recognizable but noninteractive serialized default pose. It is
-not yet the completed Melee menu. The C-owned host runtime performs the
+The SDL window now runs a persistent Main-menu session at 60 fixed ticks per
+second. Keyboard, hot-plug SDL controllers, and mouse all enter the same
+canonical command queue. Controller directions use Melee's per-port
+20/8/4/2-frame repeat schedule. Mouse motion and left-click are transformed from
+window units through the renderer's current high-density 4:3 viewport into the
+authored 640×480 canvas; clicks emit the same focus-then-confirm commands used by
+the runtime. Its non-overlapping regions are replaceable presentation data
+derived from the source archive's frame-5 visible label quads. Melee itself had
+no mouse contract, so the documented eight-pixel tolerance is a host extension.
+
+The rendered output is still a recognizable serialized default pose, so
+selection changes and destination requests are currently visible in host
+diagnostics rather than pixels. This is not yet the completed Melee menu. The
+C-owned host runtime performs the
 background constructor's GObj ownership, GX/proc registration, JObj attachment,
 frame-zero request, one direct process-callback invocation, and configured
 render-callback invocation. It builds the exported 102-node background and
@@ -53,10 +72,12 @@ drive a host implementation of the relevant HSD frame-clock semantics, but the
 converted scene does not yet carry runtime joint, material, or shape animation
 tracks. The next step is a companion runtime manifest keyed by stable source
 offsets that supplies the archive's actual hierarchy and tracks.
-Content setup in `mn_8022B3A0` follows and adds cursor cloning/reparenting,
-recursive visibility, SIS text, and material/shape animation masks. Unsupported
-calls remain errors; success stubs are not a substitute for executing the
-original UI.
+Content setup in `mn_8022B3A0` still needs to connect cursor
+cloning/reparenting, recursive visibility, SIS text, and material/shape
+animation masks to mutable presentation instances. The destination service and
+the three original menu sound assets are also not connected yet. Unsupported
+calls remain errors; diagnostic action requests and success stubs are not a
+substitute for executing the original UI.
 
 The renderer-independent `skirmish::animation` module now safely decodes and
 evaluates the exact FObj subset used by the Back and Panel roots. A small
@@ -71,8 +92,9 @@ does not change the rendered default pose.
 VS mode is implemented by the original source. The panel transition itself is
 now verified through the original callback: `MENU_KIND_VS` requests frame 400
 and settles into its frame-500 idle loop after 51 callback invocations. The
-remaining handoff is the full input/content path: after its 20-frame entrance cooldown,
-Main selection 1 enters `MENU_KIND_VS`; confirming the default Melee entry later
-requests `GM_VS`. The removed translated preview's **Original scene pending**
-label was only an unconnected host handoff; it was never evidence that VS mode
-or its assets were unavailable.
+input path now emits that exact Main-to-VS destination request after its
+20-frame entrance cooldown and 5-frame action lockout. Instantiating VS content,
+applying the paired transition clips, and later handing its default Melee entry
+to `GM_VS` remain presentation/destination work. The removed translated
+preview's **Original scene pending** label was only an unconnected host handoff;
+it was never evidence that VS mode or its assets were unavailable.

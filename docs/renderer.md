@@ -3,7 +3,8 @@
 Native rendering and audio presentation live in Skirmish's feature-gated root
 module. The `skirmish::renderer` module and `skirmish-renderer` executable
 provide a static scene preview and the development host for the original Melee
-menu source. There is no separately translated menu UI.
+menu source. One data-driven menu flow serves every input adapter; there is no
+separately translated preview UI.
 
 The graphics path uses wgpu 30.0.1, with WESL 0.4.4 compiling the mesh and
 lighting shaders at build time. SDL3 0.20 owns the window and events; CPAL
@@ -46,15 +47,20 @@ the four roots chosen by the original scene source:
 ```xonsh
 cargo run --locked --features melee-ui-source --bin skirmish-renderer -- \
   --melee-menu-assets /path/to/MnMaAll-scene.json \
-  --headless /mnt/shared/tmp/melee-main-default-pose.png \
-  --width 640 --height 480
+  --no-audio --width 1280 --height 720
 ```
 
-This currently executes the connected original background and panel source
-slice over the archive topology. The persistent scheduler, full content/cursor
-constructor, controller path, and visible animation application remain under
-development; see [direct UI status](melee-ui.md). No recreated menu or
-"unavailable/pending" screen is drawn over this path.
+This executes the connected original background and panel source slice over the
+archive topology and runs the source-backed Main behavior at 60 fixed ticks per
+second. Arrows/stick navigate, A/Enter/Space confirms, B/Escape backs out, Start
+confirms, and mouse hover/left-click use the rendered 4:3 viewport. Full
+content/cursor construction, visible animation application, original audio, and
+destination instantiation remain under development; see
+[direct UI status](melee-ui.md). No recreated menu or "unavailable/pending"
+screen is drawn over this path.
+
+For a static capture of the current serialized pose, add `--headless OUTPUT.png`
+and use a 640×480 output. Headless mode does not run the interactive session.
 
 Run a short window smoke check that exits after three presented frames:
 
@@ -74,9 +80,10 @@ cargo run --locked --features renderer --bin skirmish-renderer -- \
   SDL3 surface and PNG capture. It resizes its depth target, suspends at zero
   size, and retries recoverable surface events.
 - `melee` selects the original `MnMaAll.dat` roots and invokes the source bridge.
-- `controls` converts keyboard and SDL controller state to HSD button words for
-  the upcoming persistent original-source session; it does not implement menu
-  navigation.
+- `controls` converts keyboard and SDL controller state into independently
+  repeated digital sources and maps pointer events through authored-space hit
+  regions. `menu_host` merges them into one canonical command frame before the
+  renderer-independent menu runtime advances.
 - `audio` retains the CPAL stream and passes commands through a preallocated,
   wait-free SPSC ring buffer.
 
