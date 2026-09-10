@@ -86,9 +86,9 @@ bound over the same archive bytes. Sampled joint visibility and material color
 reach exact GPU draw occurrences. Native joint-local transforms are routed only
 for `joint_local` draws; world-baked draws retain them as
 `BakedWorldGeometry`, joints without draws as `UnmappedJointLocal`, and
-joint-local draws as `UnsupportedJointLocal` until the renderer carries a
-per-draw joint transform. Texture image, UV, and TEV register updates remain
-unsupported.
+joint-local draws as `UnsupportedJointLocal` until the driver composes native
+local deltas into world matrices for the renderer's per-draw joint transform.
+Texture image, UV, and TEV register updates remain unsupported.
 
 `tests/presentation_binding.rs` exercises the whole chain with a pinned
 `MnMaAll.dat` rotation curve in a synthetic archive. Its blocked acceptance

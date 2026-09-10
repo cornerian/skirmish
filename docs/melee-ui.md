@@ -134,9 +134,12 @@ scene-instance identities. The exact join is specified in the
 declared resource hash and offset spaces, JObj/DObj/MObj/TObj occurrence
 ordinals, and a per-draw `geometry_space`. `VisualPresentationBinding`
 cross-checks that declaration against the manifest and routes sampled
-visibility and material color to exact draws; joint-local deltas are retained
-with an explicit reason (`BakedWorldGeometry`, `UnmappedJointLocal`, or
-`UnsupportedJointLocal`) because the GPU has no per-draw joint transform yet.
+visibility and material color to exact draws. The GPU keeps one column-major
+joint transform per runtime draw, so joint-local geometry can be posed per
+instance, but joint-local deltas are still retained with an explicit reason
+(`BakedWorldGeometry`, `UnmappedJointLocal`, or `UnsupportedJointLocal`)
+because no driver composes native local SRT deltas into HSD world matrices
+yet.
 The resource project's current MnMaAll export carries none of that metadata
 and bakes every part into world space, so the interactive host still advances
 a plain `AnimationPlayback` and cannot construct exact bindings. Joint posing,

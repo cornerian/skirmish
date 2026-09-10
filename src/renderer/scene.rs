@@ -1181,7 +1181,18 @@ impl Scene {
         Ok(scene)
     }
 
-    /// Visible triangle bounds in source coordinates, suitable for automatic camera framing.
+    /// Serialized world matrix of one exported joint, when its pose is complete.
+    pub fn joint_world(&self, joint: u32) -> Option<[f32; 16]> {
+        self.joints
+            .iter()
+            .find(|candidate| candidate.offset == joint)
+            .and_then(|candidate| candidate.pose.map(|pose| pose.world))
+    }
+
+    /// Visible triangle bounds in world coordinates, suitable for automatic camera framing.
+    ///
+    /// Joint-local draws are framed through their owning joint's serialized
+    /// world matrix so the default pose is measured where it is drawn.
     pub fn bounds(&self) -> Option<([f32; 3], [f32; 3])> {
         let mut bounds: Option<([f32; 3], [f32; 3])> = None;
         for mesh in self
@@ -1189,8 +1200,17 @@ impl Scene {
             .iter()
             .filter(|m| !m.hidden && m.material.cull_mode != CullMode::All)
         {
+            let transform = match mesh.geometry_space {
+                GeometrySpace::World => None,
+                GeometrySpace::JointLocal => Some(
+                    mesh.joint
+                        .and_then(|joint| self.joint_world(joint))
+                        .expect("the loader requires a pose for joint-local draws"),
+                ),
+            };
             for &index in &mesh.indices {
-                let p = mesh.vertices[index as usize].position;
+                let local = mesh.vertices[index as usize].position;
+                let p = transform.map_or(local, |matrix| transform_column_major(&matrix, local));
                 let (min, max) = bounds.get_or_insert((p, p));
                 for axis in 0..3 {
                     min[axis] = min[axis].min(p[axis]);
@@ -1674,6 +1694,16 @@ fn cull_mode(value: &Value) -> Result<CullMode> {
         (Some("back"), _) | (_, Some(2)) => CullMode::Back,
         (Some("all"), _) | (_, Some(3)) => CullMode::All,
         _ => bail!("unknown value {value}"),
+    })
+}
+
+/// Apply a column-major 4x4 matrix (translation in elements 12..15) to a point.
+pub fn transform_column_major(matrix: &[f32; 16], point: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|row| {
+        matrix[row] * point[0]
+            + matrix[4 + row] * point[1]
+            + matrix[8 + row] * point[2]
+            + matrix[12 + row]
     })
 }
 

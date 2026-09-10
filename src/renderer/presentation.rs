@@ -336,8 +336,10 @@ pub enum PresentationUpdateRoute {
 /// Why a lossless native source delta was retained instead of rendered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetainedPresentationReason {
-    /// The joint owns joint-local draws, but the renderer has no per-draw
-    /// joint transform yet.
+    /// The joint owns joint-local draws and the renderer accepts per-draw
+    /// joint transforms, but this driver does not yet compose native local
+    /// SRT deltas into HSD world matrices (classical-scale compensation,
+    /// billboards, instance boundaries), so nothing is sent.
     UnsupportedJointLocal,
     /// The joint's exported draws were baked into world space, so a native
     /// local transform cannot move them without double-transforming.

@@ -17,9 +17,9 @@ use crate::presentation::instance::InstanceId;
 
 use super::platform::SdlSurface;
 use super::scene::{
-    Camera, CullMode, MaterialSourceId, Mesh, PeAlphaTest, PeBlendFactor, PeBlendMode,
-    PeBlendState, PeCompare, PixelEngineState, RenderMode, RenderModeClass, Scene, Texture, Vertex,
-    VisualDObjOccurrence, VisualJointOccurrence, VisualMaterialOccurrence,
+    Camera, CullMode, GeometrySpace, MaterialSourceId, Mesh, PeAlphaTest, PeBlendFactor,
+    PeBlendMode, PeBlendState, PeCompare, PixelEngineState, RenderMode, RenderModeClass, Scene,
+    Texture, Vertex, VisualDObjOccurrence, VisualJointOccurrence, VisualMaterialOccurrence,
 };
 use super::viewport::{PresentationTransform, fitted_viewport};
 
@@ -72,6 +72,14 @@ pub enum DrawUpdate<'a> {
     MaterialColor {
         target: ExportMaterialSelector<'a>,
         color: [f32; 4],
+    },
+    /// Column-major world matrix of one owning joint, applied to every
+    /// joint-local draw attached to it within the instance. Matching a
+    /// world-baked draw is a batch validation error, never a silent double
+    /// transform.
+    JointTransform {
+        target: ExportDrawSelector<'a>,
+        world: [[f32; 4]; 4],
     },
 }
 
@@ -152,18 +160,42 @@ impl From<&Mesh> for ExportDrawIdentity {
     }
 }
 
+const IDENTITY_TRANSFORM: [[f32; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
+/// Reinterpret an exported column-major 16-float matrix as four columns.
+fn transform_columns(matrix: [f32; 16]) -> [[f32; 4]; 4] {
+    std::array::from_fn(|column| std::array::from_fn(|row| matrix[column * 4 + row]))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct DrawState {
     visible: bool,
     material_color: [f32; 4],
+    /// Column-major model matrix; identity for world-baked geometry.
+    joint_transform: [[f32; 4]; 4],
 }
 
-impl From<&Mesh> for DrawState {
-    fn from(mesh: &Mesh) -> Self {
-        Self {
+impl DrawState {
+    fn new(mesh: &Mesh, joint_world: Option<[f32; 16]>) -> Result<Self> {
+        let joint_transform = match mesh.geometry_space {
+            GeometrySpace::World => IDENTITY_TRANSFORM,
+            GeometrySpace::JointLocal => transform_columns(joint_world.with_context(|| {
+                format!(
+                    "{} is joint-local but its owning joint has no serialized world matrix",
+                    mesh.name
+                )
+            })?),
+        };
+        Ok(Self {
             visible: !mesh.hidden,
             material_color: mesh.material.color,
-        }
+            joint_transform,
+        })
     }
 }
 
@@ -173,22 +205,41 @@ struct DrawPresentation {
     state: DrawState,
     material_render_mode: Option<RenderMode>,
     render_class: DrawRenderClass,
+    geometry_space: GeometrySpace,
 }
 
 impl DrawPresentation {
-    fn from_mesh(mesh: &Mesh, textures: &[Texture]) -> Self {
-        Self {
+    fn from_mesh(
+        mesh: &Mesh,
+        textures: &[Texture],
+        joint_world: Option<[f32; 16]>,
+    ) -> Result<Self> {
+        Ok(Self {
             identity: mesh.into(),
-            state: mesh.into(),
+            state: DrawState::new(mesh, joint_world)?,
             material_render_mode: mesh.material.render_mode,
             render_class: DrawRenderClass::from_mesh(mesh, textures),
-        }
+            geometry_space: mesh.geometry_space,
+        })
+    }
+
+    /// True when a joint transform would reach this draw but its geometry was
+    /// baked into world space by the exporter.
+    fn rejects_joint_transform(&self, target: ExportDrawSelector<'_>) -> bool {
+        self.geometry_space == GeometrySpace::World && self.identity.matches_joint(target)
     }
 
     fn update(&mut self, update: DrawUpdate<'_>) -> bool {
         match update {
             DrawUpdate::Visibility { target, visible } if self.identity.matches_joint(target) => {
                 self.state.visible = visible;
+                true
+            }
+            DrawUpdate::JointTransform { target, world }
+                if self.geometry_space == GeometrySpace::JointLocal
+                    && self.identity.matches_joint(target) =>
+            {
+                self.state.joint_transform = world;
                 true
             }
             DrawUpdate::MaterialColor { target, color }
@@ -257,22 +308,49 @@ fn validate_runtime_draw_update(
     update: RuntimeDrawUpdate<'_>,
 ) -> Result<()> {
     ensure_runtime_instance(instance_ids, update.instance_id)?;
-    if let DrawUpdate::MaterialColor { color, .. } = update.update {
-        ensure!(
+    match update.update {
+        DrawUpdate::MaterialColor { color, .. } => ensure!(
             color.iter().all(|component| component.is_finite()),
             "material color must contain finite components"
-        );
+        ),
+        DrawUpdate::JointTransform { world, .. } => ensure!(
+            world
+                .iter()
+                .flatten()
+                .all(|component| component.is_finite()),
+            "joint transform must contain finite components"
+        ),
+        DrawUpdate::Visibility { .. } => {}
     }
     Ok(())
 }
 
-fn validate_runtime_draw_batch(
+/// Validate a batch against the registered instances and the resident draws.
+///
+/// `draws` yields every runtime draw with its instance so a joint transform
+/// aimed at world-baked geometry is rejected before any member is applied.
+fn validate_runtime_draw_batch<'d>(
     instance_ids: &HashSet<InstanceId>,
+    draws: impl Iterator<Item = (InstanceId, &'d DrawPresentation)> + Clone,
     updates: &[RuntimeDrawUpdate<'_>],
 ) -> std::result::Result<(), RuntimeDrawBatchError> {
     for (index, update) in updates.iter().copied().enumerate() {
         validate_runtime_draw_update(instance_ids, update)
             .map_err(|source| RuntimeDrawBatchError::new(index, source))?;
+        if let DrawUpdate::JointTransform { target, .. } = update.update
+            && let Some((_, draw)) = draws.clone().find(|(instance, draw)| {
+                *instance == update.instance_id && draw.rejects_joint_transform(target)
+            })
+        {
+            return Err(RuntimeDrawBatchError::new(
+                index,
+                anyhow::anyhow!(
+                    "joint transform targets world-baked geometry under joint {:?} in runtime instance {}",
+                    draw.identity.joint,
+                    update.instance_id.get()
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -502,19 +580,23 @@ fn create_pipeline(
     })
 }
 
+/// Per-runtime-draw GPU state: the joint transform plus material color and
+/// GX alpha test, matching the shader's `Material` layout.
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct MaterialUniform {
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+struct DrawUniform {
+    model: [[f32; 4]; 4],
     color: [f32; 4],
     alpha_test: [u32; 4],
 }
 
-impl MaterialUniform {
+impl DrawUniform {
     fn new(
-        mut color: [f32; 4],
+        state: &DrawState,
         alpha_test: PeAlphaTest,
         material_alpha_uses_hsd_byte_storage: bool,
     ) -> Self {
+        let mut color = state.material_color;
         if material_alpha_uses_hsd_byte_storage {
             // HSD_SetMaterialColor stores the authored float alpha in an unsigned
             // byte before channel/TEV evaluation. Preserve that truncation boundary
@@ -522,6 +604,7 @@ impl MaterialUniform {
             color[3] = f32::from((color[3] * 255.0) as u8) / 255.0;
         }
         Self {
+            model: state.joint_transform,
             color,
             alpha_test: [
                 u32::from(alpha_test.comparison0.code()),
@@ -696,12 +779,12 @@ impl GpuScene {
             label: Some("material layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<MaterialUniform>() as u64
+                        std::mem::size_of::<DrawUniform>() as u64
                     ),
                 },
                 count: None,
@@ -779,7 +862,8 @@ impl GpuScene {
             if !retain_draw(mesh) {
                 continue;
             }
-            let presentation = DrawPresentation::from_mesh(mesh, &scene.textures);
+            let joint_world = mesh.joint.and_then(|joint| scene.joint_world(joint));
+            let presentation = DrawPresentation::from_mesh(mesh, &scene.textures, joint_world)?;
             let pixel_engine = mesh.material.pixel_engine.unwrap_or_else(|| {
                 mesh.material.render_mode.map_or_else(
                     || presentation.render_class.fallback_pixel_engine(),
@@ -900,8 +984,8 @@ impl GpuScene {
             .map(|resource| {
                 let source = &self.draw_resources[resource];
                 let presentation = source.initial_presentation.clone();
-                let uniform = MaterialUniform::new(
-                    presentation.state.material_color,
+                let uniform = DrawUniform::new(
+                    &presentation.state,
                     source.alpha_test,
                     presentation.material_alpha_uses_hsd_byte_storage(),
                 );
@@ -945,15 +1029,21 @@ impl GpuScene {
     }
 
     fn update_instance_draws(&mut self, update: RuntimeDrawUpdate<'_>) -> Result<usize> {
-        validate_runtime_draw_update(&self.instance_ids, update)?;
-        Ok(self.apply_instance_draw_update(update))
+        let counts = self.update_instance_draws_batch(std::slice::from_ref(&update))?;
+        Ok(counts[0])
     }
 
     fn update_instance_draws_batch(
         &mut self,
         updates: &[RuntimeDrawUpdate<'_>],
     ) -> std::result::Result<Vec<usize>, RuntimeDrawBatchError> {
-        validate_runtime_draw_batch(&self.instance_ids, updates)?;
+        validate_runtime_draw_batch(
+            &self.instance_ids,
+            self.draws
+                .iter()
+                .map(|draw| (draw.instance_id, &draw.presentation)),
+            updates,
+        )?;
         Ok(updates
             .iter()
             .copied()
@@ -967,13 +1057,16 @@ impl GpuScene {
             if !update_runtime_presentation(draw.instance_id, &mut draw.presentation, update) {
                 continue;
             }
-            if matches!(update.update, DrawUpdate::MaterialColor { .. }) {
+            if matches!(
+                update.update,
+                DrawUpdate::MaterialColor { .. } | DrawUpdate::JointTransform { .. }
+            ) {
                 let source = &self.draw_resources[draw.resource];
                 self.queue.write_buffer(
                     &draw.material,
                     0,
-                    bytemuck::bytes_of(&MaterialUniform::new(
-                        draw.presentation.state.material_color,
+                    bytemuck::bytes_of(&DrawUniform::new(
+                        &draw.presentation.state,
                         source.alpha_test,
                         draw.presentation.material_alpha_uses_hsd_byte_storage(),
                     )),
@@ -1456,7 +1549,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use super::super::scene::{GeometrySpace, PeAlphaOp, RenderMode, VisualResourceId};
+    use super::super::scene::{PeAlphaOp, RenderMode, VisualResourceId};
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1464,8 +1557,8 @@ mod tests {
     // caller selects both with the default multi-threaded Rust test harness.
     static GPU_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    async fn read_material_uniform(gpu: &GpuScene, draw_index: usize) -> Result<MaterialUniform> {
-        let size = std::mem::size_of::<MaterialUniform>() as u64;
+    async fn read_material_uniform(gpu: &GpuScene, draw_index: usize) -> Result<DrawUniform> {
+        let size = std::mem::size_of::<DrawUniform>() as u64;
         let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("material test readback"),
             size,
@@ -1489,7 +1582,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(30))
             .context("waiting for material test readback")??;
         let mapped = buffer.slice(..).get_mapped_range()?;
-        let uniform = *bytemuck::from_bytes::<MaterialUniform>(&mapped);
+        let uniform = *bytemuck::from_bytes::<DrawUniform>(&mapped);
         drop(mapped);
         buffer.unmap();
         Ok(uniform)
@@ -1510,7 +1603,28 @@ mod tests {
     }
 
     fn exported_presentation(mesh: &Mesh) -> DrawPresentation {
-        DrawPresentation::from_mesh(mesh, &Scene::demo().textures)
+        DrawPresentation::from_mesh(mesh, &Scene::demo().textures, None).unwrap()
+    }
+
+    /// A translated column-major matrix in the exporter's 16-float layout.
+    fn translation_matrix(x: f32, y: f32, z: f32) -> [f32; 16] {
+        [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0,
+        ]
+    }
+
+    fn posed_joint(offset: u32, world: [f32; 16]) -> super::super::scene::Joint {
+        super::super::scene::Joint {
+            name: format!("joint_{offset}"),
+            offset,
+            parent: None,
+            pose: Some(super::super::scene::JointPose {
+                flags: 0,
+                local: world,
+                world,
+                inverse_bind: translation_matrix(0.0, 0.0, 0.0),
+            }),
+        }
     }
 
     fn exact_exported_mesh(
@@ -1598,6 +1712,10 @@ mod tests {
             MESH_SHADER.contains("var<uniform> material"),
             "compiled mesh shader must consume the dynamic material uniform"
         );
+        assert!(
+            MESH_SHADER.contains("material.model"),
+            "compiled mesh shader must apply the per-draw joint transform"
+        );
         let module = wgpu::naga::front::wgsl::parse_str(MESH_SHADER).expect("valid generated WGSL");
         wgpu::naga::valid::Validator::new(
             wgpu::naga::valid::ValidationFlags::all(),
@@ -1605,7 +1723,7 @@ mod tests {
         )
         .validate(&module)
         .expect("shader validates without optional GPU capabilities");
-        assert_eq!(std::mem::size_of::<MaterialUniform>(), 32);
+        assert_eq!(std::mem::size_of::<DrawUniform>(), 96);
     }
 
     #[test]
@@ -1748,14 +1866,21 @@ mod tests {
             comparison1: PeCompare::LessEqual,
             reference1: 255,
         };
-        let uniform = MaterialUniform::new([0.25, 0.5, 0.75, 1.0], alpha_test, true);
+        let state = |material_color| DrawState {
+            visible: true,
+            material_color,
+            joint_transform: transform_columns(translation_matrix(1.0, 2.0, 3.0)),
+        };
+        let uniform = DrawUniform::new(&state([0.25, 0.5, 0.75, 1.0]), alpha_test, true);
         assert_eq!(uniform.color, [0.25, 0.5, 0.75, 1.0]);
         assert_eq!(uniform.alpha_test, [6, 102, 3, 255 | (3 << 8)]);
+        assert_eq!(uniform.model[3], [1.0, 2.0, 3.0, 1.0]);
+        assert_eq!(uniform.model[0], [1.0, 0.0, 0.0, 0.0]);
 
-        let half_alpha = MaterialUniform::new([1.0, 1.0, 1.0, 0.5], alpha_test, true);
+        let half_alpha = DrawUniform::new(&state([1.0, 1.0, 1.0, 0.5]), alpha_test, true);
         assert_eq!(half_alpha.color[3], 127.0 / 255.0);
 
-        let legacy_half_alpha = MaterialUniform::new([1.0, 1.0, 1.0, 0.5], alpha_test, false);
+        let legacy_half_alpha = DrawUniform::new(&state([1.0, 1.0, 1.0, 0.5]), alpha_test, false);
         assert_eq!(legacy_half_alpha.color[3], 0.5);
     }
 
@@ -1784,7 +1909,85 @@ mod tests {
             DrawState {
                 visible: false,
                 material_color: color,
+                joint_transform: IDENTITY_TRANSFORM,
             }
+        );
+    }
+
+    #[test]
+    fn joint_local_draws_start_at_their_serialized_joint_and_only_they_accept_transforms() {
+        let world = translation_matrix(4.0, -2.0, 0.5);
+        let textures = Scene::demo().textures;
+        let mut local = exported_mesh(7, None, false, [1.0; 4]);
+        local.geometry_space = GeometrySpace::JointLocal;
+        assert!(
+            DrawPresentation::from_mesh(&local, &textures, None)
+                .unwrap_err()
+                .to_string()
+                .contains("no serialized world matrix")
+        );
+        let mut local = DrawPresentation::from_mesh(&local, &textures, Some(world)).unwrap();
+        assert_eq!(local.state.joint_transform, transform_columns(world));
+        assert_eq!(local.state.joint_transform[3], [4.0, -2.0, 0.5, 1.0]);
+
+        let baked = exported_mesh(7, None, false, [1.0; 4]);
+        let mut baked = DrawPresentation::from_mesh(&baked, &textures, Some(world)).unwrap();
+        assert_eq!(baked.state.joint_transform, IDENTITY_TRANSFORM);
+
+        let selector = ExportDrawSelector::Legacy {
+            joint: 7,
+            instance_id: None,
+        };
+        let moved = transform_columns(translation_matrix(0.0, 9.0, 0.0));
+        let update = DrawUpdate::JointTransform {
+            target: selector,
+            world: moved,
+        };
+        assert!(local.update(update));
+        assert_eq!(local.state.joint_transform, moved);
+        assert!(!baked.update(update));
+        assert_eq!(baked.state.joint_transform, IDENTITY_TRANSFORM);
+        assert!(baked.rejects_joint_transform(selector));
+        assert!(!local.rejects_joint_transform(selector));
+        assert!(!baked.rejects_joint_transform(ExportDrawSelector::Legacy {
+            joint: 8,
+            instance_id: None,
+        }));
+
+        let instance = InstanceId::new(3);
+        let instance_ids = HashSet::from([instance]);
+        let runtime = RuntimeDrawUpdate {
+            instance_id: instance,
+            update,
+        };
+        let draws = [(instance, &local), (instance, &baked)];
+        let error =
+            validate_runtime_draw_batch(&instance_ids, draws.into_iter(), &[runtime]).unwrap_err();
+        assert_eq!(error.index(), 0);
+        assert!(
+            error
+                .to_string()
+                .contains("world-baked geometry under joint Some(7)"),
+            "{error}"
+        );
+        let other_instance = [(InstanceId::new(4), &baked), (instance, &local)];
+        assert!(
+            validate_runtime_draw_batch(&instance_ids, other_instance.into_iter(), &[runtime])
+                .is_ok(),
+            "world-baked draws in other instances must not block the batch"
+        );
+        let non_finite = RuntimeDrawUpdate {
+            instance_id: instance,
+            update: DrawUpdate::JointTransform {
+                target: selector,
+                world: transform_columns(translation_matrix(f32::NAN, 0.0, 0.0)),
+            },
+        };
+        assert!(
+            validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &[non_finite])
+                .unwrap_err()
+                .to_string()
+                .contains("finite components")
         );
     }
 
@@ -2110,14 +2313,15 @@ mod tests {
             },
         ];
 
-        let error = validate_runtime_draw_batch(&instance_ids, &updates).unwrap_err();
+        let error =
+            validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &updates).unwrap_err();
 
         assert_eq!(error.index(), 1);
         assert_eq!(
             error.to_string(),
             "runtime draw update 1: material color must contain finite components"
         );
-        assert!(validate_runtime_draw_batch(&instance_ids, &[]).is_ok());
+        assert!(validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &[]).is_ok());
     }
 
     #[test]
@@ -2449,6 +2653,89 @@ mod tests {
             .filter(|(before, after)| before != after)
             .count();
         assert!(changed > 500, "only {changed} pixels changed after reveal");
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
+    fn gpu_joint_local_draws_render_where_the_baked_export_would_and_can_be_moved() {
+        let _guard = GPU_TEST_LOCK.lock().unwrap();
+        let offset = [0.8, -0.4, 0.0];
+        let mut baked = solid_quad_scene([1.0, 0.0, 0.0, 1.0]);
+        for vertex in &mut baked.meshes[0].vertices {
+            for (position, offset) in vertex.position.iter_mut().zip(offset) {
+                *position += offset;
+            }
+        }
+        let mut local = solid_quad_scene([1.0, 0.0, 0.0, 1.0]);
+        local.meshes[0].geometry_space = GeometrySpace::JointLocal;
+        local.joints = vec![posed_joint(
+            7,
+            translation_matrix(offset[0], offset[1], offset[2]),
+        )];
+        assert_eq!(local.bounds(), baked.bounds());
+
+        let (baked_image, local_image, moved_image, rejected) = pollster::block_on(async {
+            let instance = wgpu::Instance::new(
+                wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
+            );
+            let adapter = request_adapter(&instance, None).await?;
+            let baked_gpu =
+                GpuScene::new(&adapter, &baked, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let baked_image = capture_gpu_rgba(&baked_gpu, 257, 193).await?;
+            let mut local_gpu =
+                GpuScene::new(&adapter, &local, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let local_image = capture_gpu_rgba(&local_gpu, 257, 193).await?;
+            let selector = ExportDrawSelector::Legacy {
+                joint: 7,
+                instance_id: Some("quad"),
+            };
+            assert_eq!(
+                local_gpu.update_draws(DrawUpdate::JointTransform {
+                    target: selector,
+                    world: transform_columns(translation_matrix(-1.5, 1.0, 0.0)),
+                })?,
+                1
+            );
+            assert_eq!(
+                read_material_uniform(&local_gpu, 0).await?.model[3],
+                [-1.5, 1.0, 0.0, 1.0]
+            );
+            let moved_image = capture_gpu_rgba(&local_gpu, 257, 193).await?;
+            let mut baked_gpu = baked_gpu;
+            let rejected = baked_gpu
+                .update_draws(DrawUpdate::JointTransform {
+                    target: selector,
+                    world: IDENTITY_TRANSFORM,
+                })
+                .unwrap_err()
+                .to_string();
+            Ok::<_, anyhow::Error>((baked_image, local_image, moved_image, rejected))
+        })
+        .unwrap();
+
+        assert_eq!(
+            baked_image, local_image,
+            "joint-local geometry must land exactly where the exporter would have baked it"
+        );
+        let red = |image: &[u8]| {
+            image
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|pixel| pixel[0] > 0)
+                .count()
+        };
+        assert!(red(&local_image) > 500);
+        assert!(red(&moved_image) > 500);
+        let moved_pixels = local_image
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(moved_image.as_chunks::<4>().0)
+            .filter(|(before, after)| before != after)
+            .count();
+        assert!(moved_pixels > 500, "only {moved_pixels} pixels moved");
+        assert!(rejected.contains("world-baked geometry"), "{rejected}");
     }
 
     #[test]

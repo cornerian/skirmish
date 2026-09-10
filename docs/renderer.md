@@ -80,8 +80,8 @@ cargo run --locked --features renderer --bin skirmish-renderer -- \
 - `renderer` uploads the scene and shares the depth-tested draw path between an
   SDL3 surface and PNG capture. It resizes its depth target, suspends at zero
   size, and retries recoverable surface events. Serialized-hidden draws remain
-  resident, and export-identified visibility and material color can change
-  without rebuilding geometry or textures.
+  resident, and export-identified visibility, material color, and joint-local
+  draw transforms can change without rebuilding geometry or textures.
 - `melee` selects the original `MnMaAll.dat` roots and invokes the source bridge.
 - `controls` converts keyboard and SDL controller state into independently
   repeated digital sources and maps pointer events through authored-space hit
@@ -112,10 +112,12 @@ identify runtime clones, so canonical animation binding still belongs to the
 presentation-instance/manifest layer. Exact exports declare their resource
 hash, per-kind offset spaces, DObj/TObj ordinals, and each draw's
 `geometry_space` (see the [contract](resources.md#exact-presentation-visual-exports));
-the loader rejects partial declarations, and world-baked draws never receive
-joint transforms. Draw geometry is uploaded exactly as exported: there is no
-per-draw joint transform yet, so joint-local draws would be positioned at
-their joint origin until that support lands. Texture transforms, coordinate
+the loader rejects partial declarations. Every runtime draw carries its own
+column-major model matrix in its per-instance uniform: joint-local draws
+start at their owning joint's serialized world matrix and accept
+`DrawUpdate::JointTransform`, while world-baked draws stay at identity and
+reject transforms explicitly. No driver composes native local SRT deltas
+into those matrices yet. Texture transforms, coordinate
 generation, LOD, wrapping, and filtering are approximated. Enabled destination
 alpha override, dithering, logic blending, and observable depth-before-texture
 combinations that reject fragments while writing depth are rejected explicitly

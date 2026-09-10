@@ -9,6 +9,9 @@ struct Camera {
 @group(1) @binding(1) var color_sampler: sampler;
 
 struct Material {
+    // Column-major model matrix for this runtime draw: the owning joint's
+    // world transform for joint-local geometry, identity for world-baked parts.
+    model: mat4x4f,
     color: vec4f,
     alpha_test: vec4u,
 }
@@ -55,8 +58,10 @@ fn vs_main(
     @location(3) color: vec4f,
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.position = camera.view_projection * vec4f(position, 1.0);
-    out.normal = normal;
+    out.position = camera.view_projection * material.model * vec4f(position, 1.0);
+    // The inspection light renormalizes, so non-uniform joint scale only
+    // changes direction here, never magnitude.
+    out.normal = (material.model * vec4f(normal, 0.0)).xyz;
     out.uv = uv;
     out.color = color;
     return out;
