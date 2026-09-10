@@ -94,21 +94,27 @@ The private `platform` module contains one documented unsafe surface-creation
 call. Its owner stays on the SDL thread and drops the surface before the window.
 Public renderer APIs expose no surface or acquired frame.
 
-The current material path is a textured Lambert approximation. GX TEV stages,
-alpha tests, custom blending/depth state, source lighting, complete runtime
-animation binding, and skinning are not yet complete. Exported MObj render mode
-now fixes each draw into its OPA, TEXEDGE, or XLU pass, with `LessEqual` depth
-comparison and authored traversal order within each pass. Legacy and procedural
-scenes without source metadata retain the previous one-time alpha inference.
-Material updates require a concrete source MObj identity and preserve identity
-factors for vertex-owned color channels; visibility updates remain joint based.
+The current material path is a textured, floating-point Lambert approximation;
+GX TEV evaluation and fixed-point precision, source lighting, complete runtime
+animation binding, and skinning are not yet complete. The renderer does apply
+the exported GX pixel-engine blend and depth state, color and alpha write masks,
+and byte-referenced alpha test. Immutable combinations are deduplicated into
+render pipelines. Exported MObj render mode fixes each draw into its OPA,
+TEXEDGE, or XLU pass, with stable authored traversal order within each pass.
+Legacy and procedural scenes without source metadata retain the previous
+one-time alpha inference. Material updates require a concrete source MObj
+identity, preserve identity factors for vertex-owned color channels, and retain
+HSD's byte-storage boundary for material-owned alpha; visibility updates remain
+joint based.
 
 MObj and TObj offsets are only unique inside one exported resource and cannot
 identify runtime clones, so canonical animation binding still belongs to the
 presentation-instance/manifest layer. Texture transforms, coordinate
-generation, LOD, wrapping, and filtering are approximated; custom PE blend,
-write-mask, depth, and alpha-compare state is not applied yet. Extra texture
-stages, line primitives, and point primitives are omitted.
+generation, LOD, wrapping, and filtering are approximated. Enabled destination
+alpha override, dithering, logic blending, and observable depth-before-texture
+combinations that reject fragments while writing depth are rejected explicitly
+instead of being approximated. Extra texture stages, line primitives, and point
+primitives are omitted.
 
 ## Verification
 
