@@ -483,6 +483,34 @@ fn ceiling_reflection_can_chain_into_wall_during_reflect_lockout() {
 }
 
 #[test]
+fn every_reflected_surface_action_lands_cleans_response_state_and_replays() {
+    for (angle, action, surface) in [
+        (0.0, Action::FlyReflectWall, stage::Surface::LeftWall),
+        (90.0, Action::FlyReflectCeiling, stage::Surface::Ceiling),
+    ] {
+        let mut resource = data(angle);
+        resource.fighters[1].movement.gravity = 0.2;
+        let mut game = hit(resource);
+        let reflected = until(&mut game, |state| state.fighters[1].action == action);
+        assert_eq!(reflected.fighters[1].last_damage_surface, Some(surface));
+        assert!(reflected.fighters[1].reflect_lockout > 0);
+
+        let landed = until_replayed(&mut game, |state| {
+            state.events.contains(&Event::Landed { player: 1 })
+        });
+        let fighter = &landed.fighters[1];
+        assert!(fighter.grounded);
+        assert_eq!(fighter.action, Action::DownBound);
+        assert_eq!(fighter.action_frame, 1);
+        assert_eq!(fighter.velocity, [0.0; 2]);
+        assert_eq!(fighter.knockback, [0.0; 2]);
+        assert_eq!(fighter.last_damage_surface, None);
+        assert_eq!(fighter.reflect_lockout, 0);
+        assert_eq!(fighter.surface_tech, Default::default());
+    }
+}
+
+#[test]
 fn simultaneous_floor_contact_wins_over_wall_reflection() {
     let mut game = hit(data(315.0));
     let landed = until(&mut game, |state| {

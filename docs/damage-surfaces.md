@@ -77,7 +77,8 @@ action durations, floor and wall priority, shoulder repeat lockout, all three
 tech pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
 post-freeze air-action timing and priority, ceiling non-interruption, profile
-omission, all three floor-landing paths and cleanup, an unmet threshold,
+omission, all three tech floor-landing paths, both reflected-action knockdown
+landings and cleanup, an unmet threshold,
 inward/outward moving-wall startup response, both cross-surface reflection
 chains during lockout, malformed resources and deterministic checkpoint suffixes.
 These fixtures use invented stage and fighter data.

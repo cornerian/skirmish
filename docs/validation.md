@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-10 reflected-surface landing batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-reflect-landings-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Match-level coverage drives both `FlyReflectWall` and
+`FlyReflectCeiling` through ordinary floor collision, missed-tech `DownBound`
+entry, velocity and knockback cancellation, response-history cleanup and
+deterministic checkpoint replay.
+
 The 2026-09-10 reflected-surface chaining batch is recorded at:
 
 `/mnt/archive/runs/skirmish-surface-reflect-chains-20260910`
