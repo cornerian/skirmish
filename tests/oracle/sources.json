@@ -248,5 +248,10 @@
     "fixture": "tests/oracle/original/turn_run.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_TurnRun.c",
     "sha256": "162624ab052be87b8d8046070059164de0b7c822be5c51ff54878f00a67d81f1"
+  },
+  {
+    "fixture": "tests/oracle/original/tobj.c",
+    "upstream": "src/sysdolphin/baselib/tobj.c",
+    "sha256": "582726b72298f5649f51979766e662f413cc3a72a997bd4f7e9f3fbe784a1e66"
   }
 ]

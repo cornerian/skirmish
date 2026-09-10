@@ -80,14 +80,20 @@ filenames for exact bindings.
 | mesh `geometry_space` | `joint_local` when positions are relative to the owning joint (rigid parts), `world` when the exporter baked the joint chain (envelope-skinned parts). Required for every exact mesh; `joint_local` also requires the owning joint's complete `flags`/`local`/`world`/`inverse_bind` pose. |
 | material `material_offset` | MObj descriptor offset in the materials space, plus the existing `render_mode` and pixel-engine fields. |
 | material `textures[i].tobj_offset`, `tobj_index` | TObj descriptor offset in the textures space; `tobj_index` must equal the stage ordinal `i`. |
+| material `textures[i].image_descriptor_offset` | The stage's initial HSD image descriptor in the textures space, required for every exact stage. `wrap_s`/`wrap_t` (GX 0 clamp, 1 repeat, 2 mirror), `repeat_s`/`repeat_t` (1..=255), `rotation`, `scale`, and `translation` are the authored TObj fields the runtime texture matrix needs; undeclared values default to repeat wrapping and an identity transform. |
+| `textures[]` alternates | Every image referenced only by a TexAnim image table must still be exported as a `textures[]` entry carrying `resource_id` and `image_descriptor_offset` (textures space) so image switching can resolve it. |
 
 The consumer joins these occurrences to a `skirmish-presentation-v1` manifest
 bound over the same archive bytes. Sampled joint visibility and material color
 reach exact GPU draw occurrences. Composed joint world matrices reach the
 per-draw joint transform only for `joint_local` draws; world-baked draws
 retain them as `BakedWorldGeometry` and joints without draws as
-`UnmappedJointWorld`. Texture image, UV, and TEV register updates remain
-unsupported.
+`UnmappedJointWorld`. First-stage texture image switches and the animated
+TObj translation/scale reach the GPU through the original `MakeTextureMtx`
+port when the current image resolves to an exported texture; otherwise the
+delta is retained as `UnresolvedTextureImage`, `TextureWithoutImage`,
+`ExtraTextureStageNotRendered`, or `UnmappedTexture`. Texture blend, konst,
+and TEV0 register updates are not yet rendered.
 
 `tests/presentation_binding.rs` exercises the whole chain with a pinned
 `MnMaAll.dat` rotation curve in a synthetic archive. Its blocked acceptance
@@ -96,8 +102,14 @@ test binds the real export from `MNMAALL_DAT` and `MNMAALL_SCENE` against
 
 The resource project's current MnMaAll scene declares none of `resources`,
 `resource_id`, `dobj_index`, `tobj_index`, `offset_spaces`, or
-`geometry_space`, and writes every part in world space, so the interactive
-host cannot build exact bindings from it yet. Its reference report already
+`geometry_space`, writes every part in world space, and exports only the 226
+images that some stage samples initially, so the interactive host cannot
+build exact bindings from it yet and TexAnim alternates cannot be resolved.
+`tests/presentation_binding.rs::report_mnmaall_texture_image_coverage`
+measures that image gap against the real archive: of the animated image
+descriptors per main-menu hierarchy, the export lacks 18 of 33 (back), 37 of
+40 (panel), 44 of 50 (contop), and 60 of 64 (cursor), which is why the label
+frames cannot switch yet. Its reference report already
 carries `dobj_offset`, `material_offset`, `tobj_offset`, `local_positions`,
 `matrix_indices`, and the source hash, so the producer patch is narrow:
 `src/mesh.rs` (`Part` gains the DObj ordinal and its vertex space; `Mesh`

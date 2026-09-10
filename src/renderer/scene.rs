@@ -1,5 +1,8 @@
 //! CPU assets for the native visual export. This is a Lambert preview, not GX emulation.
-use crate::presentation::manifest::VisualOffsetSpaces;
+use crate::presentation::{
+    manifest::VisualOffsetSpaces,
+    texture_matrix::{TextureTransform, WrapMode},
+};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::Value;
@@ -130,10 +133,25 @@ pub struct VisualTextureOccurrence {
 ///
 /// `visual_offset` preserves legacy exporter metadata even when the complete
 /// resource/MObj/TObj occurrence tuple is unavailable.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VisualTextureStageSource {
     pub visual_offset: Option<TextureSourceId>,
     pub occurrence: Option<VisualTextureOccurrence>,
+    /// Initial image descriptor in the visual export's texture offset space.
+    pub image_descriptor: Option<u32>,
+    /// Loaded scene texture for this stage's initial image.
+    pub texture: Option<usize>,
+    /// GX wrap modes for S and T; legacy exports default to repeat.
+    pub wrap: [WrapMode; 2],
+    /// Authored TObj rotation, scale, translation, repeat, and T wrap mode.
+    pub transform: TextureTransform,
+}
+
+/// One exported image identified inside its resource's texture offset space.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualImageKey {
+    pub resource_id: VisualResourceId,
+    pub visual_offset: u32,
 }
 
 /// Source MObj descriptor identity within one `skirmish-visual-v1` resource.
@@ -629,6 +647,9 @@ pub struct Scene {
     pub joints: Vec<Joint>,
     pub meshes: Vec<Mesh>,
     pub textures: Vec<Texture>,
+    /// Loaded textures addressed by exact image descriptor, including
+    /// animation alternates that no draw uses initially.
+    pub image_textures: HashMap<VisualImageKey, usize>,
     pub warnings: Vec<String>,
     /// Authored scene camera when one is available; otherwise the renderer frames bounds.
     pub camera: Option<Camera>,
@@ -719,6 +740,11 @@ struct RawTexture {
     path: String,
     width: u32,
     height: u32,
+    /// Exact image identity for animation alternates that no stage samples initially.
+    #[serde(default)]
+    resource_id: Option<String>,
+    #[serde(default)]
+    image_descriptor_offset: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -862,6 +888,7 @@ impl Scene {
             joints,
             meshes: Vec::new(),
             textures: Vec::new(),
+            image_textures: HashMap::new(),
             warnings: document.limitations,
             camera: None,
             clear_color: [0.018, 0.025, 0.045, 1.0],
@@ -980,104 +1007,124 @@ impl Scene {
             };
             let cull_mode =
                 cull_mode(cull).with_context(|| format!("{}: invalid cull mode", raw.name))?;
-            let (texture, texture_sources) = if let Some(stages) =
-                raw.material.get("textures").filter(|v| !v.is_null())
-            {
-                let stages = stages
+            let stages: &[Value] = match raw.material.get("textures").filter(|v| !v.is_null()) {
+                Some(stages) => stages
                     .as_array()
-                    .context("material textures must be an array")?;
-                let mut texture_sources = Vec::with_capacity(stages.len());
-                for (stage_index, stage) in stages.iter().enumerate() {
-                    ensure!(
-                        stage.is_object(),
-                        "{}: texture stage must be an object (index {stage_index})",
-                        raw.name
-                    );
-                    let descriptor_offset = optional_u32_field(stage, "tobj_offset")
-                        .with_context(|| {
-                            format!(
-                                "{}: invalid texture stage {stage_index} tobj_offset",
-                                raw.name
-                            )
-                        })?
-                        .map(TextureSourceId::new);
-                    let tobj_index =
-                        optional_u16_field(stage, "tobj_index").with_context(|| {
-                            format!(
-                                "{}: invalid texture stage {stage_index} tobj_index",
-                                raw.name
-                            )
-                        })?;
-                    let occurrence = visual_texture_occurrence(
-                        source_occurrence.as_ref(),
-                        material_source_occurrence.as_ref(),
-                        descriptor_offset,
-                        tobj_index,
-                        stage_index,
-                    )
+                    .context("material textures must be an array")?,
+                None => &[],
+            };
+            let mut texture_sources = Vec::with_capacity(stages.len());
+            for (stage_index, stage) in stages.iter().enumerate() {
+                ensure!(
+                    stage.is_object(),
+                    "{}: texture stage must be an object (index {stage_index})",
+                    raw.name
+                );
+                let descriptor_offset = optional_u32_field(stage, "tobj_offset")
                     .with_context(|| {
                         format!(
-                            "{}: invalid texture stage {stage_index} occurrence",
+                            "{}: invalid texture stage {stage_index} tobj_offset",
+                            raw.name
+                        )
+                    })?
+                    .map(TextureSourceId::new);
+                let tobj_index = optional_u16_field(stage, "tobj_index").with_context(|| {
+                    format!(
+                        "{}: invalid texture stage {stage_index} tobj_index",
+                        raw.name
+                    )
+                })?;
+                let occurrence = visual_texture_occurrence(
+                    source_occurrence.as_ref(),
+                    material_source_occurrence.as_ref(),
+                    descriptor_offset,
+                    tobj_index,
+                    stage_index,
+                )
+                .with_context(|| {
+                    format!(
+                        "{}: invalid texture stage {stage_index} occurrence",
+                        raw.name
+                    )
+                })?;
+                let image_descriptor = optional_u32_field(stage, "image_descriptor_offset")
+                    .with_context(|| {
+                        format!(
+                            "{}: invalid texture stage {stage_index} image_descriptor_offset",
                             raw.name
                         )
                     })?;
-                    texture_sources.push(VisualTextureStageSource {
-                        visual_offset: descriptor_offset,
-                        occurrence,
-                    });
-                }
-                if stages.len() > 1 {
-                    scene.warnings.push(format!(
-                        "{}: only the first of {} texture stages is sampled.",
-                        raw.name,
-                        stages.len()
-                    ));
-                }
-                if let Some(stage) = stages.first() {
-                    scene.warnings.push(format!("{}: first texture uses UV0, repeat wrapping and linear filtering; GX texture transforms, coordinate generation, LOD and texture operations are approximated.", raw.name));
-                    if ["wrap_s", "wrap_t"].iter().any(|key| {
-                        stage
-                            .get(*key)
-                            .and_then(Value::as_u64)
-                            .is_some_and(|v| v != 1)
-                    }) {
+                ensure!(
+                    occurrence.is_none() || image_descriptor.is_some(),
+                    "{}: exact texture stage {stage_index} requires image_descriptor_offset",
+                    raw.name
+                );
+                let (wrap, transform) = stage_sampling(stage).with_context(|| {
+                    format!("{}: invalid texture stage {stage_index} sampling", raw.name)
+                })?;
+                let id = stage
+                    .get("texture_id")
+                    .and_then(Value::as_str)
+                    .or_else(|| stage.get("texture_ids")?.get(0)?.as_str());
+                let texture = match id.and_then(|id| table.get(id)) {
+                    Some(source) => Some(load_shared_texture(
+                        folder,
+                        source,
+                        &mut loaded,
+                        &mut scene.textures,
+                    )?),
+                    None => {
                         scene.warnings.push(format!(
-                            "{}: source texture wrapping differs from preview repeat wrapping.",
-                            raw.name
-                        ));
-                    }
-                    let id = stage
-                        .get("texture_id")
-                        .and_then(Value::as_str)
-                        .or_else(|| stage.get("texture_ids")?.get(0)?.as_str());
-                    let texture = match id.and_then(|id| table.get(id)) {
-                        Some(source) => {
-                            let index = if let Some(&index) = loaded.get(&source.id) {
-                                index
+                            "{}: unresolved texture stage {stage_index} image {}; {}",
+                            raw.name,
+                            id.unwrap_or("(no ID)"),
+                            if stage_index == 0 {
+                                "diffuse color is used."
                             } else {
-                                let index = scene.textures.len();
-                                scene.textures.push(load_texture(folder, source)?);
-                                loaded.insert(source.id.clone(), index);
-                                index
-                            };
-                            Some(index)
-                        }
-                        None => {
-                            scene.warnings.push(format!(
-                                "{}: unresolved first texture {}; diffuse color is used.",
-                                raw.name,
-                                id.unwrap_or("(no ID)")
-                            ));
-                            None
-                        }
-                    };
-                    (texture, texture_sources)
-                } else {
-                    (None, Vec::new())
+                                "the stage is not sampled."
+                            }
+                        ));
+                        None
+                    }
+                };
+                if let (Some(occurrence), Some(image), Some(texture)) =
+                    (&occurrence, image_descriptor, texture)
+                {
+                    register_image_texture(
+                        &mut scene.image_textures,
+                        VisualImageKey {
+                            resource_id: occurrence
+                                .owner_material
+                                .owner_dobj
+                                .owner_joint
+                                .resource_id
+                                .clone(),
+                            visual_offset: image,
+                        },
+                        texture,
+                    )
+                    .with_context(|| format!("{}: texture stage {stage_index}", raw.name))?;
                 }
-            } else {
-                (None, Vec::new())
-            };
+                texture_sources.push(VisualTextureStageSource {
+                    visual_offset: descriptor_offset,
+                    occurrence,
+                    image_descriptor,
+                    texture,
+                    wrap,
+                    transform,
+                });
+            }
+            if stages.len() > 1 {
+                scene.warnings.push(format!(
+                    "{}: only the first of {} texture stages is sampled.",
+                    raw.name,
+                    stages.len()
+                ));
+            }
+            if !stages.is_empty() {
+                scene.warnings.push(format!("{}: first texture uses UV0 and linear filtering; GX coordinate generation, LOD and texture operations are approximated.", raw.name));
+            }
+            let texture = texture_sources.first().and_then(|stage| stage.texture);
             for warning in raw
                 .material
                 .get("warnings")
@@ -1178,7 +1225,52 @@ impl Scene {
                 hidden: raw.hidden,
             });
         }
+        for source in table.values() {
+            let (Some(resource), Some(image)) =
+                (&source.resource_id, source.image_descriptor_offset)
+            else {
+                ensure!(
+                    source.resource_id.is_none() && source.image_descriptor_offset.is_none(),
+                    "texture {}: resource_id and image_descriptor_offset must be present together",
+                    source.id
+                );
+                continue;
+            };
+            let resource_id = resource_ids
+                .get(resource)
+                .with_context(|| {
+                    format!(
+                        "texture {}: undeclared visual resource {resource:?}",
+                        source.id
+                    )
+                })?
+                .clone();
+            let texture = load_shared_texture(folder, source, &mut loaded, &mut scene.textures)?;
+            register_image_texture(
+                &mut scene.image_textures,
+                VisualImageKey {
+                    resource_id,
+                    visual_offset: image,
+                },
+                texture,
+            )
+            .with_context(|| format!("texture {}", source.id))?;
+        }
         Ok(scene)
+    }
+
+    /// Loaded texture for one exact image descriptor, when the export carries it.
+    pub fn image_texture(
+        &self,
+        resource_id: &VisualResourceId,
+        visual_offset: u32,
+    ) -> Option<usize> {
+        self.image_textures
+            .get(&VisualImageKey {
+                resource_id: resource_id.clone(),
+                visual_offset,
+            })
+            .copied()
     }
 
     /// Serialized world matrix of one exported joint, when its pose is complete.
@@ -1322,6 +1414,7 @@ impl Scene {
             resources: Vec::new(),
             joints: Vec::new(),
             meshes: vec![cube, floor],
+            image_textures: HashMap::new(),
             textures: vec![Texture {
                 name: "procedural checker".into(),
                 width: 8,
@@ -1737,6 +1830,83 @@ fn generated_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
     normals.into_iter().map(unit_normal).collect()
 }
 
+/// Load a table texture once and reuse its scene index afterwards.
+fn load_shared_texture(
+    folder: &Path,
+    source: &RawTexture,
+    loaded: &mut HashMap<String, usize>,
+    textures: &mut Vec<Texture>,
+) -> Result<usize> {
+    if let Some(&index) = loaded.get(&source.id) {
+        return Ok(index);
+    }
+    let index = textures.len();
+    textures.push(load_texture(folder, source)?);
+    loaded.insert(source.id.clone(), index);
+    Ok(index)
+}
+
+fn register_image_texture(
+    images: &mut HashMap<VisualImageKey, usize>,
+    key: VisualImageKey,
+    texture: usize,
+) -> Result<()> {
+    match images.insert(key.clone(), texture) {
+        Some(previous) if previous != texture => bail!(
+            "image descriptor {:#x} of {:?} maps to two different textures",
+            key.visual_offset,
+            key.resource_id.as_str()
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// GX wrap modes and the authored TObj transform of one texture stage.
+///
+/// Legacy exports without these fields keep the preview's repeat wrapping
+/// and an identity transform; declared values must be complete and finite.
+fn stage_sampling(stage: &Value) -> Result<([WrapMode; 2], TextureTransform)> {
+    let wrap = |key: &str| -> Result<WrapMode> {
+        match optional_u32_field(stage, key)? {
+            None => Ok(WrapMode::Repeat),
+            Some(value) => {
+                WrapMode::from_gx(value).with_context(|| format!("unsupported GX {key} {value}"))
+            }
+        }
+    };
+    let vector = |key: &str, default: [f32; 3]| -> Result<[f32; 3]> {
+        match stage.get(key).filter(|v| !v.is_null()) {
+            None => Ok(default),
+            Some(value) => {
+                let vector: [f32; 3] = serde_json::from_value(value.clone())
+                    .with_context(|| format!("invalid {key}"))?;
+                ensure!(vector.iter().all(|v| v.is_finite()), "nonfinite {key}");
+                Ok(vector)
+            }
+        }
+    };
+    let repeat = |key: &str| -> Result<u8> {
+        match optional_u32_field(stage, key)? {
+            None => Ok(1),
+            Some(value) => u8::try_from(value)
+                .ok()
+                .filter(|count| *count != 0)
+                .with_context(|| format!("{key} must be 1..=255, found {value}")),
+        }
+    };
+    let wrap = [wrap("wrap_s")?, wrap("wrap_t")?];
+    Ok((
+        wrap,
+        TextureTransform {
+            rotation: vector("rotation", [0.0; 3])?,
+            scale: vector("scale", [1.0; 3])?,
+            translation: vector("translation", [0.0; 3])?,
+            repeat: [repeat("repeat_s")?, repeat("repeat_t")?],
+            wrap_t: wrap[1],
+        },
+    ))
+}
+
 fn load_texture(folder: &Path, raw: &RawTexture) -> Result<Texture> {
     let path = folder.join(&raw.path);
     let mut decoder = png::Decoder::new(BufReader::new(
@@ -1962,8 +2132,8 @@ mod tests {
             &exact_document(json!({
                 "material_offset": material_offset,
                 "textures": [
-                    {"tobj_offset": texture_offset, "tobj_index": 0},
-                    {"tobj_offset": 0x4c0, "tobj_index": 1},
+                    {"tobj_offset": texture_offset, "tobj_index": 0, "image_descriptor_offset": 0x500},
+                    {"tobj_offset": 0x4c0, "tobj_index": 1, "image_descriptor_offset": 0x520},
                 ],
             })),
         )
@@ -2101,7 +2271,7 @@ mod tests {
         }));
         let mut missing_texture_offset = exact_document(json!({
             "material_offset": 0x440,
-            "textures": [{"tobj_offset": 0x480, "tobj_index": 0}],
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0, "image_descriptor_offset": 0x500}],
         }));
         missing_texture_offset["meshes"][0]["material"]["textures"][0]
             .as_object_mut()
@@ -2109,8 +2279,26 @@ mod tests {
             .remove("tobj_offset");
         let wrong_texture_index = exact_document(json!({
             "material_offset": 0x440,
-            "textures": [{"tobj_offset": 0x480, "tobj_index": 1}],
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 1, "image_descriptor_offset": 0x500}],
         }));
+        let missing_image_descriptor = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0}],
+        }));
+        let bad_wrap = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0, "image_descriptor_offset": 0x500, "wrap_s": 3}],
+        }));
+        let zero_repeat = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0, "image_descriptor_offset": 0x500, "repeat_t": 0}],
+        }));
+        let nonfinite_translation = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0, "image_descriptor_offset": 0x500, "translation": [0.0, 1.0e40, 0.0]}],
+        }));
+        let mut orphan_alternate = exact_document(json!({}));
+        orphan_alternate["textures"] = json!([{"id": "alt", "path": "alt.png", "width": 1, "height": 1, "image_descriptor_offset": 0x600}]);
         let texture_without_material = exact_document(json!({
             "textures": [{"tobj_offset": 0x480, "tobj_index": 0}],
         }));
@@ -2182,6 +2370,11 @@ mod tests {
             ),
             (missing_texture_offset, "require tobj_offset and tobj_index"),
             (wrong_texture_index, "does not match texture-stage ordinal"),
+            (missing_image_descriptor, "requires image_descriptor_offset"),
+            (bad_wrap, "unsupported GX wrap_s 3"),
+            (zero_repeat, "repeat_t must be 1..=255"),
+            (nonfinite_translation, "nonfinite translation"),
+            (orphan_alternate, "must be present together"),
             (texture_without_material, "require material_offset"),
             (
                 anonymous_texture_without_material,

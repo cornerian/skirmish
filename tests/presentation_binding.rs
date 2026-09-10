@@ -407,6 +407,11 @@ struct ContractExpectations {
     animated_materials: usize,
     animated_textures: usize,
     unmapped_animated_targets: Vec<String>,
+    /// Image descriptors referenced by bound TObjs (initial images plus every
+    /// non-null TexAnim slot) that the export must supply as loadable textures.
+    animated_image_descriptors: usize,
+    /// Descriptors of those images the current export does not carry.
+    unresolved_image_descriptors: Vec<u32>,
 }
 
 /// Acceptance test for the producer's exact `MnMaAll.dat` export.
@@ -500,6 +505,26 @@ fn pinned_mnmaall_export_binds_every_animated_occurrence() {
                     .map(|texture| texture.source_id.as_str().to_owned()),
             )
             .collect();
+        let mut image_descriptors = std::collections::BTreeSet::new();
+        let mut unresolved_images = std::collections::BTreeSet::new();
+        for texture in bound.textures() {
+            let occurrence = binding.texture_occurrence(&texture.source_id);
+            let descriptors = texture
+                .image_slots
+                .iter()
+                .filter_map(|slot| slot.image_descriptor.zip(slot.source_id.clone()))
+                .chain(
+                    texture
+                        .initial_image_descriptor
+                        .zip(texture.current_image.clone()),
+                );
+            for (descriptor, image) in descriptors {
+                image_descriptors.insert(descriptor.get());
+                if occurrence.is_some() && binding.image_texture(&image).is_none() {
+                    unresolved_images.insert(descriptor.get());
+                }
+            }
+        }
         report.push((
             hierarchy.id.clone(),
             draws.len(),
@@ -508,6 +533,8 @@ fn pinned_mnmaall_export_binds_every_animated_occurrence() {
             bound.materials().len(),
             bound.textures().len(),
             unmapped.clone(),
+            image_descriptors.len(),
+            unresolved_images.len(),
         ));
         let expected = &hierarchy.expected;
         assert_eq!(draws.len(), expected.draws, "{} draws", hierarchy.id);
@@ -528,6 +555,106 @@ fn pinned_mnmaall_export_binds_every_animated_occurrence() {
             "{}",
             hierarchy.id
         );
+        assert_eq!(
+            image_descriptors.len(),
+            expected.animated_image_descriptors,
+            "{} animated image descriptors",
+            hierarchy.id
+        );
+        assert_eq!(
+            unresolved_images.into_iter().collect::<Vec<_>>(),
+            expected.unresolved_image_descriptors,
+            "{} unresolved image descriptors",
+            hierarchy.id
+        );
     }
     eprintln!("contract report: {report:#?}");
+}
+
+/// Measure how many animated image descriptors the current export can serve,
+/// without requiring the exact occurrence contract. This is the producer-facing
+/// gap report for texture image switching; it needs `MNMAALL_DAT` and
+/// `MNMAALL_SCENE`.
+#[test]
+#[ignore = "developer report over externally supplied native resources"]
+fn report_mnmaall_texture_image_coverage() {
+    let fixture: ContractFixture = serde_json::from_str(CONTRACT_FIXTURE).unwrap();
+    let archive = fs::read(std::env::var("MNMAALL_DAT").unwrap()).unwrap();
+    let scene_path = std::env::var("MNMAALL_SCENE").unwrap();
+    let scene = Scene::load(Path::new(&scene_path)).unwrap();
+    let manifest = PresentationManifest {
+        schema: PRESENTATION_MANIFEST_SCHEMA.into(),
+        resource: ResourceSpec {
+            id: fixture.resource.id.clone(),
+            sha256: fixture.resource.sha256.clone(),
+            data_section_file_offset: fixture.resource.data_section_file_offset,
+            data_section_size: u32::from_be_bytes(archive[4..8].try_into().unwrap()),
+        },
+        visual_offsets: fixture.offset_spaces,
+        hierarchies: fixture
+            .hierarchies
+            .iter()
+            .map(|hierarchy| HierarchySpec {
+                id: hierarchy.id.clone(),
+                model_root: hierarchy.model_root,
+                joint_animation_root: Some(hierarchy.joint_animation_root),
+                material_animation_root: Some(hierarchy.material_animation_root),
+                shape_animation_root: Some(hierarchy.shape_animation_root),
+            })
+            .collect(),
+        clips: vec![],
+    };
+    let presentation = manifest.bind_hsd_dat(&archive).unwrap();
+    // Every image descriptor the export knows about, from any stage or alternate
+    // entry, normalized into the archive's data-section space.
+    let exported: std::collections::BTreeSet<u32> = scene
+        .meshes
+        .iter()
+        .flat_map(|mesh| mesh.material.texture_sources.iter())
+        .filter_map(|stage| stage.image_descriptor)
+        .chain(scene.image_textures.keys().map(|key| key.visual_offset))
+        .filter_map(|visual| {
+            presentation
+                .normalize_visual_offset(
+                    skirmish::presentation::manifest::SourceObjectKind::Texture,
+                    visual,
+                )
+                .ok()
+                .map(|offset| offset.get())
+        })
+        .collect();
+    let mut measured = Vec::new();
+    for hierarchy in &fixture.hierarchies {
+        let bound = presentation.hierarchy(&hierarchy.id).unwrap();
+        let mut descriptors = std::collections::BTreeSet::new();
+        for texture in bound.textures() {
+            descriptors.extend(
+                texture
+                    .image_slots
+                    .iter()
+                    .filter_map(|slot| slot.image_descriptor)
+                    .chain(texture.initial_image_descriptor)
+                    .map(|descriptor| descriptor.get()),
+            );
+        }
+        let missing: Vec<u32> = descriptors
+            .iter()
+            .copied()
+            .filter(|descriptor| !exported.contains(descriptor))
+            .collect();
+        eprintln!(
+            "{}: {} animated image descriptors, {} not exported (data-section offsets): {missing:?}",
+            hierarchy.id,
+            descriptors.len(),
+            missing.len()
+        );
+        measured.push((hierarchy, descriptors.len()));
+    }
+    for (hierarchy, count) in measured {
+        assert_eq!(
+            count, hierarchy.expected.animated_image_descriptors,
+            "{} animated image descriptors",
+            hierarchy.id
+        );
+    }
 }

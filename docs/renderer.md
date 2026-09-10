@@ -80,8 +80,9 @@ cargo run --locked --features renderer --bin skirmish-renderer -- \
 - `renderer` uploads the scene and shares the depth-tested draw path between an
   SDL3 surface and PNG capture. It resizes its depth target, suspends at zero
   size, and retries recoverable surface events. Serialized-hidden draws remain
-  resident, and export-identified visibility, material color, and joint-local
-  draw transforms can change without rebuilding geometry or textures.
+  resident, and export-identified visibility, material color, joint-local
+  draw transforms, first-stage images, and texture matrices can change
+  without rebuilding geometry or textures.
 - `melee` selects the original `MnMaAll.dat` roots and invokes the source bridge.
 - `controls` converts keyboard and SDL controller state into independently
   repeated digital sources and maps pointer events through authored-space hit
@@ -117,7 +118,12 @@ column-major model matrix in its per-instance uniform: joint-local draws
 start at their owning joint's serialized world matrix and accept
 `DrawUpdate::JointTransform`, while world-baked draws stay at identity and
 reject transforms explicitly. The presentation driver feeds those transforms
-from each instance's composed HSD world matrices. Texture transforms, coordinate
+from each instance's composed HSD world matrices. Each draw also carries its
+first-stage texture state: the sampled image, GX wrap modes (clamp, repeat,
+mirror per axis, with a bind group per image/wrap pair), and the original
+`MakeTextureMtx` texture matrix built from the authored rotation, repeat
+counts, and the animated translation/scale; `DrawUpdate::Texture` switches
+the image and moves the matrix without re-uploading anything. Coordinate
 generation, LOD, wrapping, and filtering are approximated. Enabled destination
 alpha override, dithering, logic blending, and observable depth-before-texture
 combinations that reject fragments while writing depth are rejected explicitly

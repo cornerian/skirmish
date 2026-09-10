@@ -12,6 +12,10 @@ struct Material {
     // Column-major model matrix for this runtime draw: the owning joint's
     // world transform for joint-local geometry, identity for world-baked parts.
     model: mat4x4f,
+    // Column-major HSD texture matrix (rows 0 and 1 of MakeTextureMtx) over
+    // (s, t, 0, 1); the original z column is folded into the translation
+    // because a regular GX texgen feeds 1 there.
+    uv_transform: mat4x4f,
     color: vec4f,
     alpha_test: vec4u,
 }
@@ -62,7 +66,7 @@ fn vs_main(
     // The inspection light renormalizes, so non-uniform joint scale only
     // changes direction here, never magnitude.
     out.normal = (material.model * vec4f(normal, 0.0)).xyz;
-    out.uv = uv;
+    out.uv = (material.uv_transform * vec4f(uv, 0.0, 1.0)).xy;
     out.color = color;
     return out;
 }

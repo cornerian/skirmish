@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use skirmish::presentation::texture_matrix::WrapMode;
 use skirmish::renderer::melee::{MAIN_MENU_ROOTS, load_main_menu_default_pose};
 use skirmish::renderer::scene::{CullMode, JointPose, Scene};
 use std::{fs, path::Path};
@@ -318,12 +319,13 @@ fn first_texture_loads_exported_paths_and_material_flags() {
     assert_eq!(scene.meshes[0].material.color, [0.8, 0.7, 0.6, 1.]);
     assert_eq!(scene.meshes[0].vertices[0].color, [1., 1., 1., 0.5]);
     assert!(scene.warnings.iter().any(|w| w.contains("first of 2")));
-    assert!(
-        scene
-            .warnings
-            .iter()
-            .any(|w| w.contains("wrapping differs"))
+    assert_eq!(
+        scene.meshes[0].material.texture_sources[0].wrap,
+        [WrapMode::Clamp, WrapMode::Repeat],
+        "declared GX wrap modes are retained per stage; undeclared axes keep repeat"
     );
+    assert_eq!(scene.meshes[0].material.texture_sources[1].texture, Some(0));
+    assert!(scene.image_textures.is_empty());
     document["textures"][0]["width"] = json!(2);
     assert!(load(directory.path(), &document).is_err());
     document["textures"][0]["width"] = json!(1);

@@ -142,7 +142,14 @@ the GPU's per-draw joint transform when the joint's draws are joint-local.
 World-baked draws retain it as `BakedWorldGeometry` and draw-less joints as
 `UnmappedJointWorld`. Billboards, quaternion rotation, constraints, and
 skinning are not modeled; the manifest reports the one billboard joint in the
-panel hierarchy as `UnmodeledJointFlags`.
+panel hierarchy as `UnmodeledJointFlags`. Texture image switches and the
+animated TObj translation/scale reach the first sampled stage through the
+original `MakeTextureMtx` port (checked against the pinned C) with the
+export's GX wrap modes, when the current image resolves to an exported
+texture; the label frames the menu switches through TexAnim tables are not
+in the current export, so those deltas are retained as
+`UnresolvedTextureImage`. Later texture stages, blend, konst, and TEV0
+registers are still not rendered.
 
 The resource project's current MnMaAll export carries none of that metadata
 and bakes every part into world space, so the interactive host still advances

@@ -20,8 +20,10 @@ use super::scene::{
     Camera, CullMode, GeometrySpace, MaterialSourceId, Mesh, PeAlphaTest, PeBlendFactor,
     PeBlendMode, PeBlendState, PeCompare, PixelEngineState, RenderMode, RenderModeClass, Scene,
     Texture, Vertex, VisualDObjOccurrence, VisualJointOccurrence, VisualMaterialOccurrence,
+    VisualTextureOccurrence,
 };
 use super::viewport::{PresentationTransform, fitted_viewport};
+use crate::presentation::texture_matrix::{TextureTransform, WrapMode, texture_matrix};
 
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -58,6 +60,16 @@ pub enum ExportMaterialSelector<'a> {
     Legacy { source_id: MaterialSourceId },
 }
 
+/// Selects the first-stage texture of every draw using one exact TObj occurrence.
+///
+/// Only stage 0 is sampled by the preview shader, so a selector naming a later
+/// stage ordinal matches nothing; the presentation driver reports that case
+/// explicitly before it reaches the renderer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportTextureSelector<'a> {
+    Exact(&'a VisualTextureOccurrence),
+}
+
 /// One type-safe mutable update over immutable scene resources.
 ///
 /// Joint visibility may fan out over all attached materials. Material color is
@@ -80,6 +92,14 @@ pub enum DrawUpdate<'a> {
     JointTransform {
         target: ExportDrawSelector<'a>,
         world: [[f32; 4]; 4],
+    },
+    /// First-stage image plus the animated TObj translation and scale; the
+    /// authored rotation, repeat counts, and wrap modes stay with the draw.
+    Texture {
+        target: ExportTextureSelector<'a>,
+        image: Option<usize>,
+        translation: [f32; 2],
+        scale: [f32; 2],
     },
 }
 
@@ -119,6 +139,8 @@ struct ExportDrawIdentity {
     source_occurrence: Option<VisualDObjOccurrence>,
     material_source_id: Option<MaterialSourceId>,
     material_source_occurrence: Option<VisualMaterialOccurrence>,
+    /// Exact occurrence of the sampled first texture stage.
+    texture_source_occurrence: Option<VisualTextureOccurrence>,
 }
 
 impl ExportDrawIdentity {
@@ -146,6 +168,14 @@ impl ExportDrawIdentity {
             }
         }
     }
+
+    fn matches_texture(&self, selector: ExportTextureSelector<'_>) -> bool {
+        match selector {
+            ExportTextureSelector::Exact(target) => {
+                self.texture_source_occurrence.as_ref() == Some(target)
+            }
+        }
+    }
 }
 
 impl From<&Mesh> for ExportDrawIdentity {
@@ -156,7 +186,57 @@ impl From<&Mesh> for ExportDrawIdentity {
             source_occurrence: mesh.source_occurrence.clone(),
             material_source_id: mesh.material.source_id,
             material_source_occurrence: mesh.material.source_occurrence.clone(),
+            texture_source_occurrence: mesh
+                .material
+                .texture_sources
+                .first()
+                .and_then(|stage| stage.occurrence.clone()),
         }
+    }
+}
+
+/// Mutable first-stage texture state of one runtime draw.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DrawTextureState {
+    /// Scene texture index; `None` samples the white fallback.
+    image: Option<usize>,
+    wrap: [WrapMode; 2],
+    transform: TextureTransform,
+}
+
+impl DrawTextureState {
+    fn from_mesh(mesh: &Mesh) -> Self {
+        let stage = mesh.material.texture_sources.first();
+        Self {
+            image: mesh.material.texture,
+            wrap: stage.map_or([WrapMode::Repeat; 2], |stage| stage.wrap),
+            transform: stage.map_or(
+                TextureTransform {
+                    rotation: [0.0; 3],
+                    scale: [1.0; 3],
+                    translation: [0.0; 3],
+                    repeat: [1, 1],
+                    wrap_t: WrapMode::Repeat,
+                },
+                |stage| stage.transform,
+            ),
+        }
+    }
+
+    /// Column-major GPU form of the HSD texture matrix over `(s, t, 0, 1)`.
+    fn uv_transform(&self) -> Result<[[f32; 4]; 4]> {
+        let matrix = texture_matrix(&self.transform)?;
+        Ok([
+            [matrix[0][0], matrix[1][0], 0.0, 0.0],
+            [matrix[0][1], matrix[1][1], 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [
+                matrix[0][2] + matrix[0][3],
+                matrix[1][2] + matrix[1][3],
+                0.0,
+                1.0,
+            ],
+        ])
     }
 }
 
@@ -178,6 +258,7 @@ struct DrawState {
     material_color: [f32; 4],
     /// Column-major model matrix; identity for world-baked geometry.
     joint_transform: [[f32; 4]; 4],
+    texture: DrawTextureState,
 }
 
 impl DrawState {
@@ -191,10 +272,15 @@ impl DrawState {
                 )
             })?),
         };
+        let texture = DrawTextureState::from_mesh(mesh);
+        texture
+            .uv_transform()
+            .with_context(|| format!("{} first texture stage", mesh.name))?;
         Ok(Self {
             visible: !mesh.hidden,
             material_color: mesh.material.color,
             joint_transform,
+            texture,
         })
     }
 }
@@ -240,6 +326,17 @@ impl DrawPresentation {
                     && self.identity.matches_joint(target) =>
             {
                 self.state.joint_transform = world;
+                true
+            }
+            DrawUpdate::Texture {
+                target,
+                image,
+                translation,
+                scale,
+            } if self.identity.matches_texture(target) => {
+                self.state.texture.image = image;
+                self.state.texture.transform.translation[..2].copy_from_slice(&translation);
+                self.state.texture.transform.scale[..2].copy_from_slice(&scale);
                 true
             }
             DrawUpdate::MaterialColor { target, color }
@@ -305,6 +402,7 @@ fn ensure_runtime_instance(
 
 fn validate_runtime_draw_update(
     instance_ids: &HashSet<InstanceId>,
+    texture_count: usize,
     update: RuntimeDrawUpdate<'_>,
 ) -> Result<()> {
     ensure_runtime_instance(instance_ids, update.instance_id)?;
@@ -320,6 +418,25 @@ fn validate_runtime_draw_update(
                 .all(|component| component.is_finite()),
             "joint transform must contain finite components"
         ),
+        DrawUpdate::Texture {
+            image,
+            translation,
+            scale,
+            ..
+        } => {
+            ensure!(
+                translation
+                    .iter()
+                    .chain(&scale)
+                    .all(|component| component.is_finite()),
+                "texture translation and scale must contain finite components"
+            );
+            ensure!(
+                image.is_none_or(|image| image < texture_count),
+                "texture image {} is outside the {texture_count} resident scene textures",
+                image.map_or(-1, |image| image as i64)
+            );
+        }
         DrawUpdate::Visibility { .. } => {}
     }
     Ok(())
@@ -331,11 +448,12 @@ fn validate_runtime_draw_update(
 /// aimed at world-baked geometry is rejected before any member is applied.
 fn validate_runtime_draw_batch<'d>(
     instance_ids: &HashSet<InstanceId>,
+    texture_count: usize,
     draws: impl Iterator<Item = (InstanceId, &'d DrawPresentation)> + Clone,
     updates: &[RuntimeDrawUpdate<'_>],
 ) -> std::result::Result<(), RuntimeDrawBatchError> {
     for (index, update) in updates.iter().copied().enumerate() {
-        validate_runtime_draw_update(instance_ids, update)
+        validate_runtime_draw_update(instance_ids, texture_count, update)
             .map_err(|source| RuntimeDrawBatchError::new(index, source))?;
         if let DrawUpdate::JointTransform { target, .. } = update.update
             && let Some((_, draw)) = draws.clone().find(|(instance, draw)| {
@@ -586,6 +704,7 @@ fn create_pipeline(
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawUniform {
     model: [[f32; 4]; 4],
+    uv_transform: [[f32; 4]; 4],
     color: [f32; 4],
     alpha_test: [u32; 4],
 }
@@ -596,6 +715,10 @@ impl DrawUniform {
         alpha_test: PeAlphaTest,
         material_alpha_uses_hsd_byte_storage: bool,
     ) -> Self {
+        let uv_transform = state
+            .texture
+            .uv_transform()
+            .expect("draw texture transforms are validated at load and update time");
         let mut color = state.material_color;
         if material_alpha_uses_hsd_byte_storage {
             // HSD_SetMaterialColor stores the authored float alpha in an unsigned
@@ -605,6 +728,7 @@ impl DrawUniform {
         }
         Self {
             model: state.joint_transform,
+            uv_transform,
             color,
             alpha_test: [
                 u32::from(alpha_test.comparison0.code()),
@@ -625,7 +749,6 @@ struct DrawResource {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     count: u32,
-    texture: usize,
     alpha_test: PeAlphaTest,
     pipeline: usize,
 }
@@ -640,6 +763,8 @@ struct Draw {
     presentation: DrawPresentation,
     material: wgpu::Buffer,
     material_binding: wgpu::BindGroup,
+    /// Index into [`GpuScene::texture_bindings`] for the current image and wrap modes.
+    texture_binding: usize,
 }
 
 struct GpuScene {
@@ -649,7 +774,13 @@ struct GpuScene {
     pipelines: Vec<wgpu::RenderPipeline>,
     camera: wgpu::Buffer,
     camera_binding: wgpu::BindGroup,
-    textures: Vec<wgpu::BindGroup>,
+    /// Scene textures followed by the white fallback.
+    texture_views: Vec<wgpu::TextureView>,
+    texture_layout: wgpu::BindGroupLayout,
+    samplers: HashMap<[WrapMode; 2], wgpu::Sampler>,
+    /// Texture/sampler bind groups created on demand per (image, wrap) pair.
+    texture_bindings: Vec<wgpu::BindGroup>,
+    texture_binding_indices: HashMap<(usize, [WrapMode; 2]), usize>,
     material_layout: wgpu::BindGroupLayout,
     draw_resources: Vec<DrawResource>,
     draws: Vec<Draw>,
@@ -790,56 +921,34 @@ impl GpuScene {
                 count: None,
             }],
         });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("preview linear repeat"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
         let white = Texture {
             name: "white".into(),
             width: 1,
             height: 1,
             rgba: vec![255; 4],
         };
-        let textures = scene
+        let texture_views = scene
             .textures
             .iter()
             .chain(std::iter::once(&white))
             .map(|source| {
-                let texture = device.create_texture_with_data(
-                    &queue,
-                    &wgpu::TextureDescriptor {
-                        label: Some(&source.name),
-                        size: extent(source.width, source.height),
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: wgpu::TextureDimension::D2,
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                        view_formats: &[],
-                    },
-                    wgpu::util::TextureDataOrder::LayerMajor,
-                    &source.rgba,
-                );
-                device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some(&source.name),
-                    layout: &texture_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(
-                                &texture.create_view(&Default::default()),
-                            ),
+                device
+                    .create_texture_with_data(
+                        &queue,
+                        &wgpu::TextureDescriptor {
+                            label: Some(&source.name),
+                            size: extent(source.width, source.height),
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                            view_formats: &[],
                         },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&sampler),
-                        },
-                    ],
-                })
+                        wgpu::util::TextureDataOrder::LayerMajor,
+                        &source.rgba,
+                    )
+                    .create_view(&Default::default())
             })
             .collect();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -899,7 +1008,6 @@ impl GpuScene {
                     usage: wgpu::BufferUsages::INDEX,
                 }),
                 count: mesh.indices.len() as u32,
-                texture: mesh.material.texture.unwrap_or(scene.textures.len()),
                 alpha_test: pixel_engine.alpha_test,
                 pipeline,
             });
@@ -930,7 +1038,11 @@ impl GpuScene {
             pipelines,
             camera,
             camera_binding,
-            textures,
+            texture_views,
+            texture_layout,
+            samplers: HashMap::new(),
+            texture_bindings: Vec::new(),
+            texture_binding_indices: HashMap::new(),
             material_layout,
             draw_resources,
             draws: Vec::new(),
@@ -956,6 +1068,48 @@ impl GpuScene {
         self.instantiate_draw_resources(instance_id, 0..self.draw_resources.len())
     }
 
+    /// Bind group for one scene texture (or the white fallback) under GX wrap modes.
+    fn texture_binding(&mut self, image: Option<usize>, wrap: [WrapMode; 2]) -> usize {
+        let white = self.texture_views.len() - 1;
+        let image = image.unwrap_or(white);
+        if let Some(&index) = self.texture_binding_indices.get(&(image, wrap)) {
+            return index;
+        }
+        let address = |mode: WrapMode| match mode {
+            WrapMode::Clamp => wgpu::AddressMode::ClampToEdge,
+            WrapMode::Repeat => wgpu::AddressMode::Repeat,
+            WrapMode::Mirror => wgpu::AddressMode::MirrorRepeat,
+        };
+        let sampler = self.samplers.entry(wrap).or_insert_with(|| {
+            self.device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("preview linear"),
+                address_mode_u: address(wrap[0]),
+                address_mode_v: address(wrap[1]),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            })
+        });
+        let binding = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("draw texture"),
+            layout: &self.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.texture_views[image]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        let index = self.texture_bindings.len();
+        self.texture_bindings.push(binding);
+        self.texture_binding_indices.insert((image, wrap), index);
+        index
+    }
+
     /// Clone selected authored draws into one independently mutable runtime set.
     ///
     /// Keeping selection in this internal path lets a later presentation bridge
@@ -979,9 +1133,16 @@ impl GpuScene {
             );
         }
 
-        let draws = resource_indices
-            .into_iter()
-            .map(|resource| {
+        let mut draws = Vec::with_capacity(resource_indices.len());
+        for resource in resource_indices {
+            let texture_binding = {
+                let texture = self.draw_resources[resource]
+                    .initial_presentation
+                    .state
+                    .texture;
+                self.texture_binding(texture.image, texture.wrap)
+            };
+            let draw = {
                 let source = &self.draw_resources[resource];
                 let presentation = source.initial_presentation.clone();
                 let uniform = DrawUniform::new(
@@ -1012,9 +1173,11 @@ impl GpuScene {
                     presentation,
                     material,
                     material_binding,
+                    texture_binding,
                 }
-            })
-            .collect::<Vec<_>>();
+            };
+            draws.push(draw);
+        }
         let count = draws.len();
         self.draws.extend(draws);
         self.instance_ids.insert(instance_id);
@@ -1039,6 +1202,7 @@ impl GpuScene {
     ) -> std::result::Result<Vec<usize>, RuntimeDrawBatchError> {
         validate_runtime_draw_batch(
             &self.instance_ids,
+            self.texture_views.len() - 1,
             self.draws
                 .iter()
                 .map(|draw| (draw.instance_id, &draw.presentation)),
@@ -1052,29 +1216,34 @@ impl GpuScene {
     }
 
     fn apply_instance_draw_update(&mut self, update: RuntimeDrawUpdate<'_>) -> usize {
-        let mut matched = 0;
-        for draw in &mut self.draws {
-            if !update_runtime_presentation(draw.instance_id, &mut draw.presentation, update) {
-                continue;
+        let mut matched = Vec::new();
+        for (index, draw) in self.draws.iter_mut().enumerate() {
+            if update_runtime_presentation(draw.instance_id, &mut draw.presentation, update) {
+                matched.push(index);
             }
-            if matches!(
-                update.update,
-                DrawUpdate::MaterialColor { .. } | DrawUpdate::JointTransform { .. }
-            ) {
-                let source = &self.draw_resources[draw.resource];
-                self.queue.write_buffer(
-                    &draw.material,
-                    0,
-                    bytemuck::bytes_of(&DrawUniform::new(
-                        &draw.presentation.state,
-                        source.alpha_test,
-                        draw.presentation.material_alpha_uses_hsd_byte_storage(),
-                    )),
-                );
-            }
-            matched += 1;
         }
-        matched
+        if matches!(update.update, DrawUpdate::Visibility { .. }) {
+            return matched.len();
+        }
+        for &index in &matched {
+            if matches!(update.update, DrawUpdate::Texture { .. }) {
+                let texture = self.draws[index].presentation.state.texture;
+                self.draws[index].texture_binding =
+                    self.texture_binding(texture.image, texture.wrap);
+            }
+            let draw = &self.draws[index];
+            let source = &self.draw_resources[draw.resource];
+            self.queue.write_buffer(
+                &draw.material,
+                0,
+                bytemuck::bytes_of(&DrawUniform::new(
+                    &draw.presentation.state,
+                    source.alpha_test,
+                    draw.presentation.material_alpha_uses_hsd_byte_storage(),
+                )),
+            );
+        }
+        matched.len()
     }
 
     fn draw(
@@ -1173,7 +1342,7 @@ impl GpuScene {
         for draw in order {
             let resource = &self.draw_resources[draw.resource];
             pass.set_pipeline(&self.pipelines[resource.pipeline]);
-            pass.set_bind_group(1, &self.textures[resource.texture], &[]);
+            pass.set_bind_group(1, &self.texture_bindings[draw.texture_binding], &[]);
             pass.set_bind_group(2, &draw.material_binding, &[]);
             pass.set_vertex_buffer(0, resource.vertices.slice(..));
             pass.set_index_buffer(resource.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -1549,7 +1718,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use super::super::scene::{PeAlphaOp, RenderMode, VisualResourceId};
+    use super::super::scene::{PeAlphaOp, RenderMode, TextureSourceId, VisualResourceId};
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1692,6 +1861,7 @@ mod tests {
                 hidden: false,
             }],
             textures: Vec::new(),
+            image_textures: HashMap::new(),
             warnings: Vec::new(),
             camera: Some(Camera {
                 eye: [0.0, 0.0, 5.0],
@@ -1723,7 +1893,11 @@ mod tests {
         )
         .validate(&module)
         .expect("shader validates without optional GPU capabilities");
-        assert_eq!(std::mem::size_of::<DrawUniform>(), 96);
+        assert_eq!(std::mem::size_of::<DrawUniform>(), 160);
+        assert!(
+            MESH_SHADER.contains("material.uv_transform"),
+            "compiled mesh shader must apply the per-draw texture matrix"
+        );
     }
 
     #[test]
@@ -1870,12 +2044,27 @@ mod tests {
             visible: true,
             material_color,
             joint_transform: transform_columns(translation_matrix(1.0, 2.0, 3.0)),
+            texture: DrawTextureState {
+                image: None,
+                wrap: [WrapMode::Clamp; 2],
+                transform: TextureTransform {
+                    rotation: [0.0; 3],
+                    scale: [1.0; 3],
+                    translation: [0.5, -0.25, 0.0],
+                    repeat: [2, 1],
+                    wrap_t: WrapMode::Clamp,
+                },
+            },
         };
         let uniform = DrawUniform::new(&state([0.25, 0.5, 0.75, 1.0]), alpha_test, true);
         assert_eq!(uniform.color, [0.25, 0.5, 0.75, 1.0]);
         assert_eq!(uniform.alpha_test, [6, 102, 3, 255 | (3 << 8)]);
         assert_eq!(uniform.model[3], [1.0, 2.0, 3.0, 1.0]);
         assert_eq!(uniform.model[0], [1.0, 0.0, 0.0, 0.0]);
+        // HSD: s' = repeat_s / scale * (s - translation) = 2s - 1; t' = t + 0.25.
+        assert_eq!(uniform.uv_transform[0], [2.0, 0.0, 0.0, 0.0]);
+        assert_eq!(uniform.uv_transform[1], [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(uniform.uv_transform[3], [-1.0, 0.25, 0.0, 1.0]);
 
         let half_alpha = DrawUniform::new(&state([1.0, 1.0, 1.0, 0.5]), alpha_test, true);
         assert_eq!(half_alpha.color[3], 127.0 / 255.0);
@@ -1902,6 +2091,7 @@ mod tests {
                 source_occurrence: None,
                 material_source_id: None,
                 material_source_occurrence: None,
+                texture_source_occurrence: None,
             }
         );
         assert_eq!(
@@ -1910,7 +2100,104 @@ mod tests {
                 visible: false,
                 material_color: color,
                 joint_transform: IDENTITY_TRANSFORM,
+                texture: DrawTextureState {
+                    image: Some(0),
+                    wrap: [WrapMode::Repeat; 2],
+                    transform: TextureTransform {
+                        rotation: [0.0; 3],
+                        scale: [1.0; 3],
+                        translation: [0.0; 3],
+                        repeat: [1, 1],
+                        wrap_t: WrapMode::Repeat,
+                    },
+                },
             }
+        );
+    }
+
+    #[test]
+    fn texture_updates_reach_only_the_exact_first_stage_occurrence() {
+        let textures = Scene::demo().textures;
+        let mut mesh = exact_exported_mesh("resource", 7, 0, 100);
+        let material = mesh.material.source_occurrence.clone().unwrap();
+        let stage_occurrence = |tobj_index| VisualTextureOccurrence {
+            owner_material: material.clone(),
+            tobj_index,
+            visual_offset: TextureSourceId::new(0x480 + u32::from(tobj_index) * 0x60),
+        };
+        let stage = |tobj_index| super::super::scene::VisualTextureStageSource {
+            visual_offset: Some(TextureSourceId::new(0x480)),
+            occurrence: Some(stage_occurrence(tobj_index)),
+            image_descriptor: Some(0x500),
+            texture: Some(0),
+            wrap: [WrapMode::Clamp, WrapMode::Mirror],
+            transform: TextureTransform {
+                rotation: [0.0; 3],
+                scale: [1.0, 1.0, 1.0],
+                translation: [0.0; 3],
+                repeat: [1, 1],
+                wrap_t: WrapMode::Mirror,
+            },
+        };
+        mesh.material.texture_sources = vec![stage(0), stage(1)];
+        let mut draw = DrawPresentation::from_mesh(&mesh, &textures, None).unwrap();
+        assert_eq!(
+            draw.identity.texture_source_occurrence,
+            Some(stage_occurrence(0))
+        );
+        assert_eq!(draw.state.texture.wrap, [WrapMode::Clamp, WrapMode::Mirror]);
+
+        let first = stage_occurrence(0);
+        let second = stage_occurrence(1);
+        assert!(!draw.update(DrawUpdate::Texture {
+            target: ExportTextureSelector::Exact(&second),
+            image: Some(3),
+            translation: [0.0; 2],
+            scale: [1.0; 2],
+        }));
+        assert!(draw.update(DrawUpdate::Texture {
+            target: ExportTextureSelector::Exact(&first),
+            image: Some(3),
+            translation: [0.25, 0.5],
+            scale: [2.0, 4.0],
+        }));
+        assert_eq!(draw.state.texture.image, Some(3));
+        assert_eq!(draw.state.texture.transform.translation, [0.25, 0.5, 0.0]);
+        assert_eq!(draw.state.texture.transform.scale, [2.0, 4.0, 1.0]);
+        assert_eq!(draw.state.texture.transform.wrap_t, WrapMode::Mirror);
+
+        let instance = InstanceId::new(9);
+        let instance_ids = HashSet::from([instance]);
+        let out_of_range = RuntimeDrawUpdate {
+            instance_id: instance,
+            update: DrawUpdate::Texture {
+                target: ExportTextureSelector::Exact(&first),
+                image: Some(2),
+                translation: [0.0; 2],
+                scale: [1.0; 2],
+            },
+        };
+        let error =
+            validate_runtime_draw_batch(&instance_ids, 2, std::iter::empty(), &[out_of_range])
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("outside the 2 resident"),
+            "{error}"
+        );
+        let non_finite = RuntimeDrawUpdate {
+            instance_id: instance,
+            update: DrawUpdate::Texture {
+                target: ExportTextureSelector::Exact(&first),
+                image: None,
+                translation: [f32::INFINITY, 0.0],
+                scale: [1.0; 2],
+            },
+        };
+        assert!(
+            validate_runtime_draw_batch(&instance_ids, 2, std::iter::empty(), &[non_finite])
+                .unwrap_err()
+                .to_string()
+                .contains("finite components")
         );
     }
 
@@ -1961,8 +2248,8 @@ mod tests {
             update,
         };
         let draws = [(instance, &local), (instance, &baked)];
-        let error =
-            validate_runtime_draw_batch(&instance_ids, draws.into_iter(), &[runtime]).unwrap_err();
+        let error = validate_runtime_draw_batch(&instance_ids, 0, draws.into_iter(), &[runtime])
+            .unwrap_err();
         assert_eq!(error.index(), 0);
         assert!(
             error
@@ -1972,7 +2259,7 @@ mod tests {
         );
         let other_instance = [(InstanceId::new(4), &baked), (instance, &local)];
         assert!(
-            validate_runtime_draw_batch(&instance_ids, other_instance.into_iter(), &[runtime])
+            validate_runtime_draw_batch(&instance_ids, 0, other_instance.into_iter(), &[runtime])
                 .is_ok(),
             "world-baked draws in other instances must not block the batch"
         );
@@ -1984,7 +2271,7 @@ mod tests {
             },
         };
         assert!(
-            validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &[non_finite])
+            validate_runtime_draw_batch(&instance_ids, 0, std::iter::empty(), &[non_finite])
                 .unwrap_err()
                 .to_string()
                 .contains("finite components")
@@ -2313,15 +2600,15 @@ mod tests {
             },
         ];
 
-        let error =
-            validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &updates).unwrap_err();
+        let error = validate_runtime_draw_batch(&instance_ids, 0, std::iter::empty(), &updates)
+            .unwrap_err();
 
         assert_eq!(error.index(), 1);
         assert_eq!(
             error.to_string(),
             "runtime draw update 1: material color must contain finite components"
         );
-        assert!(validate_runtime_draw_batch(&instance_ids, std::iter::empty(), &[]).is_ok());
+        assert!(validate_runtime_draw_batch(&instance_ids, 0, std::iter::empty(), &[]).is_ok());
     }
 
     #[test]
@@ -2736,6 +3023,148 @@ mod tests {
             .count();
         assert!(moved_pixels > 500, "only {moved_pixels} pixels moved");
         assert!(rejected.contains("world-baked geometry"), "{rejected}");
+    }
+
+    /// A textured quad with an exact first-stage occurrence over a 2x1 image
+    /// (left red, right blue) and a solid green alternate.
+    fn textured_quad_scene(wrap: [WrapMode; 2]) -> (Scene, VisualTextureOccurrence) {
+        let mut scene = solid_quad_scene([1.0, 1.0, 1.0, 1.0]);
+        scene.textures = vec![
+            Texture {
+                name: "red-blue".into(),
+                width: 2,
+                height: 1,
+                rgba: vec![255, 0, 0, 255, 0, 0, 255, 255],
+            },
+            Texture {
+                name: "green".into(),
+                width: 1,
+                height: 1,
+                rgba: vec![0, 255, 0, 255],
+            },
+        ];
+        let mesh = exact_exported_mesh("resource", 7, 0, 100);
+        let material = mesh.material.source_occurrence.clone().unwrap();
+        let occurrence = VisualTextureOccurrence {
+            owner_material: material,
+            tobj_index: 0,
+            visual_offset: TextureSourceId::new(0x480),
+        };
+        let quad = &mut scene.meshes[0];
+        quad.hidden = false;
+        quad.joint = mesh.joint;
+        quad.source_occurrence = mesh.source_occurrence.clone();
+        quad.material.source_occurrence = mesh.material.source_occurrence.clone();
+        quad.material.texture = Some(0);
+        quad.material.texture_sources = vec![super::super::scene::VisualTextureStageSource {
+            visual_offset: Some(TextureSourceId::new(0x480)),
+            occurrence: Some(occurrence.clone()),
+            image_descriptor: Some(0x500),
+            texture: Some(0),
+            wrap,
+            transform: TextureTransform {
+                rotation: [0.0; 3],
+                scale: [1.0; 3],
+                translation: [0.0; 3],
+                repeat: [1, 1],
+                wrap_t: wrap[1],
+            },
+        }];
+        // Sample only the right (blue) half of the image.
+        for (vertex, u) in quad.vertices.iter_mut().zip([0.5, 1.0, 1.0, 0.5]) {
+            vertex.uv = [u, 0.5];
+        }
+        (scene, occurrence)
+    }
+
+    fn dominant_channel_counts(image: &[u8]) -> [usize; 3] {
+        let mut counts = [0; 3];
+        for pixel in image.as_chunks::<4>().0 {
+            let brightest = (0..3).max_by_key(|&channel| pixel[channel]).unwrap();
+            if pixel[brightest] > 64 {
+                counts[brightest] += 1;
+            }
+        }
+        counts
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
+    fn gpu_texture_updates_switch_images_and_translate_uvs_under_gx_wrapping() {
+        let _guard = GPU_TEST_LOCK.lock().unwrap();
+        let (clamped, occurrence) = textured_quad_scene([WrapMode::Clamp; 2]);
+        let (repeated, _) = textured_quad_scene([WrapMode::Repeat; 2]);
+        let (initial, switched, shifted, repeated_initial, wrapped) = pollster::block_on(async {
+            let instance = wgpu::Instance::new(
+                wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
+            );
+            let adapter = request_adapter(&instance, None).await?;
+            let mut gpu =
+                GpuScene::new(&adapter, &clamped, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let initial = capture_gpu_rgba(&gpu, 129, 129).await?;
+            assert_eq!(
+                gpu.update_draws(DrawUpdate::Texture {
+                    target: ExportTextureSelector::Exact(&occurrence),
+                    image: Some(1),
+                    translation: [0.0; 2],
+                    scale: [1.0; 2],
+                })?,
+                1
+            );
+            let switched = capture_gpu_rgba(&gpu, 129, 129).await?;
+            // HSD subtracts the translation: s' = s - 0.5 moves the sampled
+            // window onto the red half.
+            assert_eq!(
+                gpu.update_draws(DrawUpdate::Texture {
+                    target: ExportTextureSelector::Exact(&occurrence),
+                    image: Some(0),
+                    translation: [0.5, 0.0],
+                    scale: [1.0; 2],
+                })?,
+                1
+            );
+            let shifted = capture_gpu_rgba(&gpu, 129, 129).await?;
+            let mut repeated_gpu =
+                GpuScene::new(&adapter, &repeated, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let repeated_initial = capture_gpu_rgba(&repeated_gpu, 129, 129).await?;
+            // With repeat wrapping, s' = s - 1.0 samples the same blue half.
+            assert_eq!(
+                repeated_gpu.update_draws(DrawUpdate::Texture {
+                    target: ExportTextureSelector::Exact(&occurrence),
+                    image: Some(0),
+                    translation: [1.0, 0.0],
+                    scale: [1.0; 2],
+                })?,
+                1
+            );
+            let wrapped = capture_gpu_rgba(&repeated_gpu, 129, 129).await?;
+            Ok::<_, anyhow::Error>((initial, switched, shifted, repeated_initial, wrapped))
+        })
+        .unwrap();
+
+        let [red, green, blue] = dominant_channel_counts(&initial);
+        assert!(
+            blue > 500 && red == 0 && green == 0,
+            "initial {red}/{green}/{blue}"
+        );
+        let [red, green, blue] = dominant_channel_counts(&switched);
+        assert!(
+            green > 500 && red == 0 && blue == 0,
+            "switched {red}/{green}/{blue}"
+        );
+        let [red, green, blue] = dominant_channel_counts(&shifted);
+        assert!(
+            red > 500 && green == 0 && blue == 0,
+            "shifted {red}/{green}/{blue}"
+        );
+        assert_ne!(
+            initial, repeated_initial,
+            "clamp and repeat wrapping differ at the texel boundary"
+        );
+        assert_eq!(
+            repeated_initial, wrapped,
+            "a whole-period repeat translation is invisible"
+        );
     }
 
     #[test]

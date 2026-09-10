@@ -839,6 +839,20 @@ impl BoundPresentation {
         self.visual_offsets
     }
 
+    /// Convert a canonical data-section offset back into the corresponding
+    /// visual export's declared coordinate for `kind`.
+    pub fn visual_offset(&self, kind: SourceObjectKind, offset: DataOffset) -> u32 {
+        let space = match kind {
+            SourceObjectKind::Joint => self.visual_offsets.joints,
+            SourceObjectKind::Material => self.visual_offsets.materials,
+            SourceObjectKind::Texture => self.visual_offsets.textures,
+        };
+        match space {
+            OffsetSpace::DataSection => offset.get(),
+            OffsetSpace::File => offset.get() + self.resource.data_section_file_offset,
+        }
+    }
+
     /// Convert one exported ID into the canonical data-section coordinate.
     pub fn normalize_visual_offset(
         &self,

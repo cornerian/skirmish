@@ -15,8 +15,8 @@ use crate::{
     presentation::{
         AnimationPlayback, PlaybackError,
         instance::{
-            InstanceError, InstanceId, SceneInstance, SourceJointId, SourceMaterialId,
-            SourceTarget, SourceTextureId,
+            InstanceError, InstanceId, SceneInstance, SourceImageId, SourceJointId,
+            SourceMaterialId, SourceTarget, SourceTextureId,
         },
         manifest::{
             BatchApplyError, BindError, BoundClip, BoundHierarchy, BoundPresentation,
@@ -28,8 +28,8 @@ use crate::{
 
 use super::{
     gpu::{
-        DrawUpdate, ExportDrawSelector, ExportMaterialSelector, RuntimeDrawBatchError,
-        RuntimeDrawUpdate, WindowRenderer,
+        DrawUpdate, ExportDrawSelector, ExportMaterialSelector, ExportTextureSelector,
+        RuntimeDrawBatchError, RuntimeDrawUpdate, WindowRenderer,
     },
     scene::{
         GeometrySpace, Scene, VisualJointOccurrence, VisualMaterialOccurrence,
@@ -48,6 +48,8 @@ pub struct VisualPresentationBinding {
     joint_geometry: HashMap<SourceJointId, GeometrySpace>,
     materials: HashMap<SourceMaterialId, VisualMaterialOccurrence>,
     textures: HashMap<SourceTextureId, VisualTextureOccurrence>,
+    /// Native image descriptors of bound textures resolved to loaded scene textures.
+    images: HashMap<SourceImageId, usize>,
 }
 
 impl VisualPresentationBinding {
@@ -64,7 +66,8 @@ impl VisualPresentationBinding {
             }
         })?;
         validate_resource(scene, presentation.as_ref())?;
-        let maps = bind_exact_occurrences(scene, presentation.as_ref(), bound_hierarchy)?;
+        let mut maps = bind_exact_occurrences(scene, presentation.as_ref(), bound_hierarchy)?;
+        maps.images = resolve_image_textures(scene, presentation.as_ref(), bound_hierarchy, &maps);
         if maps.joints.is_empty() && maps.materials.is_empty() && maps.textures.is_empty() {
             return Err(VisualPresentationBindError::NoExactOccurrences {
                 resource_id: presentation.resource().id.clone(),
@@ -78,6 +81,7 @@ impl VisualPresentationBinding {
             joint_geometry: maps.joint_geometry,
             materials: maps.materials,
             textures: maps.textures,
+            images: maps.images,
         })
     }
 
@@ -108,6 +112,11 @@ impl VisualPresentationBinding {
 
     pub fn texture_occurrence(&self, source: &SourceTextureId) -> Option<&VisualTextureOccurrence> {
         self.textures.get(source)
+    }
+
+    /// Loaded scene texture for a native image descriptor of a bound TObj.
+    pub fn image_texture(&self, image: &SourceImageId) -> Option<usize> {
+        self.images.get(image).copied()
     }
 }
 
@@ -252,13 +261,16 @@ impl RenderedPresentationTick {
             .map(|update| match &update.route {
                 PresentationUpdateRoute::JointVisibility(_)
                 | PresentationUpdateRoute::JointTransform(_)
-                | PresentationUpdateRoute::Material(_) => PresentationApplyOutcome::MatchedDraws(
-                    match_counts
-                        .next()
-                        .expect("every routed draw update has one match count"),
-                ),
+                | PresentationUpdateRoute::Material(_)
+                | PresentationUpdateRoute::Texture { .. } => {
+                    PresentationApplyOutcome::MatchedDraws(
+                        match_counts
+                            .next()
+                            .expect("every routed draw update has one match count"),
+                    )
+                }
                 PresentationUpdateRoute::Retained(reason) => {
-                    PresentationApplyOutcome::Retained(*reason)
+                    PresentationApplyOutcome::Retained(reason.clone())
                 }
             })
             .collect())
@@ -332,6 +344,23 @@ impl RoutedPresentationUpdate {
                     world: column_major(world),
                 },
             }),
+            (
+                PresentationUpdate::Texture {
+                    instance_id,
+                    translation,
+                    scale,
+                    ..
+                },
+                PresentationUpdateRoute::Texture { occurrence, image },
+            ) => Some(RuntimeDrawUpdate {
+                instance_id: *instance_id,
+                update: DrawUpdate::Texture {
+                    target: ExportTextureSelector::Exact(occurrence),
+                    image: Some(*image),
+                    translation: *translation,
+                    scale: *scale,
+                },
+            }),
             (_, PresentationUpdateRoute::Retained(_)) => None,
             _ => unreachable!("routing is constructed from the same source update"),
         }
@@ -360,11 +389,17 @@ pub enum PresentationUpdateRoute {
     /// A composed joint world matrix reaching this joint's joint-local draws.
     JointTransform(VisualJointOccurrence),
     Material(VisualMaterialOccurrence),
+    /// A first-stage TObj whose current image resolved to a loaded scene texture.
+    /// Its translation and scale reach the GPU; blend, konst, and TEV0 do not yet.
+    Texture {
+        occurrence: VisualTextureOccurrence,
+        image: usize,
+    },
     Retained(RetainedPresentationReason),
 }
 
 /// Why a lossless native source delta was retained instead of rendered.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RetainedPresentationReason {
     /// A local SRT delta is not itself renderable; the instance composes it
     /// into the joint's (and its descendants') `JointWorld` deltas.
@@ -372,7 +407,14 @@ pub enum RetainedPresentationReason {
     /// The joint's exported draws were baked into world space, so a composed
     /// world matrix cannot move them without double-transforming.
     BakedWorldGeometry,
-    UnsupportedTexture,
+    /// No exported draw samples this TObj occurrence.
+    UnmappedTexture,
+    /// The occurrence is a later texture stage, which the preview does not sample.
+    ExtraTextureStageNotRendered,
+    /// The TObj currently resolves no image at all.
+    TextureWithoutImage,
+    /// The current image descriptor has no loaded texture in the export.
+    UnresolvedTextureImage(SourceImageId),
     /// No exported draw is attached directly to this joint; its transform is
     /// already folded into descendants' own `JointWorld` deltas.
     UnmappedJointWorld,
@@ -381,7 +423,7 @@ pub enum RetainedPresentationReason {
 }
 
 /// Renderer result corresponding to exactly one routed source delta.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PresentationApplyOutcome {
     MatchedDraws(usize),
     Retained(RetainedPresentationReason),
@@ -568,11 +610,62 @@ fn route_update(
             .unwrap_or(PresentationUpdateRoute::Retained(
                 RetainedPresentationReason::UnmappedMaterial,
             )),
-        PresentationUpdate::Texture { .. } => {
-            PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedTexture)
-        }
+        PresentationUpdate::Texture {
+            source_id,
+            current_image,
+            ..
+        } => match binding.texture_occurrence(source_id) {
+            None => PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedTexture),
+            Some(occurrence) if occurrence.tobj_index != 0 => PresentationUpdateRoute::Retained(
+                RetainedPresentationReason::ExtraTextureStageNotRendered,
+            ),
+            Some(occurrence) => match current_image {
+                None => PresentationUpdateRoute::Retained(
+                    RetainedPresentationReason::TextureWithoutImage,
+                ),
+                Some(image) => match binding.image_texture(image) {
+                    Some(texture) => PresentationUpdateRoute::Texture {
+                        occurrence: occurrence.clone(),
+                        image: texture,
+                    },
+                    None => PresentationUpdateRoute::Retained(
+                        RetainedPresentationReason::UnresolvedTextureImage(image.clone()),
+                    ),
+                },
+            },
+        },
     };
     RoutedPresentationUpdate { update, route }
+}
+
+/// Join every image descriptor of the bound TObjs to the export's loaded textures.
+fn resolve_image_textures(
+    scene: &Scene,
+    presentation: &BoundPresentation,
+    hierarchy: &BoundHierarchy,
+    maps: &ExactOccurrenceMaps,
+) -> HashMap<SourceImageId, usize> {
+    let mut images = HashMap::new();
+    for texture in hierarchy.textures() {
+        let Some(occurrence) = maps.textures.get(&texture.source_id) else {
+            continue;
+        };
+        let resource_id = &occurrence.owner_material.owner_dobj.owner_joint.resource_id;
+        let slots = texture
+            .image_slots
+            .iter()
+            .filter_map(|slot| slot.image_descriptor.zip(slot.source_id.clone()));
+        let initial = texture
+            .initial_image_descriptor
+            .zip(texture.current_image.clone());
+        for (descriptor, image) in slots.chain(initial) {
+            let visual = presentation.visual_offset(SourceObjectKind::Texture, descriptor);
+            if let Some(index) = scene.image_texture(resource_id, visual) {
+                images.insert(image, index);
+            }
+        }
+    }
+    images
 }
 
 #[derive(Debug, Error)]
@@ -629,6 +722,7 @@ struct ExactOccurrenceMaps {
     joint_geometry: HashMap<SourceJointId, GeometrySpace>,
     materials: HashMap<SourceMaterialId, VisualMaterialOccurrence>,
     textures: HashMap<SourceTextureId, VisualTextureOccurrence>,
+    images: HashMap<SourceImageId, usize>,
 }
 
 fn validate_resource(
@@ -1090,7 +1184,24 @@ mod tests {
         Scene::load(path).unwrap()
     }
 
+    fn write_solid_png(path: &Path, rgba: [u8; 4]) {
+        let file = fs::File::create(path).unwrap();
+        let mut encoder = png::Encoder::new(file, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&rgba)
+            .unwrap();
+    }
+
+    /// Two draws sharing one MObj/TObj, with the TObj's initial image and its
+    /// TexAnim alternate both exported; the middle null slot has no image.
     fn repeated_material_scene(path: &Path, hash: &str, material_offset: u32) -> Scene {
+        let folder = path.parent().unwrap();
+        write_solid_png(&folder.join("image0.png"), [255, 0, 0, 255]);
+        write_solid_png(&folder.join("image2.png"), [0, 255, 0, 255]);
         let mesh = |name: &str, dobj_index: u16| {
             json!({
                 "name": name,
@@ -1102,7 +1213,16 @@ mod tests {
                 "indices": [0, 1, 2],
                 "material": {
                     "material_offset": material_offset + 32,
-                    "textures": [{"tobj_offset": TOBJ + 32, "tobj_index": 0}]
+                    "textures": [{
+                        "tobj_offset": TOBJ + 32,
+                        "tobj_index": 0,
+                        "image_descriptor_offset": IMAGE_0 + 32,
+                        "texture_id": "image0",
+                        "wrap_s": 0,
+                        "wrap_t": 1,
+                        "repeat_s": 1,
+                        "repeat_t": 1,
+                    }]
                 }
             })
         };
@@ -1120,6 +1240,17 @@ mod tests {
                     },
                 )],
                 "joints": [{"name": "root", "offset": ANIMATED_MODEL}],
+                "textures": [
+                    {"id": "image0", "path": "image0.png", "width": 1, "height": 1},
+                    {
+                        "id": "image2",
+                        "path": "image2.png",
+                        "width": 1,
+                        "height": 1,
+                        "resource_id": RESOURCE_ID,
+                        "image_descriptor_offset": IMAGE_2 + 32,
+                    }
+                ],
                 "meshes": [mesh("first", 0), mesh("second", 1)]
             }))
             .unwrap(),
@@ -1365,6 +1496,8 @@ mod tests {
         let local = hierarchy.joints()[0].local.initial_runtime_local();
         let material = hierarchy.materials()[0].source_id.clone();
         let texture = hierarchy.textures()[0].source_id.clone();
+        let alternate_image = hierarchy.textures()[0].image_slots[2].source_id.clone();
+        assert!(alternate_image.is_some());
         let binding = repeated_material_binding(directory.path(), presentation);
         let instance_id = InstanceId::new(91);
         let source_updates = vec![
@@ -1397,13 +1530,33 @@ mod tests {
             },
             PresentationUpdate::Texture {
                 instance_id,
-                source_id: texture,
+                source_id: texture.clone(),
                 current_image: None,
                 translation: [1.0, 2.0],
                 scale: [3.0, 4.0],
                 blend: 0.75,
                 konst: Some([1, 2, 3, 4]),
                 tev0: Some([5, 6, 7, 8]),
+            },
+            PresentationUpdate::Texture {
+                instance_id,
+                source_id: texture.clone(),
+                current_image: Some(SourceImageId::from("hsd/unexported/image/00000001")),
+                translation: [0.0, 0.0],
+                scale: [1.0, 1.0],
+                blend: 1.0,
+                konst: None,
+                tev0: None,
+            },
+            PresentationUpdate::Texture {
+                instance_id,
+                source_id: texture,
+                current_image: alternate_image.clone(),
+                translation: [0.5, 0.0],
+                scale: [1.0, 1.0],
+                blend: 1.0,
+                konst: None,
+                tev0: None,
             },
         ];
         let tick = RenderedPresentationTick {
@@ -1441,12 +1594,23 @@ mod tests {
         );
         assert_eq!(
             tick.updates()[5].route(),
-            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedTexture)
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::TextureWithoutImage)
         );
+        assert_eq!(
+            tick.updates()[6].route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnresolvedTextureImage(
+                SourceImageId::from("hsd/unexported/image/00000001")
+            ))
+        );
+        assert!(matches!(
+            tick.updates()[7].route(),
+            PresentationUpdateRoute::Texture { occurrence, image: 1 }
+                if occurrence.tobj_index == 0 && occurrence.visual_offset.get() == TOBJ + 32
+        ));
 
         let outcomes = tick
             .apply_with(|updates| {
-                assert_eq!(updates.len(), 2);
+                assert_eq!(updates.len(), 3);
                 assert_eq!(updates[0].instance_id, instance_id);
                 assert!(matches!(
                     updates[0].update,
@@ -1462,7 +1626,16 @@ mod tests {
                         color,
                     } if color == [1.0 / 255.0, 128.0 / 255.0, 1.0, 0.25]
                 ));
-                Ok(vec![0, 2])
+                assert!(matches!(
+                    updates[2].update,
+                    DrawUpdate::Texture {
+                        target: ExportTextureSelector::Exact(_),
+                        image: Some(1),
+                        translation: [0.5, 0.0],
+                        scale: [1.0, 1.0],
+                    }
+                ));
+                Ok(vec![0, 2, 2])
             })
             .unwrap();
         assert_eq!(
@@ -1477,7 +1650,13 @@ mod tests {
                 ),
                 PresentationApplyOutcome::MatchedDraws(2),
                 PresentationApplyOutcome::Retained(RetainedPresentationReason::UnmappedMaterial),
-                PresentationApplyOutcome::Retained(RetainedPresentationReason::UnsupportedTexture),
+                PresentationApplyOutcome::Retained(RetainedPresentationReason::TextureWithoutImage),
+                PresentationApplyOutcome::Retained(
+                    RetainedPresentationReason::UnresolvedTextureImage(SourceImageId::from(
+                        "hsd/unexported/image/00000001"
+                    ))
+                ),
+                PresentationApplyOutcome::MatchedDraws(2),
             ]
         );
 
@@ -1518,13 +1697,14 @@ mod tests {
                 .updates()
                 .iter()
                 .filter(|update| {
-                    update.route()
-                        == &PresentationUpdateRoute::Retained(
-                            RetainedPresentationReason::UnsupportedTexture,
-                        )
+                    matches!(
+                        update.route(),
+                        PresentationUpdateRoute::Texture { image: 0, .. }
+                    )
                 })
                 .count(),
-            2
+            2,
+            "both TObj occurrences start on the exported initial image"
         );
 
         let first_tick = first.tick().unwrap();

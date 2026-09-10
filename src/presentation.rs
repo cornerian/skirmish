@@ -6,6 +6,7 @@
 
 pub mod instance;
 pub mod manifest;
+pub mod texture_matrix;
 
 use thiserror::Error;
 

@@ -25,7 +25,9 @@
         "world_baked_draws": 0,
         "animated_materials": 0,
         "animated_textures": 15,
-        "unmapped_animated_targets": []
+        "unmapped_animated_targets": [],
+        "animated_image_descriptors": 33,
+        "unresolved_image_descriptors": []
       }
     },
     {
@@ -41,7 +43,9 @@
         "world_baked_draws": 12,
         "animated_materials": 1,
         "animated_textures": 3,
-        "unmapped_animated_targets": []
+        "unmapped_animated_targets": [],
+        "animated_image_descriptors": 40,
+        "unresolved_image_descriptors": []
       }
     },
     {
@@ -57,7 +61,9 @@
         "world_baked_draws": 2,
         "animated_materials": 13,
         "animated_textures": 6,
-        "unmapped_animated_targets": []
+        "unmapped_animated_targets": [],
+        "animated_image_descriptors": 50,
+        "unresolved_image_descriptors": []
       }
     },
     {
@@ -73,9 +79,11 @@
         "world_baked_draws": 1,
         "animated_materials": 1,
         "animated_textures": 4,
-        "unmapped_animated_targets": []
+        "unmapped_animated_targets": [],
+        "animated_image_descriptors": 64,
+        "unresolved_image_descriptors": []
       }
     }
   ],
-  "provenance": "Root and animation-root offsets match tests/presentation_manifest.rs::audit_pinned_mnmaall_bindings_and_color_domains, whose animated material/texture counts were audited against the pinned archive. Draw, joint, and world-baked (envelope-skinned, multi-matrix) counts were derived on 2026-09-10 from the resource project's skirmish-reference-mesh-v2 report for the same archive (/mnt/archive/runs/melee-visual-fidelity-20260909/model-references/MnMaAll.dat.json) and are regression pins, not independent evidence. Hidden draws are counted. unmapped_animated_targets must stay empty unless a real export proves an animated MObj/TObj has no exported draw, in which case the identity is recorded here explicitly."
+  "provenance": "Root and animation-root offsets match tests/presentation_manifest.rs::audit_pinned_mnmaall_bindings_and_color_domains, whose animated material/texture counts were audited against the pinned archive. Draw, joint, and world-baked (envelope-skinned, multi-matrix) counts were derived on 2026-09-10 from the resource project's skirmish-reference-mesh-v2 report for the same archive (/mnt/archive/runs/melee-visual-fidelity-20260909/model-references/MnMaAll.dat.json) and are regression pins, not independent evidence. Hidden draws are counted. unmapped_animated_targets must stay empty unless a real export proves an animated MObj/TObj has no exported draw, in which case the identity is recorded here explicitly. animated_image_descriptors counts the distinct initial-image and non-null TexAnim-slot descriptors of each hierarchy's animated TObjs, measured on 2026-09-10 from the pinned archive by report_mnmaall_texture_image_coverage; the current export resolves only the initial images (back: 18 of 33 missing, panel: 37 of 40 missing, contop: 44 of 50 missing, cursor: 60 of 64 missing), and unresolved_image_descriptors must stay empty once the producer exports TexAnim alternates."
 }
