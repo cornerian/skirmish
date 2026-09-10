@@ -142,6 +142,12 @@ decays the source ground-knockback scalar. Fly-level and explicit DownDamage
 launches leave the floor and apply the configured strict bounce branch. The
 complete damage callback sequence remains unported.
 
+Ordinary fighter hits select [damage direction](hit-direction.md) from the
+attacker and victim X positions, including the source equal-X tie, then face the
+victim toward the attacker and launch away. Throws instead negate the thrower's
+facing before entering the shared transition. Prone DownDamage retains its
+explicit old-facing override after calculating launch.
+
 Optional [`rules.damage.damage_motion`](damage-motion.md) supplies the three
 ordinary knockback-level thresholds, while every fighter supplies complete
 ground, air and fly physics poses plus a height for each hurtbox. Selection uses
@@ -291,6 +297,8 @@ reflections and wall/ceiling techs. The [damage-motion
 profile](damage-motion.md) supplies ordinary grounded, airborne and fly poses.
 The [grounded launch profile](grounded-launch.md) supplies floor-relative damage
 launch and per-frame grounded knockback friction.
+The [damage-direction port](hit-direction.md) supplies ordinary fighter-contact
+and throw launch orientation plus the prone-facing override.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

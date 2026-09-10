@@ -570,6 +570,7 @@ pub(crate) fn advance(
                 hit,
                 staled,
                 height.unwrap_or_default(),
+                damage::HitDirection::FighterContact,
             )?;
         }
         if !blocked && data.rules.staling.is_some() {

@@ -147,6 +147,13 @@ also verifies the explicit-motion DownDamage fly branch.
 `ground_launch_differential` compares the complete retained source branch and
 extracted `lbVector_Angle` over arbitrary binary32 inputs.
 
+[Damage-direction coverage](hit-direction.md) adds `game_hit_direction` for
+both players attacking from either side, the equal-X tie, grounded tangent
+composition and checkpoint replay. `game_damage_floor` verifies that DownDamage
+launches away while preserving its prior-facing override, and `game_grab`
+checks throw-facing assignment. `hit_direction_differential` compares fighter
+and throw assignments over 512 arbitrary binary32 inputs with verbatim pinned C.
+
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
@@ -229,6 +236,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `damage_surface` | Wall/ceiling reflection and techs, neutral/jump choice, both wall orientations, ceiling motion, action timing, collision priority, repeat lockout, disabled/invalid profiles and checkpoint replay |
 | `damage_motion` | All ordinary ground/air/fly selectors, sampled hurtbox/ECB poses, dual animation/hitstun completion, repeated-hit reselection, invalid profiles and checkpoint replay |
 | `ground_launch` | Flat/sloped floor retention and tangent projection, departure and fly bounce boundaries, hitlag freeze, scalar friction, prone DownDamage override, invalid profiles and checkpoint replay |
+| `hit_direction` | Both fighter positions and player slots, equal-X tie, victim facing, grounded projection, throw assignment, prone override and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order

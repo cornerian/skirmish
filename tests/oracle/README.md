@@ -132,6 +132,13 @@ selector composes those exact predicates with C-stick freshness and facing;
 native match tests own catch contact, direction priority, bone attachment,
 scripted release and the following damage lifecycle.
 
+`hit_direction` retains the exact fighter-position assignment from
+`ftColl_8007A06C` and captured-victim assignment from `ftCo_800DDDE4`. Its tests
+prove both statements appear verbatim in the pinned `ftcoll.c` and
+`ftCo_Throw.c` snapshots, then compare arbitrary binary32 positions and facings
+bit for bit. Native match tests own launch-vector composition, final victim
+facing, grounded projection and the DownDamage override.
+
 `ledge_option` preserves ftCo_CliffClimb.c and selects complete
 `ftCo_8009AAFC`. The host adapter supplies its main/C-stick identity, input-ready
 flag, X value, precomputed angle, facing, common angle boundary and cooldowns.

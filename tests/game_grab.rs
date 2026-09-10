@@ -112,6 +112,7 @@ fn all_four_throw_directions_release_into_the_shared_damage_pipeline() {
         assert_eq!(entered.fighters[1].action, victim_action);
         let released = until(&mut game, |state| state.fighters[1].percent > 0.0);
         assert_eq!(released.fighters[1].percent, 8.0);
+        assert_eq!(released.fighters[1].facing, -1.0);
         assert!(
             released
                 .fighters

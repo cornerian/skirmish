@@ -276,6 +276,17 @@ pub fn damage_motion(
     }
 }
 
+/// Fighter-attacker branch of `ftColl_8007A06C`. The victim faces toward the
+/// attacker; equal X, signed zero and unordered comparisons select +1.
+pub fn fighter_hit_direction(victim_x: f32, attacker_x: f32) -> f32 {
+    if victim_x > attacker_x { -1.0 } else { 1.0 }
+}
+
+/// Captured-victim direction assigned by `ftCo_800DDDE4` before throw damage.
+pub fn throw_hit_direction(attacker_facing: f32) -> f32 {
+    -attacker_facing
+}
+
 /// Source motion ID for differential testing and resource-extraction tooling.
 pub const fn damage_motion_id(motion: DamageMotion) -> u16 {
     match motion {
@@ -779,6 +790,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fighter_and_throw_hit_directions_preserve_source_boundaries() {
+        assert_eq!(fighter_hit_direction(1.0, 0.0), -1.0);
+        assert_eq!(fighter_hit_direction(-1.0, 0.0), 1.0);
+        assert_eq!(fighter_hit_direction(0.0, 0.0), 1.0);
+        assert_eq!(fighter_hit_direction(-0.0, 0.0), 1.0);
+        assert_eq!(fighter_hit_direction(f32::NAN, 0.0), 1.0);
+        assert_eq!(throw_hit_direction(1.0), -1.0);
+        assert_eq!(throw_hit_direction(-1.0), 1.0);
+        assert_eq!(throw_hit_direction(0.0).to_bits(), (-0.0_f32).to_bits());
     }
 
     #[test]

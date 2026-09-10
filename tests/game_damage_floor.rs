@@ -663,6 +663,25 @@ fn prone_low_damage_uses_oriented_poses_and_preserves_checkpointed_recovery() {
 }
 
 #[test]
+fn prone_damage_launches_away_but_keeps_the_pretransition_facing_override() {
+    let mut game = down_wait(down_damage_data(false));
+    assert_eq!(game.state().fighters[1].facing, -1.0);
+    for _ in 0..12 {
+        if game.state().fighters[0].position[0] > game.state().fighters[1].position[0] {
+            break;
+        }
+        step(&mut game, directional_input(0, 0, 1.0));
+    }
+    assert_eq!(game.state().fighters[1].action, Action::DownWait);
+    assert!(game.state().fighters[0].position[0] > game.state().fighters[1].position[0]);
+
+    let entered = hit_prone(&mut game);
+    assert_eq!(entered.fighters[1].action, Action::DownDamage);
+    assert_eq!(entered.fighters[1].facing, -1.0);
+    assert!(entered.fighters[1].knockback[0] < 0.0);
+}
+
+#[test]
 fn prone_down_damage_forces_the_source_fly_launch_branch() {
     let mut game = down_wait(grounded_launch_down_damage_data());
     assert!(game.state().fighters[1].grounded);

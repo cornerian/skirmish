@@ -32,7 +32,8 @@ bounce, hitlag freezing, scalar friction, state serialization, invalid resources
 and exact checkpoint replay. `game_damage_floor` also covers forced fly response
 for prone DownDamage.
 
-The profile uses the current synthetic hit-direction policy and supplied stage
-normals. Ice launch-angle changes, material-dependent ground-friction
+The profile composes with the source-backed fighter/throw
+[damage-direction rules](hit-direction.md) and supplied stage normals. Ice
+launch-angle changes, material-dependent ground-friction
 multipliers, authentic common data and the PowerPC reciprocal-root estimate
 remain separate work.

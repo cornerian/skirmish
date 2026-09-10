@@ -1,6 +1,6 @@
 //! Explicit damage rules and the experimental scheduler's damage integration.
 //! Native helpers preserve selected source arithmetic; action ordering and
-//! facing selection remain the documented match-slice policy.
+//! remaining callback ordering stays the documented match-slice policy.
 use super::{
     Action, Error, Event, Fighter, State,
     data::{Bone, FighterData, Hitbox, MatchData},
@@ -668,6 +668,12 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
 /// The original damage transition assigns/merges launch velocity before hitlag,
 /// installs a post-hitlag callback, then resets the elapsed-hit counter. The
 /// caller resolves simultaneous contacts before invoking this helper.
+#[derive(Clone, Copy)]
+pub(crate) enum HitDirection {
+    FighterContact,
+    Throw,
+}
+
 pub(crate) fn apply_hit(
     data: &MatchData,
     state: &mut State,
@@ -675,11 +681,19 @@ pub(crate) fn apply_hit(
     hit: &Hitbox,
     staled: super::staling::Hit,
     hurt_height: damage::HurtHeight,
+    direction: HitDirection,
 ) -> Result<(), Error> {
     let victim = 1 - attacker;
     let rules = &data.rules;
     let target = &state.fighters[victim];
     let was_grounded = target.grounded;
+    let previous_facing = target.facing;
+    let damage_facing = match direction {
+        HitDirection::FighterContact => {
+            damage::fighter_hit_direction(target.position[0], state.fighters[attacker].position[0])
+        }
+        HitDirection::Throw => damage::throw_hit_direction(state.fighters[attacker].facing),
+    };
     let down_damage_face_up = rules
         .damage
         .floor_response
@@ -770,11 +784,8 @@ pub(crate) fn apply_hit(
         &rules.damage.angle_rules(),
     );
     let speed = knockback * rules.knockback_speed;
-    let facing = state.fighters[attacker].facing;
-    // The slice chooses direction from the attacker's facing. Other upstream
-    // facing selection, grounded launch projection and ice bounce are unported.
     let incoming = [
-        speed * libm::cosf(angle.radians) * facing,
+        -speed * libm::cosf(angle.radians) * damage_facing,
         speed * libm::sinf(angle.radians),
     ];
     let ground_launch = (was_grounded && rules.damage.ground_launch.is_some()).then(|| {
@@ -798,6 +809,13 @@ pub(crate) fn apply_hit(
     }
     state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     let target = &mut state.fighters[victim];
+    // ftCo_8008DCE0 first installs the hit direction. Its prone low-damage
+    // caller then supplies the old facing as the transition's final override.
+    target.facing = if down_damage_face_up.is_some() {
+        previous_facing
+    } else {
+        damage_facing
+    };
     target.percent = (target.percent + staled.damage).min(999.0);
     target.hitlag = target.hitlag.max(hitlag);
     target.hitstun = hitstun as u32;
