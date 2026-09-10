@@ -233,6 +233,12 @@ pub struct SurfaceTechAttributes {
     pub wall_jump_horizontal_velocity: f32,
     pub wall_jump_vertical_velocity: f32,
     pub passive_ceiling_velocity: f32,
+    /// Complete fighter-specific PassiveWall physics poses.
+    pub passive_wall_poses: Vec<Vec<Bone>>,
+    /// Complete fighter-specific damage-tech PassiveWallJump physics poses.
+    pub passive_wall_jump_poses: Vec<Vec<Bone>>,
+    /// Complete fighter-specific PassiveCeiling physics poses.
+    pub passive_ceiling_poses: Vec<Vec<Bone>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -275,8 +281,10 @@ pub(crate) fn validate_armor(armor: &Armor) -> Result<(), Error> {
 
 pub(crate) fn validate_surface_tech_attributes(
     attributes: &SurfaceTechAttributes,
+    profile: &SurfaceTechRules,
+    fighter: &FighterData,
 ) -> Result<(), Error> {
-    if [
+    if ![
         attributes.passive_wall_velocity,
         attributes.wall_jump_horizontal_velocity,
         attributes.wall_jump_vertical_velocity,
@@ -285,12 +293,28 @@ pub(crate) fn validate_surface_tech_attributes(
     .into_iter()
     .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value))
     {
-        Ok(())
-    } else {
-        Err(Error::Data(
+        return Err(Error::Data(
             "invalid fighter damage-surface tech attributes".into(),
-        ))
+        ));
     }
+    for (poses, frames) in [
+        (&attributes.passive_wall_poses, profile.wall_frames),
+        (
+            &attributes.passive_wall_jump_poses,
+            profile.wall_jump_frames,
+        ),
+        (&attributes.passive_ceiling_poses, profile.ceiling_frames),
+    ] {
+        if poses.len() != frames as usize {
+            return Err(Error::Data(
+                "damage-surface tech poses must match the configured duration".into(),
+            ));
+        }
+        for pose in poses {
+            super::validation::validate_animation_pose(pose, fighter)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_damage_pose_attributes(
@@ -1220,6 +1244,20 @@ pub(crate) fn surface_tech(
         ceiling_velocity_applied: false,
     };
     jump
+}
+
+pub(crate) fn surface_tech_pose<'a>(
+    fighter: &Fighter,
+    data: &'a FighterData,
+) -> Option<&'a Vec<Bone>> {
+    let attributes = data.surface_tech.as_ref()?;
+    let poses = match fighter.action {
+        Action::PassiveWall => &attributes.passive_wall_poses,
+        Action::PassiveWallJump if !fighter.wall_jump.active => &attributes.passive_wall_jump_poses,
+        Action::PassiveCeiling => &attributes.passive_ceiling_poses,
+        _ => return None,
+    };
+    poses.get(fighter.action_frame as usize)
 }
 
 pub(crate) fn reflect(

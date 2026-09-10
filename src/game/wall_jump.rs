@@ -185,7 +185,7 @@ pub fn launch_velocity(
 }
 
 pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a Vec<Bone>> {
-    (fighter.action == Action::PassiveWallJump)
+    (fighter.action == Action::PassiveWallJump && fighter.wall_jump.active)
         .then(|| {
             data.wall_jump
                 .as_ref()?

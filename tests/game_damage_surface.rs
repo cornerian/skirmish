@@ -7,7 +7,8 @@ use skirmish::{
         damage::{
             FloorResponseRules, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
         },
-        data::{CollisionBox, MatchData, StageGeometry},
+        data::{Bone, CollisionBox, MatchData, StageGeometry},
+        wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules},
     },
 };
 
@@ -48,12 +49,26 @@ fn tech_profile() -> SurfaceTechRules {
     }
 }
 
-fn tech_attributes() -> SurfaceTechAttributes {
+fn pose_track(bones: &[Bone], frames: u32, translation: [f32; 2]) -> Vec<Vec<Bone>> {
+    (0..frames)
+        .map(|frame| {
+            let mut pose = bones.to_vec();
+            pose[1].translation[0] += translation[0] + frame as f32 * 0.25;
+            pose[1].translation[1] += translation[1] + frame as f32 * 0.25;
+            pose
+        })
+        .collect()
+}
+
+fn tech_attributes(bones: &[Bone], profile: &SurfaceTechRules) -> SurfaceTechAttributes {
     SurfaceTechAttributes {
         passive_wall_velocity: 2.0,
         wall_jump_horizontal_velocity: 3.0,
         wall_jump_vertical_velocity: 4.0,
         passive_ceiling_velocity: 3.0,
+        passive_wall_poses: pose_track(bones, profile.wall_frames, [5.0, 0.0]),
+        passive_wall_jump_poses: pose_track(bones, profile.wall_jump_frames, [6.0, 0.0]),
+        passive_ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 8.0]),
     }
 }
 
@@ -124,11 +139,48 @@ fn data(angle: f32) -> MatchData {
 
 fn tech_data(angle: f32) -> MatchData {
     let mut data = data(angle);
-    data.rules.damage.surface_tech = Some(tech_profile());
+    let profile = tech_profile();
+    data.rules.damage.surface_tech = Some(profile.clone());
     for fighter in &mut data.fighters {
-        fighter.surface_tech = Some(tech_attributes());
+        fighter.surface_tech = Some(tech_attributes(&fighter.bones, &profile));
     }
     data
+}
+
+fn use_bone_ecb(data: &mut MatchData) {
+    data.fighters[1].collision_box = CollisionBox::Bones {
+        indices: [0, 1, 0, 1, 0, 1],
+        parameters: ecb::JointParameters {
+            side_y_offset: 0.0,
+            height_threshold: 4.0,
+            width_threshold: 4.0,
+        },
+        flags: 5,
+    };
+}
+
+fn add_ordinary_wall_jump(data: &mut MatchData) {
+    data.rules.wall_jump = Some(WallJumpRules {
+        tilt_deadzone: 0.3,
+        input_window: 5.0,
+        stick_threshold: 0.7,
+        tilt_window: 3.0,
+        startup_frames: 2,
+        vertical_velocity_base: 0.5,
+    });
+    for fighter in &mut data.fighters {
+        let mut frames = vec![fighter.bones.clone(); 8];
+        for pose in &mut frames {
+            pose[1].translation[0] += 20.0;
+        }
+        fighter.wall_jump = Some(WallJumpAttributes {
+            can_walljump: true,
+            minimum_approach_speed: 0.2,
+            horizontal_velocity: 3.0,
+            vertical_velocity: 4.0,
+            frames,
+        });
+    }
 }
 
 fn attack() -> [Controller; 2] {
@@ -458,6 +510,52 @@ fn ceiling_tech_applies_scripted_horizontal_input_and_recovers() {
 }
 
 #[test]
+fn each_surface_tech_pose_track_drives_the_headless_bone_ecb() {
+    for (angle, buttons, action, expected) in [
+        (0.0, BUTTON_L, Action::PassiveWall, [-5.25, 0.0]),
+        (
+            0.0,
+            BUTTON_L | BUTTON_X,
+            Action::PassiveWallJump,
+            [-6.25, 0.0],
+        ),
+        (90.0, BUTTON_L, Action::PassiveCeiling, [0.0, 9.25]),
+    ] {
+        let mut resource = tech_data(angle);
+        use_bone_ecb(&mut resource);
+        let mut game = hit(resource);
+        buffer_tech(&mut game, buttons, [0.0; 2]);
+        let teched = until(&mut game, |state| state.fighters[1].action == action);
+        assert_eq!(teched.fighters[1].action_frame, 1);
+        let checkpoint = game.checkpoint();
+        let sampled = step(&mut game);
+        let ecb = sampled.fighters[1].ecb.desired;
+        if expected[0] != 0.0 {
+            assert!((ecb.left[0] - expected[0]).abs() < 0.0001);
+        } else {
+            assert!((ecb.top[1] - expected[1]).abs() < 0.0001);
+        }
+        game.restore_checkpoint(&checkpoint).unwrap();
+        assert_eq!(step(&mut game), sampled);
+    }
+}
+
+#[test]
+fn damage_wall_jump_uses_its_pose_when_ordinary_wall_jump_is_also_configured() {
+    let mut resource = tech_data(0.0);
+    use_bone_ecb(&mut resource);
+    add_ordinary_wall_jump(&mut resource);
+    let mut game = hit(resource);
+    buffer_tech(&mut game, BUTTON_L | BUTTON_X, [0.0; 2]);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::PassiveWallJump
+    });
+    assert!(!game.state().fighters[1].wall_jump.active);
+    let sampled = step(&mut game);
+    assert!((sampled.fighters[1].ecb.desired.left[0] + 6.25).abs() < 0.0001);
+}
+
+#[test]
 fn floor_tech_wins_over_armed_wall_tech_in_a_diagonal_collision() {
     let mut game = hit(tech_data(315.0));
     buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
@@ -548,6 +646,13 @@ fn a_second_recent_shoulder_press_fails_surface_tech_lockout() {
 
 #[test]
 fn malformed_surface_tech_resources_are_rejected() {
+    let encoded = serde_json::to_string(&tech_data(0.0)).unwrap();
+    let decoded: MatchData = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(
+        decoded.fighters[0].surface_tech,
+        tech_data(0.0).fighters[0].surface_tech
+    );
+
     let mut cases = Vec::new();
     let mut bad = tech_data(0.0);
     bad.rules
@@ -574,6 +679,30 @@ fn malformed_surface_tech_resources_are_rejected() {
         .as_mut()
         .unwrap()
         .wall_jump_vertical_velocity = f32::NAN;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.fighters[0]
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .passive_wall_poses
+        .pop();
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.fighters[0]
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .passive_wall_jump_poses[0][1]
+        .parent = None;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.fighters[0]
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .passive_ceiling_poses[0][1]
+        .translation[1] = f32::NAN;
     cases.push(bad);
     let mut bad = tech_data(0.0);
     bad.rules.damage.floor_response = None;

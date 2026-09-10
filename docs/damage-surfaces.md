@@ -6,10 +6,11 @@ directional knockback threshold, reflected-velocity multiplier, repeat lockout
 and synthetic wall/ceiling action durations. Optional
 `rules.damage.surface_tech` supplies wall freeze, wall and ceiling action timing,
 the upward-stick threshold and the scripted ceiling-input frame. Each fighter
-then supplies its wall, wall-jump and ceiling launch speeds in `surface_tech`.
-Omitting both profiles retains ordinary solid-surface stopping and does not infer
-common-data values. Either profile requires `floor_response` because that profile
-defines the explicit tumble threshold and physical-L/R tech window.
+then supplies its wall, wall-jump and ceiling launch speeds plus one complete
+sampled bone pose per action frame in `surface_tech`. Omitting both profiles
+retains ordinary solid-surface stopping and does not infer common-data values.
+Either profile requires `floor_response` because that profile defines the
+explicit tumble threshold and physical-L/R tech window.
 
 An eligible contact combines self velocity and knockback, mirrors the result
 across the sampled stage normal, applies the configured multiplier, clears self
@@ -27,10 +28,13 @@ actions freeze for the configured opening frames, then launch away from the
 wall using fighter attributes and recover to `Fall` after their own durations.
 A ceiling contact enters `PassiveCeiling`; its configured script frame samples
 horizontal input, applies the fighter's ceiling speed and then recovers to
-`Fall`. Tech input is sampled during hitlag and active frames and survives
-checkpoints. Floor response wins over either surface response, and a wall wins
-over a ceiling at a simultaneous corner contact. A successful tech emits
-`SurfaceTeched` with the player, surface, stable line ID and wall-jump decision.
+`Fall`. Their sampled skeletons drive hurtbox and bone-based ECB geometry in
+headless matches. Ordinary wall jumps and damage wall-jump techs use distinct
+fighter resources despite sharing the `PassiveWallJump` action. Tech input and
+pose-driven collision state survive checkpoints. Floor response wins over either
+surface response, and a wall wins over a ceiling at a simultaneous corner
+contact. A successful tech emits `SurfaceTeched` with the player, surface,
+stable line ID and wall-jump decision.
 
 `fighter::damage::reflect_velocity` retains the float operation order from the
 complete `ftCo_800C18A8` entry and its `lbVector_Add_xy`/`lbVector_Mirror`
@@ -46,13 +50,13 @@ lockout, launch scheduling and resource-driven speeds.
 `game_damage_surface` covers rightward wall and upward ceiling reflections,
 neutral and jump wall techs, both wall orientations, ceiling input motion, exact
 configured action durations, floor and wall priority, shoulder repeat lockout,
-profile omission, an unmet threshold, malformed resources and deterministic
-checkpoint suffixes.
+all three pose tracks through the bone-based ECB, ordinary wall-jump resource
+coexistence, profile omission, an unmet threshold, malformed resources and
+deterministic checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
-Missed-tech choices, character-specific surface-tech poses, invincibility,
-effect/audio commands, the complete collision callback graph and independent
-Melee traces remain pending. Directional floor tech rolls are supplied by the
+Missed-tech choices, invincibility, effect/audio commands, the complete collision
+callback graph and independent Melee traces remain pending. Directional floor tech rolls are supplied by the
 [damage-floor profile](damage-floor.md).
 The current repeat guard records the most recent surface class; native
 line-specific and connected-corner behavior needs broader collision-state

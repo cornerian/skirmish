@@ -332,7 +332,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             (None, None) => {}
         }
         match (&rules.damage.surface_tech, &fighter.surface_tech) {
-            (Some(_), Some(attributes)) => damage::validate_surface_tech_attributes(attributes)?,
+            (Some(profile), Some(attributes)) => {
+                damage::validate_surface_tech_attributes(attributes, profile, fighter)?
+            }
             (Some(_), None) => {
                 return Err(Error::Data(
                     "damage-surface tech rules require attributes for every fighter".into(),
