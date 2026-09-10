@@ -187,6 +187,69 @@ fn capture_ignores_victim_actions_and_checkpoint_replays_the_pair_exactly() {
 }
 
 #[test]
+fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
+    let mut resource = data();
+    resource.fighters[0].grab.as_mut().unwrap().pummel.poses[1][1].translation[0] += 2.0;
+    let mut game = held(resource);
+    let held_position = game.state().fighters[1].position;
+
+    let entered = step(&mut game, input(0, BUTTON_A, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(entered.fighters[0].action, Action::CatchAttack);
+    assert_eq!(entered.fighters[1].action, Action::CaptureWait);
+    assert_eq!(entered.fighters[0].grab.victim, Some(1));
+    let checkpoint = game.checkpoint();
+
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].percent, 3.0);
+    assert!(hit.fighters[0].grab.pummel_hit);
+    assert!(hit.fighters.iter().all(|fighter| fighter.hitlag == 2.0));
+    assert!(hit.fighters[1].position[0] > held_position[0] + 1.0);
+    assert!(hit.events.contains(&Event::Hit {
+        attacker: 0,
+        victim: 1,
+        damage: 3.0,
+        knockback: 0.0,
+    }));
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(step(&mut game, IDLE), hit);
+    let waiting = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    assert_eq!(waiting.fighters[1].percent, 3.0);
+    assert!(!waiting.fighters[0].grab.pummel_hit);
+    assert_eq!(waiting.fighters[0].grab.victim, Some(1));
+
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let second = until(&mut game, |state| state.fighters[1].percent == 6.0);
+    assert_eq!(second.fighters[0].action, Action::CatchAttack);
+    assert_eq!(second.fighters[0].grab.victim, Some(1));
+}
+
+#[test]
+fn held_a_during_catch_pull_does_not_turn_into_a_pummel() {
+    let mut game = Match::new(data(), 0).unwrap();
+    let held_a = input(0, BUTTON_A, [0.0; 2], [0.0; 2]);
+    step(&mut game, input(0, BUTTON_A | BUTTON_Z, [0.0; 2], [0.0; 2]));
+    for _ in 0..8 {
+        if game.state().fighters[0].action == Action::CatchWait {
+            break;
+        }
+        step(&mut game, held_a);
+    }
+    assert_eq!(game.state().fighters[0].action, Action::CatchWait);
+    assert_eq!(
+        step(&mut game, held_a).fighters[0].action,
+        Action::CatchWait
+    );
+    step(&mut game, IDLE);
+    assert_eq!(
+        step(&mut game, held_a).fighters[0].action,
+        Action::CatchAttack
+    );
+}
+
+#[test]
 fn simultaneous_catches_resolve_in_stable_player_order() {
     let mut game = Match::new(data(), 0).unwrap();
     let inputs = [Controller {
@@ -283,6 +346,15 @@ fn malformed_grab_resources_are_rejected() {
         .forward
         .hit
         .angle_degrees = 362.0;
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].grab.as_mut().unwrap().pummel.poses.clear();
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].grab.as_mut().unwrap().pummel.hit_frame = 0;
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].grab.as_mut().unwrap().pummel.damage = 1_000;
     cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());

@@ -186,10 +186,13 @@ jump selection across timer boundaries and arbitrary binary32 values.
 
 The [grab profile](grabs.md) promotes all three paired grab/throw conformance
 scenarios. `game_grab` covers bone-sampled catch contact, miss recovery, all four
-throw directions, main/C-stick priority and fresh-edge history, held-victim
-input suppression, checkpoint suffixes, simultaneous ordering, target policy,
-KO cleanup and invalid resources. `grab_differential` compares the three exact
-`ftCo_800DD1E4` main-stick threshold predicates against pinned C.
+throw directions, pummel priority and repeat lifecycle, one captured-damage
+event, shared hitlag, sampled pummel attachment motion, main/C-stick priority and
+fresh-edge history, held-victim input suppression, checkpoint suffixes,
+simultaneous ordering, target policy, KO cleanup and invalid resources. A focused
+unit test covers the exact `fn_800DA4C0` A-bit predicate. `grab_differential`
+compares the three exact `ftCo_800DD1E4` main-stick threshold predicates against
+pinned C.
 
 The [ledge profile](ledges.md) promotes all six ledge conformance scenarios.
 `game_ledge` covers endpoint flags/connectivity, both sides, eligibility,
@@ -274,7 +277,7 @@ explicitly disable unrelated state/environment branches.
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
 | Grounded and airborne neutral specials | `conformance_actions` and `game_special` (implemented paired profile) |
-| Grab and throw | `conformance_actions` and `conformance_combat`: paired capture and throw release (implemented) |
+| Grab, pummel and throw | `game_grab`, `conformance_actions` and `conformance_combat`: paired capture, repeated pummel and throw release (implemented profile) |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers; `game_damage_surface` covers ordinary wall/ceiling reflection and techs |

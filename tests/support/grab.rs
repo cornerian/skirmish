@@ -1,6 +1,6 @@
 use skirmish::game::{
     data::{Capsule, MatchData},
-    grab::{Attachment, Catch, CatchFrame, Parameters, Rules, Throw, ThrowHit, Throws},
+    grab::{Attachment, Catch, CatchFrame, Parameters, Pummel, Rules, Throw, ThrowHit, Throws},
 };
 
 pub fn profile(mut data: MatchData) -> MatchData {
@@ -48,6 +48,11 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 holder_point: [0.6, 0.0, 0.0],
                 victim_bone: 1,
                 victim_point: [0.0; 3],
+            },
+            pummel: Pummel {
+                poses: vec![bones.clone(); 4],
+                hit_frame: 1,
+                damage: 3,
             },
             throws: Throws {
                 forward: throw(30.0),

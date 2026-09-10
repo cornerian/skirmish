@@ -178,7 +178,14 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             (None, None) => {}
         }
         match (&rules.grab, &fighter.grab) {
-            (Some(rules), Some(parameters)) => grab::validate(rules, parameters, fighter)?,
+            (Some(grab_rules), Some(parameters)) => {
+                grab::validate(grab_rules, parameters, fighter)?;
+                require(
+                    parameters.pummel.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base
+                        < 1_000_000.0,
+                    "pummel hitlag exceeds supported counter range",
+                )?;
+            }
             (Some(_), None) => {
                 return Err(Error::Data(
                     "grab rules require parameters for every fighter".into(),

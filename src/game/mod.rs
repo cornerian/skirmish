@@ -95,6 +95,7 @@ pub enum Action {
     Catch,
     CatchPull,
     CatchWait,
+    CatchAttack,
     ThrowF,
     ThrowB,
     ThrowHi,

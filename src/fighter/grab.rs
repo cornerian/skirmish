@@ -1,5 +1,10 @@
 //! Throw-direction input predicates retained from `ftCo_Throw.c`.
 
+/// `fn_800DA4C0`: a freshly pressed A button requests CatchAttack.
+pub const fn pummel_pressed(pressed_buttons: u16) -> bool {
+    pressed_buttons & 0x100 != 0
+}
+
 /// A main-stick horizontal threshold crossing has priority over vertical throws.
 pub fn fresh_horizontal(current: f32, previous: f32, threshold: f32) -> bool {
     (previous < threshold && current >= threshold)
@@ -70,6 +75,14 @@ mod tests {
         assert!(!fresh_up(0.6, 0.6, 0.6));
         assert!(fresh_down(-0.6, -0.59, -0.6));
         assert!(!fresh_down(-0.6, -0.6, -0.6));
+    }
+
+    #[test]
+    fn pummel_uses_only_the_fresh_a_bit() {
+        assert!(!pummel_pressed(0));
+        assert!(!pummel_pressed(0x200));
+        assert!(pummel_pressed(0x100));
+        assert!(pummel_pressed(0x110));
     }
 
     #[test]

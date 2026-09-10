@@ -1,4 +1,4 @@
-//! Bone-driven catch, paired capture, and forward-throw scheduling.
+//! Bone-driven catch, paired capture, pummel, and throw scheduling.
 //!
 //! Resources supply every pose, collision volume, attachment, timer, and hit
 //! coefficient. The relationship is headless physics state and is serialized
@@ -11,7 +11,10 @@ use super::{
 };
 use crate::{
     collision::{bones::BoneCapsule, shield as body_collision},
-    fighter::{combat::Capsule as WorldCapsule, grab as input},
+    fighter::{
+        combat::{self, Capsule as WorldCapsule},
+        grab as input,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +32,7 @@ pub struct Rules {
 pub struct Parameters {
     pub catch: Catch,
     pub attachment: Attachment,
+    pub pummel: Pummel,
     pub throws: Throws,
 }
 
@@ -55,6 +59,17 @@ pub struct Attachment {
     pub holder_point: [f32; 3],
     pub victim_bone: usize,
     pub victim_point: [f32; 3],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pummel {
+    /// One complete holder physics pose per frame.
+    pub poses: Vec<Vec<Bone>>,
+    /// The single captured-victim damage callback. Zero is not observable in
+    /// this scheduler because input dispatch follows priority-1 callbacks.
+    pub hit_frame: u32,
+    pub damage: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -90,6 +105,7 @@ pub struct ThrowHit {
 pub struct State {
     pub victim: Option<usize>,
     pub captor: Option<usize>,
+    pub pummel_hit: bool,
 }
 
 pub(crate) fn validate(
@@ -152,6 +168,18 @@ pub(crate) fn validate(
     if !active {
         return Err(Error::Data("catch requires an active grabbox frame".into()));
     }
+    let pummel = &parameters.pummel;
+    if pummel.poses.is_empty()
+        || pummel.poses.len() > 4096
+        || pummel.hit_frame == 0
+        || pummel.hit_frame as usize >= pummel.poses.len()
+        || pummel.damage > 999
+    {
+        return Err(Error::Data("invalid explicit pummel parameters".into()));
+    }
+    for pose in &pummel.poses {
+        super::validation::validate_animation_pose(pose, fighter)?;
+    }
     for throw in [
         &parameters.throws.forward,
         &parameters.throws.backward,
@@ -182,24 +210,24 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
     let other = 1 - player;
     let fighter = &fighters[player];
     let partner = &fighters[other];
+    if fighter.grab.pummel_hit
+        && (fighter.grab.victim.is_none() || fighter.action != Action::CatchAttack)
+    {
+        return false;
+    }
     match (fighter.grab.victim, fighter.grab.captor) {
         (None, None) => true,
         (Some(victim), None) => {
             victim == other
-                && partner.grab
-                    == (State {
-                        victim: None,
-                        captor: Some(player),
-                    })
+                && partner.grab.victim.is_none()
+                && partner.grab.captor == Some(player)
+                && !partner.grab.pummel_hit
                 && pair_actions(fighter.action, partner.action)
         }
         (None, Some(holder)) => {
             holder == other
-                && partner.grab
-                    == (State {
-                        victim: Some(player),
-                        captor: None,
-                    })
+                && partner.grab.victim == Some(player)
+                && partner.grab.captor.is_none()
                 && pair_actions(partner.action, fighter.action)
         }
         (Some(_), Some(_)) => false,
@@ -211,6 +239,7 @@ fn pair_actions(holder: Action, victim: Action) -> bool {
         (holder, victim),
         (Action::CatchPull, Action::CapturePulled)
             | (Action::CatchWait, Action::CaptureWait)
+            | (Action::CatchAttack, Action::CaptureWait)
             | (Action::ThrowF, Action::ThrownF)
             | (Action::ThrowB, Action::ThrownB)
             | (Action::ThrowHi, Action::ThrownHi)
@@ -224,6 +253,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
         Action::Catch
             | Action::CatchPull
             | Action::CatchWait
+            | Action::CatchAttack
             | Action::ThrowF
             | Action::ThrowB
             | Action::ThrowHi
@@ -242,6 +272,7 @@ pub(crate) fn holder_action(action: Action) -> bool {
         action,
         Action::CatchPull
             | Action::CatchWait
+            | Action::CatchAttack
             | Action::ThrowF
             | Action::ThrowB
             | Action::ThrowHi
@@ -253,6 +284,13 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
     let Some(parameters) = &data.grab else {
         return false;
     };
+    if fighter.action == Action::CatchAttack
+        && fighter.action_frame as usize >= parameters.pummel.poses.len()
+    {
+        fighter.grab.pummel_hit = false;
+        simulation::enter(fighter, Action::CatchWait);
+        return true;
+    }
     let complete = match fighter.action {
         Action::Catch => fighter.action_frame as usize >= parameters.catch.frames.len(),
         action
@@ -282,8 +320,14 @@ pub(crate) fn update_actions(
     rules: Option<&Rules>,
     controller: Controller,
 ) -> bool {
+    let pressed = controller.buttons & !fighter.previous_input.buttons;
     if owns_action(fighter.action) {
         if fighter.action == Action::CatchWait {
+            if input::pummel_pressed(pressed) {
+                fighter.grab.pummel_hit = false;
+                simulation::enter(fighter, Action::CatchAttack);
+                return true;
+            }
             let Some(rules) = rules else { return true };
             let action = input::direction(
                 controller.stick,
@@ -309,7 +353,6 @@ pub(crate) fn update_actions(
         }
         return true;
     }
-    let pressed = controller.buttons & !fighter.previous_input.buttons;
     if fighter.grounded
         && matches!(fighter.action, Action::Wait | Action::Walk)
         && pressed & super::BUTTON_Z != 0
@@ -324,7 +367,7 @@ pub(crate) fn update_actions(
 
 /// Paired priority-1 transitions and the scripted release event.
 pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[bool; 2], Error> {
-    let mut released = [false; 2];
+    let mut frozen = [false; 2];
     for holder in 0..2 {
         let Some(victim) = state.fighters[holder].grab.victim else {
             continue;
@@ -343,6 +386,15 @@ pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[
             {
                 simulation::enter(&mut state.fighters[holder], Action::CatchWait);
                 simulation::enter(&mut state.fighters[victim], Action::CaptureWait);
+            }
+            Action::CatchAttack
+                if state.fighters[holder].action_frame == parameters.pummel.hit_frame
+                    && !state.fighters[holder].grab.pummel_hit =>
+            {
+                state.fighters[holder].grab.pummel_hit = true;
+                apply_pummel(data, state, holder, victim, parameters.pummel.damage)?;
+                frozen[holder] = true;
+                frozen[victim] = true;
             }
             action
                 if throw_for_action(&parameters.throws, action).is_some_and(|throw| {
@@ -378,13 +430,13 @@ pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[
                     crate::fighter::damage::HurtHeight::Middle,
                     super::damage::HitDirection::Throw,
                 )?;
-                released[holder] = true;
-                released[victim] = true;
+                frozen[holder] = true;
+                frozen[victim] = true;
             }
             _ => {}
         }
     }
-    Ok(released)
+    Ok(frozen)
 }
 
 pub(crate) fn synchronize_actions(state: &mut MatchState) {
@@ -558,6 +610,11 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
+        Action::CatchAttack => parameters
+            .pummel
+            .poses
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice),
         action if throw_for_action(&parameters.throws, action).is_some() => {
             throw_for_action(&parameters.throws, action)?
                 .poses
@@ -602,7 +659,34 @@ fn attach(
 
 fn detach(state: &mut MatchState, holder: usize, victim: usize) {
     state.fighters[holder].grab.victim = None;
+    state.fighters[holder].grab.pummel_hit = false;
     state.fighters[victim].grab.captor = None;
+}
+
+fn apply_pummel(
+    data: &MatchData,
+    state: &mut MatchState,
+    holder: usize,
+    victim: usize,
+    damage: u32,
+) -> Result<(), Error> {
+    let hitlag =
+        combat::hitlag(damage as i32, false, 1.0, &data.rules.hitlag.physics()).map_err(physics)?;
+    if !hitlag.is_finite() || hitlag < 0.0 {
+        return Err(Error::Physics("pummel produced invalid hitlag".into()));
+    }
+    state.fighters[holder].hitlag = state.fighters[holder].hitlag.max(hitlag);
+    let target = &mut state.fighters[victim];
+    target.percent = (target.percent + damage as f32).min(999.0);
+    target.hitlag = target.hitlag.max(hitlag);
+    target.di_pending = false;
+    state.events.push(Event::Hit {
+        attacker: holder,
+        victim,
+        damage: damage as f32,
+        knockback: 0.0,
+    });
+    Ok(())
 }
 
 fn throw_for_action(throws: &Throws, action: Action) -> Option<&Throw> {
