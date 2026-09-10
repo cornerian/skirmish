@@ -22,8 +22,9 @@ and hitlag field and requires the first
 divergence at that row. Slippi 2.0, 2.1, 3.5 and 3.8 fixtures prove the report's
 version-dependent field set. Separate Peppi-written replay cases drive physical
 B through neutral-special combat, physical Z through grab/capture and physical L
-through shield entry, then remove each recorded input and require divergence on
-that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
+through shield entry and direct platform drop, and processed C-stick through a
+shield jump, then remove or change each recorded input and require divergence
+on that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
 and fighter-hit attribution. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. Exact unit cases cover every retained

@@ -260,6 +260,85 @@ fn analog_guard_can_be_powershielded_only_inside_both_native_entry_windows() {
 }
 
 #[test]
+fn held_cstick_up_jumps_from_shield_with_native_priority_and_release_short_hop() {
+    let up = Controller {
+        buttons: BUTTON_L,
+        cstick: [0.0, 0.8],
+        ..Default::default()
+    };
+    let mut game = Match::new(data(), 42).unwrap();
+    assert_eq!(step(&mut game, 0, up).fighters[1].action, Action::GuardOn);
+    let jumped = step(&mut game, 0, up);
+    assert_eq!(jumped.fighters[1].action, Action::JumpSquat);
+    assert_eq!(
+        jumped.fighters[1].locomotion.jump_input,
+        skirmish::game::locomotion::JumpInput::CStick
+    );
+    assert!(!jumped.fighters[1].short_hop);
+    let checkpoint = game.checkpoint();
+    let released = step(
+        &mut game,
+        0,
+        Controller {
+            buttons: BUTTON_L,
+            ..Default::default()
+        },
+    );
+    assert!(released.fighters[1].short_hop);
+    let expected = serde_json::to_vec(&released).unwrap();
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&step(
+            &mut game,
+            0,
+            Controller {
+                buttons: BUTTON_L,
+                ..Default::default()
+            },
+        ))
+        .unwrap(),
+        expected
+    );
+
+    for (controller, expected) in [
+        (
+            Controller {
+                buttons: BUTTON_L,
+                stick: [0.0, 1.0],
+                cstick: [0.0, 1.0],
+                ..Default::default()
+            },
+            skirmish::game::locomotion::JumpInput::Stick,
+        ),
+        (
+            Controller {
+                buttons: BUTTON_L | BUTTON_X,
+                cstick: [0.0, 1.0],
+                ..Default::default()
+            },
+            skirmish::game::locomotion::JumpInput::Buttons,
+        ),
+    ] {
+        let mut game = Match::new(data(), 42).unwrap();
+        step(&mut game, 0, held());
+        let state = step(&mut game, 0, controller);
+        assert_eq!(state.fighters[1].action, Action::JumpSquat);
+        assert_eq!(state.fighters[1].locomotion.jump_input, expected);
+    }
+
+    let mut ordinary = Match::new(data(), 42).unwrap();
+    let no_shield = step(
+        &mut ordinary,
+        0,
+        Controller {
+            cstick: [0.0, 1.0],
+            ..Default::default()
+        },
+    );
+    assert_eq!(no_shield.fighters[1].action, Action::Wait);
+}
+
+#[test]
 fn inert_hitboxes_signal_shield_touch_without_damage_stun_or_body_contact() {
     let mut shielded = Match::new(inert_data(), 42).unwrap();
     step(&mut shielded, BUTTON_A, held());

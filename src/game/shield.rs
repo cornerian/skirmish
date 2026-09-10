@@ -355,17 +355,13 @@ pub(crate) fn update_actions(
                 start_powershield(f, r, false, input);
                 return true;
             }
-            let stick_jump = data.locomotion.as_ref().is_some_and(|p| {
-                input.stick[1] >= p.tap_jump_threshold
-                    && f.locomotion.tilt_y_age < p.tap_jump_window
-            });
-            if stick_jump || pressed & (super::BUTTON_X | super::BUTTON_Y) != 0 {
+            if let Some(source) = data
+                .locomotion
+                .as_ref()
+                .and_then(|p| super::locomotion::shield_jump_input(f, p, input))
+            {
                 f.short_hop = false;
-                f.locomotion.jump_input = if stick_jump {
-                    super::locomotion::JumpInput::Stick
-                } else {
-                    super::locomotion::JumpInput::Buttons
-                };
+                f.locomotion.jump_input = source;
                 enter(f, Action::JumpSquat);
             }
         }

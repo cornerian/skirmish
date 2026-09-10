@@ -53,6 +53,10 @@ The implementation preserves these examined source branches:
   platform. The transition reuses the ordinary floor-line skip, falling physics
   and ECB lock. A shield entered on the current scheduler frame cannot also
   drop until its next action callback.
+- `ftCo_800CB024` extends the ordinary jump dispatcher with
+  `ftCo_800DF910`'s inclusive upward C-stick threshold. Main-stick tap jump and
+  fresh X/Y retain priority. C-stick input does not require a fresh excursion,
+  and its release during JumpSquat selects the native short-hop branch.
 - `ftCo_ShieldBreak{Fly,Fall,Down,Stand}.c` launches a broken fighter, suppresses
   air control, preserves the break hurt-status branch, and transitions on landing
   and supplied animation endings. `ftCo_Furafura.c` resets shield health, computes
@@ -72,7 +76,7 @@ This is still an experimental scheduler rather than complete Melee equivalence.
 Reflected-projectile motion is not yet simulated even though the fighter's
 reflector-active window is represented. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
 branches, shield tilting and native shield/body animation tracks, rolls, grabs,
-C-stick shield jumps, full callback ordering and material
-friction are not provided by this batch. Break down/up pose selection is grouped
+full callback ordering and material friction are not provided by this batch.
+Break down/up pose selection is grouped
 into one lifecycle with supplied durations. Real Slippi parity also requires
 the missing authentic gameplay resources and other action systems.

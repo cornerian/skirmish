@@ -520,6 +520,38 @@ fn file_backed_shield_drop_matches_and_detects_the_first_changed_stick_frame() {
 }
 
 #[test]
+fn file_backed_cstick_shield_jump_matches_and_detects_the_first_changed_frame() {
+    let mut inputs = vec![IDLE; 8];
+    for input in &mut inputs[..2] {
+        input[0].buttons = BUTTON_L;
+        input[0].cstick[1] = 0.8;
+    }
+    inputs[2][0].buttons = BUTTON_L;
+    let recording = Recording::from_script(shield_drop_data(), 31, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::GuardOn);
+    assert_eq!(recording.states[1].fighters[0].action, Action::JumpSquat);
+    assert_eq!(
+        recording.states[1].fighters[0].locomotion.jump_input,
+        skirmish::game::locomotion::JumpInput::CStick
+    );
+    assert!(recording.states[2].fighters[0].short_hop);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.cstick.y.set(1, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame,
+            checked_frames: 1,
+            ..
+        } if frame == FIRST + 1
+    ));
+}
+
+#[test]
 fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [
         (0, Action::DeadUp, false),

@@ -74,6 +74,7 @@ pub enum JumpInput {
     #[default]
     Buttons,
     Stick,
+    CStick,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -268,6 +269,16 @@ fn jump_input(f: &Fighter, p: &Parameters, input: Controller, relaxed: bool) -> 
     } else {
         None
     }
+}
+
+pub(crate) fn shield_jump_input(
+    f: &Fighter,
+    p: &Parameters,
+    input: Controller,
+) -> Option<JumpInput> {
+    jump_input(f, p, input, false).or_else(|| {
+        math::cstick_jump(input.cstick[1], p.tap_jump_threshold).then_some(JumpInput::CStick)
+    })
 }
 
 fn start_dash(f: &mut Fighter, p: &Parameters) {
@@ -540,6 +551,7 @@ pub(crate) fn update_actions(
             f.short_hop |= match f.locomotion.jump_input {
                 JumpInput::Buttons => input.buttons & (BUTTON_X | BUTTON_Y) == 0,
                 JumpInput::Stick => input.stick[1] < p.tap_jump_release_threshold,
+                JumpInput::CStick => input.cstick[1] < p.tap_jump_release_threshold,
             };
         }
         _ => {}

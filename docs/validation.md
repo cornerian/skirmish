@@ -1,5 +1,19 @@
 # Local validation provenance
 
+The 2026-09-10 C-stick shield-jump coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-cstick-shield-jump-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage holds an upward C-stick before shield entry,
+uses it on the next Guard callback, checks main-stick/X/Y priority, the inclusive
+threshold, release-based short hops, ordinary-state exclusion and checkpoint
+restoration. The complete `ftCo_800DF910` predicate is compared with pinned C
+over arbitrary binary32 values. A Peppi-written replay matches the
+GuardOn-to-JumpSquat suffix and detects a changed C-stick at its first affected
+frame.
+
 The 2026-09-10 shield-drop coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-shield-drop-20260910-verified`

@@ -76,6 +76,12 @@ pub fn shield_drop_request(
     shield_held && stick_y <= -threshold && tilt_age < window && on_platform
 }
 
+/// Complete `ftCo_800DF910` C-stick jump predicate. Unlike tap jump, this
+/// extended shield-action input does not require a fresh-stick age.
+pub fn cstick_jump(stick_y: f32, threshold: f32) -> bool {
+    stick_y >= threshold
+}
+
 /// Walking coefficients, including the environment query result used by the
 /// original ground projection. No character or material defaults are assumed.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -206,6 +212,13 @@ mod tests {
         assert!(!shield_drop_request(true, -0.7, 3, 0.7, 3, true));
         assert!(!shield_drop_request(false, -1.0, 0, 0.7, 3, true));
         assert!(!shield_drop_request(true, -1.0, 0, 0.7, 3, false));
+    }
+
+    #[test]
+    fn cstick_jump_is_inclusive_and_does_not_require_a_previous_sample() {
+        assert!(!cstick_jump(0.799, 0.8));
+        assert!(cstick_jump(0.8, 0.8));
+        assert!(cstick_jump(1.0, 0.8));
     }
 
     #[test]

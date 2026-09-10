@@ -132,8 +132,10 @@ trigger flag without analog pressure or digital L/R is rejected. Other buttons
 remain unsupported. Raw stick and physical analog samples remain preserved by
 the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit resources, aerial selection and direct
-main-stick shield drops through one-way platforms. A file-backed regression
-requires a changed down-stick sample to diverge at the first affected frame.
+main-stick shield drops through one-way platforms. C-stick shield jumps use the
+processed C-stick channel and preserve release-based short hops. File-backed
+regressions require changed down-stick and up-C-stick samples to diverge at
+their first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each
