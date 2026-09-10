@@ -238,7 +238,13 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             &fighter.floor_tech,
         ) {
             (Some(_), Some(attributes)) => {
-                damage::validate_floor_tech_attributes(attributes, fighter)?
+                let invincibility = rules
+                    .damage
+                    .floor_response
+                    .as_ref()
+                    .and_then(|profile| profile.recovery_invincibility.as_ref())
+                    .map_or(0, |profile| profile.tech_roll_frames);
+                damage::validate_floor_tech_attributes(attributes, fighter, invincibility)?
             }
             (Some(_), None) => {
                 return Err(Error::Data(
@@ -263,12 +269,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             (Some(_), Some(attributes)) => damage::validate_knockdown_attributes(
                 attributes,
                 fighter,
-                rules
-                    .damage
-                    .floor_response
-                    .as_ref()
-                    .unwrap()
-                    .down_stand_frames,
+                rules.damage.floor_response.as_ref().unwrap(),
             )?,
             (Some(_), None) => {
                 return Err(Error::Data(

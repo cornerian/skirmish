@@ -68,6 +68,7 @@ fn data(angle: f32) -> MatchData {
         tech_repeat_lockout: 40,
         tech_roll: None,
         knockdown_options: None,
+        recovery_invincibility: None,
         passive_frames: 3,
         down_bound_frames: 4,
         down_wait_frames: 5,

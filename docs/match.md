@@ -162,10 +162,12 @@ Optional [`rules.damage.floor_response`](damage-floor.md) adds source-gated
 neutral techs plus the complete configured DownBound/DownWait/DownStand recovery
 chain. Its optional roll profile adds forward/backward selection and per-frame
 root motion and bone poses. Optional knockdown resources add missed-tech rolls,
-standing and get-up attacks with sampled bones and TransN motion. Physical-L/R
-ages are sampled during hitlag and ordinary frames. Damage at or above its
-inclusive threshold retains tumble
-eligibility through DamageFall until floor contact. Optional
+standing and get-up attacks with sampled bones and TransN motion, while optional
+recovery rules assign invincibility to each tech and get-up action. Physical
+L/R and separate A/B ages are sampled during hitlag and ordinary frames; A/B
+ages reset when DownBound begins and provide its attack buffer. Damage at or
+above its inclusive threshold retains tumble eligibility through DamageFall
+until floor contact. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
 configured FlyReflectWall/FlyReflectCeiling durations. Optional
@@ -272,8 +274,7 @@ priority action graph remain unported. The optional [damage-floor profile](damag
 and directional floor techs plus resource-driven missed-tech rolls, standing and
 get-up attacks. The
 [damage-surface profile](damage-surfaces.md) supplies ordinary tumble
-reflections and wall/ceiling techs. Recovery invincibility and prone-orientation
-variants remain unported.
+reflections and wall/ceiling techs. Prone-orientation variants remain unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

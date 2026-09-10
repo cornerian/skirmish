@@ -792,13 +792,23 @@ fn update_nudge(
 // Input sampling continues during hitlag; SDI/jump transitions consume the
 // same history, so old held inputs cannot become fresh after a state change.
 fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
-    f.locomotion.jump_press_age =
-        if input.buttons & !f.previous_input.buttons & (BUTTON_X | BUTTON_Y) != 0 {
-            0
-        } else {
-            f.locomotion.jump_press_age.saturating_add(1)
-        };
-    if input.buttons & !f.previous_input.buttons & (BUTTON_L | BUTTON_R) != 0 {
+    let pressed = input.buttons & !f.previous_input.buttons;
+    f.locomotion.jump_press_age = if pressed & (BUTTON_X | BUTTON_Y) != 0 {
+        0
+    } else {
+        f.locomotion.jump_press_age.saturating_add(1)
+    };
+    f.locomotion.attack_a_age = if pressed & BUTTON_A != 0 {
+        0
+    } else {
+        f.locomotion.attack_a_age.saturating_add(1)
+    };
+    f.locomotion.attack_b_age = if pressed & BUTTON_B != 0 {
+        0
+    } else {
+        f.locomotion.attack_b_age.saturating_add(1)
+    };
+    if pressed & (BUTTON_L | BUTTON_R) != 0 {
         f.locomotion.previous_tech_press_age = f.locomotion.tech_press_age;
         f.locomotion.tech_press_age = 0;
     } else {

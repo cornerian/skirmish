@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 floor-recovery coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-floor-recovery-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage exercises the full supplied
+Passive/DownBound/DownWait pose suffix, reset and checkpoint behavior for the
+source A/B attack buffer, DownBound attack/roll priority, every recovery
+invincibility category and combat on the first vulnerable frame. Exact selector
+boundaries remain covered by Rust unit tests and the existing complete C-stick
+predicate differentials.
+
 The 2026-09-09 missed-tech recovery batch is recorded at:
 
 `/mnt/archive/runs/skirmish-knockdown-options-20260909`

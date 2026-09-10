@@ -206,7 +206,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |
 | `ecb_response` | Four-sided moving compression, ECB restoration, moving-floor landing, one-way direction and tangential-motion rejection, checkpoint replay |
-| `damage_floor` | Neutral/directional techs, missed-tech rolls/stand/attack, sampled root motion and bones, input priority/history, invalid profiles and checkpoint replay |
+| `damage_floor` | Neutral/directional techs, full knockdown/get-up suffix, DownBound attack buffering, sampled root motion and bones, exact recovery protection, combat vulnerability, input history, invalid profiles and checkpoint replay |
 | `damage_surface` | Wall/ceiling reflection and techs, neutral/jump choice, both wall orientations, ceiling motion, action timing, collision priority, repeat lockout, disabled/invalid profiles and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them

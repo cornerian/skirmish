@@ -283,6 +283,7 @@ pub struct KnockdownRules {
     pub stand_stick_threshold: f32,
     pub vertical_angle_radians: f32,
     pub attack_cstick_threshold: f32,
+    pub bound_attack_window: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -305,6 +306,38 @@ pub fn knockdown_option(input: KnockdownInput, rules: &KnockdownRules) -> Option
     {
         return Some(KnockdownOption::Attack);
     }
+    if let Some(option) = knockdown_roll(input, rules) {
+        return Some(option);
+    }
+    ((input.main[1] >= rules.stand_stick_threshold
+        && super::aerial::stick_angle(input.main) >= rules.vertical_angle_radians)
+        || input.shoulder_pressed)
+        .then_some(KnockdownOption::Stand)
+}
+
+/// DownBound's animation-end input branch. Fresh A/B ages are reset when the
+/// bound begins; either buffered button or a fresh upward C-stick beats a roll.
+pub fn down_bound_option(
+    input: KnockdownInput,
+    attack_ages: [u8; 2],
+    rules: &KnockdownRules,
+) -> Option<KnockdownOption> {
+    if attack_ages
+        .into_iter()
+        .any(|age| f32::from(age) < rules.bound_attack_window)
+        || fresh_up_cstick(
+            input.previous_cstick[1],
+            input.cstick[1],
+            rules.attack_cstick_threshold,
+        )
+    {
+        Some(KnockdownOption::Attack)
+    } else {
+        knockdown_roll(input, rules)
+    }
+}
+
+fn knockdown_roll(input: KnockdownInput, rules: &KnockdownRules) -> Option<KnockdownOption> {
     let stick_x = if fresh_horizontal_cstick(
         input.previous_cstick,
         input.cstick,
@@ -319,17 +352,13 @@ pub fn knockdown_option(input: KnockdownInput, rules: &KnockdownRules) -> Option
     } else {
         None
     };
-    if let Some(stick_x) = stick_x {
-        return Some(if stick_x * input.facing >= 0.0 {
+    stick_x.map(|stick_x| {
+        if stick_x * input.facing >= 0.0 {
             KnockdownOption::Forward
         } else {
             KnockdownOption::Backward
-        });
-    }
-    ((input.main[1] >= rules.stand_stick_threshold
-        && super::aerial::stick_angle(input.main) >= rules.vertical_angle_radians)
-        || input.shoulder_pressed)
-        .then_some(KnockdownOption::Stand)
+        }
+    })
 }
 
 /// `ftCo_800C1E0C`: a recent X/Y press or an upward stick at the inclusive
@@ -460,6 +489,7 @@ mod tests {
             stand_stick_threshold: 0.7,
             vertical_angle_radians: 0.8,
             attack_cstick_threshold: 0.8,
+            bound_attack_window: 4.0,
         };
         let mut input = KnockdownInput {
             main: [-0.7, 0.0],
@@ -487,6 +517,18 @@ mod tests {
         input.main = [0.0, 0.0];
         input.shoulder_pressed = false;
         assert_eq!(knockdown_option(input, &rules), None);
+
+        input.main = [-0.7, 0.0];
+        assert_eq!(
+            down_bound_option(input, [3, 255], &rules),
+            Some(KnockdownOption::Attack)
+        );
+        assert_eq!(
+            down_bound_option(input, [4, 255], &rules),
+            Some(KnockdownOption::Forward)
+        );
+        input.main = [0.0, 0.7];
+        assert_eq!(down_bound_option(input, [4, 255], &rules), None);
     }
 
     #[test]
