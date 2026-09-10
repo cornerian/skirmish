@@ -9,11 +9,12 @@ terrain conversion can retain the current animation frame.
 A fresh physical B press selects the action only when both main-stick axes are
 strictly inside `neutral_thresholds`. Grounded locomotion states enter
 `SpecialN`; ordinary jump/fall states enter `SpecialAirN`. Special selection
-and released wall-tech actions enter `SpecialAirN`. Special selection precedes
-catch, shield, ordinary attack and aerial dispatch. A frozen wall tech blocks
-the action, and a B press held through release must be rearmed. Holding B cannot
-restart the move after it finishes; returning through a released frame rearms
-the input edge.
+and released wall-tech actions enter `SpecialAirN`. Reflected wall and ceiling
+damage actions also enter it after hitstun reaches zero. Special selection
+precedes catch, shield, ordinary attack and aerial dispatch. Frozen wall tech or
+active hitstun blocks the action, and a B press held through release must be
+rearmed. Holding B cannot restart the move after it finishes; returning through
+a released frame rearms the input edge.
 
 Both variants use the ordinary ground or air physics path. Walking off an edge
 changes to `SpecialAirN`, and landing changes to `SpecialN`, retaining the frame

@@ -1179,14 +1179,16 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             f.action,
             Action::Damage
                 | Action::DownDamage
-                | Action::FlyReflectWall
-                | Action::FlyReflectCeiling
                 | Action::PassiveWall
                 | Action::PassiveWallJump
                 | Action::PassiveCeiling
         ) && !shield::break_invulnerable(f.action)
         {
-            if !f.fast_fall
+            let damage_input_locked =
+                matches!(f.action, Action::FlyReflectWall | Action::FlyReflectCeiling)
+                    && f.hitstun != 0;
+            if !damage_input_locked
+                && !f.fast_fall
                 && f.velocity[1] < 0.0
                 && input.stick[1] <= -rules.fast_fall_threshold
                 && f.previous_input.stick[1] > -rules.fast_fall_threshold

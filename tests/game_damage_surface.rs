@@ -212,6 +212,32 @@ fn interrupt_data(angle: f32) -> MatchData {
     special_resources::profile(data)
 }
 
+fn long_reflect_data(angle: f32) -> MatchData {
+    let mut data = interrupt_data(angle);
+    let response = data.rules.damage.surface_response.as_mut().unwrap();
+    response.wall_frames = 256;
+    response.ceiling_frames = 256;
+    let response = response.clone();
+    for fighter in &mut data.fighters {
+        fighter.surface_response = Some(response_attributes(&fighter.bones, &response));
+    }
+    data.stage.floor.y = -100.0;
+    data.stage.spawns[0][1] = -100.0;
+    let geometry = data.stage.geometry.as_mut().unwrap();
+    geometry.lines[0].start[1] = -100.0;
+    geometry.lines[0].end[1] = -100.0;
+    geometry.joints[0].bounds_min[1] = -130.0;
+    for hit in data.fighters[0]
+        .jab
+        .frames
+        .iter_mut()
+        .flat_map(|frame| &mut frame.hitboxes)
+    {
+        hit.radius = 120.0;
+    }
+    data
+}
+
 fn released_neutral_wall_tech(data: MatchData) -> Match {
     let mut game = hit(data);
     buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
@@ -399,6 +425,98 @@ fn reflected_wall_and_ceiling_pose_tracks_drive_the_headless_bone_ecb() {
         }
         game.restore_checkpoint(&checkpoint).unwrap();
         assert_eq!(step(&mut game), sampled);
+    }
+}
+
+#[test]
+fn reflected_actions_use_ordinary_air_gravity_and_drift() {
+    for (angle, action) in [
+        (0.0, Action::FlyReflectWall),
+        (90.0, Action::FlyReflectCeiling),
+    ] {
+        let mut resource = long_reflect_data(angle);
+        resource.fighters[1].movement.gravity = 0.2;
+        let mut game = hit(resource);
+        let reflected = until(&mut game, |state| state.fighters[1].action == action);
+        let before = reflected.fighters[1].velocity;
+        let mut drift = IDLE;
+        drift[1].stick[0] = 1.0;
+        let after = step_with(&mut game, drift);
+        assert_eq!(after.fighters[1].action, action);
+        assert!(after.fighters[1].velocity[0] > before[0]);
+        assert!(after.fighters[1].velocity[1] < before[1]);
+    }
+}
+
+#[test]
+fn reflected_fast_fall_waits_for_hitstun_and_replays() {
+    for (angle, action) in [
+        (0.0, Action::FlyReflectWall),
+        (90.0, Action::FlyReflectCeiling),
+    ] {
+        let mut resource = long_reflect_data(angle);
+        resource.fighters[1].movement.gravity = 0.2;
+        let mut game = hit(resource);
+        until(&mut game, |state| state.fighters[1].action == action);
+        while game.state().fighters[1].velocity[1] >= 0.0 {
+            step(&mut game);
+        }
+        assert!(game.state().fighters[1].hitstun > 1);
+        let blocked = game.checkpoint();
+        let mut down = IDLE;
+        down[1].stick[1] = -1.0;
+        assert!(!step_with(&mut game, down).fighters[1].fast_fall);
+
+        game.restore_checkpoint(&blocked).unwrap();
+        while game.state().fighters[1].hitstun != 0 {
+            step(&mut game);
+        }
+        let ready = game.checkpoint();
+        let fast_fall = step_with(&mut game, down);
+        assert_eq!(fast_fall.fighters[1].action, action);
+        assert!(fast_fall.fighters[1].fast_fall);
+        game.restore_checkpoint(&ready).unwrap();
+        assert_eq!(step_with(&mut game, down), fast_fall);
+    }
+}
+
+#[test]
+fn reflected_damage_air_inputs_wait_for_hitstun_and_replay() {
+    for (buttons, stick, expected) in [
+        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
+        (BUTTON_X, [0.0; 2], Action::JumpAerial),
+    ] {
+        for (angle, reflected_action) in [
+            (0.0, Action::FlyReflectWall),
+            (90.0, Action::FlyReflectCeiling),
+        ] {
+            let mut game = hit(long_reflect_data(angle));
+            until(&mut game, |state| {
+                state.fighters[1].action == reflected_action
+            });
+            while game.state().fighters[1].hitstun > 1 {
+                step(&mut game);
+            }
+            assert_eq!(game.state().fighters[1].hitstun, 1);
+            let boundary = game.checkpoint();
+            let mut input = IDLE;
+            input[1].buttons = buttons;
+            input[1].stick = stick;
+            let blocked = step_with(&mut game, input);
+            assert_eq!(blocked.fighters[1].hitstun, 0);
+            assert_eq!(blocked.fighters[1].action, reflected_action);
+
+            game.restore_checkpoint(&boundary).unwrap();
+            let ready = step(&mut game);
+            assert_eq!(ready.fighters[1].hitstun, 0);
+            assert_eq!(ready.fighters[1].action, reflected_action);
+            let ready = game.checkpoint();
+            let transitioned = step_with(&mut game, input);
+            assert_eq!(transitioned.fighters[1].action, expected);
+            game.restore_checkpoint(&ready).unwrap();
+            assert_eq!(step_with(&mut game, input), transitioned);
+        }
     }
 }
 

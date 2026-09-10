@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-10 reflected damage-air callback batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-reflect-air-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Both reflected actions now run ordinary aerial gravity and stick
+drift. Match coverage holds fast fall, neutral special, aerial attack and double
+jump through hitstun, accepts fresh input after the exact boundary and replays
+every branch from checkpoints.
+
 The 2026-09-10 moving-wall reflection batch is recorded at:
 
 `/mnt/archive/runs/skirmish-surface-reflect-moving-wall-20260910`

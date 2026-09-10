@@ -64,6 +64,7 @@ pub(crate) fn update_actions(
         );
     let air = !fighter.grounded
         && (super::damage::wall_tech_interruptible(fighter)
+            || super::damage::reflected_air_interruptible(fighter)
             || matches!(
                 fighter.action,
                 Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass

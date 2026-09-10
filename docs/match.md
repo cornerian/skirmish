@@ -201,7 +201,9 @@ launch, landing and hitstun-countdown recovery without resetting DownWait. Optio
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
 configured FlyReflectWall/FlyReflectCeiling durations with complete sampled
-physics poses. Optional
+physics poses. Reflected actions retain ordinary gravity and drift, hold fast
+fall and implemented air-action input through hitstun, then accept fresh input.
+Optional
 `rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
 techs, ceiling tech input motion, complete sampled physics poses and configured
 recovery. Floor landing wins when multiple responses are possible in one

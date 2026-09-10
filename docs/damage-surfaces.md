@@ -19,7 +19,10 @@ across the sampled stage normal, applies the configured multiplier, clears self
 velocity and faces along the reflected horizontal component. Wall contacts enter
 `FlyReflectWall`; ceiling contacts enter `FlyReflectCeiling`. Their configured
 durations return to `DamageFall` while retaining tumble state. Their sampled
-skeletons drive hurtbox and bone-based ECB geometry headlessly. Collision
+skeletons drive hurtbox and bone-based ECB geometry headlessly. Both actions run
+ordinary aerial gravity and stick drift. Their shared damage-air input callback
+blocks fast fall, neutral special, aerial attack and double jump while hitstun
+remains, then accepts fresh inputs in ordinary source priority. Collision
 corrects the ECB before the transition and reports `SurfaceReflected` with the
 player, surface class and stable line ID. Floor landing has priority over a wall
 or ceiling reflection found in the same collision pass. The repeat field stores
@@ -78,9 +81,10 @@ jump wall techs, both wall orientations, ceiling input motion, exact configured
 action durations, floor and wall priority, shoulder repeat lockout, all three
 tech pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
-post-freeze air-action timing and priority, ceiling non-interruption, profile
-omission, all three tech floor-landing paths, both reflected-action knockdown
-landings and cleanup, an unmet threshold,
+post-freeze air-action timing and priority, reflected-action gravity, drift,
+fast-fall and special/aerial/jump hitstun boundaries, ceiling non-interruption,
+profile omission, all three tech floor-landing paths, both reflected-action
+knockdown landings and cleanup, an unmet threshold,
 inward/outward moving-wall startup response, both cross-surface reflection
 chains during lockout, reflected-action moving-wall response, malformed
 resources and deterministic checkpoint suffixes.
