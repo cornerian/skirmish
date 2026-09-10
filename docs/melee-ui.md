@@ -8,12 +8,13 @@ complete `mnmain.c` plus the exact-revision animation and joint-lookup helpers
 for the host, and exposes only functions whose dependencies are already
 implemented. It does not contain a second menu state-machine rewrite.
 
-Main-menu behavior is represented once as validated declarative Rust data and
-a small renderer-independent state machine. The pinned C remains its behavioral
-oracle: item order, descriptions, selection animation ranges, vertical wrap,
-input priority, 20-frame entrance lockout, 5-frame action lockout, cue IDs, and
-destination IDs are covered directly. This is the extensible replacement for
-hard-coded source control flow, not a parallel preview menu.
+Main- and Versus-menu behavior is represented once as validated declarative
+Rust data and a small renderer-independent state machine. The pinned C remains
+its behavioral oracle: item order, descriptions, authored selection ranges,
+vertical wrap, input priority, entrance and action lockouts, cue IDs,
+destination IDs, and Back behavior are covered directly. This is the
+extensible replacement for hard-coded source control flow, not a parallel
+preview menu.
 
 Set `SKIRMISH_MELEE_SOURCE` to a pinned doldecomp/melee checkout, or keep it at
 the repository's documented `../../External/melee` location. The
@@ -35,23 +36,37 @@ serialized default-pose preview usable; it does not claim that original source
 was executed. This keeps `--all-features` validation portable while preserving
 an explicit distinction between the source-backed and preview-only paths.
 
-The development render selects only the four `MnMaAll.dat` roots loaded by
-`mnMain_Scene_OnEnter`: `MenMainBack_Top`, `MenMainPanel_Top`,
+The development asset loader selects only the four `MnMaAll.dat` symbols loaded
+by `mnMain_Scene_OnEnter`: `MenMainBack_Top`, `MenMainPanel_Top`,
 `MenMainConTop_Top`, and `MenMainCursor_Top`. It retains source joint identities,
-uses the original 4:3 camera, and clears to the original fog color. This fixes
-the previous renderer behavior that overlaid all 57 independent archive roots.
+uses the original 4:3 camera, and clears to the original fog color. The current
+serialized preview renders all four exports as roots, which is not yet the
+source composition: `MenMainCursor_Top` is a prototype that `mn_8022B3A0`
+clones five times and reparents beneath ConTop slots.
 
 ## Current boundary
 
-The SDL window now runs a persistent Main-menu session at 60 fixed ticks per
-second. Keyboard, hot-plug SDL controllers, and mouse all enter the same
-canonical command queue. Controller directions use Melee's per-port
-20/8/4/2-frame repeat schedule. Mouse motion and left-click are transformed from
-window units through the renderer's current high-density 4:3 viewport into the
-authored 640×480 canvas; clicks emit the same focus-then-confirm commands used by
-the runtime. Its non-overlapping regions are replaceable presentation data
-derived from the source archive's frame-5 visible label quads. Melee itself had
-no mouse contract, so the documented eight-pixel tolerance is a host extension.
+The SDL window runs a persistent 60 Hz fixed-tick menu session. It starts in
+Main and resolves Main-to-Versus and Versus-to-Main handoffs without rebuilding
+the host input adapters. Keyboard, hot-plug SDL controllers, and mouse all enter
+the same canonical command queue. Directional holds use Melee's independent
+20/8/4/2-frame repeat schedule. Menu handoffs preserve keyboard and controller
+edge state, inherit the source-global action cooldown, and re-hit-test the
+stationary pointer against the destination menu.
+
+Mouse motion and left-click are transformed from window units through the
+renderer's current high-density 4:3 viewport into the authored 640×480 canvas.
+Clicks emit the same focus-then-confirm commands used by every other adapter.
+Main and Versus share the source-derived five-slot geometry; their
+non-overlapping regions are replaceable presentation data derived from the
+frame-5 visible label quads. Melee itself had no mouse contract, so the
+eight-pixel tolerance is a host extension.
+
+Each selected menu cue initializes or restarts a renderer-independent authored
+frame clock. The first presentation tick samples the range start, subsequent
+fixed and catch-up ticks advance at unit rate, and looped clips wrap at the
+source end boundary before displaying the terminal integer frame. This clock is
+connected to menu effects, but not yet to decoded asset tracks.
 
 The rendered output is still a recognizable serialized default pose, so
 selection changes and destination requests are currently visible in host
@@ -67,34 +82,70 @@ the VS transition request at frame 400 to the idle request at frame 500, and
 the original user-data teardown runs. Pointer-free results cross into Rust as
 scene plans.
 
-Both plans deliberately keep `pose_evaluated` false. The original functions
-drive a host implementation of the relevant HSD frame-clock semantics, but the
-converted scene does not yet carry runtime joint, material, or shape animation
-tracks. The next step is a companion runtime manifest keyed by stable source
-offsets that supplies the archive's actual hierarchy and tracks.
-Content setup in `mn_8022B3A0` still needs to connect cursor
-cloning/reparenting, recursive visibility, SIS text, and material/shape
-animation masks to mutable presentation instances. The destination service and
-the three original menu sound assets are also not connected yet. Unsupported
-calls remain errors; diagnostic action requests and success stubs are not a
-substitute for executing the original UI.
+Both C scene plans deliberately keep `pose_evaluated` false. The converted
+scene still lacks the animation target graph and alternate texture tables
+needed to bind archive tracks to runtime objects.
 
-The renderer-independent `skirmish::animation` module now safely decodes and
-evaluates the exact FObj subset used by the Back and Panel roots. A small
-provenance fixture binds one visible Back joint to its original AObj/FObj byte
-ranges and asserts five sample values bit-for-bit against the pinned C runtime.
-ConTop still requires the SLP opcode, material diffuse channels, and texture
-color-register channels; Cursor still requires texture scale and color-register
-channels. Those inputs fail explicitly until their exact consumers exist. The
-decoder is not yet connected to joint posing or GPU updates, so this milestone
-does not change the rendered default pose.
+The generic presentation-instance layer models independently mutable joint
+hierarchy and SRT-or-matrix state, effective branch visibility, material state,
+and texture-animation state under stable source identities and distinct runtime
+identities. Clones therefore retain their source provenance without sharing
+mutable state. The layer consumes sampled channel values but does not decode an
+asset schema, schedule playback, upload GPU state, or implement skinning. The
+menu host does not yet construct these instances from `MnMaAll` or synchronize
+them with the renderer.
 
-VS mode is implemented by the original source. The panel transition itself is
-now verified through the original callback: `MENU_KIND_VS` requests frame 400
-and settles into its frame-500 idle loop after 51 callback invocations. The
-input path now emits that exact Main-to-VS destination request after its
-20-frame entrance cooldown and 5-frame action lockout. Instantiating VS content,
-applying the paired transition clips, and later handing its default Melee entry
-to `GM_VS` remain presentation/destination work. The removed translated
-preview's **Original scene pending** label was only an unconnected host handoff;
-it was never evidence that VS mode or its assets were unavailable.
+A companion animation manifest keyed by stable source offsets must still supply
+the hierarchy, track-to-owner bindings, material and texture identities, and
+ordered alternate-image tables. Content construction must then express
+`mn_8022B3A0`'s cursor cloning and reparenting, SIS text, and animation masks
+against those instances. Main-to-Versus and Versus-to-Main are connected
+internal destinations; scene exits plus the Special, Rules, and Name submenus
+remain unresolved. The three original menu sounds are also not connected.
+Unsupported calls remain errors; diagnostic action requests and success stubs
+are not a substitute for executing the original UI.
+
+The renderer-independent `skirmish::animation` module safely decodes and
+evaluates the exact FObj subset used by the Back and Panel roots. Its coverage
+fixture binds all 133 AObjs and 276 FObjs in those slices and checks 1,349
+samples against the pinned C oracle. A smaller provenance fixture also binds
+one visible Back mesh to its original joint and byte ranges.
+
+The decoder recognizes every scalar channel used by the audited Main-selection
+ConTop subtree: joint translation, scale, and branch visibility; material
+diffuse RGB and alpha; and texture image, U/V translation, blend, Konst alpha,
+and TEV0 alpha. That subtree uses interpolation opcodes 1–4 and does not require
+SLP. Cursor texture scale and its additional color-register channels remain
+explicitly unsupported.
+
+The GPU path retains serialized-hidden geometry plus source MObj, first-stage
+TObj, and render-mode metadata without rebuilding geometry or textures. Source
+render mode fixes each draw in its OPA, TEXEDGE, or XLU pass while material
+alpha animates, and authored traversal order remains stable within each pass.
+Visibility uses an exact export-joint/optional-instance selector; material
+color instead requires the concrete source MObj identity, so one joint cannot
+accidentally broadcast a material track across unrelated materials. Vertex-owned
+color channels remain identity factors when a material update arrives.
+
+These exported offsets are still resource-local and cannot distinguish runtime
+clones, so they are a transitional renderer boundary rather than canonical
+scene-instance identities. No animation manifest or synchronization layer
+drives the updates, and joint posing, skinning, texture selection, UV
+transforms, texture color registers, complete PE state, and additional texture
+stages are not GPU-bound. Consequently the rendered menu remains the
+serialized default pose.
+
+Versus behavior is a connected declarative menu, not an unavailable screen.
+Its Melee, Tournament, Special, Rules, and Name entries carry the source
+descriptions `0x8E`–`0x92`, label frames 40–48, selection ranges 700–949 with
+their twenty-frame loop offsets, cue IDs, destinations, and Back behavior.
+Confirming Versus in Main enters this runtime with Melee selected and the
+inherited five-frame cooldown; Back restores Main with Versus selected. The
+same five-slot mouse policy works through the handoff without leaking the click
+or re-triggering a held button.
+
+Independently, the original panel callback verifies that `MENU_KIND_VS`
+requests frame 400 and settles into its frame-500 idle loop after 51 callback
+invocations. VS content construction, paired transition clips, SIS text, and
+the external `GM_VS`/Tournament and submenu destinations remain unconnected, so
+the current pixels do not yet change when the behavioral handoff occurs.

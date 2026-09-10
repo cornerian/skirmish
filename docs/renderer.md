@@ -51,11 +51,12 @@ cargo run --locked --features melee-ui-source --bin skirmish-renderer -- \
 ```
 
 This executes the connected original background and panel source slice over the
-archive topology and runs the source-backed Main behavior at 60 fixed ticks per
-second. Arrows/stick navigate, A/Enter/Space confirms, B/Escape backs out, Start
-confirms, and mouse hover/left-click use the rendered 4:3 viewport. Full
-content/cursor construction, visible animation application, original audio, and
-destination instantiation remain under development; see
+archive topology and runs source-audited declarative Main and Versus behavior at
+60 fixed ticks per second. Arrows/stick navigate, A/Enter/Space confirms,
+B/Escape backs out, Start confirms, and mouse hover/left-click use the rendered
+4:3 viewport. Internal Main↔Versus handoffs work. Full content/cursor
+construction, visible animation application, original audio, submenu content,
+and external destination instantiation remain under development; see
 [direct UI status](melee-ui.md). No recreated menu or "unavailable/pending"
 screen is drawn over this path.
 
@@ -78,7 +79,9 @@ cargo run --locked --features renderer --bin skirmish-renderer -- \
   warnings.
 - `renderer` uploads the scene and shares the depth-tested draw path between an
   SDL3 surface and PNG capture. It resizes its depth target, suspends at zero
-  size, and retries recoverable surface events.
+  size, and retries recoverable surface events. Serialized-hidden draws remain
+  resident, and export-identified visibility and material color can change
+  without rebuilding geometry or textures.
 - `melee` selects the original `MnMaAll.dat` roots and invokes the source bridge.
 - `controls` converts keyboard and SDL controller state into independently
   repeated digital sources and maps pointer events through authored-space hit
@@ -92,10 +95,20 @@ call. Its owner stays on the SDL thread and drops the surface before the window.
 Public renderer APIs expose no surface or acquired frame.
 
 The current material path is a textured Lambert approximation. GX TEV stages,
-alpha tests, custom blending/depth state, source lighting, runtime animation,
-and skinning are not yet complete. Texture transforms, coordinate generation,
-LOD, wrapping, and filtering are approximated; extra texture stages, line
-primitives, and point primitives are omitted.
+alpha tests, custom blending/depth state, source lighting, complete runtime
+animation binding, and skinning are not yet complete. Exported MObj render mode
+now fixes each draw into its OPA, TEXEDGE, or XLU pass, with `LessEqual` depth
+comparison and authored traversal order within each pass. Legacy and procedural
+scenes without source metadata retain the previous one-time alpha inference.
+Material updates require a concrete source MObj identity and preserve identity
+factors for vertex-owned color channels; visibility updates remain joint based.
+
+MObj and TObj offsets are only unique inside one exported resource and cannot
+identify runtime clones, so canonical animation binding still belongs to the
+presentation-instance/manifest layer. Texture transforms, coordinate
+generation, LOD, wrapping, and filtering are approximated; custom PE blend,
+write-mask, depth, and alpha-compare state is not applied yet. Extra texture
+stages, line primitives, and point primitives are omitted.
 
 ## Verification
 

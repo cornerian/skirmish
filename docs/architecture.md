@@ -11,7 +11,7 @@ carry the gameplay data; unresolved data and rules must not be silently filled
 with approximate defaults to make a match appear playable.
 
 Resource extraction and visual conversion are owned by the separate
-`melee-assets` task. Skirmish consumes native exports while continuing gameplay
+`skirmish-assets` task. Skirmish consumes native exports while continuing gameplay
 work; it does not own that project's directory layout. The
 [resource integration contract](resources.md) separates exact gameplay data
 from vector artwork and procedural presentation effects.
@@ -20,12 +20,13 @@ The main crate groups native code by responsibility. Focused top-level modules
 hold translated HSD and Metrowerks algorithms. `fighter` contains scalar
 movement, walking/jump launch, and damage arithmetic; `collision` contains bone
 hierarchy transforms, environmental collision boxes, sampled stage queries,
-moving-line remapping and swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
-headless. `game` composes the experimental match slice and owns gameplay state
-and frame scheduling. Feature-gated presentation lives under `src/renderer` so
-the native application can share game and resource types without a circular
-workspace dependency. Separate crates remain where a real dependency boundary
-exists, such as replay parsing.
+moving-line remapping and swept contacts. Bone poses and bone-attached
+hitboxes/hurtboxes remain available headless. `game` composes the experimental
+match slice and owns gameplay state and frame scheduling. Renderer-independent
+presentation timing and mutable scene-instance state live under
+`src/presentation`; feature-gated GPU, window, input-host, and audio adapters
+live under `src/renderer`. Separate crates remain where a real dependency
+boundary exists, such as replay parsing.
 
 `crates/peppi-adapter` uses Peppi for parsing and columnar replay storage,
 reusing its port, version, pre/post-frame and vector types. This keeps replay
