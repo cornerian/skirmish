@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use extraction::{self, Source};
 use menus::Unlocks;
 use renderer::{
     asset_menu::{AssetImportMenu, ImportAction},
@@ -18,7 +19,7 @@ use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
 };
-use skirmish::{assets, controller::host::ControllerHub};
+use skirmish::controller::host::ControllerHub;
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -179,7 +180,7 @@ impl App {
             } if window_id == self.renderer.window_id() && !self.asset_menu.busy() => {
                 self.menu_active = true;
                 self.import_active = true;
-                self.asset_menu.start(assets::Source::File(filename.into()));
+                self.asset_menu.start(Source::File(filename.into()));
                 self.keyboard.clear();
                 self.ports.release();
                 self.asset_menu.release_input();
@@ -427,7 +428,7 @@ fn main() -> Result<()> {
     let menu_active = cli.menus || cli.import_assets || cli.scene.is_none();
     let asset_destination = cli.asset_dir.map(Ok).unwrap_or_else(|| {
         sdl3::filesystem::get_pref_path("Skirmish", "Skirmish")
-            .map(|path| path.join("assets").join(assets::BUNDLE_NAME))
+            .map(|path| path.join("assets").join(extraction::BUNDLE_NAME))
             .map_err(|error| format!("Asset storage is unavailable: {error}"))
     });
     let mut search_roots = Vec::new();

@@ -10,6 +10,7 @@ name = "skirmish-renderer"
 path = "src/main.rs"
 
 [dependencies]
+extraction = { path = "../extraction" }
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }

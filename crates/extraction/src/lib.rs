@@ -1,4 +1,4 @@
-//! Optional offline disc import. Gameplay never opens an ISO or runs a decoder.
+//! Optional offline disc extraction. Gameplay never opens an ISO or runs a decoder.
 //! The installed bundle retains original files, with a checked path resolver;
 //! it is not a converted visual scene or a complete native MatchData resource.
 

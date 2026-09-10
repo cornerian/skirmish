@@ -1,10 +1,10 @@
+use extraction::Source;
 use menus::{Menu, MenuState, Unlocks, input::pad};
 use renderer::{
     asset_menu::{AssetImportMenu, ImportAction},
     menu::{MenuEvent, MenuSession},
     ui::UiFrame,
 };
-use skirmish::assets::Source;
 use std::time::{Duration, Instant};
 
 #[test]

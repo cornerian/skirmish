@@ -2,8 +2,8 @@
 //! on a cancellable worker. SDL dialogs only communicate via a channel.
 
 use crate::menu::{MenuRow, MenuStatus, MenuView};
+use extraction::{self, Progress, Source};
 use menus::{MenuState, Unlocks, controller::Controllers, input};
-use skirmish::assets::{self, Progress, Source};
 use std::{
     path::PathBuf,
     sync::{
@@ -130,12 +130,12 @@ impl AssetImportMenu {
             .name("asset-import".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    assets::import(source, &destination, &cancel, |progress| {
+                    extraction::import(source, &destination, &cancel, |progress| {
                         let _ = sender.send(Message::Progress(progress));
                     })
                     .map(|bundle| bundle.root().to_owned())
                     .map_err(|error| ImportError {
-                        manual_search: error.is::<assets::IsoNotFound>(),
+                        manual_search: error.is::<extraction::IsoNotFound>(),
                         message: format!("{error:#}"),
                     })
                 }))

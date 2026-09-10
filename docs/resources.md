@@ -35,7 +35,7 @@ versioned manifest can resolve stable resource IDs to paths relative to the
 bundle root, allowing the producing task to organize directories sensibly.
 Skirmish must not depend on a particular developer's checkout path, an extraction
 tool at runtime, or an ISO/DOL. The optional [in-game importer](asset-import.md)
-now installs original files, and `assets::AssetBundle` resolves their exact disc
+now installs original files, and `extraction::AssetBundle` resolves their exact disc
 identifiers with path containment and integrity checks. It does not implement a
 converted gameplay/visual bundle resolver; that integration remains outstanding.
 

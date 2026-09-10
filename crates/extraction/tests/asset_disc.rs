@@ -1,5 +1,5 @@
 //! Optional local-disc smoke check. The ordinary suite never needs a game ISO.
-use skirmish::assets::{self, Source};
+use extraction::{self, Source};
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
@@ -14,7 +14,8 @@ fn native_import_matches_every_disc_file_byte_for_byte() {
     let temp = tempfile::tempdir().unwrap();
     let destination = temp.path().join("bundle");
     let cancel = AtomicBool::new(false);
-    let bundle = assets::import(Source::File(iso.into()), &destination, &cancel, |_| {}).unwrap();
+    let bundle =
+        extraction::import(Source::File(iso.into()), &destination, &cancel, |_| {}).unwrap();
     assert_eq!(bundle.files().len(), 1209);
     for entry in bundle.files() {
         original.seek(SeekFrom::Start(entry.offset)).unwrap();
@@ -27,7 +28,7 @@ fn native_import_matches_every_disc_file_byte_for_byte() {
             entry.path
         );
     }
-    let reused = assets::import(
+    let reused = extraction::import(
         Source::File("no-disc-needed.iso".into()),
         &destination,
         &cancel,

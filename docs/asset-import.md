@@ -68,7 +68,7 @@ Existing installations are verified against every recorded file hash without
 requiring the ISO. A damaged installation reports an error instead of silently
 overwriting it.
 
-`skirmish::assets::AssetBundle::open` opens an installed bundle independently of
+`extraction::AssetBundle::open` opens an installed bundle independently of
 the disc. `resolve("PlFx.dat")` returns a checked path within `disc/files`;
 unknown IDs, traversal paths, escaping symlinks, missing files, and size
 mismatches are rejected. `verify` additionally checks every SHA-256.
