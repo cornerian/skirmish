@@ -103,6 +103,10 @@ pub(crate) fn validate(rules: &Rules) -> Result<(), Error> {
 }
 
 pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
+    let delayed_disappearance = matches!(
+        kind,
+        Kind::UpStar | Kind::UpStarIce | Kind::UpScreen | Kind::UpScreenIce
+    );
     fighter.grounded = false;
     fighter.ground_line = None;
     fighter.skip_floor = None;
@@ -127,6 +131,9 @@ pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
             Kind::UpScreen | Kind::UpScreenIce => rules.screen.approach_start,
             _ => [0.0; 3],
         },
+        // Ordinary blast deaths set Fighter::x221F_b1 on entry. Star and
+        // screen deaths defer it until their disappearance phase.
+        hidden: !delayed_disappearance,
         ..State::default()
     };
     simulation::enter(fighter, action(kind));

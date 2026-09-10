@@ -182,6 +182,8 @@ fn forced_normal_top_death_loses_stock_immediately_and_ignores_input_until_respa
     let started = top_death(&mut game, 0);
     assert_eq!(started.fighters[1].action, Action::DeadUp);
     assert_eq!(started.fighters[1].stocks, 2);
+    assert!(started.fighters[1].death.hidden);
+    assert!(started.fighters[1].death.stock_lost);
     assert_eq!(started.rng_seed, 31);
     assert!(started.events.contains(&Event::DeathStarted {
         player: 1,
@@ -242,6 +244,8 @@ fn left_right_and_bottom_deaths_publish_direction_and_complete_the_normal_timer(
             .expect("directional scenario must cross its blast line");
         assert_eq!(started.fighters[player].stocks, 2);
         assert_eq!(started.fighters[player].death.kind, Some(kind));
+        assert!(started.fighters[player].death.hidden);
+        assert!(started.fighters[player].death.stock_lost);
         assert_eq!(started.rng_seed, seed);
         assert!(
             started

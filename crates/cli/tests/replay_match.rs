@@ -13,6 +13,8 @@ use std::{fs, process::Command};
 
 #[path = "../../../tests/support/aerial.rs"]
 mod aerial_support;
+#[path = "../../../tests/support/death.rs"]
+mod death_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
 #[path = "../../../tests/support/ledge.rs"]
@@ -284,7 +286,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v7");
+    assert_eq!(report.policy, "fighter-post-v8");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -409,6 +411,113 @@ fn physical_l_drives_file_backed_shield_state_and_detects_its_removal() {
             ..
         }
     ));
+}
+
+#[test]
+fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
+    for (mode, expected_action, delayed) in [
+        (0, Action::DeadUp, false),
+        (1, Action::DeadUpStar, true),
+        (2, Action::DeadUpFall, true),
+    ] {
+        let mut data = death_support::profile(aerial_support::conformance::data());
+        data.rules.countdown_frames = 0;
+        data.rules.stocks = 3;
+        data.rules.respawn_frames = 2;
+        data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
+        data.stage.floor.left = -50.0;
+        data.stage.floor.right = 50.0;
+        data.stage.blast = [-80.0, 80.0, -40.0, 5.0];
+        data.rules.knockback_decay = 0.0;
+        data.rules.knockback_speed = 1.0;
+        data.rules.hitlag.base = 0.0;
+        data.rules.hitlag.damage_scale = 0.0;
+        let death = data.rules.death.as_mut().unwrap();
+        death.force_normal_top[1] = mode == 0;
+        death.screen_chance_percent = if mode == 2 { 100 } else { 0 };
+        for fighter in &mut data.fighters {
+            fighter.movement.gravity = 0.0;
+            for frame in &mut fighter.jab.frames {
+                for hit in &mut frame.hitboxes {
+                    hit.angle_degrees = 90.0;
+                    hit.growth = 0;
+                    hit.base = 2;
+                }
+            }
+        }
+
+        let mut inputs = vec![IDLE; 40];
+        inputs[0][0].buttons = BUTTON_A;
+        let mut recording = Recording::from_script(data, 17, inputs);
+        let started = recording
+            .states
+            .iter()
+            .position(|state| {
+                state
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, Event::DeathStarted { player: 1, .. }))
+            })
+            .expect("script must reach the top blast zone");
+        assert_eq!(
+            recording.states[started].fighters[1].action,
+            expected_action
+        );
+        assert_eq!(
+            observation::state_flags(&recording.states[started].fighters[1])[4] & 0x40 != 0,
+            !delayed
+        );
+        let first_dead = recording.states[started..]
+            .iter()
+            .position(|state| observation::state_flags(&state.fighters[1])[4] & 0x40 != 0)
+            .map(|row| started + row)
+            .expect("every death path must eventually set x221F_b1");
+        assert_eq!(first_dead > started, delayed);
+        let respawn = recording.states[first_dead..]
+            .iter()
+            .position(|state| state.fighters[1].action == Action::Respawn)
+            .map(|row| first_dead + row)
+            .expect("death script must reach the inactive respawn delay");
+        assert_eq!(
+            observation::state_flags(&recording.states[respawn].fighters[1])[4],
+            0x40
+        );
+        let active = recording.states[respawn + 1..]
+            .iter()
+            .position(|state| state.fighters[1].action != Action::Respawn)
+            .map(|row| respawn + 1 + row)
+            .expect("script must return the fighter to active play");
+        assert_eq!(
+            observation::state_flags(&recording.states[active].fighters[1])[4],
+            0
+        );
+        recording.inputs.truncate(respawn);
+        recording.states.truncate(respawn);
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let corrupted = recording.bytes(support::Fixture::default(), |frames| {
+            frames.ports[1]
+                .leader
+                .post
+                .state_flags
+                .as_mut()
+                .unwrap()
+                .4
+                .set(first_dead, Some(0));
+        });
+        assert!(matches!(
+            recording.compare(&corrupted).outcome,
+            Outcome::Mismatch {
+                frame,
+                checked_frames,
+                ref difference,
+            } if frame == FIRST + first_dead as i32
+                && checked_frames == first_dead as u64
+                && difference.port == PORTS[1]
+                && difference.field == "state_flags.dead"
+        ));
+    }
 }
 
 #[test]
@@ -685,6 +794,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .unwrap()
                     .3
                     .set(row, Some(observation::state_flags(fighter)[3] ^ 0x02)),
+                "state_flags.dead" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .4
+                    .set(row, Some(observation::state_flags(fighter)[4] ^ 0x40)),
                 "misc_as.hitstun" => post
                     .misc_as
                     .as_mut()
@@ -1131,7 +1246,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v7");
+        assert_eq!(report["policy"], "fighter-post-v8");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

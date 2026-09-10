@@ -1,5 +1,19 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi death-flag batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-death-flag-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, 567 native
+workspace tests, and 761 original-C differential tests in both debug and release
+modes. The `fighter-post-v8` policy adds the recorder's `Fighter::x221F_b1`
+bit. Native lifecycle tests cover immediate ordinary deaths, delayed star/screen
+disappearance, inactive respawn retention and rebirth clearing. Peppi-written
+replay tests exercise all three death paths with a positive flag value and
+require an independently corrupted fifth-byte bit to report
+`state_flags.dead`. The 19 ignored tests require external references, extracted
+assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 Slippi animation-index batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-animation-index-20260910`

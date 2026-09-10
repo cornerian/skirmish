@@ -16,7 +16,8 @@ main-stick-only DI, hitlag freeze and checkpoint branching; the file-backed
 version detects a changed C-stick at the first affected frame. A table-driven
 file-backed case independently corrupts every reported action, timer, position,
 damage, shield, stock, airborne, jump, retained ground, l-cancel, character,
-hit-attribution, raw combo, selected state-flag, hitstun-union, hurtbox, velocity
+hit-attribution, raw combo, selected state-flag (including positive ordinary,
+star and screen death transitions), hitstun-union, hurtbox, velocity
 and hitlag field and requires the first
 divergence at that row. Slippi 2.0, 2.1, 3.5 and 3.8 fixtures prove the report's
 version-dependent field set. Separate Peppi-written replay cases drive physical

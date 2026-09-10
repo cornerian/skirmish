@@ -904,6 +904,9 @@ fn lose_stock(
     fighter.combo = crate::fighter::combo::State::default();
     fighter.di_pending = false;
     fighter.ledge = ledge::State::default();
+    if preserve_death {
+        fighter.death.stock_lost = true;
+    }
     if fighter.stocks == 0 {
         enter(fighter, Action::Eliminated);
     } else if !preserve_death {

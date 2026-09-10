@@ -44,6 +44,7 @@ pub const STATE_FLAG_FIELDS: &[&str] = &[
     "state_flags.hitlag",
     "state_flags.shield",
     "state_flags.hitstun",
+    "state_flags.dead",
 ];
 pub const MISC_HITSTUN_FIELD: &str = "misc_as.hitstun";
 
@@ -382,7 +383,13 @@ pub fn state_flags(fighter: &game::Fighter) -> [u8; 5] {
             | (u8::from(fighter.hitlag > 0.0) << 5),
         u8::from(shield) << 7,
         u8::from(fighter.hitstun > 0) << 1,
-        0,
+        u8::from(
+            fighter.death.hidden
+                || matches!(
+                    fighter.action,
+                    game::Action::Respawn | game::Action::Eliminated
+                ),
+        ) << 6,
     ]
 }
 
@@ -752,7 +759,14 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
                 return Some(difference);
             }
         }
-        let selected_flags = [(1, 0x04), (1, 0x08), (1, 0x20), (2, 0x80), (3, 0x02)];
+        let selected_flags = [
+            (1, 0x04),
+            (1, 0x08),
+            (1, 0x20),
+            (2, 0x80),
+            (3, 0x02),
+            (4, 0x40),
+        ];
         if let Some(expected_flags) = expected.state_flags {
             let Some(actual_flags) = actual.state_flags else {
                 return Some(Difference {
@@ -1041,6 +1055,7 @@ mod tests {
                 "state_flags.hitlag" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x20,
                 "state_flags.shield" => fighter.state_flags.as_mut().unwrap()[2] ^= 0x80,
                 "state_flags.hitstun" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x02,
+                "state_flags.dead" => fighter.state_flags.as_mut().unwrap()[4] ^= 0x40,
                 "misc_as.hitstun" => fighter.misc_as = Some(1.0),
                 "hurtbox_state" => fighter.hurtbox_state = Some(1),
                 "velocities.self_x_air" => fighter.velocities.as_mut().unwrap()[0] = 1.0,
@@ -1218,6 +1233,15 @@ mod tests {
         fighter.hitstun = 3;
         fighter.action = game::Action::Guard;
         assert_eq!(state_flags(&fighter), [0, 0x2c, 0x80, 0x02, 0]);
+        fighter.death.hidden = true;
+        assert_eq!(state_flags(&fighter)[4], 0x40);
+        fighter.death.hidden = false;
+        for action in [game::Action::Respawn, game::Action::Eliminated] {
+            fighter.action = action;
+            assert_eq!(state_flags(&fighter)[4], 0x40, "{action:?}");
+        }
+        fighter.action = game::Action::Rebirth;
+        assert_eq!(state_flags(&fighter)[4], 0);
     }
 
     #[test]

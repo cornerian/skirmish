@@ -134,7 +134,7 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v7`** policy compares these post-frame fields for each
+The named **`fighter-post-v8`** policy compares these post-frame fields for each
 mapped actor:
 
 | Replay field | Native observation | Comparison |
@@ -156,7 +156,7 @@ mapped actor:
 | `last_hit_by` | Recorded source physical port, or Melee's initial sentinel 6 | Exact integer |
 | `last_hit_by_instance` (Slippi 3.16+) | Victim's retained source action-instance ID | Exact `u16` |
 | `instance_id` (Slippi 3.16+) | Fighter's current motion-family instance ID | Exact `u16` |
-| selected `state_flags` | Protection, fast-fall, hitlag, active shield and hitstun bits | Exact bits |
+| selected `state_flags` | Protection, fast-fall, hitlag, active shield, hitstun and dead/inactive bits | Exact bits |
 | `misc_as` while in hitstun | Remaining hitstun | Exact `f32` bits |
 | `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
 | `velocities.*` (Slippi 3.5+) | Air X/Y, knockback X/Y and ground X velocity | Exact `f32` bits |
@@ -178,7 +178,11 @@ fighter model. Animation-index mapping covers the same resolved common actions
 and Fox startup states. Refactored Walk and directional jump actions use their
 canonical first animation, and the original randomized Wait animation changes
 are not scheduled yet. RNG, collision-line
-geometry, unselected state-flag bits, items and stage state are not compared.
+geometry, the reflect, shield-touch, powershield, offscreen, sleep and follower
+state-flag bits, items and stage state are not compared. The selected dead bit
+follows `Fighter::x221F_b1`: it begins immediately for ordinary blast deaths,
+after disappearance for star/screen deaths, persists through the inactive
+respawn delay, and clears on rebirth.
 Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not
 establish equality of hidden state, complete frame behavior or Melee gameplay.
