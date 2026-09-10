@@ -151,6 +151,9 @@ impl Recording {
                     if let Some(instance) = &mut post.instance_id {
                         instance.set(row, Some(fighter.action_instance.id));
                     }
+                    if let Some(animation) = &mut post.animation_index {
+                        animation.set(row, observation::animation_index(fighter, Some(2)));
+                    }
                     post.stocks.set(row, Some(fighter.stocks));
                     post.airborne
                         .as_mut()
@@ -281,7 +284,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v6");
+    assert_eq!(report.policy, "fighter-post-v7");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -648,6 +651,10 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .as_mut()
                     .unwrap()
                     .set(row, Some(fighter.action_instance.id ^ 1)),
+                "animation_index" => post.animation_index.as_mut().unwrap().set(
+                    row,
+                    Some(observation::animation_index(fighter, Some(2)).unwrap() ^ 1),
+                ),
                 "state_flags.protected" => post
                     .state_flags
                     .as_mut()
@@ -752,6 +759,7 @@ fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
         Version(2, 1, 0),
         Version(3, 5, 0),
         Version(3, 8, 0),
+        Version(3, 11, 0),
         Version(3, 16, 0),
     ] {
         let bytes = recording.bytes(
@@ -769,6 +777,10 @@ fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
             version.gte(3, 5)
         );
         assert_eq!(report.fields.contains(&"hitlag"), version.gte(3, 8));
+        assert_eq!(
+            report.fields.contains(&"animation_index"),
+            version.gte(3, 11)
+        );
         assert_eq!(report.fields.contains(&"hurtbox_state"), version.gte(2, 1));
         assert_eq!(
             report.fields.contains(&"last_hit_by_instance"),
@@ -1119,7 +1131,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v6");
+        assert_eq!(report["policy"], "fighter-post-v7");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

@@ -132,6 +132,13 @@ aerial-to-landing IDs, zero-identity changes, stock cleanup, independent match
 instances and reset. File-backed Peppi tests gate both replay fields at Slippi
 3.16 and corrupt each independently.
 
+The replay animation-index batch maps each resolved native action state through
+the pinned common motion table's separate `anim_id`, preserving the original
+`-1` bit pattern. Focused unit cases cover ordinary, shared, damage, prone,
+ledge, no-figatree and Fox-specific entries. Peppi-written replay files gate the
+field at Slippi 3.11 and independently corrupt it in the complete reported-field
+integration loop.
+
 The [ordinary clank profile](clanks.md) adds native `game_clank` scenarios and
 enables equal-grounded-jab conformance. Original-C kernels compare response and
 victim-table mutations; match tests cover source slot order, staled fractional

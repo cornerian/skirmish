@@ -134,7 +134,7 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v6`** policy compares these post-frame fields for each
+The named **`fighter-post-v7`** policy compares these post-frame fields for each
 mapped actor:
 
 | Replay field | Native observation | Comparison |
@@ -161,6 +161,7 @@ mapped actor:
 | `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
 | `velocities.*` (Slippi 3.5+) | Air X/Y, knockback X/Y and ground X velocity | Exact `f32` bits |
 | `hitlag` (Slippi 3.8+) | Remaining hitlag | Exact `f32` bits |
+| `animation_index` (Slippi 3.11+) | Common motion table's current `anim_id`, including `-1` as `0xffffffff` | Exact `u32` |
 
 The report's `fields` array follows the replay version, so fields absent from an
 older Slippi schema are visible rather than silently claimed. The refactored
@@ -173,7 +174,10 @@ transformations are also unimplemented, so a post-frame internal character
 change produces a character mismatch. Action-instance retention covers the
 implemented common motion families and Fox neutral-special startup. Luigi and
 held-item metadata branches in the original callback remain outside the native
-fighter model. RNG, collision-line
+fighter model. Animation-index mapping covers the same resolved common actions
+and Fox startup states. Refactored Walk and directional jump actions use their
+canonical first animation, and the original randomized Wait animation changes
+are not scheduled yet. RNG, collision-line
 geometry, unselected state-flag bits, items and stage state are not compared.
 Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not

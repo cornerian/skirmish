@@ -37,6 +37,7 @@ pub const VELOCITY_FIELDS: &[&str] = &[
     "velocities.self_x_ground",
 ];
 pub const HITLAG_FIELD: &str = "hitlag";
+pub const ANIMATION_FIELD: &str = "animation_index";
 pub const STATE_FLAG_FIELDS: &[&str] = &[
     "state_flags.protected",
     "state_flags.fast_fall",
@@ -59,6 +60,9 @@ pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     }
     if version.gte(3, 8) {
         fields.push(HITLAG_FIELD);
+    }
+    if version.gte(3, 11) {
+        fields.push(ANIMATION_FIELD);
     }
     if version.gte(3, 16) {
         fields.extend_from_slice(INSTANCE_FIELDS);
@@ -113,6 +117,7 @@ pub struct FighterObservation {
     pub hurtbox_state: Option<u8>,
     pub velocities: Option<[f32; 5]>,
     pub hitlag: Option<f32>,
+    pub animation_index: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -285,6 +290,7 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
                 ]
             }),
             hitlag: post.hitlag,
+            animation_index: post.animation_index,
         })
     };
     let [first, second] = actors(frame, ports)?;
@@ -337,6 +343,7 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                     fighter.ground_velocity,
                 ]),
                 hitlag: Some(fighter.hitlag),
+                animation_index: animation_index(fighter, Some(characters[index])),
             }
         }),
     }
@@ -533,6 +540,47 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
     })
 }
 
+/// Resolve `Fighter::anim_id` from the exact common motion-state table. Values
+/// without a figatree retain Melee's `-1` bit pattern in Slippi's `u32` field.
+pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option<u32> {
+    let state = action_state(fighter, character)?;
+    Some(match state {
+        0..=3 | 5 | 9 | 10 | 237 => u32::MAX,
+        4 | 6 | 38 => 29,
+        7 => 0,
+        8 => 1,
+        12..=14 => 2,
+        15 => 7,
+        18..=21 => u32::from(state - 8),
+        23..=25 => u32::from(state - 9),
+        27 => 18,
+        29 => 20,
+        39 | 40 => u32::from(state - 9),
+        41 | 42 => u32::from(state - 7),
+        44 => 46,
+        65..=74 => u32::from(state + 3),
+        75..=91 => u32::from(state + 90),
+        178..=181 => u32::from(state - 141),
+        183..=204 => u32::from(state),
+        205..=210 => u32::from(state + 81),
+        211 => 205,
+        212 | 213 => 242,
+        214 | 215 => 243,
+        216..=229 => u32::from(state + 28),
+        238 => 45,
+        239..=242 => u32::from(state + 23),
+        244 => 209,
+        247 => 212,
+        248 => 214,
+        252 => 216,
+        253 => 217,
+        254..=260 | 262 => u32::from(state - 35),
+        341 => 295,
+        344 => 298,
+        _ => return None,
+    })
+}
+
 fn prone_state(fighter: &game::Fighter, face_up: u16, face_down: u16) -> u16 {
     match fighter.prone {
         Some(game::damage::ProneOrientation::FaceDown) => face_down,
@@ -593,6 +641,19 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
             actual.action_state,
         ) {
             return Some(difference);
+        }
+        if let Some(expected) = expected.animation_index {
+            let Some(actual) = actual.animation_index else {
+                return Some(Difference {
+                    port,
+                    field: ANIMATION_FIELD,
+                    expected: format!("0x{expected:08x}"),
+                    actual: "unavailable".into(),
+                });
+            };
+            if let Some(difference) = difference(port, ANIMATION_FIELD, expected, actual, 8) {
+                return Some(difference);
+            }
         }
         for (field, expected, actual) in [
             (BASE_FIELDS[1], expected.action_age, actual.action_age),
@@ -827,6 +888,7 @@ mod tests {
                         stocks: 4,
                         velocities: Some(row::Velocities::default()),
                         hitlag: Some(0.0),
+                        animation_index: Some(2),
                         ..Default::default()
                     },
                 })
@@ -951,6 +1013,7 @@ mod tests {
             .chain([HURTBOX_FIELD].iter())
             .chain(VELOCITY_FIELDS)
             .chain([HITLAG_FIELD].iter())
+            .chain([ANIMATION_FIELD].iter())
         {
             let mut actual = expected.clone();
             let fighter = &mut actual.fighters[0];
@@ -986,6 +1049,7 @@ mod tests {
                 "velocities.knockback_y" => fighter.velocities.as_mut().unwrap()[3] = 1.0,
                 "velocities.self_x_ground" => fighter.velocities.as_mut().unwrap()[4] = 1.0,
                 "hitlag" => fighter.hitlag = Some(1.0),
+                "animation_index" => fighter.animation_index = None,
                 _ => unreachable!(),
             }
             let difference = compare(&expected, &actual).unwrap();
@@ -1061,31 +1125,37 @@ mod tests {
                 .map(f32::to_bits)
             );
             assert_eq!(fighter.hitlag.unwrap().to_bits(), native.hitlag.to_bits());
+            assert_eq!(fighter.animation_index, animation_index(native, Some(2)));
         }
     }
 
     #[test]
-    fn common_action_ids_preserve_the_pinned_motion_state_numbers() {
+    fn common_action_and_animation_ids_preserve_the_pinned_tables() {
         let data = serde_json::from_str(include_str!(
             "../../../tests/fixtures/game/integration-match.json"
         ))
         .unwrap();
         let game = game::Match::new(data, 1).unwrap();
         let mut fighter = game.state().fighters[0].clone();
-        for (action, state) in [
-            (game::Action::Wait, 14),
-            (game::Action::Walk, 15),
-            (game::Action::Dash, 20),
-            (game::Action::JumpSquat, 24),
-            (game::Action::AttackAirLw, 69),
-            (game::Action::Guard, 179),
-            (game::Action::PassiveWallJump, 203),
-            (game::Action::ThrowLw, 222),
-            (game::Action::FlyReflectCeiling, 248),
-            (game::Action::DeadUpFallHitCameraIce, 10),
+        for (action, state, animation) in [
+            (game::Action::Wait, 14, 2),
+            (game::Action::Walk, 15, 7),
+            (game::Action::Dash, 20, 12),
+            (game::Action::JumpSquat, 24, 15),
+            (game::Action::AttackAirLw, 69, 72),
+            (game::Action::Guard, 179, 38),
+            (game::Action::PassiveWallJump, 203, 203),
+            (game::Action::ThrowLw, 222, 250),
+            (game::Action::FlyReflectCeiling, 248, 214),
+            (game::Action::DeadUpFallHitCameraIce, 10, u32::MAX),
         ] {
             fighter.action = action;
             assert_eq!(action_state(&fighter, Some(2)), Some(state), "{action:?}");
+            assert_eq!(
+                animation_index(&fighter, Some(2)),
+                Some(animation),
+                "{action:?}"
+            );
         }
 
         fighter.action = game::Action::Damage;
@@ -1094,31 +1164,40 @@ mod tests {
             height: skirmish::fighter::damage::HurtHeight::Low,
         });
         assert_eq!(action_state(&fighter, Some(2)), Some(83));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(173));
         fighter.damage_motion = Some(skirmish::fighter::damage::DamageMotion::Fly {
             height: skirmish::fighter::damage::HurtHeight::High,
         });
         assert_eq!(action_state(&fighter, Some(2)), Some(87));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(177));
 
         fighter.action = game::Action::DownWait;
         fighter.prone = Some(game::damage::ProneOrientation::FaceDown);
         assert_eq!(action_state(&fighter, Some(2)), Some(192));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(192));
         fighter.action = game::Action::CliffAttack;
         fighter.ledge.slow = false;
         assert_eq!(action_state(&fighter, Some(2)), Some(257));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(222));
         fighter.ledge.slow = true;
         assert_eq!(action_state(&fighter, Some(2)), Some(256));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(221));
 
         fighter.action = game::Action::SpecialN;
         assert_eq!(action_state(&fighter, Some(2)), Some(341));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(295));
         fighter.action = game::Action::SpecialAirN;
         assert_eq!(action_state(&fighter, Some(2)), Some(344));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(298));
 
         for action in [game::Action::Respawn, game::Action::Eliminated] {
             fighter.action = action;
             assert_eq!(action_state(&fighter, Some(2)), None, "{action:?}");
+            assert_eq!(animation_index(&fighter, Some(2)), None, "{action:?}");
         }
         fighter.action = game::Action::SpecialN;
         assert_eq!(action_state(&fighter, None), None);
+        assert_eq!(animation_index(&fighter, None), None);
     }
 
     #[test]

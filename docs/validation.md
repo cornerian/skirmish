@@ -1,5 +1,21 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi animation-index batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-animation-index-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 566 native
+workspace tests, and 760 original-C differential tests in both debug and release
+modes. The `fighter-post-v7` replay policy now compares Slippi 3.11's exact
+32-bit `Fighter::anim_id`, separately from the motion-state ID. The pinned
+common motion table supplies shared animation indices and preserves `-1` as
+`0xffffffff`; mapped Fox neutral-special startup states use their character
+table indices. Focused unit coverage checks ordinary, shared, damage, prone,
+ledge, no-figatree and Fox-specific entries. Peppi-written file tests enforce
+the 3.11 version boundary and independently corrupt the new field in the full
+reported-field loop. The 19 ignored tests require external references, extracted
+assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 Slippi action-instance batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-action-instance-20260910`
