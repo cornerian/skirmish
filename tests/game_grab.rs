@@ -28,6 +28,14 @@ fn data() -> MatchData {
     grab_resources::profile(data)
 }
 
+fn with_locomotion(mut data: MatchData) -> MatchData {
+    let locomotion = serde_json::from_str(include_str!("fixtures/game/locomotion.json")).unwrap();
+    for fighter in &mut data.fighters {
+        fighter.locomotion = Some(locomotion);
+    }
+    data
+}
+
 fn input(player: usize, buttons: u16, stick: [f32; 2], cstick: [f32; 2]) -> [Controller; 2] {
     let mut inputs = IDLE;
     inputs[player] = Controller {
@@ -100,6 +108,117 @@ fn catch_contact_uses_the_sampled_bone_pose_and_miss_recovers() {
             .iter()
             .all(|fighter| fighter.grab == grab::State::default())
     );
+}
+
+#[test]
+fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
+    let mut resource = with_locomotion(data());
+    resource.stage.spawns = [[-2.0, 0.0], [6.0, 0.0]];
+    for frame in &mut resource.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .catch_dash
+        .frames
+    {
+        if let Some(grabbox) = frame.grabboxes.first_mut() {
+            frame.bones[1].translation[0] = 6.0;
+            grabbox.start[0] = 0.0;
+            grabbox.end[0] = 0.0;
+            grabbox.radius = 0.2;
+        }
+    }
+    let mut contact = Match::new(resource, 12).unwrap();
+    let dashed = step(&mut contact, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(dashed.fighters[0].action, Action::Dash);
+    let caught = step(&mut contact, input(0, BUTTON_Z, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(caught.fighters[0].action, Action::CatchDashPull);
+    assert_eq!(caught.fighters[1].action, Action::CapturePulled);
+    assert!(caught.fighters[0].position[0] > dashed.fighters[0].position[0]);
+    assert!(caught.events.contains(&Event::Grabbed {
+        holder: 0,
+        victim: 1,
+    }));
+    let waiting = until(&mut contact, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    assert_eq!(waiting.fighters[1].action, Action::CaptureWait);
+
+    let mut resource = with_locomotion(data());
+    resource.stage.spawns = [[-8.0, 0.0], [8.0, 0.0]];
+    let mut miss = Match::new(resource, 12).unwrap();
+    step(&mut miss, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    let checkpoint = miss.checkpoint();
+    let entered = step(&mut miss, input(0, BUTTON_Z, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(entered.fighters[0].action, Action::CatchDash);
+    miss.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        step(&mut miss, input(0, BUTTON_Z, [1.0, 0.0], [0.0; 2])),
+        entered
+    );
+    let recovered = until(&mut miss, |state| state.fighters[0].action == Action::Wait);
+    assert_eq!(recovered.fighters[0].grab, grab::State::default());
+
+    let mut run_resource = with_locomotion(data());
+    run_resource.stage.floor.left = -100.0;
+    run_resource.stage.floor.right = 100.0;
+    run_resource.stage.spawns = [[-20.0, 0.0], [20.0, 0.0]];
+    run_resource.stage.blast = [-200.0, 200.0, -200.0, 200.0];
+    let mut run = Match::new(run_resource, 12).unwrap();
+    step(&mut run, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    for _ in 0..12 {
+        if run.state().fighters[0].action == Action::Run {
+            break;
+        }
+        step(&mut run, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    }
+    assert_eq!(run.state().fighters[0].action, Action::Run);
+    assert_eq!(
+        step(&mut run, input(0, BUTTON_Z, [1.0, 0.0], [0.0; 2])).fighters[0].action,
+        Action::CatchDash
+    );
+}
+
+#[test]
+fn turn_grab_applies_the_pending_facing_before_standing_catch_contact() {
+    let mut resource = with_locomotion(data());
+    resource.stage.spawns = [[1.0, 0.0], [-1.0, 0.0]];
+    let mut game = Match::new(resource, 13).unwrap();
+
+    let turning = step(&mut game, input(0, 0, [-1.0, 0.0], [0.0; 2]));
+    assert_eq!(turning.fighters[0].action, Action::Turn);
+    assert_eq!(turning.fighters[0].facing, 1.0);
+    let caught = step(&mut game, input(0, BUTTON_Z, [-1.0, 0.0], [0.0; 2]));
+    assert_eq!(caught.fighters[0].facing, -1.0);
+    assert_eq!(caught.fighters[0].action, Action::CatchPull);
+    assert_eq!(caught.fighters[1].action, Action::CapturePulled);
+    assert!(caught.events.contains(&Event::Grabbed {
+        holder: 0,
+        victim: 1,
+    }));
+
+    let mut completed = Match::new(with_locomotion(data()), 13).unwrap();
+    step(&mut completed, input(0, 0, [-1.0, 0.0], [0.0; 2]));
+    until(&mut completed, |state| {
+        state.fighters[0].locomotion.turn_has_turned
+    });
+    assert_eq!(completed.state().fighters[0].facing, -1.0);
+    let entered = step(&mut completed, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
+    assert_eq!(entered.fighters[0].action, Action::Catch);
+    assert_eq!(entered.fighters[0].facing, -1.0);
+}
+
+#[test]
+fn crouch_startup_accepts_the_source_standing_catch_transition() {
+    let mut resource = with_locomotion(data());
+    resource.stage.spawns = [[-8.0, 0.0], [8.0, 0.0]];
+    let mut game = Match::new(resource, 14).unwrap();
+
+    let crouched = step(&mut game, input(0, 0, [0.0, -1.0], [0.0; 2]));
+    assert_eq!(crouched.fighters[0].action, Action::Squat);
+    let caught = step(&mut game, input(0, BUTTON_Z, [0.0, -1.0], [0.0; 2]));
+    assert_eq!(caught.fighters[0].action, Action::Catch);
+    assert_eq!(caught.fighters[0].grab, grab::State::default());
 }
 
 #[test]
@@ -541,6 +660,15 @@ fn malformed_grab_resources_are_rejected() {
     for frame in &mut bad.fighters[0].grab.as_mut().unwrap().catch.frames {
         frame.grabboxes.clear();
     }
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .catch_dash
+        .frames
+        .clear();
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0]

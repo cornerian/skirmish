@@ -3,22 +3,30 @@
 `rules.grab` enables physical Z-button catch dispatch and supplies the signed
 stick thresholds used by ordinary throw selection, plus explicit hold-timer,
 mash and release-speed coefficients. Each `fighters[].grab`
-resource supplies complete catch poses and bone-attached grab capsules, an
-explicit pull duration, two bone-local attachment anchors, complete holder poses
-for pummel and four throws, and the fighter's own CaptureDamage, CatchCut and
-CaptureCut poses.
+resource supplies separate complete standing and dash-catch poses with
+bone-attached grab capsules, their explicit pull durations, two bone-local
+attachment anchors, complete holder poses for pummel and four throws, and the
+fighter's own CaptureDamage, CatchCut and CaptureCut poses.
 Pummel supplies one captured-damage frame and damage value; each throw supplies
 a release event and hit coefficients. Every fighter needs parameters when the
 common profile is enabled.
 
 A catch tests its current sampled grab capsules against enabled, grabbable target
 hurt capsules with the matrix-aware source solver. Bone scale and shear retain
-directional radius. Successful contact enters CatchPull/CapturePulled and records
-the bidirectional relationship in deterministic match state. The victim's
-selected bone point is aligned to the holder's selected bone point throughout
+directional radius. Successful contact enters CatchPull or CatchDashPull with
+CapturePulled and records the bidirectional relationship in deterministic match
+state. The victim's selected bone point is aligned to the holder's selected
+bone point throughout
 pull, wait, and throw; controller input cannot move or dispatch actions for the
 captured fighter. The relationship, input history, action clocks, positions, and
 bone-driven depth are included in observations and checkpoints.
+
+A fresh grab request in Dash or Run enters CatchDash and uses the dedicated
+dash-catch samples while retained ground momentum decays through ordinary
+physics. Contact enters CatchDashPull for that resource's pull duration. Turn
+uses the standing catch and applies its pending facing first, matching the
+source Turn IASA ordering; Squat startup also accepts the standing transition.
+Both catch animations recover normally after a miss.
 
 The victim's timer starts at `base + percent * scale` on contact. CaptureWait
 and CaptureDamage subtract the passive decrement once per active frame. The
@@ -43,7 +51,9 @@ ordinary damage, hitlag, hitstun, DI, knockback, floor, and blast-zone pipeline.
 A blast-zone exit also clears both sides of the relationship before publishing
 stock loss.
 
-`game_grab` covers animated bone contact versus a miss, pummel priority,
+`game_grab` covers separate standing/dash bone contact versus a miss, Dash/Run
+entry, retained dash momentum, pending and completed Turn facing, Squat entry,
+pummel priority,
 single-hit timing, repeated pummels, shared hitlag, sampled holder and victim
 reaction poses, independent reaction completion, passive and mashed escape,
 button freshness, stick latches, hitlag timer freeze, cut actions and release
@@ -57,8 +67,8 @@ throw stick-crossing predicates; `grab_mash_differential` compares the complete
 mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C.
 
-This profile does not yet implement dash/pivot/tether catches, analog-trigger
-mash synthesis, cargo carries, separate high/low capture reactions, throw or
+This profile does not yet implement tether catches, analog-trigger mash
+synthesis, cargo carries, separate high/low capture reactions, throw or
 pummel staling, weight-scaled animation rate, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.

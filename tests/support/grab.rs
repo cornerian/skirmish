@@ -53,6 +53,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
             },
         };
         fighter.grab = Some(Parameters {
+            catch_dash: catch.clone(),
             catch,
             attachment: Attachment {
                 holder_bone: 1,

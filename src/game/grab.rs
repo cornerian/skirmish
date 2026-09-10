@@ -43,6 +43,7 @@ pub struct EscapeRules {
 #[serde(deny_unknown_fields)]
 pub struct Parameters {
     pub catch: Catch,
+    pub catch_dash: Catch,
     pub attachment: Attachment,
     pub pummel: Pummel,
     /// Complete victim physics poses for the ordinary pummel reaction.
@@ -165,10 +166,6 @@ pub(crate) fn validate(
         || rules.escape.stick_threshold == 0.0
         || !(0.0..=1_000_000.0).contains(&rules.escape.release_speed)
         || rules.escape.timer_base + 999.0 * rules.escape.timer_percent_scale >= 1_000_000.0
-        || parameters.catch.frames.is_empty()
-        || parameters.catch.frames.len() > 4096
-        || parameters.catch.pull_frames == 0
-        || parameters.catch.pull_frames >= 1_000_000
         || parameters.attachment.holder_bone >= fighter.bones.len()
         || parameters.attachment.victim_bone >= fighter.bones.len()
         || parameters
@@ -180,33 +177,8 @@ pub(crate) fn validate(
     {
         return Err(Error::Data("invalid explicit grab parameters".into()));
     }
-    let mut active = false;
-    for frame in &parameters.catch.frames {
-        let pose = super::validation::validate_animation_pose(&frame.bones, fighter)?;
-        if frame.grabboxes.len() > 4 {
-            return Err(Error::Data("at most four grabboxes per frame".into()));
-        }
-        active |= !frame.grabboxes.is_empty();
-        for grabbox in &frame.grabboxes {
-            if grabbox.bone >= frame.bones.len()
-                || grabbox
-                    .start
-                    .into_iter()
-                    .chain(grabbox.end)
-                    .chain([grabbox.radius])
-                    .any(|value| !value.is_finite() || !(0.0..=1_000_000.0).contains(&value.abs()))
-                || grabbox.radius < 0.0
-            {
-                return Err(Error::Data("invalid grabbox".into()));
-            }
-            grabbox
-                .physics()
-                .transform(&pose, 1.0)
-                .map_err(|error| Error::Data(error.to_string()))?;
-        }
-    }
-    if !active {
-        return Err(Error::Data("catch requires an active grabbox frame".into()));
+    for catch in [&parameters.catch, &parameters.catch_dash] {
+        validate_catch(catch, fighter)?;
     }
     let pummel = &parameters.pummel;
     if pummel.poses.is_empty()
@@ -265,6 +237,45 @@ pub(crate) fn validate(
     Ok(())
 }
 
+fn validate_catch(catch: &Catch, fighter: &FighterData) -> Result<(), Error> {
+    if catch.frames.is_empty()
+        || catch.frames.len() > 4096
+        || catch.pull_frames == 0
+        || catch.pull_frames >= 1_000_000
+    {
+        return Err(Error::Data("invalid explicit catch parameters".into()));
+    }
+    let mut active = false;
+    for frame in &catch.frames {
+        let pose = super::validation::validate_animation_pose(&frame.bones, fighter)?;
+        if frame.grabboxes.len() > 4 {
+            return Err(Error::Data("at most four grabboxes per frame".into()));
+        }
+        active |= !frame.grabboxes.is_empty();
+        for grabbox in &frame.grabboxes {
+            if grabbox.bone >= frame.bones.len()
+                || grabbox
+                    .start
+                    .into_iter()
+                    .chain(grabbox.end)
+                    .chain([grabbox.radius])
+                    .any(|value| !value.is_finite() || !(0.0..=1_000_000.0).contains(&value.abs()))
+                || grabbox.radius < 0.0
+            {
+                return Err(Error::Data("invalid grabbox".into()));
+            }
+            grabbox
+                .physics()
+                .transform(&pose, 1.0)
+                .map_err(|error| Error::Data(error.to_string()))?;
+        }
+    }
+    if !active {
+        return Err(Error::Data("catch requires an active grabbox frame".into()));
+    }
+    Ok(())
+}
+
 pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool {
     let other = 1 - player;
     let fighter = &fighters[player];
@@ -306,6 +317,7 @@ fn pair_actions(holder: Action, victim: Action) -> bool {
     matches!(
         (holder, victim),
         (Action::CatchPull, Action::CapturePulled)
+            | (Action::CatchDashPull, Action::CapturePulled)
             | (Action::CatchWait, Action::CaptureWait)
             | (Action::CatchAttack, Action::CaptureWait)
             | (Action::CatchWait, Action::CaptureDamage)
@@ -321,7 +333,9 @@ pub(crate) fn owns_action(action: Action) -> bool {
     matches!(
         action,
         Action::Catch
+            | Action::CatchDash
             | Action::CatchPull
+            | Action::CatchDashPull
             | Action::CatchWait
             | Action::CatchAttack
             | Action::CatchCut
@@ -344,6 +358,7 @@ pub(crate) fn holder_action(action: Action) -> bool {
     matches!(
         action,
         Action::CatchPull
+            | Action::CatchDashPull
             | Action::CatchWait
             | Action::CatchAttack
             | Action::ThrowF
@@ -391,7 +406,8 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
         return true;
     }
     let complete = match fighter.action {
-        Action::Catch => fighter.action_frame as usize >= parameters.catch.frames.len(),
+        Action::Catch | Action::CatchDash => catch_for_action(parameters, fighter.action)
+            .is_some_and(|catch| fighter.action_frame as usize >= catch.frames.len()),
         action
             if throw_for_action(&parameters.throws, action)
                 .is_some_and(|throw| fighter.action_frame as usize >= throw.poses.len()) =>
@@ -452,14 +468,24 @@ pub(crate) fn update_actions(
         }
         return true;
     }
-    if fighter.grounded
-        && matches!(fighter.action, Action::Wait | Action::Walk)
-        && pressed & super::BUTTON_Z != 0
-        && data.grab.is_some()
-        && rules.is_some()
+    if fighter.grounded && pressed & super::BUTTON_Z != 0 && data.grab.is_some() && rules.is_some()
     {
-        simulation::enter(fighter, Action::Catch);
-        return true;
+        let action = match fighter.action {
+            Action::Dash | Action::Run => Some(Action::CatchDash),
+            Action::Turn => {
+                // Turn_IASA temporarily applies facing_after before checking Catch.
+                if !fighter.locomotion.turn_has_turned {
+                    fighter.facing = -fighter.facing;
+                }
+                Some(Action::Catch)
+            }
+            Action::Wait | Action::Walk | Action::Squat => Some(Action::Catch),
+            _ => None,
+        };
+        if let Some(action) = action {
+            simulation::enter(fighter, action);
+            return true;
+        }
     }
     false
 }
@@ -504,6 +530,12 @@ pub(crate) fn update_pairs(
         match holder_action {
             Action::CatchPull
                 if state.fighters[holder].action_frame >= parameters.catch.pull_frames =>
+            {
+                simulation::enter(&mut state.fighters[holder], Action::CatchWait);
+                simulation::enter(&mut state.fighters[victim], Action::CaptureWait);
+            }
+            Action::CatchDashPull
+                if state.fighters[holder].action_frame >= parameters.catch_dash.pull_frames =>
             {
                 simulation::enter(&mut state.fighters[holder], Action::CatchWait);
                 simulation::enter(&mut state.fighters[victim], Action::CaptureWait);
@@ -643,12 +675,15 @@ pub(crate) fn scan(
     for (holder, &holder_frozen) in frozen.iter().enumerate() {
         let victim = 1 - holder;
         let source = &state.fighters[holder];
+        let source_action = source.action;
         let target = &state.fighters[victim];
         let Some(parameters) = &data.fighters[holder].grab else {
             continue;
         };
+        let Some(catch) = catch_for_action(parameters, source_action) else {
+            continue;
+        };
         if holder_frozen
-            || source.action != Action::Catch
             || source.grab != State::default()
             || target.grab != State::default()
             || target.invincibility > 0
@@ -656,14 +691,13 @@ pub(crate) fn scan(
                 target.action,
                 Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
             )
-            || parameters.catch.grounded_targets_only && !target.grounded
+            || catch.grounded_targets_only && !target.grounded
         {
             continue;
         }
         let source_pose = simulation::pose(source, &data.fighters[holder])?;
         let target_pose = simulation::pose(target, &data.fighters[victim])?;
-        let frame = parameters
-            .catch
+        let frame = catch
             .frames
             .get(source.action_frame as usize)
             .ok_or_else(|| Error::Physics("catch frame is outside supplied animation".into()))?;
@@ -719,7 +753,12 @@ pub(crate) fn scan(
             state.fighters[victim].knockback = [0.0; 2];
             state.fighters[victim].ground_knockback = 0.0;
             state.fighters[victim].ground_velocity = 0.0;
-            simulation::enter(&mut state.fighters[holder], Action::CatchPull);
+            let pull = if source_action == Action::CatchDash {
+                Action::CatchDashPull
+            } else {
+                Action::CatchPull
+            };
+            simulation::enter(&mut state.fighters[holder], pull);
             simulation::enter(&mut state.fighters[victim], Action::CapturePulled);
             state.events.push(Event::Grabbed { holder, victim });
             attach(data, state, holder, victim)?;
@@ -731,8 +770,7 @@ pub(crate) fn scan(
 pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [Bone]> {
     let parameters = data.grab.as_ref()?;
     match fighter.action {
-        Action::Catch => parameters
-            .catch
+        Action::Catch | Action::CatchDash => catch_for_action(parameters, fighter.action)?
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
@@ -761,6 +799,14 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
                 .get(fighter.action_frame as usize)
                 .map(Vec::as_slice)
         }
+        _ => None,
+    }
+}
+
+fn catch_for_action(parameters: &Parameters, action: Action) -> Option<&Catch> {
+    match action {
+        Action::Catch => Some(&parameters.catch),
+        Action::CatchDash => Some(&parameters.catch_dash),
         _ => None,
     }
 }

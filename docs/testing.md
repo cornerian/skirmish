@@ -185,8 +185,9 @@ binary32 values. `wall_tech_differential` compares complete `ftCo_800C1E0C`
 jump selection across timer boundaries and arbitrary binary32 values.
 
 The [grab profile](grabs.md) promotes all three paired grab/throw conformance
-scenarios. `game_grab` covers bone-sampled catch contact, miss recovery, all four
-throw directions, pummel priority and repeat lifecycle, one captured-damage
+scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
+Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
+directions, pummel priority and repeat lifecycle, one captured-damage
 event, shared hitlag, sampled holder/victim attachment motion, independent
 CaptureDamage completion, passive and button/stick-mashed escape, timer freeze,
 release motion and cut actions, main/C-stick priority and fresh-edge history,
@@ -281,7 +282,7 @@ explicitly disable unrelated state/environment branches.
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
 | Grounded and airborne neutral specials | `conformance_actions` and `game_special` (implemented paired profile) |
-| Grab, pummel, escape and throw | `game_grab`, `conformance_actions` and `conformance_combat`: paired capture, sampled captured-damage reaction, repeated pummel, exact mash timer, cut release and throw release (implemented profile) |
+| Grab, pummel, escape and throw | `game_grab`, `conformance_actions` and `conformance_combat`: standing/dash/pivot capture, sampled captured-damage reaction, repeated pummel, exact mash timer, cut release and throw release (implemented profile) |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers; `game_damage_surface` covers ordinary wall/ceiling reflection and techs |

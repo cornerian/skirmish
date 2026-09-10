@@ -205,8 +205,9 @@ when multiple responses are possible in one collision pass; wall response wins
 over ceiling response at a corner. Surface-tech poses remain separate work.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
-catch entry, sampled bone-attached grab capsules, paired pull/hold states and
-fresh-A pummels plus forward/back/up/down throws. Captured fighters remain
+standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
+grab capsules, paired pull/hold states and fresh-A pummels plus
+forward/back/up/down throws. Captured fighters remain
 attached through explicit holder/victim bone anchors. A pummel has priority over
 throw selection, applies one shared-hitlag percent event, starts the victim's
 sampled CaptureDamage pose sequence, and returns both sides independently to
@@ -217,7 +218,7 @@ checkpointed and cleared transactionally on release or stock loss. Captured
 fighters also run an explicit percent-scaled hold timer and the complete
 button/stick `ftCommon_GrabMash`
 transition. Expiry enters resource-driven CatchCut/CaptureCut release actions.
-Dash/tether variants, analog-trigger mash synthesis, throw/pummel staling,
+Tether variants, analog-trigger mash synthesis, throw/pummel staling,
 separate high/low victim reactions and capture-contact interference remain
 unported.
 
@@ -282,8 +283,8 @@ damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
 Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
-standing catches, paired holds, pummels with captured reaction poses, mash
-escape and four-direction throws. The optional [ledge
+standing, dash and pivot catches, paired holds, pummels with captured reaction
+poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
