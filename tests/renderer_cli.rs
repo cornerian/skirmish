@@ -30,8 +30,25 @@ fn help_is_available_without_a_display() {
     assert!(stdout.contains("skirmish-renderer"), "{stdout}");
     assert!(stdout.contains("--headless"), "{stdout}");
     assert!(stdout.contains("--menus"), "{stdout}");
+    assert!(stdout.contains("--melee-menu-assets"), "{stdout}");
     assert!(stdout.contains("--no-audio"), "{stdout}");
     assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn direct_melee_assets_reject_the_legacy_menu_overlay_before_loading_assets() {
+    let output = cli_without_display()
+        .args([
+            "--melee-menu-assets",
+            "does-not-need-to-exist.json",
+            "--menus",
+        ])
+        .output()
+        .unwrap();
+    assert_usage_error(&output, "--menus");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--melee-menu-assets"), "{stderr}");
+    assert!(!stderr.contains("loading Melee menu assets"), "{stderr}");
 }
 
 #[test]

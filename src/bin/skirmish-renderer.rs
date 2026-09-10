@@ -38,8 +38,8 @@ struct Cli {
     /// This development view is a static default pose until JObj animation is connected.
     #[arg(long, value_name = "SCENE.json", conflicts_with = "scene")]
     melee_menu_assets: Option<PathBuf>,
-    /// Start in the interactive menu. F1 toggles menus and scene preview.
-    #[arg(long)]
+    /// Start in the translated menu preview. F1 toggles it and scene preview.
+    #[arg(long, conflicts_with = "melee_menu_assets")]
     menus: bool,
     /// Open the in-game asset import screen.
     #[arg(long)]
@@ -68,6 +68,36 @@ struct Cli {
     no_audio: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PresentationMode {
+    Legacy,
+    DirectMelee,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OverlayKind {
+    None,
+    LegacyMenu,
+    AssetImport,
+}
+
+impl PresentationMode {
+    const fn overlay(self, legacy_menu_active: bool, import_active: bool) -> OverlayKind {
+        if import_active {
+            OverlayKind::AssetImport
+        } else {
+            match (self, legacy_menu_active) {
+                (Self::Legacy, true) => OverlayKind::LegacyMenu,
+                _ => OverlayKind::None,
+            }
+        }
+    }
+
+    const fn allows_legacy_toggle(self, import_active: bool) -> bool {
+        matches!(self, Self::Legacy) && !import_active
+    }
+}
+
 struct App {
     renderer: WindowRenderer,
     audio: Option<AudioOutput>,
@@ -75,7 +105,8 @@ struct App {
     ports: ControllerPorts,
     keyboard: KeyboardInput,
     menu: MenuSession,
-    menu_active: bool,
+    presentation_mode: PresentationMode,
+    legacy_menu_active: bool,
     asset_menu: AssetImportMenu,
     import_active: bool,
     clock: FixedMenuClock,
@@ -91,14 +122,22 @@ struct App {
 }
 
 impl App {
+    fn overlay_kind(&self) -> OverlayKind {
+        self.presentation_mode
+            .overlay(self.legacy_menu_active, self.import_active)
+    }
+
+    fn menu_input_active(&self) -> bool {
+        self.overlay_kind() != OverlayKind::None
+    }
+
     fn update_menu(&mut self) {
-        self.renderer.set_menu(self.menu_active.then(|| {
-            if self.import_active {
-                self.asset_menu.view()
-            } else {
-                self.menu.view()
-            }
-        }));
+        let view = match self.overlay_kind() {
+            OverlayKind::None => None,
+            OverlayKind::LegacyMenu => Some(self.menu.view()),
+            OverlayKind::AssetImport => Some(self.asset_menu.view()),
+        };
+        self.renderer.set_menu(view);
         self.dirty = true;
     }
 
@@ -155,8 +194,13 @@ impl App {
                 repeat,
                 ..
             } if window_id == self.renderer.window_id() && self.focused => {
-                if !repeat && code == Scancode::F1 && !self.import_active {
-                    self.menu_active = !self.menu_active;
+                if !repeat
+                    && code == Scancode::F1
+                    && self
+                        .presentation_mode
+                        .allows_legacy_toggle(self.import_active)
+                {
+                    self.legacy_menu_active = !self.legacy_menu_active;
                     self.keyboard.clear();
                     self.ports.release();
                     self.menu.release_input();
@@ -165,7 +209,7 @@ impl App {
                     self.update_menu();
                 } else if !repeat && code == Scancode::Q {
                     self.quit = true;
-                } else if self.menu_active {
+                } else if self.menu_input_active() {
                     self.keyboard.key(code, true, repeat);
                 } else {
                     self.scene_key(code, repeat);
@@ -183,7 +227,9 @@ impl App {
                 filename,
                 ..
             } if window_id == self.renderer.window_id() && !self.asset_menu.busy() => {
-                self.menu_active = true;
+                if self.presentation_mode == PresentationMode::Legacy {
+                    self.legacy_menu_active = true;
+                }
                 self.import_active = true;
                 self.asset_menu.start(Source::File(filename.into()));
                 self.keyboard.clear();
@@ -316,7 +362,7 @@ impl App {
                 now.duration_since(last_update)
             };
             last_update = now;
-            if self.menu_active && self.drawable() {
+            if self.menu_input_active() && self.drawable() {
                 for _ in 0..self.clock.advance(elapsed) {
                     self.tick_menu();
                     if self.quit {
@@ -354,7 +400,7 @@ impl App {
             }
             let mut wait = Duration::from_millis(250);
             if self.drawable() {
-                if self.menu_active {
+                if self.menu_input_active() {
                     wait = wait.min(
                         self.clock
                             .until_next_tick()
@@ -376,6 +422,11 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let presentation_mode = if cli.melee_menu_assets.is_some() {
+        PresentationMode::DirectMelee
+    } else {
+        PresentationMode::Legacy
+    };
     let scene = match (&cli.scene, &cli.melee_menu_assets) {
         (Some(path), None) => {
             Scene::load(path).with_context(|| format!("loading scene from {}", path.display()))?
@@ -429,12 +480,17 @@ fn main() -> Result<()> {
         .context("creating SDL window")?;
     let mut renderer = pollster::block_on(WindowRenderer::new(window, &scene))?;
     println!("Graphics adapter: {}", renderer.adapter_name());
-    println!(
-        "SDL3 host: F1 toggles menus/scene. Menus: arrows/D-pad, Enter/A selects, Esc/B backs. Q quits."
-    );
+    match presentation_mode {
+        PresentationMode::Legacy => println!(
+            "SDL3 host: F1 toggles menus/scene. Menus: arrows/D-pad, Enter/A selects, Esc/B backs. Q quits."
+        ),
+        PresentationMode::DirectMelee => println!(
+            "SDL3 host: direct Melee asset scene; translated menu overlay and F1 toggle are disabled. Q quits."
+        ),
+    }
     println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
-    let menu_active =
-        cli.menus || cli.import_assets || (cli.scene.is_none() && cli.melee_menu_assets.is_none());
+    let legacy_menu_active = presentation_mode == PresentationMode::Legacy
+        && (cli.menus || cli.import_assets || cli.scene.is_none());
     let asset_destination = cli.asset_dir.map(Ok).unwrap_or_else(|| {
         sdl3::filesystem::get_pref_path("Skirmish", "Skirmish")
             .map(|path| path.join("assets").join(extraction::BUNDLE_NAME))
@@ -455,13 +511,13 @@ fn main() -> Result<()> {
         }
     }
     let asset_menu = AssetImportMenu::new(asset_destination, search_roots);
-    renderer.set_menu(menu_active.then(|| {
-        if cli.import_assets {
-            asset_menu.view()
-        } else {
-            menu.view()
-        }
-    }));
+    renderer.set_menu(
+        match presentation_mode.overlay(legacy_menu_active, cli.import_assets) {
+            OverlayKind::None => None,
+            OverlayKind::LegacyMenu => Some(menu.view()),
+            OverlayKind::AssetImport => Some(asset_menu.view()),
+        },
+    );
     let events = sdl.event_pump().context("creating shared SDL event pump")?;
     let controllers = match ControllerHub::with_sdl(&sdl) {
         Ok(hub) => Some(hub),
@@ -488,7 +544,8 @@ fn main() -> Result<()> {
         ports: ControllerPorts::default(),
         keyboard: KeyboardInput::default(),
         menu,
-        menu_active,
+        presentation_mode,
+        legacy_menu_active,
         asset_menu,
         import_active: cli.import_assets,
         clock: FixedMenuClock::default(),
@@ -503,4 +560,25 @@ fn main() -> Result<()> {
         frame_limit: cli.frames,
     }
     .run(events)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OverlayKind, PresentationMode};
+
+    #[test]
+    fn direct_melee_mode_never_selects_the_legacy_menu_overlay() {
+        let direct = PresentationMode::DirectMelee;
+        assert_eq!(direct.overlay(false, false), OverlayKind::None);
+        assert_eq!(direct.overlay(true, false), OverlayKind::None);
+        assert!(!direct.allows_legacy_toggle(false));
+    }
+
+    #[test]
+    fn direct_melee_mode_keeps_asset_import_separate_and_temporary() {
+        let direct = PresentationMode::DirectMelee;
+        assert_eq!(direct.overlay(false, true), OverlayKind::AssetImport);
+        assert_eq!(direct.overlay(true, true), OverlayKind::AssetImport);
+        assert_eq!(direct.overlay(true, false), OverlayKind::None);
+    }
 }

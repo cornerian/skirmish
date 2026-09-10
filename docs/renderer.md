@@ -86,6 +86,10 @@ cargo run --locked --features melee-ui-source --bin skirmish-renderer -- --melee
 
 This is a serialized default-pose milestone, not a claim that the original JObj
 animations and scheduler are complete. See the [direct UI status](melee-ui.md).
+Direct Melee asset mode never draws or toggles the translated Skirmish menu
+overlay: `--menus` is rejected with `--melee-menu-assets`, and F1 remains on the
+direct scene. The separate asset-import screen can still be opened and returns
+to the direct scene when closed.
 
 The second command captures the menu UI through the same WESL draw path used
 in the window. Add `--scene /path/to/scene.json` to capture an export. Headless
