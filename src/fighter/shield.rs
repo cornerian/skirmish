@@ -84,6 +84,33 @@ pub fn response(
     )
 }
 
+/// ftCo_80093BC0: advance the independent reflector and damage-immunity
+/// windows. A zero initial timer remains active through its entry frame and is
+/// cleared by the first animation callback because the source tests `< 0`.
+pub fn powershield_tick(
+    just_started: &mut bool,
+    reflecting: &mut bool,
+    powershield: &mut bool,
+    reflect_timer: &mut f32,
+    powershield_timer: &mut f32,
+) {
+    if *just_started {
+        *just_started = false;
+    }
+    if *reflecting {
+        *reflect_timer -= 1.0;
+        if *reflect_timer < 0.0 {
+            *reflecting = false;
+        }
+    }
+    if *powershield {
+        *powershield_timer -= 1.0;
+        if *powershield_timer < 0.0 {
+            *powershield = false;
+        }
+    }
+}
+
 /// ftCo_80093240/800932DC, horizontal displacement along the floor tangent.
 pub fn displacement(
     position: &mut [f32; 2],
@@ -133,4 +160,26 @@ pub fn mash(
         result = true;
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::powershield_tick;
+
+    #[test]
+    fn zero_windows_remain_active_on_entry_and_clear_on_the_first_tick() {
+        let (mut fresh, mut reflect, mut shield) = (true, true, true);
+        let (mut reflect_timer, mut shield_timer) = (0.0, 0.0);
+        powershield_tick(
+            &mut fresh,
+            &mut reflect,
+            &mut shield,
+            &mut reflect_timer,
+            &mut shield_timer,
+        );
+        assert_eq!(
+            (fresh, reflect, shield, reflect_timer, shield_timer),
+            (false, false, false, -1.0, -1.0)
+        );
+    }
 }

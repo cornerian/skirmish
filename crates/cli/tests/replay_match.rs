@@ -2,7 +2,9 @@
 //! same native implementation, so success does not certify Melee fidelity.
 use peppi::frame::mutable;
 use serde_json::Value;
-use skirmish::game::{Action, BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Z, Controller, Event, State};
+use skirmish::game::{
+    Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, State,
+};
 use skirmish_replay::{
     Checkpoint,
     match_validation::{self as replay_match, Initialization, Outcome, Report},
@@ -37,6 +39,36 @@ struct Recording {
     initialization: Initialization,
     inputs: Vec<[Controller; 2]>,
     states: Vec<State>,
+}
+
+#[derive(serde::Deserialize)]
+struct ShieldProfile {
+    rules: skirmish::game::shield::Rules,
+    attributes: skirmish::game::shield::Attributes,
+}
+
+fn powershield_data() -> skirmish::game::data::MatchData {
+    let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    let mut profile: ShieldProfile =
+        serde_json::from_str(include_str!("../../../tests/fixtures/game/shield.json")).unwrap();
+    profile.rules.powershield_input_window = 3;
+    profile.rules.powershield_reflect_frames = 3.0;
+    profile.rules.powershield_frames = 2.0;
+    profile.attributes.raise_frames = 10.0;
+    data.rules.shield = Some(profile.rules);
+    data.rules.countdown_frames = 0;
+    data.rules.time_limit_frames = 9_999;
+    data.stage.floor.left = -100.0;
+    data.stage.floor.right = 100.0;
+    data.stage.blast = [-200.0, 200.0, -200.0, 200.0];
+    data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
+    for fighter in &mut data.fighters {
+        fighter.shield = Some(profile.attributes.clone());
+    }
+    data
 }
 
 impl Recording {
@@ -286,7 +318,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v9");
+    assert_eq!(report.policy, "fighter-post-v10");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -539,6 +571,52 @@ fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
 }
 
 #[test]
+fn file_backed_powershield_covers_reflector_immunity_and_guard_reflect_state() {
+    let mut inputs = vec![IDLE; 8];
+    for input in &mut inputs {
+        input[1].buttons = BUTTON_L;
+    }
+    let recording = Recording::from_script(powershield_data(), 23, inputs);
+    let first = &recording.states[0].fighters[1];
+    assert_eq!(first.action, Action::GuardReflect);
+    assert_eq!(observation::action_state(first, Some(2)), Some(182));
+    assert_eq!(observation::animation_index(first, Some(2)), Some(37));
+    assert_eq!(observation::state_flags(first)[0] & 0x10, 0x10);
+    assert_eq!(observation::state_flags(first)[3] & 0x20, 0x20);
+    assert!(recording.states.iter().any(|state| {
+        state.fighters[1].shield.reflecting && !state.fighters[1].shield.powershield
+    }));
+    assert!(recording.states.iter().any(|state| {
+        !state.fighters[1].shield.reflecting && !state.fighters[1].shield.powershield
+    }));
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    for (byte, mask, field) in [
+        (0, 0x10, "state_flags.reflect"),
+        (3, 0x20, "state_flags.powershield"),
+    ] {
+        let corrupted = recording.bytes(support::Fixture::default(), |frames| {
+            let flags = frames.ports[1].leader.post.state_flags.as_mut().unwrap();
+            let value = observation::state_flags(first)[byte] ^ mask;
+            match byte {
+                0 => flags.0.set(0, Some(value)),
+                3 => flags.3.set(0, Some(value)),
+                _ => unreachable!(),
+            }
+        });
+        assert!(matches!(
+            recording.compare(&corrupted).outcome,
+            Outcome::Mismatch {
+                frame: FIRST,
+                checked_frames: 0,
+                ref difference,
+            } if difference.port == PORTS[1] && difference.field == field
+        ));
+    }
+}
+
+#[test]
 fn file_backed_ledge_intangibility_uses_hurtbox_state_two() {
     let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
         "../../../tests/fixtures/game/integration-match.json"
@@ -782,6 +860,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     row,
                     Some(observation::animation_index(fighter, Some(2)).unwrap() ^ 1),
                 ),
+                "state_flags.reflect" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .0
+                    .set(row, Some(observation::state_flags(fighter)[0] ^ 0x10)),
                 "state_flags.protected" => post
                     .state_flags
                     .as_mut()
@@ -812,6 +896,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .unwrap()
                     .3
                     .set(row, Some(observation::state_flags(fighter)[3] ^ 0x02)),
+                "state_flags.powershield" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .3
+                    .set(row, Some(observation::state_flags(fighter)[3] ^ 0x20)),
                 "state_flags.dead" => post
                     .state_flags
                     .as_mut()
@@ -1270,7 +1360,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v9");
+        assert_eq!(report["policy"], "fighter-post-v10");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

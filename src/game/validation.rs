@@ -728,6 +728,8 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.shield.stun_rate,
                 f.shield.attacker_ground_push,
                 f.shield.dizzy_timer,
+                f.shield.reflect_timer,
+                f.shield.powershield_timer,
             ])
             .chain(f.shield.attacker_push)
             .chain(f.death.camera_offset)

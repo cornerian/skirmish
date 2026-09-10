@@ -29,7 +29,9 @@
     "dizzy_frame_decay": 1.0,
     "dizzy_mash_rate": 5.0,
     "mash_stick_threshold": 0.5,
-    "powershield_input_window": 0
+    "powershield_input_window": 0,
+    "powershield_reflect_frames": 0.0,
+    "powershield_frames": 0.0
   },
   "attributes": {
     "bone": 1,

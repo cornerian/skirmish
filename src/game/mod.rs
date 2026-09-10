@@ -87,6 +87,7 @@ pub enum Action {
     Guard,
     GuardOff,
     GuardSetOff,
+    GuardReflect,
     ShieldBreakFly,
     ShieldBreakFall,
     ShieldBreakDown,

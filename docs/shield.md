@@ -1,7 +1,7 @@
-# Ordinary native shields
+# Native shields
 
 `game::shield` connects processed digital/analog shoulder input to GuardOn,
-Guard, GuardOff and GuardSetOff. Shield contacts run the original matrix-aware
+Guard, GuardOff, GuardSetOff and GuardReflect. Shield contacts run the original matrix-aware
 `lbColl_80006E58` narrowphase before hurtbox checks. A shrinking shield can miss
 an attack that subsequently hits a hurtbox. The shield bone uses unit local
 scale in the supplied pose; its explicit initial radius replaces that scale.
@@ -22,11 +22,19 @@ The implementation preserves these examined source branches:
   does not cancel a latched release. GuardSetOff preserves the latch and blocks
   action interrupts while its supplied animation advances at the calculated
   rate; its duration is not replaced with a rounded integer timer.
+- `ftCo_80091A4C`, `ftCo_80093694` and the GuardReflect callbacks enter a
+  powershield only for a fresh physical L/R press inside both trigger and
+  GuardOn windows. The independent `x2A4` reflector and `x2B4` damage-immunity
+  timers retain the source's active-at-zero boundary and freeze in hitlag.
+  Releasing the trigger is latched while the reflector remains active.
 - `ftcoll.c::ftColl_80076CBC` converts stored hit damage with `getEnvDmg`, adds
   `HitCapsule::x34` shield damage, and clamps that sum before accumulating shield
   damage. Nonzero damage smaller than one becomes one. Zero integer damage does
   not invoke the shield-stun callback, even if an extra shield-damage value is
   present.
+  A powershield contact skips shield-health loss and the ordinary shield effect,
+  while retaining hitlag, stun, attacker recoil and the source's unmultiplied
+  defender push branch.
 - `Fighter_ProcessHit_8006D1EC` supplies regeneration, hitlag, shield damage and
   attacker recoil. Contact damage uses already cached stale damage. Shield-only
   contacts do not run the hurt path's stale-queue insertion. Defender ground
@@ -41,18 +49,18 @@ The implementation preserves these examined source branches:
   the percent-dependent dizzy timer and uses `ftCommon_GrabMash` direction/button
   reductions. Neutral stick input retains its previous mash-direction bucket.
 
-Shield health, analog strength, hold/release state, stun animation progress,
-recoil vectors, dizzy timer and mash directions survive native checkpoints.
+Shield health, analog strength, hold/release state, powershield flags and timers,
+stun animation progress, recoil vectors, dizzy timer and mash directions survive native checkpoints.
 Nonfinite results fail a step atomically. Tests exercise the complete ordinary
 cycle, shield pokes, zero boundaries, staling interaction, hitlag displacement
 and deterministic replay. Selected complete C functions independently check
-radius, drain, strength, stun/rate/push, displacement, damage conversion and mash
-arithmetic. C adapters omit presentation/statistics callbacks whose results do
+radius, drain, strength, powershield-window ticking, ordinary/powershield
+stun-rate/push, displacement, damage conversion and mash arithmetic. C adapters omit presentation/statistics callbacks whose results do
 not feed those calculations.
 
 This is still an experimental scheduler rather than complete Melee equivalence.
-Powershield/reflect rules are rejected by requiring an explicit zero powershield
-input window. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
+Reflected-projectile motion is not yet simulated even though the fighter's
+reflector-active window is represented. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
 branches, shield tilting and native shield/body animation tracks, rolls, grabs,
 shield-drop input, C-stick shield jumps, full callback ordering and material
 friction are not provided by this batch. Break down/up pose selection is grouped

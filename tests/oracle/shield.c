@@ -23,12 +23,13 @@ typedef Fighter_GObj HSD_GObj;
 typedef void (*HSD_GObjEvent)(Fighter_GObj*);
 struct Fighter {
     int kind, player_id, x221F_b4, ground_or_air;
-    bool x221B_b0, x221A_b7, x221C_b2, x2219_b0, allow_sdi;
+    bool x221B_b0, x221A_b7, x221C_b1, x221C_b2, x221C_b3, x2219_b0;
+    bool allow_sdi, reflecting;
     float shield_health, lightshield_amount, specialn_facing_dir, gr_vel, rate;
     int x19A4;
     HSD_GObjEvent hitlag_cb, post_hitlag_cb;
     struct { float initial_shield_size; } co_attrs;
-    struct { struct { struct { float x2C, x10; } guard; } co; } mv;
+    struct { struct { struct { float x2C, x10, x14, x18; } guard; } co; } mv;
     struct { float triggers[1]; Vec3 lstick[1]; uint32_t pressed_buttons; } input;
     struct { struct { Vec3 normal; } floor; } coll_data;
     Vec3 cur_pos;
@@ -65,6 +66,7 @@ static void ftAnim_SetAnimRate(Fighter_GObj* g,float rate) {g->user_data->rate=r
 static void ftColl_8007B1B8(Fighter_GObj* g,ShieldDesc* s,HSD_GObjEvent cb) {(void)g;(void)s;(void)cb;}
 static void HSD_JObjSetScale(HSD_JObj* j,Vec3* v) {(void)j;(void)v;}
 static void ftCo_80092E50(Fighter_GObj* g) {(void)g;}
+static void ftCo_80092450_inline(Fighter_GObj* g) {(void)g;}
 static void pl_800402D0(int a,int b,bool result) {(void)a;(void)b;(void)result;}
 void ftCo_80093240(Fighter_GObj*);
 void ftCo_800932DC(Fighter_GObj*);
@@ -85,10 +87,10 @@ int oracle_shield_drain(const float* v,float* out) {
     Fighter_GObj g={&f}; int broken=ftCo_800925A4(&g);
     out[0]=f.shield_health;out[1]=f.lightshield_amount;out[2]=f.mv.co.guard.x10;return broken;
 }
-void oracle_shield_response(int damage,const float* v,float* out) {
+void oracle_shield_response(int damage,const float* v,int powershield,float* out) {
     common=(ftCommonData){.x28C=v[3],.x290=v[4],.x2E4=v[1],.x2E8=v[2],.x294=v[6],.x2BC=v[7],.x298=v[8],.x260_startShieldHealth=60,.x264=1}; p_ftCommonData=&common;
     BoneIds ids={0}; FighterData data={&ids};
-    Fighter f={.x19A4=damage,.lightshield_amount=v[0],.specialn_facing_dir=v[9],.animation.end=v[5],.ft_data=&data};
+    Fighter f={.x19A4=damage,.lightshield_amount=v[0],.specialn_facing_dir=v[9],.animation.end=v[5],.ft_data=&data,.x221C_b2=powershield};
     Fighter_GObj g={&f}; out[0]=ftCo_80092ED8(damage,v[0]);ftCo_80092F2C(&g,false);out[1]=f.rate;out[2]=f.gr_vel;
 }
 void oracle_shield_displacement(const float* v,uint8_t* timer,int window,int exit,float* out) {
@@ -96,6 +98,12 @@ void oracle_shield_displacement(const float* v,uint8_t* timer,int window,int exi
     Fighter f={.cur_pos={v[0],v[1],0},.coll_data.floor.normal={v[2],v[3],0},.input.lstick={{v[4],0,0}},.allow_sdi=(int)v[5],.x670_timer_lstick_tilt_x=*timer};
     Fighter_GObj g={&f};if(exit)ftCo_800932DC(&g);else ftCo_80093240(&g);
     out[0]=f.cur_pos.x;out[1]=f.cur_pos.y;*timer=f.x670_timer_lstick_tilt_x;
+}
+void oracle_powershield_tick(float* timers,uint8_t* flags) {
+    Fighter f={.x221C_b3=flags[0],.x221C_b1=flags[1],.x221C_b2=flags[2],.reflecting=flags[3],.mv.co.guard={.x14=timers[0],.x18=timers[1]}};
+    Fighter_GObj g={&f};ftCo_80093BC0(&g);
+    timers[0]=f.mv.co.guard.x14;timers[1]=f.mv.co.guard.x18;
+    flags[0]=f.x221C_b3;flags[1]=f.x221C_b1;flags[2]=f.x221C_b2;flags[3]=f.reflecting;
 }
 int oracle_shield_mash(float* timer,int8_t* directions,const float* stick,uint16_t pressed,float threshold,float amount) {
     common=(ftCommonData){.x308=threshold};p_ftCommonData=&common;

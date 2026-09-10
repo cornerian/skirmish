@@ -7,7 +7,7 @@ unsafe extern "C" {
     fn oracle_shield_environment_damage(damage: f32) -> i32;
     fn oracle_shield_radius(values: *const f32) -> f32;
     fn oracle_shield_drain(values: *const f32, output: *mut f32) -> i32;
-    fn oracle_shield_response(damage: i32, values: *const f32, output: *mut f32);
+    fn oracle_shield_response(damage: i32, values: *const f32, powershield: i32, output: *mut f32);
     fn oracle_shield_displacement(
         values: *const f32,
         timer: *mut u8,
@@ -23,6 +23,7 @@ unsafe extern "C" {
         threshold: f32,
         amount: f32,
     ) -> i32;
+    fn oracle_powershield_tick(timers: *mut f32, flags: *mut u8);
 }
 
 fn bits(value: f32) -> u32 {
@@ -52,11 +53,12 @@ proptest! {
     #[test]
     fn stun_animation_rate_and_push_match_original(damage in 0i32..1000, amount in 0.0f32..1.0,
         low in 0.0f32..1.0, high in 0.0f32..1.0, scale in 0.0f32..2.0, base in 0.1f32..10.0,
-        end in 0.1f32..80.0, push in 0.0f32..2.0, multiplier in 0.0f32..2.0, maximum in 0.0f32..30.0, facing in prop_oneof![Just(-1.0f32),Just(1.0f32)]) {
+        end in 0.1f32..80.0, push in 0.0f32..2.0, multiplier in 0.0f32..2.0, maximum in 0.0f32..30.0,
+        facing in prop_oneof![Just(-1.0f32),Just(1.0f32)], powershield in any::<bool>()) {
         let values=[amount,low,high,scale,base,end,push,multiplier,maximum,facing];
-        let mut output=[0.0;3]; unsafe{oracle_shield_response(damage,values.as_ptr(),output.as_mut_ptr())};
+        let mut output=[0.0;3]; unsafe{oracle_shield_response(damage,values.as_ptr(),i32::from(powershield),output.as_mut_ptr())};
         let stun=shield::stun(damage,amount,[low,high],scale,base);
-        let (rate,velocity)=shield::response(stun,end,push,multiplier,maximum,facing);
+        let (rate,velocity)=shield::response(stun,end,push,if powershield {1.0} else {multiplier},maximum,facing);
         prop_assert_eq!([stun,rate,velocity].map(bits),output.map(bits));
     }
 
@@ -81,6 +83,20 @@ proptest! {
         let mut original=timer;let mut original_directions=directions;
         let original_changed=unsafe{oracle_shield_mash(&mut original,original_directions.as_mut_ptr(),stick.as_ptr(),pressed,threshold,amount)};
         prop_assert_eq!((bits(actual),actual_directions,changed),(bits(original),original_directions,original_changed!=0));
+    }
+
+    #[test]
+    fn powershield_windows_match_original(
+        timers in prop::array::uniform2(-10.0f32..300.0), flags in prop::array::uniform3(any::<bool>())
+    ) {
+        let [mut reflect_timer,mut powershield_timer]=timers;
+        let [mut just_started,mut reflecting,mut powershield]=flags;
+        shield::powershield_tick(&mut just_started,&mut reflecting,&mut powershield,&mut reflect_timer,&mut powershield_timer);
+        let mut oracle_timers=timers;
+        let mut oracle_flags=[u8::from(flags[0]),u8::from(flags[1]),u8::from(flags[2]),u8::from(flags[1])];
+        unsafe{oracle_powershield_tick(oracle_timers.as_mut_ptr(),oracle_flags.as_mut_ptr())};
+        prop_assert_eq!([reflect_timer,powershield_timer].map(bits),oracle_timers.map(bits));
+        prop_assert_eq!([just_started,reflecting,powershield,reflecting].map(u8::from),oracle_flags);
     }
 }
 

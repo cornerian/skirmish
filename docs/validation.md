@@ -1,5 +1,20 @@
 # Local validation provenance
 
+The 2026-09-10 powershield batch is recorded at:
+
+`/mnt/archive/runs/skirmish-powershield-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and the selected original-C functions in debug and release
+modes. GuardReflect integration tests cover fresh digital entry, conversion
+from analog GuardOn, expiration boundaries, shield-damage immunity, hitlag,
+shield stun, defender push, attacker recoil and checkpoint replay. The exact
+`ftCo_80093BC0` timer routine and both ordinary/powershield push branches are
+also differential-tested against the pinned C source. The `fighter-post-v10`
+policy maps state 182 to the GuardOn animation and compares `reflecting` and
+`x221C_b2`; a Peppi-written file requires independent corruptions to report
+`state_flags.reflect` and `state_flags.powershield`.
+
 The 2026-09-10 Slippi sleep-state batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-sleep-state-20260910-verified`

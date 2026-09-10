@@ -365,7 +365,7 @@ The [damage-direction port](hit-direction.md) supplies ordinary fighter-contact
 and throw launch orientation plus the prone-facing override.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
-vulnerability/target flags, powershield/reflect and character-specific shield responses,
+vulnerability/target flags, reflected-projectile motion and character-specific shield responses,
 capture-specific interference and other special launch-angle behaviors. Outside supplied attack, catch,
 throw, landing and ordinary damage poses,
 fighters currently use a static supplied pose; authentic walking, jumping and

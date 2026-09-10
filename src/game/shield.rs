@@ -1,7 +1,7 @@
-//! Ordinary shield callbacks with caller-supplied native common/character data.
-//! Yoshi shields, powershields, shield-tilt animation, rolls/grabs and projectile
-//! reflection are separate unported branches. Shield break uses explicit native
-//! animation durations rather than guessed character timing or render state.
+//! Shield callbacks with caller-supplied native common/character data. Yoshi
+//! shields, shield-tilt animation, rolls/grabs and reflected-projectile motion
+//! are separate unported branches. Shield break uses explicit native animation
+//! durations rather than guessed character timing or render state.
 use super::{
     Action, Controller, Error, Event, Fighter, State,
     data::{FighterData, Hitbox, MatchData},
@@ -44,8 +44,9 @@ pub struct Rules {
     pub dizzy_frame_decay: f32,
     pub dizzy_mash_rate: f32,
     pub mash_stick_threshold: f32,
-    /// Only the ordinary GuardOn path is translated in this batch.
     pub powershield_input_window: u8,
+    pub powershield_reflect_frames: f32,
+    pub powershield_frames: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -76,6 +77,11 @@ pub struct ShieldState {
     pub attacker_ground_push: f32,
     pub dizzy_timer: f32,
     pub mash_directions: [i8; 2],
+    pub powershield_just_started: bool,
+    pub reflecting: bool,
+    pub powershield: bool,
+    pub reflect_timer: f32,
+    pub powershield_timer: f32,
 }
 
 pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
@@ -102,6 +108,8 @@ pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
         r.dizzy_base_frames,
         r.dizzy_frame_decay,
         r.dizzy_mash_rate,
+        r.powershield_reflect_frames,
+        r.powershield_frames,
     ];
     if !nonnegative
         .into_iter()
@@ -121,7 +129,6 @@ pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
         || r.stun_base == 0.0
         || r.dizzy_frame_decay == 0.0
         || r.break_health > r.maximum_health
-        || r.powershield_input_window != 0
     {
         return Err(Error::Data(
             "invalid or unsupported ordinary shield rules".into(),
@@ -168,7 +175,7 @@ pub(crate) fn active(f: &Fighter) -> bool {
     f.grounded
         && matches!(
             f.action,
-            Action::GuardOn | Action::Guard | Action::GuardSetOff
+            Action::GuardOn | Action::Guard | Action::GuardSetOff | Action::GuardReflect
         )
 }
 
@@ -250,7 +257,16 @@ pub(crate) fn update_animation(
             Action::GuardOff if f.action_frame >= a.release_frames => {
                 enter(f, Action::Wait);
             }
-            Action::GuardOn | Action::Guard => {
+            Action::GuardOn | Action::Guard | Action::GuardReflect => {
+                if f.action == Action::GuardReflect {
+                    math::powershield_tick(
+                        &mut f.shield.powershield_just_started,
+                        &mut f.shield.reflecting,
+                        &mut f.shield.powershield,
+                        &mut f.shield.reflect_timer,
+                        &mut f.shield.powershield_timer,
+                    );
+                }
                 f.shield.strength = math::strength(
                     input.shield_pressure(),
                     r.analog_deadzone,
@@ -271,16 +287,26 @@ pub(crate) fn update_animation(
                     f.shield.minimum_hold = (f.shield.minimum_hold - 1.0).max(0.0);
                 }
                 f.shield.raise_progress += 1.0;
-                if f.action == Action::GuardOn && f.shield.raise_progress >= a.raise_frames {
+                if matches!(f.action, Action::GuardOn | Action::GuardReflect)
+                    && f.shield.raise_progress >= a.raise_frames
+                {
                     enter(f, Action::Guard);
                 }
                 f.shield.release_latched |= !input.shield_held();
-                if f.shield.release_latched && f.shield.minimum_hold == 0.0 {
+                if f.shield.release_latched && f.shield.minimum_hold == 0.0 && !f.shield.reflecting
+                {
                     enter(f, Action::GuardOff);
                     return true;
                 }
             }
             Action::GuardSetOff => {
+                math::powershield_tick(
+                    &mut f.shield.powershield_just_started,
+                    &mut f.shield.reflecting,
+                    &mut f.shield.powershield,
+                    &mut f.shield.reflect_timer,
+                    &mut f.shield.powershield_timer,
+                );
                 f.shield.stun_progress += f.shield.stun_rate;
                 if f.shield.stun_progress >= a.stun_animation_end {
                     enter(
@@ -302,7 +328,7 @@ pub(crate) fn update_animation(
 }
 
 /// Priority-3 shield input callback. Entry honors the existing supported attack
-/// priority; missing roll/grab/powershield paths remain explicit.
+/// priority; missing roll and grab paths remain explicit.
 pub(crate) fn update_actions(
     f: &mut Fighter,
     data: &FighterData,
@@ -314,8 +340,19 @@ pub(crate) fn update_actions(
         return false;
     };
     if own_action {
-        if matches!(f.action, Action::GuardOn | Action::Guard | Action::GuardOff) {
+        if matches!(
+            f.action,
+            Action::GuardOn | Action::Guard | Action::GuardOff | Action::GuardReflect
+        ) {
             let pressed = input.buttons & !f.previous_input.buttons;
+            if f.action == Action::GuardOn
+                && f.shield.raise_progress < f32::from(r.powershield_input_window)
+                && pressed & (super::BUTTON_L | super::BUTTON_R) != 0
+                && f.locomotion.trigger_age < r.powershield_input_window
+            {
+                start_powershield(f, r, false, input);
+                return true;
+            }
             let stick_jump = data.locomotion.as_ref().is_some_and(|p| {
                 input.stick[1] >= p.tap_jump_threshold
                     && f.locomotion.tilt_y_age < p.tap_jump_window
@@ -343,18 +380,51 @@ pub(crate) fn update_actions(
                 | Action::Squat
                 | Action::SquatWait
         )
-        && input.shield_held()
-        && f.shield.health != 0.0
         && input.buttons & !f.previous_input.buttons & super::BUTTON_A == 0
     {
+        let pressed = input.buttons & !f.previous_input.buttons;
+        if pressed & (super::BUTTON_L | super::BUTTON_R) != 0
+            && f.locomotion.trigger_age < r.powershield_input_window
+        {
+            start_powershield(f, r, true, input);
+            return true;
+        }
+        if !input.shield_held() || f.shield.health == 0.0 {
+            return false;
+        }
         f.shield.strength = math::strength(input.shield_pressure(), r.analog_deadzone, 0.0);
         f.shield.minimum_hold = r.minimum_hold_frames;
         f.shield.release_latched = false;
         f.shield.raise_progress = 0.0;
+        clear_powershield(f);
         enter(f, Action::GuardOn);
         return true;
     }
     false
+}
+
+fn clear_powershield(f: &mut Fighter) {
+    f.shield.powershield_just_started = false;
+    f.shield.reflecting = false;
+    f.shield.powershield = false;
+    f.shield.reflect_timer = 0.0;
+    f.shield.powershield_timer = 0.0;
+}
+
+fn start_powershield(f: &mut Fighter, r: &Rules, initialize: bool, input: Controller) {
+    if initialize {
+        f.shield.strength = math::strength(input.shield_pressure(), r.analog_deadzone, 0.0);
+        f.shield.minimum_hold = r.minimum_hold_frames;
+        f.shield.release_latched = false;
+        f.shield.raise_progress = 0.0;
+    }
+    f.locomotion.trigger_age = 254;
+    f.shield.powershield_just_started = true;
+    f.shield.reflecting = true;
+    f.shield.powershield = true;
+    f.shield.reflect_timer = r.powershield_reflect_frames;
+    f.shield.powershield_timer = r.powershield_frames;
+    enter(f, Action::GuardReflect);
 }
 
 /// ProcessHit regenerates outside guard, and subtracts its base cost even with
@@ -441,7 +511,9 @@ pub(crate) fn apply_contact(
         r.damage_base,
     );
     let f = &mut state.fighters[victim];
-    f.shield.health -= loss;
+    let powershield = f.shield.powershield;
+    let applied_loss = if powershield { 0.0 } else { loss };
+    f.shield.health -= applied_loss;
     let broken = f.shield.health < 0.0;
     if damage == 0 {
         if broken {
@@ -450,7 +522,7 @@ pub(crate) fn apply_contact(
         state.events.push(Event::ShieldHit {
             attacker,
             victim,
-            damage: loss,
+            damage: applied_loss,
             broken: false,
         });
         return Ok(());
@@ -464,7 +536,7 @@ pub(crate) fn apply_contact(
             stun,
             a.stun_animation_end,
             r.push_scale,
-            r.push_multiplier,
+            if powershield { 1.0 } else { r.push_multiplier },
             r.push_maximum,
             -towards,
         );
@@ -494,7 +566,7 @@ pub(crate) fn apply_contact(
     state.events.push(Event::ShieldHit {
         attacker,
         victim,
-        damage: loss,
+        damage: applied_loss,
         broken,
     });
     Ok(())

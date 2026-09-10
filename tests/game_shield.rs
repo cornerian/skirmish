@@ -58,6 +58,19 @@ fn shield_hit(data: MatchData) -> Match {
     );
     game
 }
+
+fn powershield_data() -> MatchData {
+    let mut data = data();
+    let rules = data.rules.shield.as_mut().unwrap();
+    rules.powershield_input_window = 3;
+    rules.powershield_reflect_frames = 3.0;
+    rules.powershield_frames = 2.0;
+    rules.push_multiplier = 0.25;
+    for fighter in &mut data.fighters {
+        fighter.shield.as_mut().unwrap().raise_frames = 10.0;
+    }
+    data
+}
 fn until(
     game: &mut Match,
     input: [Controller; 2],
@@ -149,6 +162,90 @@ fn blocked_hit_reduces_only_shield_health_freezes_stun_then_pushes_both_players(
         );
     }
     assert_eq!(game.state().fighters[1].action, Action::Guard);
+}
+
+#[test]
+fn powershield_entry_blocks_health_loss_but_keeps_hitlag_stun_and_recoil() {
+    let mut powershield = Match::new(powershield_data(), 42).unwrap();
+    let entry = step(&mut powershield, BUTTON_A, held());
+    assert_eq!(entry.fighters[1].action, Action::GuardReflect);
+    assert!(entry.fighters[1].shield.reflecting);
+    assert!(entry.fighters[1].shield.powershield);
+    assert_eq!(entry.fighters[1].locomotion.trigger_age, 254);
+    let checkpoint = powershield.checkpoint();
+    let contact = step(&mut powershield, 0, held());
+    assert_eq!(contact.fighters[1].action, Action::GuardSetOff);
+    assert_eq!(contact.fighters[1].percent, 0.0);
+    assert_eq!(contact.fighters[1].shield.health, 49.8);
+    assert!(contact.fighters.iter().all(|fighter| fighter.hitlag > 0.0));
+    assert!(contact.events.iter().any(|event| matches!(
+        event,
+        Event::ShieldHit {
+            attacker: 0,
+            victim: 1,
+            damage: 0.0,
+            broken: false
+        }
+    )));
+
+    let mut ordinary_data = powershield_data();
+    ordinary_data
+        .rules
+        .shield
+        .as_mut()
+        .unwrap()
+        .powershield_input_window = 0;
+    let ordinary = shield_hit(ordinary_data);
+    assert!(ordinary.state().fighters[1].shield.health < contact.fighters[1].shield.health);
+    assert!(
+        contact.fighters[1].ground_velocity.abs()
+            > ordinary.state().fighters[1].ground_velocity.abs()
+    );
+    assert_eq!(
+        contact.fighters[0].shield.attacker_push,
+        ordinary.state().fighters[0].shield.attacker_push
+    );
+
+    let expected = serde_json::to_vec(powershield.state()).unwrap();
+    powershield.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&step(&mut powershield, 0, held())).unwrap(),
+        expected
+    );
+    until(&mut powershield, input(0, held()), 40, |state| {
+        !state.fighters[1].shield.reflecting && !state.fighters[1].shield.powershield
+    });
+}
+
+#[test]
+fn analog_guard_can_be_powershielded_only_inside_both_native_entry_windows() {
+    let analog = Controller {
+        trigger: 0.3,
+        ..Default::default()
+    };
+    let digital = Controller {
+        trigger: 0.3,
+        buttons: BUTTON_L,
+        ..Default::default()
+    };
+    let mut early = Match::new(powershield_data(), 42).unwrap();
+    assert_eq!(
+        step(&mut early, 0, analog).fighters[1].action,
+        Action::GuardOn
+    );
+    assert_eq!(
+        step(&mut early, 0, digital).fighters[1].action,
+        Action::GuardReflect
+    );
+
+    let mut late = Match::new(powershield_data(), 42).unwrap();
+    step(&mut late, 0, analog);
+    for _ in 0..3 {
+        step(&mut late, 0, analog);
+    }
+    let state = step(&mut late, 0, digital);
+    assert_eq!(state.fighters[1].action, Action::GuardOn);
+    assert!(!state.fighters[1].shield.powershield);
 }
 
 #[test]
@@ -436,6 +533,6 @@ fn invalid_shield_resources_are_rejected_without_constructing_a_match() {
     d.fighters[0].shield.as_mut().unwrap().bone = 999;
     assert!(Match::new(d, 0).is_err());
     let mut d = data();
-    d.rules.shield.as_mut().unwrap().powershield_input_window = 3;
+    d.rules.shield.as_mut().unwrap().powershield_reflect_frames = f32::NAN;
     assert!(Match::new(d, 0).is_err());
 }
