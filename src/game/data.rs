@@ -106,6 +106,8 @@ pub struct Rules {
     pub grab: Option<super::grab::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ledge: Option<super::ledge::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_jump: Option<super::wall_jump::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -171,6 +173,8 @@ pub struct FighterData {
     pub knockdown: Option<super::damage::KnockdownAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_tech: Option<super::damage::SurfaceTechAttributes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_jump: Option<super::wall_jump::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_poses: Option<super::damage::DamagePoseAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

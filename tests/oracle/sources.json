@@ -200,6 +200,11 @@
     "sha256": "7e6c054dea388508689b0eea87b899246961a260f762055be40a9d7e7b68c274"
   },
   {
+    "fixture": "tests/oracle/original/wall_jump.c",
+    "upstream": "src/melee/ft/ftwalljump.c",
+    "sha256": "02b5d6f71363666a11bd1625550ac9e179c330fdd7faf9239acb32e716c81a79"
+  },
+  {
     "fixture": "tests/oracle/original/rebirth.c",
     "upstream": "src/melee/ft/ft_0D4D.c",
     "sha256": "e820dee162afc842ec4e3dab7aecd8a22331d9ebf9c484362de8e005735eb296"

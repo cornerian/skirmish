@@ -973,7 +973,7 @@ pub(crate) fn update_animation(
     }
     if let (Some(profile), Some(attributes)) = (&rules.surface_tech, &data.surface_tech) {
         let duration = match fighter.action {
-            Action::PassiveWall | Action::PassiveWallJump => {
+            Action::PassiveWall | Action::PassiveWallJump if !fighter.wall_jump.active => {
                 if fighter.surface_tech.timer != 0 {
                     fighter.surface_tech.timer -= 1;
                     if fighter.surface_tech.timer == 0 {

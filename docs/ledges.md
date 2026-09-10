@@ -49,6 +49,6 @@ cooldowns, including the quick/slow percent selector.
 
 The profile uses supplied generic action tracks. Moving or remapped collision
 lines, disappearing ledges, ledge trumping, tether grabs,
-character overrides, ledge stalls, wall jumps, complete collision-environment
+character overrides, ledge stalls, complete collision-environment
 flags and the original invincibility-refresh policy remain unported. Authentic
 values and poses must come from separately attributed native resources.

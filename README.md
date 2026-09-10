@@ -105,6 +105,9 @@ ordinary four-sided squeeze and deterministic shape restoration.
 The [damage-surface profile](docs/damage-surfaces.md) composes exact reflection
 and wall-tech input arithmetic with wall/ceiling ECB contacts, headless tech
 motion and configured action timing.
+The [ordinary wall-jump profile](docs/wall-jumps.md) adds moving-wall-relative
+arming, strict away-input timing, repeated-height decay and complete sampled
+physics poses without rendering.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

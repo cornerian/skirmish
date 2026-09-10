@@ -17,5 +17,6 @@
   "nudge": "ftcommon",
   "grab_mash": "ftcommon",
   "ground_launch": "lbvector",
-  "capture_alignment": "capture_pulled"
+  "capture_alignment": "capture_pulled",
+  "passive_wall_launch": "passive_wall"
 }

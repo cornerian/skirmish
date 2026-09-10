@@ -41,7 +41,8 @@ restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
 time, selected damage motion, grounded knockback scalar, tumble eligibility,
-damage-surface history/lockout and tech timer, physical-L/R
+damage-surface history/lockout and tech timer, wall-jump contact timer, side,
+repeat count and startup/exponent state, physical-L/R
 tech ages, jump-press age, swept hitbox centers, ECB
 interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
@@ -204,6 +205,13 @@ configured FlyReflectWall/FlyReflectCeiling durations. Optional
 techs, ceiling tech input motion and configured recovery. Floor landing wins
 when multiple responses are possible in one collision pass; wall response wins
 over ceiling response at a corner. Surface-tech poses remain separate work.
+
+Optional [`rules.wall_jump`](wall-jumps.md) and paired fighter resources add the
+ordinary wall-jump interrupt. ECB wall contacts use fighter displacement relative
+to the contacted stage line, so animated walls participate. Strict source input
+windows, incapable fighters, startup freeze, repeated-height decay, sampled
+physics bones, landing reset and checkpoint state are covered independently from
+damage wall techs even though both use `PassiveWallJump`.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash

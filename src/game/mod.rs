@@ -21,6 +21,7 @@ pub mod special;
 pub mod stage_motion;
 pub mod staling;
 mod validation;
+pub mod wall_jump;
 
 use crate::collision::ecb;
 use data::MatchData;
@@ -229,6 +230,7 @@ pub struct Fighter {
     /// Frames before another configured damage-surface reflection is eligible.
     pub reflect_lockout: u8,
     pub surface_tech: damage::SurfaceTechState,
+    pub wall_jump: wall_jump::State,
     pub invincibility: u32,
     pub short_hop: bool,
     pub fast_fall: bool,
@@ -306,6 +308,10 @@ pub enum Event {
         surface: crate::collision::stage::Surface,
         line: usize,
         jump: bool,
+    },
+    WallJumped {
+        player: usize,
+        line: usize,
     },
     Knockout {
         player: usize,

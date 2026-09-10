@@ -85,6 +85,7 @@ fn spawn(
         last_damage_surface: None,
         reflect_lockout: 0,
         surface_tech: damage::SurfaceTechState::default(),
+        wall_jump: wall_jump::State::default(),
         invincibility,
         short_hop: false,
         fast_fall: false,
@@ -150,6 +151,11 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     ) {
         fighter.surface_tech = damage::SurfaceTechState::default();
     }
+    // Ordinary wall-jump entry reclaims this shared motion immediately after
+    // the transition; damage-tech entry must never inherit that ownership.
+    fighter.wall_jump.active = false;
+    fighter.wall_jump.startup_timer = 0;
+    fighter.wall_jump.vertical_exponent = 0;
 }
 
 pub(crate) fn advance(
@@ -957,7 +963,8 @@ fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, inpu
                 .displacement
                 .as_ref()
                 .map(|p| p.axis_thresholds)
-        });
+        })
+        .or_else(|| rules.wall_jump.as_ref().map(|p| [p.tilt_deadzone; 2]));
     if let Some([x, y]) = thresholds {
         f.locomotion.tilt_x_age = damage_math::tilt_timer(
             f.locomotion.tilt_x_age,
@@ -991,6 +998,7 @@ fn update_animation(
     );
     special::update_animation(f, data.special.as_ref());
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
+    wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
     match f.action {
         Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
@@ -1164,7 +1172,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
         if matches!(f.action, Action::PassiveWall | Action::PassiveWallJump)
-            && f.surface_tech.timer != 0
+            && (f.surface_tech.timer != 0 || f.wall_jump.startup_timer != 0)
         {
             // Wall techs remain fixed until the source timer releases them.
         } else if !matches!(
@@ -1240,6 +1248,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     let local = if let Some(pose) = grab::pose(fighter, data) {
         pose
     } else if let Some(pose) = ledge::pose(fighter, data) {
+        pose
+    } else if let Some(pose) = wall_jump::pose(fighter, data) {
         pose
     } else if let Some(pose) = damage::ground_recovery_pose(fighter, data) {
         pose

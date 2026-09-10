@@ -145,6 +145,7 @@ pub(crate) fn resolve(
 ) -> Result<(), Error> {
     let (stage, geometry, previous_geometry) = environment;
     let (data, rules, input) = resources;
+    let position_delta_x = f.position[0] - previous_position[0];
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
         [f.position[0], f.position[1], 0.0],
@@ -396,7 +397,47 @@ pub(crate) fn resolve(
             }
         }
     }
+    if !f.grounded && !responded && f.wall_jump.startup_timer == 0 {
+        let contact = wall_jump_contact(f, geometry, previous_geometry, position_delta_x);
+        if let (Some(jump_rules), Some(attributes)) = (&rules.wall_jump, data.wall_jump.as_ref())
+            && let Some(trigger) = super::wall_jump::interrupt(
+                &mut f.wall_jump,
+                attributes.can_walljump,
+                contact,
+                attributes.minimum_approach_speed,
+                input,
+                f.locomotion.tilt_x_age,
+                jump_rules,
+            )
+        {
+            let line = f.contacts[3].or(f.contacts[2]).unwrap();
+            super::wall_jump::enter(f, jump_rules, trigger);
+            events.push(Event::WallJumped { player, line });
+        }
+    }
     Ok(())
+}
+
+fn wall_jump_contact(
+    fighter: &Fighter,
+    geometry: &StageGeometry,
+    previous: &StageGeometry,
+    position_delta_x: f32,
+) -> Option<super::wall_jump::Contact> {
+    let (line_id, wall_side, point) = if let Some(line) = fighter.contacts[3] {
+        (line, -1.0, fighter.ecb.current.left)
+    } else {
+        (fighter.contacts[2]?, 1.0, fighter.ecb.current.right)
+    };
+    let current = geometry.lines.get(line_id)?;
+    let old = previous.lines.get(line_id)?;
+    let point = add(fighter.position, point);
+    let remapped = stage::remap_point([current.start, current.end], [old.start, old.end], point);
+    Some(super::wall_jump::Contact {
+        wall_side,
+        wall_velocity_x: Some(point[0] - remapped[0]),
+        position_delta_x,
+    })
 }
 
 fn land(
@@ -415,6 +456,7 @@ fn land(
     f.grounded = true;
     f.fast_fall = false;
     super::locomotion::landed(f);
+    super::wall_jump::landed(f);
     f.ecb_lock = 0;
     f.ecb.bottom_locked = false;
     f.skip_floor = None;

@@ -163,6 +163,12 @@ Stub transitions report climb or fall while the original callback owns every
 comparison, return value and cooldown write. Native match tests own endpoint
 eligibility, bone attachment and the six-state action lifecycle.
 
+`wall_jump` preserves complete `ftWallJump_8008169C`. Its adapter supplies
+arbitrary contact sides, moving-line speed results, fighter displacement,
+timers, stick state and common/fighter thresholds. Differential tests compare
+the callback result and every mutated wall-jump field; native match tests own
+stage contact, startup motion, repeated-jump decay and landing reset.
+
 `rebirth` preserves ft_0D4D.c and selects complete `ftCo_Rebirth_Phys` and
 `ftCo_RebirthWait_Phys`. The host adapter exercises their ordinary leader
 branches with an already-resolved platform target and sampled current position.

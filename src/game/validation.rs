@@ -116,6 +116,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             "blast-death rules require an explicit top KO threshold",
         )?;
     }
+    if let Some(wall_jump) = &rules.wall_jump {
+        require(
+            wall_jump::validate_rules(wall_jump),
+            "invalid wall-jump rules",
+        )?;
+    }
     require(
         rules
             .top_ko_min_knockback
@@ -219,6 +225,29 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, Some(_)) => {
                 return Err(Error::Data("ledge parameters require common rules".into()));
+            }
+            (None, None) => {}
+        }
+        match (&rules.wall_jump, &fighter.wall_jump) {
+            (Some(wall_jump_rules), Some(attributes)) => {
+                require(
+                    wall_jump::validate_attributes(attributes)
+                        && wall_jump_rules.startup_frames < attributes.frames.len() as u32,
+                    "invalid fighter wall-jump attributes",
+                )?;
+                for pose in &attributes.frames {
+                    validate_animation_pose(pose, fighter)?;
+                }
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "wall-jump rules require attributes for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "wall-jump attributes require common rules".into(),
+                ));
             }
             (None, None) => {}
         }
@@ -595,6 +624,13 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             "invalid paired capture state",
         )?;
         require(ledge::valid_state(f), "invalid ledge attachment state")?;
+        require(
+            f.wall_jump.wall_side.is_finite()
+                && matches!(f.wall_jump.wall_side, -1.0 | 0.0 | 1.0)
+                && (!f.wall_jump.active || f.action == Action::PassiveWallJump)
+                && f.wall_jump.vertical_exponent <= f.wall_jump.used,
+            "invalid wall-jump state",
+        )?;
         require(
             f.staling.transitions.is_empty(),
             "unflushed attack identity transition",
