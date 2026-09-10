@@ -1,10 +1,18 @@
 //! Shared GPU path for window presentation and offscreen captures.
-use std::{collections::HashMap, fs::File, io::BufWriter, path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::BufWriter,
+    path::Path,
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use glam::Vec3;
 use sdl3::video::Window;
 use wgpu::util::DeviceExt;
+
+use crate::presentation::instance::InstanceId;
 
 use super::platform::SdlSurface;
 use super::scene::{
@@ -17,6 +25,12 @@ use super::viewport::{PresentationTransform, fitted_viewport};
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// Runtime identity used by the one-scene compatibility path.
+///
+/// New callers that clone resident draws should allocate their own non-default
+/// identity and use [`RuntimeDrawUpdate`] for every mutation.
+pub const DEFAULT_INSTANCE_ID: InstanceId = InstanceId::new(0);
+
 /// Selects draw parts attached to one exported joint for visibility updates.
 ///
 /// Exact selectors include resource provenance and never collide across visual
@@ -25,6 +39,8 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExportDrawSelector<'a> {
     Exact(&'a VisualJointOccurrence),
+    /// Legacy source identity. `instance_id` is the exporter's occurrence
+    /// discriminator from [`Mesh::instance_id`], not a runtime [`InstanceId`].
     Legacy {
         joint: u32,
         instance_id: Option<&'a str>,
@@ -58,10 +74,20 @@ pub enum DrawUpdate<'a> {
     },
 }
 
+/// One source-targeted draw update scoped to exactly one runtime instance.
+///
+/// Keeping runtime identity outside the source selector prevents source and
+/// exporter occurrence IDs from becoming a second runtime identity system.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RuntimeDrawUpdate<'a> {
+    pub instance_id: InstanceId,
+    pub update: DrawUpdate<'a>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ExportDrawIdentity {
     joint: Option<u32>,
-    instance_id: Option<String>,
+    export_instance_id: Option<String>,
     source_occurrence: Option<VisualDObjOccurrence>,
     material_source_id: Option<MaterialSourceId>,
     material_source_occurrence: Option<VisualMaterialOccurrence>,
@@ -77,7 +103,7 @@ impl ExportDrawIdentity {
             ExportDrawSelector::Legacy { joint, instance_id } => {
                 self.source_occurrence.is_none()
                     && self.joint == Some(joint)
-                    && self.instance_id.as_deref() == instance_id
+                    && self.export_instance_id.as_deref() == instance_id
             }
         }
     }
@@ -98,7 +124,7 @@ impl From<&Mesh> for ExportDrawIdentity {
     fn from(mesh: &Mesh) -> Self {
         Self {
             joint: mesh.joint,
-            instance_id: mesh.instance_id.clone(),
+            export_instance_id: mesh.instance_id.clone(),
             source_occurrence: mesh.source_occurrence.clone(),
             material_source_id: mesh.material.source_id,
             material_source_occurrence: mesh.material.source_occurrence.clone(),
@@ -172,6 +198,38 @@ impl DrawPresentation {
         self.material_render_mode
             .is_some_and(|mode| !mode.uses_vertex_alpha())
     }
+}
+
+fn update_runtime_presentation(
+    instance_id: InstanceId,
+    presentation: &mut DrawPresentation,
+    update: RuntimeDrawUpdate<'_>,
+) -> bool {
+    instance_id == update.instance_id && presentation.update(update.update)
+}
+
+fn ensure_new_runtime_instance(
+    instance_ids: &HashSet<InstanceId>,
+    instance_id: InstanceId,
+) -> Result<()> {
+    ensure!(
+        !instance_ids.contains(&instance_id),
+        "runtime draw instance {} already exists",
+        instance_id.get()
+    );
+    Ok(())
+}
+
+fn ensure_runtime_instance(
+    instance_ids: &HashSet<InstanceId>,
+    instance_id: InstanceId,
+) -> Result<()> {
+    ensure!(
+        instance_ids.contains(&instance_id),
+        "runtime draw instance {} does not exist",
+        instance_id.get()
+    );
+    Ok(())
 }
 
 /// Immutable HSD draw-pass classification, with a legacy inference fallback.
@@ -430,16 +488,30 @@ impl MaterialUniform {
     }
 }
 
-struct Draw {
-    presentation: DrawPresentation,
+/// Immutable GPU allocation and authored presentation defaults for one mesh.
+///
+/// Every runtime draw instance refers here by index, so cloning presentation
+/// state never duplicates vertex/index buffers, textures, or pipelines.
+struct DrawResource {
+    initial_presentation: DrawPresentation,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    material: wgpu::Buffer,
-    material_binding: wgpu::BindGroup,
     count: u32,
     texture: usize,
     alpha_test: PeAlphaTest,
     pipeline: usize,
+}
+
+/// Independently mutable state for one runtime occurrence of a draw resource.
+///
+/// The material buffer and bind group are intentionally per-instance: unlike
+/// geometry and texture bindings, their contents change during animation.
+struct Draw {
+    instance_id: InstanceId,
+    resource: usize,
+    presentation: DrawPresentation,
+    material: wgpu::Buffer,
+    material_binding: wgpu::BindGroup,
 }
 
 struct GpuScene {
@@ -450,7 +522,10 @@ struct GpuScene {
     camera: wgpu::Buffer,
     camera_binding: wgpu::BindGroup,
     textures: Vec<wgpu::BindGroup>,
+    material_layout: wgpu::BindGroupLayout,
+    draw_resources: Vec<DrawResource>,
     draws: Vec<Draw>,
+    instance_ids: HashSet<InstanceId>,
     center: Vec3,
     radius: f32,
     source_camera: Option<Camera>,
@@ -654,7 +729,7 @@ impl GpuScene {
         });
         let mut pipelines = Vec::new();
         let mut pipeline_indices = HashMap::new();
-        let mut draws = Vec::new();
+        let mut draw_resources = Vec::new();
         for mesh in &scene.meshes {
             if !retain_draw(mesh) {
                 continue;
@@ -682,28 +757,8 @@ impl GpuScene {
                 pipeline_indices.insert(pipeline_key, index);
                 index
             };
-            let uniform = MaterialUniform::new(
-                mesh.material.color,
-                pixel_engine.alpha_test,
-                presentation.material_alpha_uses_hsd_byte_storage(),
-            );
-            let material = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("{} material", mesh.name)),
-                contents: bytemuck::bytes_of(&uniform),
-                usage: wgpu::BufferUsages::UNIFORM
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            });
-            let material_binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(&format!("{} material", mesh.name)),
-                layout: &material_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: material.as_entire_binding(),
-                }],
-            });
-            draws.push(Draw {
-                presentation,
+            draw_resources.push(DrawResource {
+                initial_presentation: presentation,
                 vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&mesh.name),
                     contents: bytemuck::cast_slice(&mesh.vertices),
@@ -714,16 +769,11 @@ impl GpuScene {
                     contents: bytemuck::cast_slice(&mesh.indices),
                     usage: wgpu::BufferUsages::INDEX,
                 }),
-                material,
-                material_binding,
                 count: mesh.indices.len() as u32,
                 texture: mesh.material.texture.unwrap_or(scene.textures.len()),
                 alpha_test: pixel_engine.alpha_test,
                 pipeline,
             });
-        }
-        if let Some(error) = scope.pop().await {
-            bail!("creating graphics resources: {error}");
         }
         let (low, high) = scene.bounds().unwrap_or(([-1.0; 3], [1.0; 3]));
         let low = Vec3::from(low);
@@ -744,7 +794,7 @@ impl GpuScene {
                 .all(|value| value.is_finite() && (0.0..=1.0).contains(value)),
             "scene clear color must contain finite normalized components"
         );
-        Ok(Self {
+        let mut gpu = Self {
             device,
             queue,
             adapter_name: adapter.get_info().name,
@@ -752,7 +802,10 @@ impl GpuScene {
             camera,
             camera_binding,
             textures,
-            draws,
+            material_layout,
+            draw_resources,
+            draws: Vec::new(),
+            instance_ids: HashSet::new(),
             center,
             radius,
             source_camera: scene.camera,
@@ -762,11 +815,93 @@ impl GpuScene {
                 b: f64::from(scene.clear_color[2]),
                 a: f64::from(scene.clear_color[3]),
             },
-        })
+        };
+        gpu.instantiate_draws(DEFAULT_INSTANCE_ID)?;
+        if let Some(error) = scope.pop().await {
+            bail!("creating graphics resources: {error}");
+        }
+        Ok(gpu)
+    }
+
+    fn instantiate_draws(&mut self, instance_id: InstanceId) -> Result<usize> {
+        self.instantiate_draw_resources(instance_id, 0..self.draw_resources.len())
+    }
+
+    /// Clone selected authored draws into one independently mutable runtime set.
+    ///
+    /// Keeping selection in this internal path lets a later presentation bridge
+    /// instantiate one bound hierarchy without re-uploading immutable geometry.
+    fn instantiate_draw_resources(
+        &mut self,
+        instance_id: InstanceId,
+        resource_indices: impl IntoIterator<Item = usize>,
+    ) -> Result<usize> {
+        ensure_new_runtime_instance(&self.instance_ids, instance_id)?;
+        let resource_indices = resource_indices.into_iter().collect::<Vec<_>>();
+        let mut unique = HashSet::with_capacity(resource_indices.len());
+        for &resource in &resource_indices {
+            ensure!(
+                resource < self.draw_resources.len(),
+                "draw resource index {resource} is out of range"
+            );
+            ensure!(
+                unique.insert(resource),
+                "draw resource index {resource} occurs more than once in one runtime instance"
+            );
+        }
+
+        let draws = resource_indices
+            .into_iter()
+            .map(|resource| {
+                let source = &self.draw_resources[resource];
+                let presentation = source.initial_presentation.clone();
+                let uniform = MaterialUniform::new(
+                    presentation.state.material_color,
+                    source.alpha_test,
+                    presentation.material_alpha_uses_hsd_byte_storage(),
+                );
+                let material = self
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("draw instance material"),
+                        contents: bytemuck::bytes_of(&uniform),
+                        usage: wgpu::BufferUsages::UNIFORM
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC,
+                    });
+                let material_binding = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("draw instance material"),
+                    layout: &self.material_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: material.as_entire_binding(),
+                    }],
+                });
+                Draw {
+                    instance_id,
+                    resource,
+                    presentation,
+                    material,
+                    material_binding,
+                }
+            })
+            .collect::<Vec<_>>();
+        let count = draws.len();
+        self.draws.extend(draws);
+        self.instance_ids.insert(instance_id);
+        Ok(count)
     }
 
     fn update_draws(&mut self, update: DrawUpdate<'_>) -> Result<usize> {
-        if let DrawUpdate::MaterialColor { color, .. } = update {
+        self.update_instance_draws(RuntimeDrawUpdate {
+            instance_id: DEFAULT_INSTANCE_ID,
+            update,
+        })
+    }
+
+    fn update_instance_draws(&mut self, update: RuntimeDrawUpdate<'_>) -> Result<usize> {
+        ensure_runtime_instance(&self.instance_ids, update.instance_id)?;
+        if let DrawUpdate::MaterialColor { color, .. } = update.update {
             ensure!(
                 color.iter().all(|component| component.is_finite()),
                 "material color must contain finite components"
@@ -774,16 +909,17 @@ impl GpuScene {
         }
         let mut matched = 0;
         for draw in &mut self.draws {
-            if !draw.presentation.update(update) {
+            if !update_runtime_presentation(draw.instance_id, &mut draw.presentation, update) {
                 continue;
             }
-            if matches!(update, DrawUpdate::MaterialColor { .. }) {
+            if matches!(update.update, DrawUpdate::MaterialColor { .. }) {
+                let source = &self.draw_resources[draw.resource];
                 self.queue.write_buffer(
                     &draw.material,
                     0,
                     bytemuck::bytes_of(&MaterialUniform::new(
                         draw.presentation.state.material_color,
-                        draw.alpha_test,
+                        source.alpha_test,
                         draw.presentation.material_alpha_uses_hsd_byte_storage(),
                     )),
                 );
@@ -850,7 +986,14 @@ impl GpuScene {
             .filter(|draw| draw.presentation.state.visible)
             .collect();
         order.sort_by(|a, b| {
-            compare_draw_order(a.presentation.render_class, b.presentation.render_class)
+            compare_draw_order(
+                self.draw_resources[a.resource]
+                    .initial_presentation
+                    .render_class,
+                self.draw_resources[b.resource]
+                    .initial_presentation
+                    .render_class,
+            )
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene"),
@@ -880,12 +1023,13 @@ impl GpuScene {
         }
         pass.set_bind_group(0, &self.camera_binding, &[]);
         for draw in order {
-            pass.set_pipeline(&self.pipelines[draw.pipeline]);
-            pass.set_bind_group(1, &self.textures[draw.texture], &[]);
+            let resource = &self.draw_resources[draw.resource];
+            pass.set_pipeline(&self.pipelines[resource.pipeline]);
+            pass.set_bind_group(1, &self.textures[resource.texture], &[]);
             pass.set_bind_group(2, &draw.material_binding, &[]);
-            pass.set_vertex_buffer(0, draw.vertices.slice(..));
-            pass.set_index_buffer(draw.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..draw.count, 0, 0..1);
+            pass.set_vertex_buffer(0, resource.vertices.slice(..));
+            pass.set_index_buffer(resource.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..resource.count, 0, 0..1);
         }
     }
 }
@@ -1035,12 +1179,30 @@ impl WindowRenderer {
         )
     }
 
-    /// Applies one source-targeted visibility or material update to resident draws.
+    /// Clone every retained authored draw under a new runtime identity.
+    ///
+    /// Immutable geometry, textures, and pipelines remain shared. Each clone
+    /// receives independent visibility, material state, and a mutable uniform.
+    /// This bounded API does not yet add an instance transform, so simultaneous
+    /// visible whole-scene clones occupy the same authored location.
+    pub fn instantiate_draws(&mut self, instance_id: InstanceId) -> Result<usize> {
+        self.gpu.instantiate_draws(instance_id)
+    }
+
+    /// Applies one source-targeted update to exactly one runtime draw instance.
     ///
     /// Visibility uses an exported joint/part selector and may fan out to every
-    /// attached material. Color requires an exact source MObj identity.
-    /// The returned count exposes missing or intentionally grouped draw parts;
-    /// immutable geometry and textures remain resident.
+    /// attached material within that instance. Color requires an exact source
+    /// MObj identity. The returned count exposes missing or intentionally
+    /// grouped draw parts; immutable geometry and textures remain resident.
+    pub fn update_instance_draws(&mut self, update: RuntimeDrawUpdate<'_>) -> Result<usize> {
+        self.gpu.update_instance_draws(update)
+    }
+
+    /// Compatibility update for the original one-scene renderer.
+    ///
+    /// This always targets [`DEFAULT_INSTANCE_ID`]. New multi-instance callers
+    /// should use [`Self::update_instance_draws`] so runtime scope is explicit.
     pub fn update_draws(&mut self, update: DrawUpdate<'_>) -> Result<usize> {
         self.gpu.update_draws(update)
     }
@@ -1543,7 +1705,7 @@ mod tests {
             presentation.identity,
             ExportDrawIdentity {
                 joint: Some(0x1234),
-                instance_id: Some("cursor-2".into()),
+                export_instance_id: Some("cursor-2".into()),
                 source_occurrence: None,
                 material_source_id: None,
                 material_source_occurrence: None,
@@ -1773,6 +1935,90 @@ mod tests {
     }
 
     #[test]
+    fn exact_updates_are_isolated_by_typed_runtime_instance() {
+        let mut mesh = exact_exported_mesh("shared-resource", 7, 0, 100);
+        mesh.instance_id = Some("exporter-occurrence-is-not-runtime-identity".into());
+        let joint = mesh.source_occurrence.as_ref().unwrap().owner_joint.clone();
+        let material = mesh.material.source_occurrence.clone().unwrap();
+        let initial = exported_presentation(&mesh);
+        let first = InstanceId::new(41);
+        let second = InstanceId::new(42);
+        let mut presentations = [initial.clone(), initial];
+
+        let reveal_second = RuntimeDrawUpdate {
+            instance_id: second,
+            update: DrawUpdate::Visibility {
+                target: ExportDrawSelector::Exact(&joint),
+                visible: true,
+            },
+        };
+        assert!(!update_runtime_presentation(
+            first,
+            &mut presentations[0],
+            reveal_second
+        ));
+        assert!(update_runtime_presentation(
+            second,
+            &mut presentations[1],
+            reveal_second
+        ));
+        assert_eq!(
+            presentations
+                .iter()
+                .map(|draw| draw.state.visible)
+                .collect::<Vec<_>>(),
+            [false, true]
+        );
+
+        let recolor_first = RuntimeDrawUpdate {
+            instance_id: first,
+            update: DrawUpdate::MaterialColor {
+                target: ExportMaterialSelector::Exact(&material),
+                color: [0.25, 0.5, 0.75, 1.0],
+            },
+        };
+        assert!(update_runtime_presentation(
+            first,
+            &mut presentations[0],
+            recolor_first
+        ));
+        assert!(!update_runtime_presentation(
+            second,
+            &mut presentations[1],
+            recolor_first
+        ));
+        assert_eq!(
+            presentations
+                .iter()
+                .map(|draw| draw.state.material_color)
+                .collect::<Vec<_>>(),
+            [[0.25, 0.5, 0.75, 1.0], [1.0; 4]]
+        );
+    }
+
+    #[test]
+    fn runtime_instance_registry_rejects_duplicate_and_missing_ids() {
+        let existing = InstanceId::new(41);
+        let missing = InstanceId::new(42);
+        let instance_ids = HashSet::from([existing]);
+
+        assert_eq!(
+            ensure_new_runtime_instance(&instance_ids, existing)
+                .unwrap_err()
+                .to_string(),
+            "runtime draw instance 41 already exists"
+        );
+        assert_eq!(
+            ensure_runtime_instance(&instance_ids, missing)
+                .unwrap_err()
+                .to_string(),
+            "runtime draw instance 42 does not exist"
+        );
+        ensure_new_runtime_instance(&instance_ids, missing).unwrap();
+        ensure_runtime_instance(&instance_ids, existing).unwrap();
+    }
+
+    #[test]
     fn material_update_preserves_identity_for_vertex_owned_channels() {
         let material = MaterialSourceId::new(100);
         let update = [0.125, 0.25, 0.5, 0.75];
@@ -1982,12 +2228,14 @@ mod tests {
 
     #[test]
     #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
-    fn gpu_update_reveals_preuploaded_hidden_geometry() {
+    fn gpu_clone_shares_geometry_and_reveals_only_the_targeted_instance() {
         let _guard = GPU_TEST_LOCK.lock().unwrap();
         let mut scene = Scene::demo();
         scene.meshes[0].joint = Some(7);
         scene.meshes[0].instance_id = Some("cube".into());
+        scene.meshes[0].material.source_id = Some(MaterialSourceId::new(100));
         scene.meshes[0].hidden = true;
+        let clone = InstanceId::new(41);
         let (hidden, visible) = pollster::block_on(async {
             let instance = wgpu::Instance::new(
                 wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
@@ -1996,15 +2244,95 @@ mod tests {
             let mut gpu =
                 GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
             let hidden = capture_gpu_rgba(&gpu, 257, 193).await?;
+            let resource_count = gpu.draw_resources.len();
+            assert_eq!(gpu.draws.len(), resource_count);
+            assert_eq!(gpu.instantiate_draws(clone)?, resource_count);
             assert_eq!(
-                gpu.update_draws(DrawUpdate::Visibility {
-                    target: ExportDrawSelector::Legacy {
-                        joint: 7,
-                        instance_id: Some("cube"),
+                gpu.draw_resources.len(),
+                resource_count,
+                "cloning must not upload another immutable draw resource"
+            );
+            assert_eq!(gpu.draws.len(), resource_count * 2);
+            assert!(gpu.instantiate_draws(clone).is_err());
+            assert_eq!(
+                gpu.update_instance_draws(RuntimeDrawUpdate {
+                    instance_id: clone,
+                    update: DrawUpdate::Visibility {
+                        target: ExportDrawSelector::Legacy {
+                            joint: 7,
+                            instance_id: Some("cube"),
+                        },
+                        visible: true,
                     },
-                    visible: true,
                 })?,
                 1
+            );
+            assert_eq!(
+                gpu.draws
+                    .iter()
+                    .filter(|draw| {
+                        draw.instance_id == DEFAULT_INSTANCE_ID
+                            && draw.presentation.identity.matches_joint(
+                                ExportDrawSelector::Legacy {
+                                    joint: 7,
+                                    instance_id: Some("cube"),
+                                },
+                            )
+                    })
+                    .map(|draw| draw.presentation.state.visible)
+                    .collect::<Vec<_>>(),
+                [false],
+                "the compatibility draw must remain hidden"
+            );
+            assert_eq!(
+                gpu.draws
+                    .iter()
+                    .filter(|draw| {
+                        draw.instance_id == clone
+                            && draw.presentation.identity.matches_joint(
+                                ExportDrawSelector::Legacy {
+                                    joint: 7,
+                                    instance_id: Some("cube"),
+                                },
+                            )
+                    })
+                    .filter(|draw| draw.presentation.state.visible)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                gpu.update_instance_draws(RuntimeDrawUpdate {
+                    instance_id: clone,
+                    update: DrawUpdate::MaterialColor {
+                        target: ExportMaterialSelector::Legacy {
+                            source_id: MaterialSourceId::new(100),
+                        },
+                        color: [0.0, 0.0, 1.0, 1.0],
+                    },
+                })?,
+                1
+            );
+            let cube_draw = |instance_id| {
+                gpu.draws.iter().position(|draw| {
+                    draw.instance_id == instance_id
+                        && draw
+                            .presentation
+                            .identity
+                            .matches_joint(ExportDrawSelector::Legacy {
+                                joint: 7,
+                                instance_id: Some("cube"),
+                            })
+                })
+            };
+            let default_cube = cube_draw(DEFAULT_INSTANCE_ID).unwrap();
+            let cloned_cube = cube_draw(clone).unwrap();
+            assert_eq!(
+                read_material_uniform(&gpu, default_cube).await?.color,
+                [1.0; 4]
+            );
+            assert_eq!(
+                read_material_uniform(&gpu, cloned_cube).await?.color,
+                [0.0, 0.0, 1.0, 1.0]
             );
             let visible = capture_gpu_rgba(&gpu, 257, 193).await?;
             Ok::<_, anyhow::Error>((hidden, visible))
