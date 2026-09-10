@@ -529,6 +529,7 @@ pub(crate) fn scan(
             state.fighters[victim].facing = state.fighters[holder].facing;
             state.fighters[victim].velocity = [0.0; 2];
             state.fighters[victim].knockback = [0.0; 2];
+            state.fighters[victim].ground_knockback = 0.0;
             state.fighters[victim].ground_velocity = 0.0;
             simulation::enter(&mut state.fighters[holder], Action::CatchPull);
             simulation::enter(&mut state.fighters[victim], Action::CapturePulled);

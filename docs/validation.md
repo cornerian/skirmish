@@ -1,5 +1,17 @@
 # Local validation provenance
 
+The 2026-09-09 grounded-launch coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-ground-launch-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage exercises flat and sloped tangent
+projection, exact floor departure, fly bounce, hitlag freezing, scalar friction,
+prone DownDamage's explicit fly override, malformed resources and checkpoint
+replay. The complete retained launch branch and extracted vector-angle helper
+are compared over arbitrary binary32 inputs.
+
 The 2026-09-09 prone DownDamage coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-down-damage-20260909`

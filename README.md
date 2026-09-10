@@ -90,6 +90,9 @@ motion and bones.
 The [ordinary damage-motion profile](docs/damage-motion.md) selects all 15
 ground, air and fly reactions by post-armor knockback and contacted hurtbox
 height, with headless pose sampling through hitstun.
+The [grounded launch profile](docs/grounded-launch.md) keeps low-level damage on
+the supporting floor, projects knockback along slopes and decays its dedicated
+scalar while fly hits leave or bounce from the floor.
 Resource-driven [stage motion](docs/stage-motion.md) exposes current collision
 geometry and carries supported fighters with the original line-remap arithmetic.
 The [ECB response profile](docs/ecb-response.md) adds moving-surface penetration,

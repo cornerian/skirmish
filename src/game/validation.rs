@@ -606,7 +606,13 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                         .chain(shape.right)
                 }),
             )
-            .chain([f.percent, f.ground_velocity, f.hitlag, f.facing])
+            .chain([
+                f.percent,
+                f.ground_velocity,
+                f.ground_knockback,
+                f.hitlag,
+                f.facing,
+            ])
             .chain([
                 f.locomotion.turn_frames,
                 f.locomotion.run_brake_frames,
@@ -679,6 +685,9 @@ mod tests {
         }
         snapshot.events.clear();
         snapshot.fighters[0].facing = f32::NAN;
+        assert!(matches!(state(&snapshot), Err(Error::NonFinite)));
+        snapshot.fighters[0].facing = 1.0;
+        snapshot.fighters[0].ground_knockback = f32::NAN;
         assert!(matches!(state(&snapshot), Err(Error::NonFinite)));
     }
 }

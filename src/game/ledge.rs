@@ -419,6 +419,7 @@ pub(crate) fn scan(
         fighter.facing = side.inward();
         fighter.velocity = [0.0; 2];
         fighter.knockback = [0.0; 2];
+        fighter.ground_knockback = 0.0;
         fighter.ground_velocity = 0.0;
         fighter.grounded = false;
         fighter.ground_line = None;
@@ -563,6 +564,7 @@ fn finish_on_floor(fighter: &mut Fighter, geometry: &StageGeometry) -> Result<()
     fighter.contacts[0] = Some(line);
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.ground_velocity = 0.0;
     fighter.ledge.line = None;
     fighter.ledge.side = None;
@@ -577,6 +579,7 @@ fn drop(fighter: &mut Fighter, rules: &Rules) {
     fighter.ledge.cooldown = rules.regrab_cooldown;
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.grounded = false;
     fighter.ground_line = None;
     simulation::enter(fighter, Action::Fall);

@@ -46,6 +46,7 @@ pub(crate) fn enter(fighter: &mut Fighter, rules: &Rules, player: usize, post_fr
     fighter.depth = 0.0;
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.ground_velocity = 0.0;
     fighter.grounded = false;
     fighter.ground_line = None;

@@ -35,6 +35,6 @@ bone-derived hurtbox and ECB changes, animation/hitstun completion, final-pose
 holding, checkpoint replay, serialization and malformed resources.
 
 This profile does not supply authentic character poses or the rest of the
-damage callback graph. Grounded launch projection, elemental and character
-damage states, dynamic armor modifiers and input-lock behavior remain separate
-work.
+damage callback graph. Floor-relative launch is supplied separately by the
+[grounded launch profile](grounded-launch.md). Elemental and character damage
+states, dynamic armor modifiers and input-lock behavior remain separate work.

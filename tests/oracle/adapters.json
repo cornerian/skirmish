@@ -14,5 +14,6 @@
   "clank_response": "combat_knockback",
   "clank_victims": "combat_collision",
   "clank_push": "ftcommon",
-  "nudge": "ftcommon"
+  "nudge": "ftcommon",
+  "ground_launch": "lbvector"
 }

@@ -1,10 +1,12 @@
 //! Native damage-floor scheduling with explicit synthetic state durations.
 use skirmish::{
     collision::ecb,
+    fighter::damage::HurtHeight,
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
         damage::{
-            DownDamageRules, FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules,
+            DamageMotionRules, DamagePoseAttributes, DownDamageRules, FloorTechAttributes,
+            FloorTechFrame, FloorTechMotion, FloorTechRules, GroundLaunchRules,
             KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules,
             ProneRecoveryAttributes, RecoveryInvincibilityRules,
         },
@@ -259,6 +261,28 @@ fn down_damage_data(face_down: bool) -> skirmish::game::data::MatchData {
         .flat_map(|frame| &mut frame.hitboxes)
     {
         hit.radius = 30.0;
+    }
+    resource
+}
+
+fn grounded_launch_down_damage_data() -> skirmish::game::data::MatchData {
+    let mut resource = down_damage_data(false);
+    resource.rules.damage.damage_motion = Some(DamageMotionRules {
+        thresholds: [100.0, 200.0, 300.0],
+    });
+    resource.rules.damage.ground_launch = Some(GroundLaunchRules {
+        fly_bounce_angle_radians: 0.2,
+        fly_bounce_vertical_multiplier: 0.5,
+        ground_knockback_friction_multiplier: 2.0,
+    });
+    for fighter in &mut resource.fighters {
+        let motion = vec![fighter.bones.clone()];
+        fighter.damage_poses = Some(DamagePoseAttributes {
+            hurtbox_heights: vec![HurtHeight::Middle; fighter.hurtboxes.len()],
+            ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
+            air: core::array::from_fn(|_| motion.clone()),
+            fly: core::array::from_fn(|_| motion.clone()),
+        });
     }
     resource
 }
@@ -636,6 +660,20 @@ fn prone_low_damage_uses_oriented_poses_and_preserves_checkpointed_recovery() {
         });
         assert_eq!(game.state().fighters[1].down_timer, 0);
     }
+}
+
+#[test]
+fn prone_down_damage_forces_the_source_fly_launch_branch() {
+    let mut game = down_wait(grounded_launch_down_damage_data());
+    assert!(game.state().fighters[1].grounded);
+    assert_eq!(game.state().fighters[1].action, Action::DownWait);
+    let entered = hit_prone(&mut game);
+    let fighter = &entered.fighters[1];
+    assert_eq!(fighter.action, Action::DownDamage);
+    assert!(!fighter.grounded);
+    assert_eq!(fighter.ground_line, None);
+    assert_eq!(fighter.ground_knockback, 0.0);
+    assert!(fighter.knockback[1] > 0.0);
 }
 
 #[test]

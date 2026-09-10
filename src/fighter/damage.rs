@@ -287,6 +287,87 @@ pub const fn damage_motion_id(motion: DamageMotion) -> u16 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroundLaunchRules {
+    /// Common x1E8: additional angle past pi/2 before a fly launch bounces.
+    pub fly_bounce_angle_radians: f32,
+    /// Common x1EC: vertical multiplier applied by that bounce.
+    pub fly_bounce_vertical_multiplier: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroundLaunch {
+    pub airborne: bool,
+    pub knockback: [f32; 2],
+    pub ground_knockback: f32,
+    pub bounced: bool,
+}
+
+/// `lbVector_Angle`, including its tiny-vector fallthrough and cosine clamp.
+/// The original is three-dimensional; the damage transition supplies z = 0.
+#[allow(clippy::manual_clamp)] // Two ordered source comparisons preserve NaN.
+pub fn vector_angle(a: [f32; 2], b: [f32; 2]) -> f32 {
+    let length_product = (a[0] * a[0] + a[1] * a[1]).sqrt() * (b[0] * b[0] + b[1] * b[1]).sqrt();
+    if length_product > 0.0000000001_f32 {
+        let mut cosine = (a[0] * b[0] + a[1] * b[1]) / length_product;
+        if cosine > 1.0 {
+            cosine = 1.0;
+        }
+        if cosine < -1.0 {
+            cosine = -1.0;
+        }
+        cosine.acos()
+    } else {
+        0.0
+    }
+}
+
+/// Grounded portion of `ftCo_8008DCE0`. Low-level launch at least pi/2 from
+/// the floor normal remains grounded and is projected onto the floor tangent.
+/// Fly launch always leaves ground and may reverse/scale its vertical component.
+pub fn ground_launch(
+    knockback: [f32; 2],
+    floor_normal: [f32; 2],
+    fly: bool,
+    rules: &GroundLaunchRules,
+) -> GroundLaunch {
+    let floor_angle = vector_angle(floor_normal, knockback);
+    if floor_angle < core::f32::consts::FRAC_PI_2 {
+        GroundLaunch {
+            airborne: true,
+            knockback,
+            ground_knockback: 0.0,
+            bounced: false,
+        }
+    } else if fly {
+        let bounced = f64::from(floor_angle)
+            > core::f64::consts::FRAC_PI_2 + f64::from(rules.fly_bounce_angle_radians);
+        GroundLaunch {
+            airborne: true,
+            knockback: if bounced {
+                [
+                    knockback[0],
+                    -knockback[1] * rules.fly_bounce_vertical_multiplier,
+                ]
+            } else {
+                knockback
+            },
+            ground_knockback: 0.0,
+            bounced,
+        }
+    } else {
+        GroundLaunch {
+            airborne: false,
+            knockback: [
+                floor_normal[1] * knockback[0],
+                -floor_normal[0] * knockback[0],
+            ],
+            ground_knockback: knockback[0],
+            bounced: false,
+        }
+    }
+}
+
 /// `ftCo_800986B0`: buffered physical-L/R tech eligibility. The current byte
 /// age is promoted to float; the previous byte and repeat boundary stay ints.
 pub fn can_tech(
@@ -698,5 +779,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn ground_launch_preserves_floor_and_fly_boundaries() {
+        let rules = GroundLaunchRules {
+            fly_bounce_angle_radians: 0.2,
+            fly_bounce_vertical_multiplier: 0.5,
+        };
+        let grounded = ground_launch([4.0, 0.0], [0.0, 1.0], false, &rules);
+        assert!(!grounded.airborne);
+        assert_eq!(
+            grounded.knockback.map(f32::to_bits),
+            [4.0_f32.to_bits(), (-0.0_f32).to_bits()]
+        );
+        assert_eq!(grounded.ground_knockback, 4.0);
+
+        let rising = ground_launch([4.0, 1.0], [0.0, 1.0], false, &rules);
+        assert!(rising.airborne && !rising.bounced);
+        assert_eq!(rising.knockback, [4.0, 1.0]);
+
+        let fly_boundary = ground_launch([4.0, 0.0], [0.0, 1.0], true, &rules);
+        assert!(fly_boundary.airborne && !fly_boundary.bounced);
+        let bounced = ground_launch([4.0, -2.0], [0.0, 1.0], true, &rules);
+        assert!(bounced.airborne && bounced.bounced);
+        assert_eq!(bounced.knockback, [4.0, 1.0]);
+    }
+
+    #[test]
+    fn ground_launch_projects_onto_slopes_and_tiny_vectors_take_angle_zero() {
+        let rules = GroundLaunchRules {
+            fly_bounce_angle_radians: 0.0,
+            fly_bounce_vertical_multiplier: 1.0,
+        };
+        assert_eq!(vector_angle([0.0, 1.0], [0.0; 2]), 0.0);
+        assert_eq!(vector_angle([0.0, 1.0], [f32::NAN, 0.0]), 0.0);
+        assert!(ground_launch([1.0e-12, 0.0], [0.0, 1.0], false, &rules).airborne);
+
+        let launch = ground_launch([5.0, 0.0], [-0.6, 0.8], false, &rules);
+        assert!(!launch.airborne);
+        assert_eq!(launch.knockback, [4.0, 3.0]);
+        assert_eq!(launch.ground_knockback, 5.0);
     }
 }

@@ -279,6 +279,7 @@ pub(crate) fn resolve(
             }
             f.grounded = false;
             f.ground_line = None;
+            f.ground_knockback = 0.0;
             f.ground_velocity = 0.0;
             f.fast_fall = false;
             // Ground-to-air conversion consumes the grounded jump slot, even
@@ -408,6 +409,7 @@ fn land(
     f.contacts[0] = f.ground_line;
     f.velocity[1] = 0.0;
     f.knockback = [0.0; 2];
+    f.ground_knockback = 0.0;
     f.ground_velocity = f.velocity[0];
     f.grounded = true;
     f.fast_fall = false;

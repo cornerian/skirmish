@@ -40,7 +40,8 @@ simulator state; it is not a player-information observation policy. `reset(seed)
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
-time, selected damage motion, tumble eligibility, damage-surface history/lockout and tech timer, physical-L/R
+time, selected damage motion, grounded knockback scalar, tumble eligibility,
+damage-surface history/lockout and tech timer, physical-L/R
 tech ages, jump-press age, swept hitbox centers, ECB
 interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
@@ -135,8 +136,11 @@ that displacement while ordinary motion stays frozen. Attacker hitlag does not
 install those damage callbacks. Zero hitlag creates no expiry callback. Optional
 fighter `armor` supplies two subtraction channels and a minimum knockback;
 ordinary armor subtracts the larger channel without changing percent damage.
-Grounded launch projection and the complete damage callback
-sequence remain unported.
+Optional [`rules.damage.ground_launch`](grounded-launch.md) retains low-level
+damage on the floor, projects its launch along the supporting tangent and
+decays the source ground-knockback scalar. Fly-level and explicit DownDamage
+launches leave the floor and apply the configured strict bounce branch. The
+complete damage callback sequence remains unported.
 
 Optional [`rules.damage.damage_motion`](damage-motion.md) supplies the three
 ordinary knockback-level thresholds, while every fighter supplies complete
@@ -285,6 +289,8 @@ get-up attacks. The
 [damage-surface profile](damage-surfaces.md) supplies ordinary tumble
 reflections and wall/ceiling techs. The [damage-motion
 profile](damage-motion.md) supplies ordinary grounded, airborne and fly poses.
+The [grounded launch profile](grounded-launch.md) supplies floor-relative damage
+launch and per-frame grounded knockback friction.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

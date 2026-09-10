@@ -1,6 +1,6 @@
 //! Explicit damage rules and the experimental scheduler's damage integration.
-//! Native helpers preserve selected source arithmetic; action ordering, facing
-//! selection, and floor response remain the documented match-slice policy.
+//! Native helpers preserve selected source arithmetic; action ordering and
+//! facing selection remain the documented match-slice policy.
 use super::{
     Action, Error, Event, Fighter, State,
     data::{Bone, FighterData, Hitbox, MatchData},
@@ -35,12 +35,33 @@ pub struct CombatRules {
     /// Optional ordinary Damage motion thresholds (common x158/x15C/x160).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_motion: Option<DamageMotionRules>,
+    /// Optional grounded launch projection and friction profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_launch: Option<GroundLaunchRules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DamageMotionRules {
     pub thresholds: [f32; 3],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundLaunchRules {
+    pub fly_bounce_angle_radians: f32,
+    pub fly_bounce_vertical_multiplier: f32,
+    /// Common x200, multiplied by each fighter's ground friction.
+    pub ground_knockback_friction_multiplier: f32,
+}
+
+impl GroundLaunchRules {
+    fn physics(&self) -> damage::GroundLaunchRules {
+        damage::GroundLaunchRules {
+            fly_bounce_angle_radians: self.fly_bounce_angle_radians,
+            fly_bounce_vertical_multiplier: self.fly_bounce_vertical_multiplier,
+        }
+    }
 }
 
 /// Complete physics-pose samples for the source's 15 ordinary Damage motions.
@@ -493,6 +514,22 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
             "invalid explicit damage-motion thresholds".into(),
         ));
     }
+    if let Some(profile) = &rules.ground_launch
+        && (!(0.0..=core::f32::consts::FRAC_PI_2).contains(&profile.fly_bounce_angle_radians)
+            || ![
+                profile.fly_bounce_vertical_multiplier,
+                profile.ground_knockback_friction_multiplier,
+            ]
+            .into_iter()
+            .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value)))
+    {
+        return Err(Error::Data("invalid explicit grounded-launch rules".into()));
+    }
+    if rules.ground_launch.is_some() && rules.damage_motion.is_none() {
+        return Err(Error::Data(
+            "grounded launch requires damage-motion thresholds".into(),
+        ));
+    }
     if let Some(profile) = &rules.floor_response
         && (![profile.tumble_knockback_threshold, profile.tech_window]
             .into_iter()
@@ -642,6 +679,7 @@ pub(crate) fn apply_hit(
     let victim = 1 - attacker;
     let rules = &data.rules;
     let target = &state.fighters[victim];
+    let was_grounded = target.grounded;
     let down_damage_face_up = rules
         .damage
         .floor_response
@@ -739,6 +777,16 @@ pub(crate) fn apply_hit(
         speed * libm::cosf(angle.radians) * facing,
         speed * libm::sinf(angle.radians),
     ];
+    let ground_launch = (was_grounded && rules.damage.ground_launch.is_some()).then(|| {
+        damage::ground_launch(
+            incoming,
+            [target.floor_normal[0], target.floor_normal[1]],
+            down_damage_face_up.is_some()
+                || matches!(damage_motion, Some(damage::DamageMotion::Fly { .. })),
+            &rules.damage.ground_launch.as_ref().unwrap().physics(),
+        )
+    });
+    let incoming = ground_launch.map_or(incoming, |launch| launch.knockback);
     let merged = damage::merge_knockback(
         target.knockback,
         incoming,
@@ -756,12 +804,15 @@ pub(crate) fn apply_hit(
     target.velocity = [0.0; 2];
     target.ground_velocity = 0.0;
     target.knockback = merged;
-    if target.grounded {
+    target.ground_knockback = ground_launch.map_or(0.0, |launch| launch.ground_knockback);
+    if was_grounded && ground_launch.is_none_or(|launch| launch.airborne) {
         // ftCommon_8007D5D4 consumes the ground jump when damage leaves ground.
         target.locomotion.jumps_used = 1;
     }
-    target.grounded = false;
-    target.ground_line = None;
+    if ground_launch.is_none_or(|launch| launch.airborne) {
+        target.grounded = false;
+        target.ground_line = None;
+    }
     target.fast_fall = false;
     super::ledge::release_on_damage(target, rules.ledge.as_ref());
     super::simulation::enter(
@@ -1098,6 +1149,7 @@ pub(crate) fn surface_tech(
     let profile = rules.surface_tech.as_ref().unwrap();
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.ground_velocity = 0.0;
     fighter.grounded = false;
     fighter.ground_line = None;
@@ -1151,6 +1203,7 @@ pub(crate) fn reflect(
     );
     fighter.velocity = [0.0; 2];
     fighter.knockback = reflected.knockback;
+    fighter.ground_knockback = 0.0;
     fighter.ground_velocity = 0.0;
     fighter.facing = reflected.facing;
     fighter.grounded = false;

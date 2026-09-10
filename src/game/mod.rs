@@ -171,6 +171,8 @@ pub struct Fighter {
     pub nudge: [f32; 2],
     pub velocity: [f32; 2],
     pub knockback: [f32; 2],
+    /// Source xF0 scalar used to decay and reproject grounded knockback.
+    pub ground_knockback: f32,
     pub ground_velocity: f32,
     pub facing: f32,
     pub grounded: bool,

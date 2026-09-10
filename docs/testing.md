@@ -139,6 +139,14 @@ checkpoint replay and malformed resources. `damage_motion_differential` runs
 arbitrary binary32 values through Rust and the byte-for-byte source level
 selection and 2x4x3 motion table in its host C adapter.
 
+The [grounded launch profile](grounded-launch.md) adds `game_ground_launch`
+coverage for flat and sloped tangent projection, the exact pi/2 departure
+boundary, fly departure and bounce, hitlag freezing, ground-friction decay,
+serialization, invalid resources and checkpoint replay. `game_damage_floor`
+also verifies the explicit-motion DownDamage fly branch.
+`ground_launch_differential` compares the complete retained source branch and
+extracted `lbVector_Angle` over arbitrary binary32 inputs.
+
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
@@ -220,6 +228,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `damage_floor` | Neutral/directional techs, full face-up/down knockdown and get-up suffix, DownBound attack buffering, prone DownDamage reactions, sampled root motion and bones, exact recovery protection, combat vulnerability, input history, invalid profiles and checkpoint replay |
 | `damage_surface` | Wall/ceiling reflection and techs, neutral/jump choice, both wall orientations, ceiling motion, action timing, collision priority, repeat lockout, disabled/invalid profiles and checkpoint replay |
 | `damage_motion` | All ordinary ground/air/fly selectors, sampled hurtbox/ECB poses, dual animation/hitstun completion, repeated-hit reselection, invalid profiles and checkpoint replay |
+| `ground_launch` | Flat/sloped floor retention and tangent projection, departure and fly bounce boundaries, hitlag freeze, scalar friction, prone DownDamage override, invalid profiles and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order

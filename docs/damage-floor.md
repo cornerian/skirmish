@@ -89,7 +89,9 @@ shared combat pipeline, exact recovery protection and its first vulnerable
 frame, prone low-damage hits, strict threshold equality, the face-down selector
 quirk, DownDamage landing/timer recovery, state durations, repeat lockout,
 non-tumble separation, DamageFall persistence, resource rejection,
-serialization, checkpoint replay and reset.
+serialization, checkpoint replay and reset. When the [grounded launch
+profile](grounded-launch.md) is enabled, the suite also verifies that an
+explicit prone DownDamage motion forces the source fly-launch branch.
 The two tech/knockdown conformance scenarios run normally.
 
 Ordinary grounded, airborne and fly reaction poses are supplied separately by

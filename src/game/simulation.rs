@@ -48,6 +48,7 @@ fn spawn(
         nudge: [0.0; 2],
         velocity: [0.0; 2],
         knockback: [0.0; 2],
+        ground_knockback: 0.0,
         ground_velocity: 0.0,
         facing: if player == 0 { 1.0 } else { -1.0 },
         grounded: false,
@@ -739,6 +740,7 @@ fn lose_stock(
     fighter.stocks -= 1;
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.hitlag = 0.0;
     fighter.hitstun = 0;
     fighter.di_pending = false;
@@ -1025,6 +1027,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         attributes: attrs.physics(),
         self_velocity: [f.velocity[0], f.velocity[1], 0.0],
         ground_velocity: f.ground_velocity,
+        ground_knockback: f.ground_knockback,
         floor_normal: f.floor_normal,
         stick_x: input.stick[0],
         ..Movement::default()
@@ -1120,7 +1123,21 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     for (axis, velocity) in f.velocity.iter_mut().enumerate() {
         *velocity = movement.self_velocity[axis] + movement.animation_velocity[axis];
     }
-    f.knockback = damage_math::decay_air_knockback(f.knockback, rules.knockback_decay);
+    if f.grounded
+        && let Some(profile) = &rules.damage.ground_launch
+    {
+        movement.decay_ground_knockback(
+            attrs.ground_friction * profile.ground_knockback_friction_multiplier,
+        );
+        f.ground_knockback = movement.ground_knockback;
+        f.knockback = [
+            f.floor_normal[1] * f.ground_knockback,
+            -f.floor_normal[0] * f.ground_knockback,
+        ];
+    } else {
+        f.ground_knockback = 0.0;
+        f.knockback = damage_math::decay_air_knockback(f.knockback, rules.knockback_decay);
+    }
     shield::recoil(f, data, rules.shield.as_ref());
     // Fighter_procUpdate adds the priority-1 push result before self velocity,
     // knockback and shield recoil. Depth is gameplay state used by bone contact.

@@ -110,6 +110,7 @@ pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
     fighter.ground_velocity = 0.0;
     fighter.velocity = [0.0; 2];
     fighter.knockback = [0.0; 2];
+    fighter.ground_knockback = 0.0;
     fighter.hitlag = 0.0;
     fighter.hitstun = 0;
     fighter.di_pending = false;
