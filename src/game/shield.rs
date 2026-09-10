@@ -82,6 +82,8 @@ pub struct ShieldState {
     pub powershield: bool,
     pub reflect_timer: f32,
     pub powershield_timer: f32,
+    /// Per-frame x221C_b5 inert-hitbox overlap signal.
+    pub touched: bool,
 }
 
 pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {

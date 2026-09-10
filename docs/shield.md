@@ -35,6 +35,11 @@ The implementation preserves these examined source branches:
   A powershield contact skips shield-health loss and the ordinary shield effect,
   while retaining hitlag, stun, attacker recoil and the source's unmultiplied
   defender push branch.
+- The fighter-contact scan distinguishes normal hitboxes from
+  `HitElement_Inert`. An inert overlap sets the one-frame `x221C_b5` shield-touch
+  signal without health loss, stun, hitlag, body damage or hit-group history.
+  This is gameplay state used by character callbacks, rather than a rendering
+  effect.
 - `Fighter_ProcessHit_8006D1EC` supplies regeneration, hitlag, shield damage and
   attacker recoil. Contact damage uses already cached stale damage. Shield-only
   contacts do not run the hurt path's stale-queue insertion. Defender ground

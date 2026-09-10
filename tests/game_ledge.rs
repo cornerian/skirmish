@@ -342,6 +342,7 @@ fn an_opponent_hit_releases_ledge_ownership_before_entering_damage() {
             hitboxes: vec![Hitbox {
                 clank: false,
                 rebound: false,
+                element: Default::default(),
                 group: 0,
                 bone: 0,
                 center: [1.3, 0.0, 0.0],

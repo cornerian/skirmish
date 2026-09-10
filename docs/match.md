@@ -373,6 +373,8 @@ other action collision requires those animation resources. The schema exposes or
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.
 Character-specific radius/model scaling is not implemented. Tests exercise the
 explicit slice; they do not certify those missing rules.
+Attack resources currently accept the normal and inert detection elements;
+other elemental damage and status branches remain outside the schema.
 
 The [native-data audit](native-data.md) preserves real Fox numeric attributes,
 raw jab commands, captured jab observations and Final Destination bounds with

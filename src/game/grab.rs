@@ -720,6 +720,7 @@ pub(crate) fn update_pairs(
                     &Hitbox {
                         clank: false,
                         rebound: false,
+                        element: Default::default(),
                         group: 0,
                         bone: 0,
                         center: [0.0; 3],

@@ -17,6 +17,7 @@ fn hit(group: u8) -> Hitbox {
     Hitbox {
         clank: false,
         rebound: false,
+        element: Default::default(),
         shield_damage: 0,
         group,
         bone: 0,

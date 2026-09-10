@@ -45,6 +45,7 @@ pub const STATE_FLAG_FIELDS: &[&str] = &[
     "state_flags.hitlag",
     "state_flags.shield",
     "state_flags.hitstun",
+    "state_flags.shield_touch",
     "state_flags.powershield",
     "state_flags.dead",
     "state_flags.sleep",
@@ -388,7 +389,9 @@ pub fn state_flags(fighter: &game::Fighter) -> [u8; 5] {
             | (u8::from(fighter.fast_fall) << 3)
             | (u8::from(fighter.hitlag > 0.0) << 5),
         u8::from(shield) << 7,
-        (u8::from(fighter.hitstun > 0) << 1) | (u8::from(fighter.shield.powershield) << 5),
+        (u8::from(fighter.hitstun > 0) << 1)
+            | (u8::from(fighter.shield.touched) << 2)
+            | (u8::from(fighter.shield.powershield) << 5),
         (u8::from(
             fighter.death.hidden
                 || matches!(
@@ -776,6 +779,7 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
             (1, 0x20),
             (2, 0x80),
             (3, 0x02),
+            (3, 0x04),
             (3, 0x20),
             (4, 0x40),
             (4, 0x10),
@@ -1069,6 +1073,7 @@ mod tests {
                 "state_flags.hitlag" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x20,
                 "state_flags.shield" => fighter.state_flags.as_mut().unwrap()[2] ^= 0x80,
                 "state_flags.hitstun" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x02,
+                "state_flags.shield_touch" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x04,
                 "state_flags.powershield" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x20,
                 "state_flags.dead" => fighter.state_flags.as_mut().unwrap()[4] ^= 0x40,
                 "state_flags.sleep" => fighter.state_flags.as_mut().unwrap()[4] ^= 0x10,
@@ -1253,9 +1258,11 @@ mod tests {
         assert_eq!(state_flags(&fighter), [0, 0x2c, 0x80, 0x02, 0]);
         fighter.shield.reflecting = true;
         fighter.shield.powershield = true;
-        assert_eq!(state_flags(&fighter), [0x10, 0x2c, 0x80, 0x22, 0]);
+        fighter.shield.touched = true;
+        assert_eq!(state_flags(&fighter), [0x10, 0x2c, 0x80, 0x26, 0]);
         fighter.shield.reflecting = false;
         fighter.shield.powershield = false;
+        fighter.shield.touched = false;
         fighter.death.hidden = true;
         assert_eq!(state_flags(&fighter)[4], 0x40);
         fighter.death.hidden = false;

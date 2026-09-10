@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-10 inert shield-touch batch is recorded at:
+
+`/mnt/archive/runs/skirmish-shield-touch-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration tests prove that an inert hitbox can overlap a shield
+without shield/body damage, hitlag, stun or hit-history consumption, that the
+one-frame signal survives checkpoints, and that inert body overlap is ignored.
+The `fighter-post-v11` policy compares the recorder's `x221C_b5` bit. A
+Peppi-written GuardReflect replay contains a positive shield-touch frame and
+requires an independent corruption to report `state_flags.shield_touch`.
+
 The 2026-09-10 powershield batch is recorded at:
 
 `/mnt/archive/runs/skirmish-powershield-20260910-verified`

@@ -202,6 +202,7 @@ fn rebirth_actions_cannot_be_hit_or_leave_the_platform_during_wait() {
             hitboxes: vec![Hitbox {
                 clank: false,
                 rebound: false,
+                element: Default::default(),
                 group: 0,
                 bone: 0,
                 center: [2.0, 6.0, 0.0],

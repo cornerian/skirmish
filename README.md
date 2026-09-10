@@ -129,10 +129,10 @@ cargo run --locked --bin skirmish -- validate-replay /path/to/game.slp --initial
 The required initialization embeds native match data, a seed, explicit port
 mapping, the next replay frame and deterministic warmup inputs. The command
 compares the entire selected suffix, reports the first difference, and exits
-unsuccessfully on mismatch or unsupported input. Its `fighter-post-v10` policy
+unsuccessfully on mismatch or unsupported input. Its `fighter-post-v11` policy
 checks action identity and age, position, facing, percent, shield, stocks,
 airborne state, remaining jumps, landing state, selected fighter-state flags
-(including GuardReflect and the death/inactive lifecycle),
+(including GuardReflect, inert shield touch and the death/inactive lifecycle),
 hit attribution, the retained combo counter, and the hitstun counter for two
 human leaders. It also checks internal character identity, all five recorded
 velocity components from Slippi 3.5 onward, hitlag from 3.8 onward, and current

@@ -207,10 +207,11 @@ pub(crate) fn advance(
         return Ok(());
     }
 
-    // Slippi's recorder clears this byte before the map callback. A landing
-    // later in the same callback replaces it with the frame's result.
+    // Slippi's recorder clears these transient fields before their producer
+    // callbacks. Contacts and landings later in the frame replace them.
     for fighter in &mut state.fighters {
         fighter.l_cancel_status = 0;
+        fighter.shield.touched = false;
     }
 
     let previous_stage_frame = state.stage.frame;
@@ -562,6 +563,7 @@ pub(crate) fn advance(
         },
     }
     let mut hits = Vec::with_capacity(2);
+    let mut shield_touches = [false; 2];
     for attacker in 0..2 {
         let victim = 1 - attacker;
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
@@ -602,9 +604,16 @@ pub(crate) fn advance(
                     .map_err(physics)?
                     .is_some()
                 {
+                    if hit.element == HitElement::Inert {
+                        shield_touches[victim] = true;
+                        continue;
+                    }
                     hits.push((attacker, hit, staled, HitContact::Shield));
                     break;
                 }
+            }
+            if hit.element == HitElement::Inert {
+                continue;
             }
             let mut body_contact = None;
             for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
@@ -648,6 +657,9 @@ pub(crate) fn advance(
                 break;
             }
         }
+    }
+    for (fighter, touched) in state.fighters.iter_mut().zip(shield_touches) {
+        fighter.shield.touched = touched;
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.

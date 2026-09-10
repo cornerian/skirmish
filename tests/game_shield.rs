@@ -1,4 +1,5 @@
 //! End-to-end ordinary shield branches in an explicitly synthetic native world.
+use skirmish::game::data::HitElement;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State, data::MatchData, shield,
 };
@@ -68,6 +69,16 @@ fn powershield_data() -> MatchData {
     rules.push_multiplier = 0.25;
     for fighter in &mut data.fighters {
         fighter.shield.as_mut().unwrap().raise_frames = 10.0;
+    }
+    data
+}
+
+fn inert_data() -> MatchData {
+    let mut data = data();
+    for frame in &mut data.fighters[0].jab.frames {
+        for hit in &mut frame.hitboxes {
+            hit.element = HitElement::Inert;
+        }
     }
     data
 }
@@ -246,6 +257,47 @@ fn analog_guard_can_be_powershielded_only_inside_both_native_entry_windows() {
     let state = step(&mut late, 0, digital);
     assert_eq!(state.fighters[1].action, Action::GuardOn);
     assert!(!state.fighters[1].shield.powershield);
+}
+
+#[test]
+fn inert_hitboxes_signal_shield_touch_without_damage_stun_or_body_contact() {
+    let mut shielded = Match::new(inert_data(), 42).unwrap();
+    step(&mut shielded, BUTTON_A, held());
+    let touch = step(&mut shielded, 0, held());
+    assert!(touch.fighters[1].shield.touched);
+    assert_eq!(touch.fighters[1].percent, 0.0);
+    assert_eq!(touch.fighters[1].shield.health, 49.8);
+    assert_eq!(touch.fighters[1].action, Action::GuardOn);
+    assert_eq!(touch.fighters[1].hitlag, 0.0);
+    assert_eq!(touch.fighters[0].hit_groups, 0);
+    assert!(
+        touch
+            .events
+            .iter()
+            .all(|event| !matches!(event, Event::Hit { .. } | Event::ShieldHit { .. }))
+    );
+    let checkpoint = shielded.checkpoint();
+    let expected = serde_json::to_vec(&step(&mut shielded, 0, held())).unwrap();
+    shielded.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&step(&mut shielded, 0, held())).unwrap(),
+        expected
+    );
+    until(&mut shielded, input(0, held()), 30, |state| {
+        !state.fighters[1].shield.touched
+    });
+
+    let mut unshielded = Match::new(inert_data(), 42).unwrap();
+    step(&mut unshielded, BUTTON_A, Controller::default());
+    let overlap = step(&mut unshielded, 0, Controller::default());
+    assert!(!overlap.fighters[1].shield.touched);
+    assert_eq!(overlap.fighters[1].percent, 0.0);
+    assert!(
+        overlap
+            .events
+            .iter()
+            .all(|event| !matches!(event, Event::Hit { .. } | Event::ShieldHit { .. }))
+    );
 }
 
 #[test]

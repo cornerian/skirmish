@@ -43,6 +43,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                         vec![Hitbox {
                             clank: false,
                             rebound: false,
+                            element: Default::default(),
                             group: 0,
                             bone: 0,
                             center: [1.0, 0.8, 0.0],

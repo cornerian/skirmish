@@ -378,6 +378,14 @@ pub struct AttackFrame {
     pub hurtbox_states: Vec<HurtboxState>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitElement {
+    #[default]
+    Normal,
+    Inert,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Hitbox {
@@ -386,6 +394,9 @@ pub struct Hitbox {
     pub clank: bool,
     #[serde(default)]
     pub rebound: bool,
+    /// Collision element branch. Unsupported elements are rejected by serde.
+    #[serde(default)]
+    pub element: HitElement,
     /// Same-group hitboxes share victim history while active. The legacy profile
     /// without clank data retains its simpler per-attack group mask.
     pub group: u8,

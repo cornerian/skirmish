@@ -2,6 +2,7 @@
 //! same native implementation, so success does not certify Melee fidelity.
 use peppi::frame::mutable;
 use serde_json::Value;
+use skirmish::game::data::HitElement;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, State,
 };
@@ -67,6 +68,11 @@ fn powershield_data() -> skirmish::game::data::MatchData {
     data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
     for fighter in &mut data.fighters {
         fighter.shield = Some(profile.attributes.clone());
+    }
+    for frame in &mut data.fighters[0].jab.frames {
+        for hit in &mut frame.hitboxes {
+            hit.element = HitElement::Inert;
+        }
     }
     data
 }
@@ -318,7 +324,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v10");
+    assert_eq!(report.policy, "fighter-post-v11");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -576,6 +582,7 @@ fn file_backed_powershield_covers_reflector_immunity_and_guard_reflect_state() {
     for input in &mut inputs {
         input[1].buttons = BUTTON_L;
     }
+    inputs[0][0].buttons = BUTTON_A;
     let recording = Recording::from_script(powershield_data(), 23, inputs);
     let first = &recording.states[0].fighters[1];
     assert_eq!(first.action, Action::GuardReflect);
@@ -589,29 +596,48 @@ fn file_backed_powershield_covers_reflector_immunity_and_guard_reflect_state() {
     assert!(recording.states.iter().any(|state| {
         !state.fighters[1].shield.reflecting && !state.fighters[1].shield.powershield
     }));
+    let touch_row = recording
+        .states
+        .iter()
+        .position(|state| state.fighters[1].shield.touched)
+        .expect("inert jab must overlap the powershield");
+    assert_eq!(
+        observation::state_flags(&recording.states[touch_row].fighters[1])[3] & 0x04,
+        0x04
+    );
+    assert!(
+        recording.states[touch_row]
+            .events
+            .iter()
+            .all(|event| !matches!(event, Event::Hit { .. } | Event::ShieldHit { .. }))
+    );
 
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
-    for (byte, mask, field) in [
-        (0, 0x10, "state_flags.reflect"),
-        (3, 0x20, "state_flags.powershield"),
+    for (byte, mask, field, row) in [
+        (0, 0x10, "state_flags.reflect", 0),
+        (3, 0x20, "state_flags.powershield", 0),
+        (3, 0x04, "state_flags.shield_touch", touch_row),
     ] {
         let corrupted = recording.bytes(support::Fixture::default(), |frames| {
             let flags = frames.ports[1].leader.post.state_flags.as_mut().unwrap();
-            let value = observation::state_flags(first)[byte] ^ mask;
+            let value = observation::state_flags(&recording.states[row].fighters[1])[byte] ^ mask;
             match byte {
-                0 => flags.0.set(0, Some(value)),
-                3 => flags.3.set(0, Some(value)),
+                0 => flags.0.set(row, Some(value)),
+                3 => flags.3.set(row, Some(value)),
                 _ => unreachable!(),
             }
         });
         assert!(matches!(
             recording.compare(&corrupted).outcome,
             Outcome::Mismatch {
-                frame: FIRST,
-                checked_frames: 0,
+                frame,
+                checked_frames,
                 ref difference,
-            } if difference.port == PORTS[1] && difference.field == field
+            } if frame == FIRST + row as i32
+                && checked_frames == row as u64
+                && difference.port == PORTS[1]
+                && difference.field == field
         ));
     }
 }
@@ -896,6 +922,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .unwrap()
                     .3
                     .set(row, Some(observation::state_flags(fighter)[3] ^ 0x02)),
+                "state_flags.shield_touch" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .3
+                    .set(row, Some(observation::state_flags(fighter)[3] ^ 0x04)),
                 "state_flags.powershield" => post
                     .state_flags
                     .as_mut()
@@ -1360,7 +1392,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v10");
+        assert_eq!(report["policy"], "fighter-post-v11");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],
