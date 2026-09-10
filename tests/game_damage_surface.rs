@@ -631,6 +631,48 @@ fn ceiling_tech_does_not_dispatch_wall_tech_air_interrupts() {
 }
 
 #[test]
+fn every_surface_tech_action_lands_cleans_shared_state_and_replays() {
+    for (angle, buttons, expected_action) in [
+        (0.0, BUTTON_L, Action::PassiveWall),
+        (0.0, BUTTON_L | BUTTON_X, Action::PassiveWallJump),
+        (90.0, BUTTON_L, Action::PassiveCeiling),
+    ] {
+        let mut resource = tech_data(angle);
+        resource.fighters[1].movement.gravity = 0.2;
+        let mut game = hit(resource);
+        buffer_tech(&mut game, buttons, [0.0; 2]);
+        until(&mut game, |state| {
+            state.fighters[1].action == expected_action
+        });
+        let checkpoint = game.checkpoint();
+        let mut suffix = Vec::new();
+        loop {
+            let state = step(&mut game);
+            suffix.push(state.clone());
+            if state.events.contains(&Event::Landed { player: 1 }) {
+                break;
+            }
+            assert!(suffix.len() < 240);
+        }
+        let landed = &game.state().fighters[1];
+        assert!(landed.grounded);
+        assert_eq!(landed.action, Action::Landing);
+        assert_eq!(landed.action_frame, 1);
+        assert_eq!(landed.velocity[1], 0.0);
+        assert_eq!(landed.surface_tech, Default::default());
+        assert_eq!(landed.wall_jump.used, 0);
+        assert!(!landed.wall_jump.active);
+
+        game.restore_checkpoint(&checkpoint).unwrap();
+        for expected in suffix {
+            assert_eq!(step(&mut game), expected);
+        }
+        assert_eq!(step(&mut game).fighters[1].action, Action::Landing);
+        assert_eq!(step(&mut game).fighters[1].action, Action::Wait);
+    }
+}
+
+#[test]
 fn ceiling_tech_applies_scripted_horizontal_input_and_recovers() {
     let mut game = hit(tech_data(90.0));
     buffer_tech(&mut game, BUTTON_L, [0.0; 2]);

@@ -179,8 +179,9 @@ coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
 sampled bone poses, delayed neutral-to-jump conversion, floor/wall collision
 priority, post-freeze special/aerial/jump dispatch, ceiling non-interruption,
-shoulder repeat lockout, disabled/unmet profiles, malformed resources and
-checkpoint replay. `damage_reflect_differential`
+all three floor-landing and shared-state cleanup paths, shoulder repeat lockout,
+disabled/unmet profiles, malformed resources and checkpoint replay.
+`damage_reflect_differential`
 compares the retained velocity/facing/lockout portion of complete
 `ftCo_800C18A8`, including its two complete vector helpers, over arbitrary
 binary32 values. `wall_tech_differential` compares complete `ftCo_800C1E0C`

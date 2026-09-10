@@ -43,6 +43,10 @@ pose-driven collision state survive checkpoints. Floor response wins over either
 surface response, and a wall wins over a ceiling at a simultaneous corner
 contact. A successful tech emits `SurfaceTeched` with the player, surface,
 stable line ID and wall-jump decision.
+Gravity and ordinary floor collision continue after release. Neutral wall,
+wall-jump and ceiling techs all enter the shared landing action on contact,
+clear both surface-tech and ordinary wall-jump transient state, and retain the
+configured landing duration through checkpoint replay.
 
 `fighter::damage::reflect_velocity` retains the float operation order from the
 complete `ftCo_800C18A8` entry and its `lbVector_Add_xy`/`lbVector_Mirror`
@@ -61,8 +65,8 @@ configured action durations, floor and wall priority, shoulder repeat lockout,
 all three pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
 post-freeze air-action timing and priority, ceiling non-interruption, profile
-omission, an unmet threshold, malformed resources and deterministic checkpoint
-suffixes.
+omission, all three floor-landing paths and cleanup, an unmet threshold,
+malformed resources and deterministic checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
 Missed-tech choices, invincibility, effect/audio commands, the complete collision

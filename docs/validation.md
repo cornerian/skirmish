@@ -27,6 +27,16 @@ tech startup, rearms fresh input after release, dispatches neutral special,
 aerial attack and double jump in source priority, applies the same branches to
 ordinary wall jumps and preserves the ceiling tech's empty interrupt callback.
 
+The 2026-09-10 surface-tech landing coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-tech-landings-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. One match-level integration test drives neutral wall tech,
+wall-jump tech and ceiling tech through gravity, floor contact, shared Landing
+timing, transient surface/wall-jump cleanup and checkpoint replay.
+
 The 2026-09-09 grounded-launch coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ground-launch-20260909`
