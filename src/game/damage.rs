@@ -1202,14 +1202,14 @@ pub(crate) fn wall_tech_interruptible(fighter: &Fighter) -> bool {
         && fighter.wall_jump.startup_timer == 0
 }
 
-/// `ftCo_DamageFly_IASA` delegates to the ordinary airborne input graph once
-/// hitstun ends. Reflected actions share that callback with DamageFly.
-pub(crate) fn reflected_air_interruptible(fighter: &Fighter) -> bool {
+/// DamageFall and `ftCo_DamageFly_IASA` delegate to the ordinary airborne input
+/// graph once hitstun ends. Reflected actions share the latter callback.
+pub(crate) fn damage_air_interruptible(fighter: &Fighter) -> bool {
     !fighter.grounded
         && fighter.hitstun == 0
         && matches!(
             fighter.action,
-            Action::FlyReflectWall | Action::FlyReflectCeiling
+            Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
         )
 }
 

@@ -19,7 +19,9 @@ velocity and selects neutral Passive when the buffered-tech predicate succeeds;
 otherwise it enters DownBound. The native scheduler then advances the complete
 DownBound -> DownWait -> DownStand -> Wait recovery chain. A non-tumbling
 damage landing does not enter this graph. DamageFall uses ordinary gravity,
-air drift and fresh fast-fall input while preserving tumble eligibility.
+air drift and preserves tumble eligibility. Once hitstun reaches zero, fresh
+input can fast fall or dispatch the implemented neutral special, aerial attack
+and available double jump branches.
 
 The reusable `fighter::damage::can_tech` kernel is the complete
 `ftCo_800986B0` predicate. Its C differential retains the source's strict
@@ -88,7 +90,8 @@ prone families through rolls/stand/attack, get-up attack contact through the
 shared combat pipeline, exact recovery protection and its first vulnerable
 frame, prone low-damage hits, strict threshold equality, the face-down selector
 quirk, DownDamage landing/timer recovery, state durations, repeat lockout,
-non-tumble separation, DamageFall persistence, resource rejection,
+non-tumble separation, DamageFall persistence and its air-input hitstun
+boundary, resource rejection,
 serialization, checkpoint replay and reset. When the [grounded launch
 profile](grounded-launch.md) is enabled, the suite also verifies that an
 explicit prone DownDamage motion forces the source fly-launch branch.

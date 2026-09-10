@@ -1,5 +1,15 @@
 # Local validation provenance
 
+The 2026-09-10 DamageFall air-callback batch is recorded at:
+
+`/mnt/archive/runs/skirmish-damage-fall-air-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Integration coverage holds DamageFall fast fall, neutral special,
+aerial attack and double jump through hitstun, accepts fresh input after the
+exact boundary and replays every branch from checkpoints.
+
 The 2026-09-10 reflected damage-air callback batch is recorded at:
 
 `/mnt/archive/runs/skirmish-surface-reflect-air-20260910`

@@ -121,7 +121,9 @@ directional tech and missed-tech rolls, attack/roll/stand priority, fresh C-stic
 history, sampled TransN motion and bone-derived ECBs, get-up attack contact,
 prone DownDamage launch/landing and countdown recovery, repeat lockout, exact
 configured recovery durations, non-tumble landings, DamageFall carry, invalid
-data, serialization, checkpoint replay and reset.
+data, serialization, checkpoint replay and reset. The damage-surface integration
+resource also covers DamageFall fast-fall and special/aerial/jump dispatch on
+both sides of the hitstun boundary.
 `damage_floor_differential` compares the retained eligibility predicate with
 the complete pinned original C function over generated timer, boundary and lock
 inputs. `floor_tech_roll_differential` compares complete `ftCo_80098928` with a
@@ -184,7 +186,8 @@ drift, fast-fall and special/aerial/jump hitstun boundaries, ceiling
 non-interruption, all three tech floor-landing paths, both reflected-action
 knockdown landings and shared-state cleanup, shoulder repeat lockout,
 disabled/unmet profiles, moving-wall tech and reflected-action response,
-malformed resources and checkpoint replay.
+DamageFall air-action and fast-fall hitstun boundaries, malformed resources and
+checkpoint replay.
 `damage_reflect_differential`
 compares the retained velocity/facing/lockout portion of complete
 `ftCo_800C18A8`, including its two complete vector helpers, over arbitrary

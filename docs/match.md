@@ -194,9 +194,10 @@ recovery rules assign invincibility to each tech and get-up action. Physical
 L/R and separate A/B ages are sampled during hitlag and ordinary frames; A/B
 ages reset when DownBound begins and provide its attack buffer. Damage at or
 above its inclusive threshold retains tumble eligibility through DamageFall
-until floor contact. The evaluated hip-bone matrix and per-fighter axis/inversion
-flags select checkpointed face-up or face-down resources for the entire
-missed-tech suffix. Optional low-damage rules add source-gated DownDamage poses,
+until floor contact. DamageFall holds fast fall and the implemented air-action
+inputs through hitstun, then accepts a fresh input. The evaluated hip-bone matrix
+and per-fighter axis/inversion flags select checkpointed face-up or face-down
+resources for the entire missed-tech suffix. Optional low-damage rules add source-gated DownDamage poses,
 launch, landing and hitstun-countdown recovery without resetting DownWait. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and

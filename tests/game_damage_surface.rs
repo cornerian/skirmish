@@ -212,15 +212,7 @@ fn interrupt_data(angle: f32) -> MatchData {
     special_resources::profile(data)
 }
 
-fn long_reflect_data(angle: f32) -> MatchData {
-    let mut data = interrupt_data(angle);
-    let response = data.rules.damage.surface_response.as_mut().unwrap();
-    response.wall_frames = 256;
-    response.ceiling_frames = 256;
-    let response = response.clone();
-    for fighter in &mut data.fighters {
-        fighter.surface_response = Some(response_attributes(&fighter.bones, &response));
-    }
+fn lower_floor(data: &mut MatchData) {
     data.stage.floor.y = -100.0;
     data.stage.spawns[0][1] = -100.0;
     let geometry = data.stage.geometry.as_mut().unwrap();
@@ -235,6 +227,24 @@ fn long_reflect_data(angle: f32) -> MatchData {
     {
         hit.radius = 120.0;
     }
+}
+
+fn long_reflect_data(angle: f32) -> MatchData {
+    let mut data = interrupt_data(angle);
+    let response = data.rules.damage.surface_response.as_mut().unwrap();
+    response.wall_frames = 256;
+    response.ceiling_frames = 256;
+    let response = response.clone();
+    for fighter in &mut data.fighters {
+        fighter.surface_response = Some(response_attributes(&fighter.bones, &response));
+    }
+    lower_floor(&mut data);
+    data
+}
+
+fn damage_fall_data() -> MatchData {
+    let mut data = interrupt_data(0.0);
+    lower_floor(&mut data);
     data
 }
 
@@ -326,6 +336,37 @@ fn buffer_tech(game: &mut Match, buttons: u16, stick: [f32; 2]) {
     input[1].buttons = buttons;
     input[1].stick = stick;
     step_with(game, input);
+}
+
+fn assert_air_input_boundary(
+    mut game: Match,
+    action: Action,
+    buttons: u16,
+    stick: [f32; 2],
+    expected: Action,
+) {
+    until(&mut game, |state| state.fighters[1].action == action);
+    while game.state().fighters[1].hitstun > 1 {
+        step(&mut game);
+    }
+    assert_eq!(game.state().fighters[1].hitstun, 1);
+    let boundary = game.checkpoint();
+    let mut input = IDLE;
+    input[1].buttons = buttons;
+    input[1].stick = stick;
+    let blocked = step_with(&mut game, input);
+    assert_eq!(blocked.fighters[1].hitstun, 0);
+    assert_eq!(blocked.fighters[1].action, action);
+
+    game.restore_checkpoint(&boundary).unwrap();
+    let ready = step(&mut game);
+    assert_eq!(ready.fighters[1].hitstun, 0);
+    assert_eq!(ready.fighters[1].action, action);
+    let ready = game.checkpoint();
+    let transitioned = step_with(&mut game, input);
+    assert_eq!(transitioned.fighters[1].action, expected);
+    game.restore_checkpoint(&ready).unwrap();
+    assert_eq!(step_with(&mut game, input), transitioned);
 }
 
 #[test]
@@ -491,33 +532,61 @@ fn reflected_damage_air_inputs_wait_for_hitstun_and_replay() {
             (0.0, Action::FlyReflectWall),
             (90.0, Action::FlyReflectCeiling),
         ] {
-            let mut game = hit(long_reflect_data(angle));
-            until(&mut game, |state| {
-                state.fighters[1].action == reflected_action
-            });
-            while game.state().fighters[1].hitstun > 1 {
-                step(&mut game);
-            }
-            assert_eq!(game.state().fighters[1].hitstun, 1);
-            let boundary = game.checkpoint();
-            let mut input = IDLE;
-            input[1].buttons = buttons;
-            input[1].stick = stick;
-            let blocked = step_with(&mut game, input);
-            assert_eq!(blocked.fighters[1].hitstun, 0);
-            assert_eq!(blocked.fighters[1].action, reflected_action);
-
-            game.restore_checkpoint(&boundary).unwrap();
-            let ready = step(&mut game);
-            assert_eq!(ready.fighters[1].hitstun, 0);
-            assert_eq!(ready.fighters[1].action, reflected_action);
-            let ready = game.checkpoint();
-            let transitioned = step_with(&mut game, input);
-            assert_eq!(transitioned.fighters[1].action, expected);
-            game.restore_checkpoint(&ready).unwrap();
-            assert_eq!(step_with(&mut game, input), transitioned);
+            assert_air_input_boundary(
+                hit(long_reflect_data(angle)),
+                reflected_action,
+                buttons,
+                stick,
+                expected,
+            );
         }
     }
+}
+
+#[test]
+fn damage_fall_air_inputs_wait_for_hitstun_and_replay() {
+    for (buttons, stick, expected) in [
+        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
+        (BUTTON_X, [0.0; 2], Action::JumpAerial),
+    ] {
+        assert_air_input_boundary(
+            hit(damage_fall_data()),
+            Action::DamageFall,
+            buttons,
+            stick,
+            expected,
+        );
+    }
+}
+
+#[test]
+fn damage_fall_fast_fall_waits_for_hitstun_and_replays() {
+    let mut resource = damage_fall_data();
+    resource.fighters[1].movement.gravity = 0.2;
+    let mut game = hit(resource);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::DamageFall
+    });
+    while game.state().fighters[1].velocity[1] >= 0.0 {
+        step(&mut game);
+    }
+    assert!(game.state().fighters[1].hitstun > 1);
+    let blocked = game.checkpoint();
+    let mut down = IDLE;
+    down[1].stick[1] = -1.0;
+    assert!(!step_with(&mut game, down).fighters[1].fast_fall);
+
+    game.restore_checkpoint(&blocked).unwrap();
+    while game.state().fighters[1].hitstun != 0 {
+        step(&mut game);
+    }
+    let ready = game.checkpoint();
+    let fast_fall = step_with(&mut game, down);
+    assert_eq!(fast_fall.fighters[1].action, Action::DamageFall);
+    assert!(fast_fall.fighters[1].fast_fall);
+    game.restore_checkpoint(&ready).unwrap();
+    assert_eq!(step_with(&mut game, down), fast_fall);
 }
 
 #[test]

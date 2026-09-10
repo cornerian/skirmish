@@ -1184,9 +1184,10 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                 | Action::PassiveCeiling
         ) && !shield::break_invulnerable(f.action)
         {
-            let damage_input_locked =
-                matches!(f.action, Action::FlyReflectWall | Action::FlyReflectCeiling)
-                    && f.hitstun != 0;
+            let damage_input_locked = matches!(
+                f.action,
+                Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+            ) && f.hitstun != 0;
             if !damage_input_locked
                 && !f.fast_fall
                 && f.velocity[1] < 0.0

@@ -119,7 +119,7 @@ pub(crate) fn update(f: &mut Fighter, data: &FighterData, input: Controller) -> 
     {
         return true;
     }
-    let damage_air = super::damage::reflected_air_interruptible(f);
+    let damage_air = super::damage::damage_air_interruptible(f);
     let wall_tech = super::damage::wall_tech_interruptible(f);
     if f.grounded
         || !(damage_air

@@ -18,7 +18,7 @@ Command-state samples carry the landing-lag and interrupt flags plus an optional
 one-shot facing reversal. Hitlag cannot replay the reversal. Interruptible
 frames and released wall-tech actions permit another ordinary aerial or an
 available ordinary double jump; aerial selection has priority over that jump.
-Reflected wall and ceiling damage actions gain the same two branches when
+DamageFall and reflected wall/ceiling actions gain the same two branches when
 hitstun reaches zero; earlier presses remain blocked and require a fresh edge.
 Exhausting attack samples enters Fall. Item throws, character-specific
 overrides, aerial dodges and the remaining interrupt branches are unported.
