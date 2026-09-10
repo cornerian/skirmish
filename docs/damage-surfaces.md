@@ -57,7 +57,9 @@ configured landing duration through checkpoint replay.
 Frozen startup still runs the moving-stage collision pass. An inward-moving
 wall displaces the fighter by the line's frame delta while self velocity remains
 zero, retains the stable wall contact and advances the tech timer exactly once.
-An outward-moving wall clears contact without dragging the fighter.
+An outward-moving wall clears contact without dragging the fighter. The same
+inward-push and outward-separation behavior applies during `FlyReflectWall`,
+including a zero-speed reflected trajectory and checkpoint replay.
 
 `fighter::damage::reflect_velocity` retains the float operation order from the
 complete `ftCo_800C18A8` entry and its `lbVector_Add_xy`/`lbVector_Mirror`
@@ -80,7 +82,8 @@ post-freeze air-action timing and priority, ceiling non-interruption, profile
 omission, all three tech floor-landing paths, both reflected-action knockdown
 landings and cleanup, an unmet threshold,
 inward/outward moving-wall startup response, both cross-surface reflection
-chains during lockout, malformed resources and deterministic checkpoint suffixes.
+chains during lockout, reflected-action moving-wall response, malformed
+resources and deterministic checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
 Missed-tech choices, invincibility, effect/audio commands, the complete collision

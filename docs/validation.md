@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-10 moving-wall reflection batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-reflect-moving-wall-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. A zero-speed `FlyReflectWall` integration fixture isolates the
+moving collision plane: inward translation pushes the ECB by the exact line
+delta, outward translation separates without dragging, and both paths replay
+from checkpoints.
+
 The 2026-09-10 reflected-surface landing batch is recorded at:
 
 `/mnt/archive/runs/skirmish-surface-reflect-landings-20260910`

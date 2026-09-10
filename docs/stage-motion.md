@@ -24,6 +24,8 @@ horizontal squeeze; simultaneous ceiling/floor response invokes grounded
 vertical squeeze. A one-way floor cannot catch an upward fighter, and motion
 along a plane does not capture a fighter already behind it. See the
 [ECB response profile](ecb-response.md).
+Match integration also covers inward and outward wall motion during frozen
+damage wall techs and zero-speed wall reflections.
 
 Transforms must keep every line finite, bounded and directed according to its
 declared surface kind. Tracks cannot overlap. The native fixture uses invented

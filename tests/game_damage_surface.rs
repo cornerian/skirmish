@@ -931,6 +931,61 @@ fn moving_wall_pushes_inward_but_does_not_drag_a_frozen_wall_tech() {
 }
 
 #[test]
+fn moving_wall_pushes_inward_but_does_not_drag_a_wall_reflection() {
+    let mut probe_resource = data(0.0);
+    probe_resource
+        .rules
+        .damage
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .velocity_multiplier = 0.0;
+    add_wall_motion(&mut probe_resource, vec![Transform::IDENTITY]);
+    let mut probe = hit(probe_resource);
+    let reflect_frame = until(&mut probe, |state| {
+        state.fighters[1].action == Action::FlyReflectWall
+    })
+    .stage
+    .frame as usize;
+
+    for (translation, expected_delta, expected_contact) in [(-1.0, -1.0, Some(2)), (1.0, 0.0, None)]
+    {
+        let mut frames = vec![Transform::IDENTITY; reflect_frame + 3];
+        frames[reflect_frame + 1] = Transform {
+            matrix: [[1.0, 0.0, translation], [0.0, 1.0, 0.0]],
+        };
+        frames[reflect_frame + 2] = frames[reflect_frame + 1];
+        let mut resource = data(0.0);
+        resource
+            .rules
+            .damage
+            .surface_response
+            .as_mut()
+            .unwrap()
+            .velocity_multiplier = 0.0;
+        add_wall_motion(&mut resource, frames);
+        let mut game = hit(resource);
+        let reflected = until(&mut game, |state| {
+            state.fighters[1].action == Action::FlyReflectWall
+        });
+        assert_eq!(reflected.stage.frame as usize, reflect_frame);
+        assert_eq!(reflected.fighters[1].knockback, [0.0; 2]);
+        let before = reflected.fighters[1].position;
+        let checkpoint = game.checkpoint();
+        let moved = step(&mut game);
+        assert_eq!(moved.fighters[1].action, Action::FlyReflectWall);
+        assert_eq!(moved.fighters[1].velocity, [0.0; 2]);
+        assert_eq!(moved.fighters[1].knockback, [0.0; 2]);
+        assert_eq!(moved.fighters[1].contacts[2], expected_contact);
+        assert!((moved.fighters[1].position[0] - (before[0] + expected_delta)).abs() < 0.0001);
+        assert_eq!(moved.fighters[1].position[1], before[1]);
+
+        game.restore_checkpoint(&checkpoint).unwrap();
+        assert_eq!(step(&mut game), moved);
+    }
+}
+
+#[test]
 fn ceiling_tech_applies_scripted_horizontal_input_and_recovers() {
     let mut game = hit(tech_data(90.0));
     buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
