@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::mbstring::wcstombs;
+use skirmish::compat::mbstring::wcstombs;
 
 unsafe extern "C" {
     fn oracle_wcstombs(dest: *mut u8, source: *const u16, max: u32) -> u32;

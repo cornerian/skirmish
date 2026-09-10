@@ -1,10 +1,12 @@
 //! Synthetic orchestration regressions, not Melee fidelity certification.
+use replay_validation::{
+    Checkpoint, FrameStepper, Transition, ValidationError, branch_from, validate,
+};
 use serde_json::Value;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_X, Controller, Error, Event, FinishReason, Match, Phase, State,
     data::{MatchData, Profile},
 };
-use skirmish::replay::{Checkpoint, Transition, ValidationError, branch_from, validate};
 
 const IDLE: [Controller; 2] = [Controller {
     cstick: [0.0; 2],
@@ -12,6 +14,24 @@ const IDLE: [Controller; 2] = [Controller {
     buttons: 0,
     stick: [0.0; 2],
 }; 2];
+
+#[derive(Clone)]
+struct ReplayStepper(Match);
+
+impl FrameStepper for ReplayStepper {
+    type Checkpoint = skirmish::game::Checkpoint;
+    type Input = [Controller; 2];
+    type Observation = State;
+    type Error = Error;
+
+    fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<(), Self::Error> {
+        self.0.restore_checkpoint(checkpoint)
+    }
+
+    fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
+        self.0.step(*input).cloned()
+    }
+}
 
 fn data() -> MatchData {
     serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap()
@@ -311,28 +331,28 @@ fn simultaneous_contacts_trade_and_timer_uses_damage_to_break_stock_ties() {
 
 #[test]
 fn mid_hitlag_checkpoint_replays_exactly_and_branches_without_shared_state() {
-    let mut reference = playing(data());
-    reference.step(press(0, BUTTON_A)).unwrap();
-    reference.step(IDLE).unwrap();
-    assert!(reference.state().fighters[0].hitlag > 0.0);
+    let mut reference = ReplayStepper(playing(data()));
+    reference.0.step(press(0, BUTTON_A)).unwrap();
+    reference.0.step(IDLE).unwrap();
+    assert!(reference.0.state().fighters[0].hitlag > 0.0);
     let checkpoint = Checkpoint {
         next_frame: -123,
-        state: reference.checkpoint(),
+        state: reference.0.checkpoint(),
     };
-    let checkpoint_bits = state_bits(reference.state());
+    let checkpoint_bits = state_bits(reference.0.state());
     let transitions: Vec<_> = (0..24)
         .map(|index| Transition {
             frame: -123 + index,
             input: IDLE,
-            expected: reference.step(IDLE).unwrap().clone(),
+            expected: reference.0.step(IDLE).unwrap().clone(),
         })
         .collect();
-    let original_bits = state_bits(reference.state());
+    let original_bits = state_bits(reference.0.state());
     let mut candidate = branch_from(&reference, &checkpoint).unwrap();
-    assert_eq!(state_bits(candidate.state()), checkpoint_bits);
+    assert_eq!(state_bits(candidate.0.state()), checkpoint_bits);
     let report = validate(&mut candidate, &checkpoint, transitions.clone(), compare).unwrap();
     assert_eq!(report.checked_frames, 24);
-    assert_eq!(state_bits(candidate.state()), original_bits);
+    assert_eq!(state_bits(candidate.0.state()), original_bits);
 
     let mut altered = transitions;
     altered[7].expected.fighters[0].previous_input.stick[1] = -0.0;
@@ -348,12 +368,12 @@ fn mid_hitlag_checkpoint_replays_exactly_and_branches_without_shared_state() {
     let mut left = IDLE;
     left[0].stick[0] = -1.0;
     for _ in 0..12 {
-        branch.step(left).unwrap();
+        branch.0.step(left).unwrap();
     }
-    assert_ne!(state_bits(branch.state()), original_bits);
-    assert_eq!(state_bits(reference.state()), original_bits);
-    reference.restore_checkpoint(&checkpoint.state).unwrap();
-    assert_eq!(state_bits(reference.state()), checkpoint_bits);
+    assert_ne!(state_bits(branch.0.state()), original_bits);
+    assert_eq!(state_bits(reference.0.state()), original_bits);
+    reference.0.restore_checkpoint(&checkpoint.state).unwrap();
+    assert_eq!(state_bits(reference.0.state()), checkpoint_bits);
 }
 
 #[test]

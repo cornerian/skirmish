@@ -50,9 +50,10 @@ values, and restoration rejects different resource/rule identities. Persistent
 checkpoint encoding is a later versioned interface.
 
 Clones share only immutable native resources. Each branch owns its mutable state;
-stepping errors leave it unchanged. The crate implements `replay`'s
-`FrameStepper`, so streaming expected observations and counterfactual branches
-already use this match implementation. The `validate-replay` command applies
+stepping errors leave it unchanged. `skirmish-replay` implements the
+`replay-validation` adapter around this match, so streaming expected observations
+and counterfactual branches use this implementation without coupling replay to
+the core simulator. The `validate-replay` command applies
 Peppi-imported inputs to real `Match::step` calls from an explicitly initialized
 checkpoint. It compares position, facing, percent, stocks and airborne state;
 see the [file-backed comparison contract](replays.md) for the required embedded

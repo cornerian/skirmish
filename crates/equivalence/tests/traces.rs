@@ -1,5 +1,5 @@
 use serde_json::json;
-use skirmish::trace::{compare, f32_bits};
+use skirmish_equivalence::trace::{compare, f32_bits};
 use std::io::Cursor;
 
 fn trace() -> Vec<serde_json::Value> {

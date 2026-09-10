@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use skirmish::{
-    bytecode::{Error, evaluate},
+    compat::bytecode::{Error, evaluate},
     random::HsdRng,
 };
 

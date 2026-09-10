@@ -1,7 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
-use skirmish::{inventory, match_trace, menu_cli, menus::Unlocks, runner, slippi, trace};
+use skirmish::{inventory, menus::Unlocks};
+use skirmish_cli::menu_cli;
+use skirmish_equivalence::{match_trace, runner, trace};
+use skirmish_replay::{match_validation, slippi};
 use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter},
@@ -132,9 +135,9 @@ fn main() -> Result<()> {
         } => {
             let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
             let bytes = fs::read(initialization)?;
-            let initial: skirmish::replay_match::Initialization = serde_json::from_slice(&bytes)?;
-            let mut game = skirmish::replay_match::initialize(&initial)?;
-            let checkpoint = skirmish::replay::Checkpoint {
+            let initial: match_validation::Initialization = serde_json::from_slice(&bytes)?;
+            let mut game = match_validation::initialize(&initial)?;
+            let checkpoint = skirmish_replay::Checkpoint {
                 next_frame: initial.next_frame,
                 state: game.checkpoint(),
             };
@@ -143,13 +146,8 @@ fn main() -> Result<()> {
             } else {
                 slippi::Timeline::LastRecorded
             };
-            let report = skirmish::replay_match::validate(
-                &replay,
-                &mut game,
-                &checkpoint,
-                initial.ports,
-                policy,
-            )?;
+            let report =
+                match_validation::validate(&replay, &mut game, &checkpoint, initial.ports, policy)?;
             let mut output = serde_json::to_value(&report)?;
             output["initialization_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
             println!("{}", serde_json::to_string_pretty(&output)?);
@@ -175,7 +173,7 @@ fn main() -> Result<()> {
         }
         Commands::DemoMatch { seed } => {
             let data = serde_json::from_str(include_str!(
-                "../tests/fixtures/game/integration-match.json"
+                "../../../tests/fixtures/game/integration-match.json"
             ))?;
             match_trace::run(
                 data,

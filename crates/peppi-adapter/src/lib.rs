@@ -9,7 +9,7 @@ mod envelope;
 mod frames;
 
 use peppi::{frame::FIRST_INDEX, game::immutable::Game};
-use replay::Transition;
+use replay_validation::Transition;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read};

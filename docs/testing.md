@@ -8,7 +8,7 @@ an exact original-C counterpart or arithmetic compatibility boundary. Existing
 `tests/*_differential.rs` use content-pinned source snapshots, with ABI adaptations
 documented in `tests/oracle`; they do not establish whole-game equivalence.
 
-`tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
+`crates/cli/tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
 files, and advances `game::Match` using their controller inputs. It exercises
 movement, jumps, landing, a jab, damage, explicit checkpoint restoration, and
 the command-line executable. C-stick ASDI cases check inclusive selection,
@@ -28,7 +28,7 @@ Three independent workflows run on pushes, pull requests, and manual dispatch:
 | --- | --- |
 | [Unit tests](../.github/workflows/unit-tests.yml) | Workspace library/binary unit tests and doctests; formatting and Clippy |
 | [Integration tests](../.github/workflows/integration-tests.yml) | Workspace integration targets, including original-C differential tests, except the Slippi file targets below; debug/release match-trace comparison |
-| [System tests (Slippi file parity)](../.github/workflows/system-tests.yml) | `peppi-adapter`'s `replays`, plus `skirmish`'s `slippi_cli`, `slippi_corpus` and `replay_match` |
+| [System tests (Slippi file parity)](../.github/workflows/system-tests.yml) | `peppi-adapter`'s `replays`, plus `skirmish-cli`'s `slippi_cli`, `slippi_corpus` and `replay_match` |
 
 Every suite retains default debug, C-oracle debug, and C-oracle release runs.
 Integration targets are discovered from Cargo metadata, so new integration test

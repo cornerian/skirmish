@@ -1,7 +1,7 @@
 mod support;
 
 use peppi_adapter::{Error, Inputs, Port, Replay, Timeline, Version};
-use replay::{
+use replay_validation::{
     Checkpoint, FrameStepper, Transition, ValidationError, compare_f32_bits, validate_fallible,
 };
 use std::convert::Infallible;

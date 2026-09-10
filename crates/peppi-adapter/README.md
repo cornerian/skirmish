@@ -2,7 +2,8 @@
 
 Native Slippi import using pinned **Peppi 2.1.2**. This independently buildable
 crate reuses Peppi's Arrow storage, parser and field types and emits transitions
-for `replay`. It requires no ISO, DOL, emulator or GameCube runtime.
+for `replay-validation` and `skirmish-replay`. It requires no ISO, DOL, emulator
+or GameCube runtime.
 
 ```rust,no_run
 use peppi_adapter::{Replay, Timeline};

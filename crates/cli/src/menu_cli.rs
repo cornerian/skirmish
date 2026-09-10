@@ -1,12 +1,10 @@
 //! Terminal and semantic-trace adapters for the native menu branch library.
 
-use crate::{
-    menus::{Action, MenuState, Unlocks, controller::Controllers, input},
-    trace::{Record, SCHEMA},
-};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use skirmish::menus::{Action, MenuState, Unlocks, controller::Controllers, input};
+use skirmish_equivalence::trace::{Record, SCHEMA};
 use std::{
     collections::BTreeMap,
     io::{BufRead, Write},

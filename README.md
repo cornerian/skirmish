@@ -44,14 +44,16 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 
 | Library | Translated behavior |
 | --- | --- |
-| `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
+| `compat::{bytecode, math, mbstring}`, `random`, `ctype`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks compatibility algorithms without a generic runtime wrapper |
 | `fighter` | Movement, locomotion, neutral-special input, blast-death selection, fixed/contact-relative knockback, DI, hitlag, prone damage, damage reflection and floor/wall-tech selection |
 | `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze, swept capsules and matrix-aware [hurtbox contact](docs/hurtbox-contact.md) with frame-sampled eligibility |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
-| `replay` | Streaming checkpoint/step/observation validation machinery |
+| `replay-validation` | Simulator-independent checkpoint/transition validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
-| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
+| `skirmish-replay` | Concrete Slippi input conversion, observation policy, and native match validation |
+| `skirmish-equivalence` | Semantic traces, process comparison, native match trace adapter, and differential probes |
+| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout and checkpoints |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
@@ -133,9 +135,11 @@ the [initialization format and comparison limits](docs/replays.md).
 See [headless architecture](docs/architecture.md) and
 [equivalence testing](docs/equivalence.md), plus the
 [replay integration contract](docs/replays.md). Independent library projects live under
-`crates/`; rendering and training/coaching adapters are kept outside the runtime.
+`crates/`; CLI, replay, testing, rendering, and training/coaching adapters are
+kept outside the core simulation library.
 
-`skirmish-probe` is a headless RNG executable for testing the comparison harness.
+`skirmish-probe` lives in `skirmish-equivalence` and is a headless RNG executable
+for testing the comparison harness.
 The suite compiles a separate executable from original C, compares it with the
 Rust executable at two C optimization levels, and verifies that deliberate
 divergence, input mutation, nonzero exit and timeout all fail. It is not a game.

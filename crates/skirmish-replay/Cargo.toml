@@ -1,16 +1,16 @@
 [package]
-name = "peppi-adapter"
+name = "skirmish-replay"
 version = "0.1.0"
 edition = "2024"
-description = "Peppi-backed Slippi replay observations for native Skirmish validation"
+description = "Slippi replay integration for native Skirmish validation"
 publish = false
 
 [dependencies]
-peppi = "=2.1.2"
+anyhow = "1"
+peppi-adapter = { path = "../peppi-adapter" }
 replay-validation = { path = "../replay-validation" }
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
-thiserror = "2"
+skirmish = { path = "../.." }
 
 [dev-dependencies]
 serde_json = "1"

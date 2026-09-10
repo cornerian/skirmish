@@ -1,4 +1,4 @@
-# replay
+# replay-validation
 
 Streaming machinery for validating a replay adapter against a headless
 simulation. It contains no Slippi parser, no complete Melee frame scheduler,
@@ -45,6 +45,6 @@ From the repository root, with the project build directory configured:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
-cargo test --locked -p replay
-cargo clippy --locked -p replay --all-targets -- -D warnings
+cargo test --locked -p replay-validation
+cargo clippy --locked -p replay-validation --all-targets -- -D warnings
 ```

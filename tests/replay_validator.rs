@@ -1,4 +1,5 @@
-use skirmish::{fighter::Movement, random::HsdRng, replay::*};
+use replay_validation::*;
+use skirmish::{fighter::Movement, random::HsdRng};
 use std::error::Error as _;
 
 // This is an explicit script of real translated helpers, not a game frame loop.

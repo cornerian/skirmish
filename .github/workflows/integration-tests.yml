@@ -21,9 +21,9 @@ jobs:
               "cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"
           ]))
           system_targets = {
-              ("skirmish", "replay_match"),
-              ("skirmish", "slippi_cli"),
-              ("skirmish", "slippi_corpus"),
+              ("skirmish-cli", "replay_match"),
+              ("skirmish-cli", "slippi_cli"),
+              ("skirmish-cli", "slippi_corpus"),
               ("peppi-adapter", "replays"),
           }
           targets = {(package["name"], target["name"])

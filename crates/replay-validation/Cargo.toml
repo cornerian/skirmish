@@ -1,5 +1,5 @@
 [package]
-name = "replay"
+name = "replay-validation"
 version = "0.1.0"
 edition = "2024"
 description = "Streaming checkpoint-based frame validation for future replay adapters"

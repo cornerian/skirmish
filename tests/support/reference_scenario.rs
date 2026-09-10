@@ -21,8 +21,8 @@
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use skirmish::{
-    game::{Controller, Match, State, data::MatchData},
+use skirmish::game::{Controller, Match, State, data::MatchData};
+use skirmish_equivalence::{
     match_trace,
     trace::{self, Record},
 };

@@ -1,8 +1,6 @@
-use skirmish::{
-    menu_cli::{self, Command},
-    menus::{Menu, Unlocks, input::pad},
-    trace,
-};
+use skirmish::menus::{Menu, Unlocks, input::pad};
+use skirmish_cli::menu_cli::{self, Command};
+use skirmish_equivalence::trace;
 use std::{
     io::{Cursor, Write},
     process::{Command as Process, Stdio},

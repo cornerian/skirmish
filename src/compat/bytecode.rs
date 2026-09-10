@@ -6,9 +6,8 @@
 //! Integer arithmetic wraps as on PowerPC. Invalid float casts and integer
 //! division, which are undefined in the reference C, return explicit errors.
 
+use super::math;
 use crate::random::HsdRng;
-
-mod compat;
 
 const DEG_TO_RAD: f64 = 0.017453292519943295;
 const RAD_TO_DEG: f64 = 57.29577951308232;
@@ -170,11 +169,11 @@ fn binary(opcode: u8, left: u32, right: u32, rng: &mut HsdRng, pc: usize) -> Res
         0x1f => i.checked_div(j).ok_or(Error::InvalidDivision(pc))? as u32,
         0x20 => i.checked_rem(j).ok_or(Error::InvalidDivision(pc))? as u32,
         0x21 => libm::powf(a, b).to_bits(),
-        0x22 => compat::min(a, b).to_bits(),
-        0x23 => compat::max(a, b).to_bits(),
+        0x22 => math::min(a, b).to_bits(),
+        0x23 => math::max(a, b).to_bits(),
         0x24 => i.min(j) as u32,
         0x25 => i.max(j) as u32,
-        0x26 => compat::atan2_degrees(a, b).to_bits(),
+        0x26 => math::atan2_degrees(a, b).to_bits(),
         0x27 => i.wrapping_add(rng.randi(j.wrapping_sub(i).wrapping_add(1))) as u32,
         0x29 => u32::from(i < j),
         0x2a => u32::from(i > j),
