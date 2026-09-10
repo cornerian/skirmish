@@ -134,7 +134,7 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v8`** policy compares these post-frame fields for each
+The named **`fighter-post-v9`** policy compares these post-frame fields for each
 mapped actor:
 
 | Replay field | Native observation | Comparison |
@@ -156,7 +156,7 @@ mapped actor:
 | `last_hit_by` | Recorded source physical port, or Melee's initial sentinel 6 | Exact integer |
 | `last_hit_by_instance` (Slippi 3.16+) | Victim's retained source action-instance ID | Exact `u16` |
 | `instance_id` (Slippi 3.16+) | Fighter's current motion-family instance ID | Exact `u16` |
-| selected `state_flags` | Protection, fast-fall, hitlag, active shield, hitstun and dead/inactive bits | Exact bits |
+| selected `state_flags` | Protection, fast-fall, hitlag, active shield, hitstun, dead and sleep/inactive bits | Exact bits |
 | `misc_as` while in hitstun | Remaining hitstun | Exact `f32` bits |
 | `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
 | `velocities.*` (Slippi 3.5+) | Air X/Y, knockback X/Y and ground X velocity | Exact `f32` bits |
@@ -168,8 +168,9 @@ older Slippi schema are visible rather than silently claimed. The refactored
 action enum collapses some original motion states. Those actions map to one
 documented common-state ID. Fox's current neutral-special shell maps to its
 ground and air startup families using GameStart character metadata; other
-character-specific specials and internal respawn or elimination phases remain
-unmapped and therefore produce an action-state mismatch. Zelda/Sheik
+character-specific specials and internal elimination remain unmapped and
+therefore produce an action-state mismatch. The inactive respawn interval maps
+to Melee's common `Sleep` state 11 and its absent animation. Zelda/Sheik
 transformations are also unimplemented, so a post-frame internal character
 change produces a character mismatch. Action-instance retention covers the
 implemented common motion families and Fox neutral-special startup. Luigi and
@@ -178,11 +179,12 @@ fighter model. Animation-index mapping covers the same resolved common actions
 and Fox startup states. Refactored Walk and directional jump actions use their
 canonical first animation, and the original randomized Wait animation changes
 are not scheduled yet. RNG, collision-line
-geometry, the reflect, shield-touch, powershield, offscreen, sleep and follower
+geometry, the reflect, shield-touch, powershield, offscreen and follower
 state-flag bits, items and stage state are not compared. The selected dead bit
 follows `Fighter::x221F_b1`: it begins immediately for ordinary blast deaths,
 after disappearance for star/screen deaths, persists through the inactive
-respawn delay, and clears on rebirth.
+respawn delay, and clears on rebirth. The selected sleep bit follows
+`Fighter::x221F_b3` only during that inactive respawn delay.
 Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not
 establish equality of hidden state, complete frame behavior or Melee gameplay.

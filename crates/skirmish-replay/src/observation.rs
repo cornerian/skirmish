@@ -45,6 +45,7 @@ pub const STATE_FLAG_FIELDS: &[&str] = &[
     "state_flags.shield",
     "state_flags.hitstun",
     "state_flags.dead",
+    "state_flags.sleep",
 ];
 pub const MISC_HITSTUN_FIELD: &str = "misc_as.hitstun";
 
@@ -383,13 +384,14 @@ pub fn state_flags(fighter: &game::Fighter) -> [u8; 5] {
             | (u8::from(fighter.hitlag > 0.0) << 5),
         u8::from(shield) << 7,
         u8::from(fighter.hitstun > 0) << 1,
-        u8::from(
+        (u8::from(
             fighter.death.hidden
                 || matches!(
                     fighter.action,
                     game::Action::Respawn | game::Action::Eliminated
                 ),
-        ) << 6,
+        ) << 6)
+            | (u8::from(fighter.action == game::Action::Respawn) << 4),
     ]
 }
 
@@ -411,6 +413,7 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         DeadUpFallHitCameraFlat => 8,
         DeadUpFallIce => 9,
         DeadUpFallHitCameraIce => 10,
+        Respawn => 11,
         Rebirth => 12,
         RebirthWait => 13,
         Wait => 14,
@@ -543,7 +546,7 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         // neutral-special shell retains only the startup family distinction.
         SpecialN if character == Some(2) => 341,
         SpecialAirN if character == Some(2) => 344,
-        SpecialN | SpecialAirN | Respawn | Eliminated => return None,
+        SpecialN | SpecialAirN | Eliminated => return None,
     })
 }
 
@@ -552,7 +555,7 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
 pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option<u32> {
     let state = action_state(fighter, character)?;
     Some(match state {
-        0..=3 | 5 | 9 | 10 | 237 => u32::MAX,
+        0..=3 | 5 | 9..=11 | 237 => u32::MAX,
         4 | 6 | 38 => 29,
         7 => 0,
         8 => 1,
@@ -766,6 +769,7 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
             (2, 0x80),
             (3, 0x02),
             (4, 0x40),
+            (4, 0x10),
         ];
         if let Some(expected_flags) = expected.state_flags {
             let Some(actual_flags) = actual.state_flags else {
@@ -1056,6 +1060,7 @@ mod tests {
                 "state_flags.shield" => fighter.state_flags.as_mut().unwrap()[2] ^= 0x80,
                 "state_flags.hitstun" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x02,
                 "state_flags.dead" => fighter.state_flags.as_mut().unwrap()[4] ^= 0x40,
+                "state_flags.sleep" => fighter.state_flags.as_mut().unwrap()[4] ^= 0x10,
                 "misc_as.hitstun" => fighter.misc_as = Some(1.0),
                 "hurtbox_state" => fighter.hurtbox_state = Some(1),
                 "velocities.self_x_air" => fighter.velocities.as_mut().unwrap()[0] = 1.0,
@@ -1205,11 +1210,12 @@ mod tests {
         assert_eq!(action_state(&fighter, Some(2)), Some(344));
         assert_eq!(animation_index(&fighter, Some(2)), Some(298));
 
-        for action in [game::Action::Respawn, game::Action::Eliminated] {
-            fighter.action = action;
-            assert_eq!(action_state(&fighter, Some(2)), None, "{action:?}");
-            assert_eq!(animation_index(&fighter, Some(2)), None, "{action:?}");
-        }
+        fighter.action = game::Action::Respawn;
+        assert_eq!(action_state(&fighter, Some(2)), Some(11));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(u32::MAX));
+        fighter.action = game::Action::Eliminated;
+        assert_eq!(action_state(&fighter, Some(2)), None);
+        assert_eq!(animation_index(&fighter, Some(2)), None);
         fighter.action = game::Action::SpecialN;
         assert_eq!(action_state(&fighter, None), None);
         assert_eq!(animation_index(&fighter, None), None);
@@ -1236,10 +1242,10 @@ mod tests {
         fighter.death.hidden = true;
         assert_eq!(state_flags(&fighter)[4], 0x40);
         fighter.death.hidden = false;
-        for action in [game::Action::Respawn, game::Action::Eliminated] {
-            fighter.action = action;
-            assert_eq!(state_flags(&fighter)[4], 0x40, "{action:?}");
-        }
+        fighter.action = game::Action::Respawn;
+        assert_eq!(state_flags(&fighter)[4], 0x50);
+        fighter.action = game::Action::Eliminated;
+        assert_eq!(state_flags(&fighter)[4], 0x40);
         fighter.action = game::Action::Rebirth;
         assert_eq!(state_flags(&fighter)[4], 0);
     }

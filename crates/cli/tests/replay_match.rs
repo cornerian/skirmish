@@ -286,7 +286,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v8");
+    assert_eq!(report.policy, "fighter-post-v9");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -414,7 +414,7 @@ fn physical_l_drives_file_backed_shield_state_and_detects_its_removal() {
 }
 
 #[test]
-fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
+fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [
         (0, Action::DeadUp, false),
         (1, Action::DeadUpStar, true),
@@ -448,7 +448,7 @@ fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
 
         let mut inputs = vec![IDLE; 40];
         inputs[0][0].buttons = BUTTON_A;
-        let mut recording = Recording::from_script(data, 17, inputs);
+        let recording = Recording::from_script(data, 17, inputs);
         let started = recording
             .states
             .iter()
@@ -480,7 +480,7 @@ fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
             .expect("death script must reach the inactive respawn delay");
         assert_eq!(
             observation::state_flags(&recording.states[respawn].fighters[1])[4],
-            0x40
+            0x50
         );
         let active = recording.states[respawn + 1..]
             .iter()
@@ -491,9 +491,6 @@ fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
             observation::state_flags(&recording.states[active].fighters[1])[4],
             0
         );
-        recording.inputs.truncate(respawn);
-        recording.states.truncate(respawn);
-
         let bytes = recording.bytes(support::Fixture::default(), |_| {});
         matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
         let corrupted = recording.bytes(support::Fixture::default(), |frames| {
@@ -516,6 +513,27 @@ fn file_backed_death_flag_covers_immediate_star_and_screen_disappearance() {
                 && checked_frames == first_dead as u64
                 && difference.port == PORTS[1]
                 && difference.field == "state_flags.dead"
+        ));
+        let corrupted = recording.bytes(support::Fixture::default(), |frames| {
+            frames.ports[1]
+                .leader
+                .post
+                .state_flags
+                .as_mut()
+                .unwrap()
+                .4
+                .set(respawn, Some(0x40));
+        });
+        assert!(matches!(
+            recording.compare(&corrupted).outcome,
+            Outcome::Mismatch {
+                frame,
+                checked_frames,
+                ref difference,
+            } if frame == FIRST + respawn as i32
+                && checked_frames == respawn as u64
+                && difference.port == PORTS[1]
+                && difference.field == "state_flags.sleep"
         ));
     }
 }
@@ -800,6 +818,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .unwrap()
                     .4
                     .set(row, Some(observation::state_flags(fighter)[4] ^ 0x40)),
+                "state_flags.sleep" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .4
+                    .set(row, Some(observation::state_flags(fighter)[4] ^ 0x10)),
                 "misc_as.hitstun" => post
                     .misc_as
                     .as_mut()
@@ -1246,7 +1270,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v8");
+        assert_eq!(report["policy"], "fighter-post-v9");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

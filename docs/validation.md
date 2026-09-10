@@ -1,5 +1,19 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi sleep-state batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-sleep-state-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, 567 native
+workspace tests, and 761 original-C differential tests in both debug and release
+modes. The `fighter-post-v9` policy maps Skirmish's inactive respawn interval to
+Melee's common `Sleep` state 11, its absent animation index, and
+`Fighter::x221F_b3`. Peppi-written ordinary, star and screen death replays now
+continue through sleep and return to active play. They require an independently
+corrupted positive sleep bit to report `state_flags.sleep`. The 19 ignored tests
+require external references, extracted assets, or a GPU/window and are
+unchanged.
+
 The 2026-09-10 Slippi death-flag batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-death-flag-20260910-verified`
