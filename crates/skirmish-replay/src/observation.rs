@@ -30,9 +30,19 @@ pub const VELOCITY_FIELDS: &[&str] = &[
     "velocities.self_x_ground",
 ];
 pub const HITLAG_FIELD: &str = "hitlag";
+pub const STATE_FLAG_FIELDS: &[&str] = &[
+    "state_flags.protected",
+    "state_flags.fast_fall",
+    "state_flags.hitlag",
+    "state_flags.shield",
+    "state_flags.hitstun",
+];
+pub const MISC_HITSTUN_FIELD: &str = "misc_as.hitstun";
 
 pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     let mut fields = BASE_FIELDS.to_vec();
+    fields.extend_from_slice(STATE_FLAG_FIELDS);
+    fields.push(MISC_HITSTUN_FIELD);
     if version.gte(2, 1) {
         fields.push(HURTBOX_FIELD);
     }
@@ -79,6 +89,10 @@ pub struct FighterObservation {
     pub last_ground_id: u16,
     /// None, successful, unsuccessful.
     pub l_cancel: u8,
+    /// Raw Melee flag bytes. The policy selects only bits modeled by Skirmish.
+    pub state_flags: Option<[u8; 5]>,
+    /// Action-state union slot, compared only while the hitstun flag is set.
+    pub misc_as: Option<f32>,
     pub hurtbox_state: Option<u8>,
     pub velocities: Option<[f32; 5]>,
     pub hitlag: Option<f32>,
@@ -210,6 +224,9 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
                 actor.port
             ));
         }
+        let flags = post
+            .state_flags
+            .ok_or_else(|| format!("{} post.state_flags must be present", actor.port))?;
         Ok(FighterObservation {
             port: actor.port,
             action_state: Some(post.state),
@@ -229,6 +246,11 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
                 .ground
                 .ok_or_else(|| format!("{} post.ground must be present", actor.port))?,
             l_cancel,
+            state_flags: Some([flags.0, flags.1, flags.2, flags.3, flags.4]),
+            misc_as: Some(
+                post.misc_as
+                    .ok_or_else(|| format!("{} post.misc_as must be present", actor.port))?,
+            ),
             hurtbox_state: post.hurtbox_state,
             velocities: post.velocities.map(|velocity| {
                 [
@@ -271,6 +293,8 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                     .last_ground_line
                     .map_or(u16::MAX, |line| line as u16),
                 l_cancel: fighter.l_cancel_status,
+                state_flags: Some(state_flags(fighter)),
+                misc_as: Some(fighter.hitstun as f32),
                 hurtbox_state: Some(hurtbox_state(fighter)),
                 velocities: Some([
                     fighter.velocity[0],
@@ -293,6 +317,24 @@ pub fn hurtbox_state(fighter: &game::Fighter) -> u8 {
     } else {
         u8::from(fighter.invincibility > 0)
     }
+}
+
+/// Reconstruct the Slippi flag bytes for the modeled fighter-wide bits.
+pub fn state_flags(fighter: &game::Fighter) -> [u8; 5] {
+    let shield = fighter.grounded
+        && matches!(
+            fighter.action,
+            game::Action::GuardOn | game::Action::Guard | game::Action::GuardSetOff
+        );
+    [
+        0,
+        (u8::from(hurtbox_state(fighter) != 0) << 2)
+            | (u8::from(fighter.fast_fall) << 3)
+            | (u8::from(fighter.hitlag > 0.0) << 5),
+        u8::from(shield) << 7,
+        u8::from(fighter.hitstun > 0) << 1,
+        0,
+    ]
 }
 
 /// Map each refactored action to the exact common-state identity that remains
@@ -559,6 +601,50 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
         ) {
             return Some(difference);
         }
+        let selected_flags = [(1, 0x04), (1, 0x08), (1, 0x20), (2, 0x80), (3, 0x02)];
+        if let Some(expected_flags) = expected.state_flags {
+            let Some(actual_flags) = actual.state_flags else {
+                return Some(Difference {
+                    port,
+                    field: STATE_FLAG_FIELDS[0],
+                    expected: format!("0x{:02x}", expected_flags[1] & 0x04),
+                    actual: "unavailable".into(),
+                });
+            };
+            for (field, (byte, mask)) in STATE_FLAG_FIELDS.iter().copied().zip(selected_flags) {
+                if let Some(difference) = difference(
+                    port,
+                    field,
+                    u32::from(expected_flags[byte] & mask != 0),
+                    u32::from(actual_flags[byte] & mask != 0),
+                    2,
+                ) {
+                    return Some(difference);
+                }
+            }
+            if expected_flags[3] & 0x02 != 0 {
+                let (Some(expected_misc), Some(actual_misc)) = (expected.misc_as, actual.misc_as)
+                else {
+                    return Some(Difference {
+                        port,
+                        field: MISC_HITSTUN_FIELD,
+                        expected: expected.misc_as.map_or_else(
+                            || "unavailable".into(),
+                            |v| format!("0x{:08x}", v.to_bits()),
+                        ),
+                        actual: actual.misc_as.map_or_else(
+                            || "unavailable".into(),
+                            |v| format!("0x{:08x}", v.to_bits()),
+                        ),
+                    });
+                };
+                if let Some(difference) =
+                    float_difference(port, MISC_HITSTUN_FIELD, expected_misc, actual_misc)
+                {
+                    return Some(difference);
+                }
+            }
+        }
         if let Some(expected_hurtbox_state) = expected.hurtbox_state {
             let Some(actual_hurtbox_state) = actual.hurtbox_state else {
                 return Some(Difference {
@@ -639,6 +725,8 @@ mod tests {
                         jumps: Some(2),
                         ground: Some(u16::MAX),
                         l_cancel: Some(0),
+                        state_flags: Some(row::StateFlags(0, 0, 0, 2, 0)),
+                        misc_as: Some(0.0),
                         hurtbox_state: Some(0),
                         stocks: 4,
                         velocities: Some(row::Velocities::default()),
@@ -760,6 +848,8 @@ mod tests {
         assert!(compare(&expected, &expected).is_none());
         for &field in BASE_FIELDS
             .iter()
+            .chain(STATE_FLAG_FIELDS)
+            .chain([MISC_HITSTUN_FIELD].iter())
             .chain([HURTBOX_FIELD].iter())
             .chain(VELOCITY_FIELDS)
             .chain([HITLAG_FIELD].iter())
@@ -779,6 +869,12 @@ mod tests {
                 "jumps_remaining" => fighter.jumps_remaining -= 1,
                 "last_ground_id" => fighter.last_ground_id = 7,
                 "l_cancel" => fighter.l_cancel = 1,
+                "state_flags.protected" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x04,
+                "state_flags.fast_fall" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x08,
+                "state_flags.hitlag" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x20,
+                "state_flags.shield" => fighter.state_flags.as_mut().unwrap()[2] ^= 0x80,
+                "state_flags.hitstun" => fighter.state_flags.as_mut().unwrap()[3] ^= 0x02,
+                "misc_as.hitstun" => fighter.misc_as = Some(1.0),
                 "hurtbox_state" => fighter.hurtbox_state = Some(1),
                 "velocities.self_x_air" => fighter.velocities.as_mut().unwrap()[0] = 1.0,
                 "velocities.self_y" => fighter.velocities.as_mut().unwrap()[1] = 1.0,
@@ -837,6 +933,8 @@ mod tests {
                 native.last_ground_line.map_or(u16::MAX, |line| line as u16)
             );
             assert_eq!(fighter.l_cancel, native.l_cancel_status);
+            assert_eq!(fighter.state_flags, Some(state_flags(native)));
+            assert_eq!(fighter.misc_as, Some(native.hitstun as f32));
             assert_eq!(fighter.hurtbox_state, Some(hurtbox_state(native)));
             assert_eq!(
                 fighter.velocities.unwrap().map(f32::to_bits),
@@ -923,5 +1021,10 @@ mod tests {
         assert_eq!(hurtbox_state(&fighter), 1);
         fighter.intangibility = 2;
         assert_eq!(hurtbox_state(&fighter), 2);
+        fighter.fast_fall = true;
+        fighter.hitlag = 2.0;
+        fighter.hitstun = 3;
+        fighter.action = game::Action::Guard;
+        assert_eq!(state_flags(&fighter), [0, 0x2c, 0x80, 0x02, 0]);
     }
 }

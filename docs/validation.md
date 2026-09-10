@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi state-flags batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-state-flags-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 558 native
+workspace tests, and 748 original-C differential tests in both debug and release
+modes. The `fighter-post-v4` replay policy now compares protection, fast-fall,
+hitlag, active-shield and hitstun bits, plus the action-state union as a hitstun
+counter only while Slippi marks that interpretation valid. File-backed tests
+drive digital-L shield entry, fast fall, hitlag and hitstun and corrupt every new
+reported field independently. The 19 ignored tests require external references,
+extracted assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 Slippi post-frame v3 batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-post-v3-20260910`

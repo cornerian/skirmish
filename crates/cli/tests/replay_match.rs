@@ -80,6 +80,11 @@ impl Recording {
             input[0].buttons = BUTTON_X;
             input[0].stick[0] = 0.25;
         }
+        // Re-arm the tap between attempts so one input crosses the threshold
+        // after the jump has started descending.
+        for row in [20, 22, 24, 26, 28, 30] {
+            inputs[row][0].stick[1] = -1.0;
+        }
         for input in &mut inputs[44..48] {
             input[0].stick[0] = -0.5;
         }
@@ -147,6 +152,18 @@ impl Recording {
                         .as_mut()
                         .unwrap()
                         .set(row, Some(fighter.l_cancel_status));
+                    let native_flags = observation::state_flags(fighter);
+                    if let Some(flags) = &mut post.state_flags {
+                        flags.0.set(row, Some(native_flags[0]));
+                        flags.1.set(row, Some(native_flags[1]));
+                        flags.2.set(row, Some(native_flags[2]));
+                        flags.3.set(row, Some(native_flags[3]));
+                        flags.4.set(row, Some(native_flags[4]));
+                    }
+                    post.misc_as
+                        .as_mut()
+                        .unwrap()
+                        .set(row, Some(fighter.hitstun as f32));
                     if let Some(hurtbox_state) = &mut post.hurtbox_state {
                         hurtbox_state.set(row, Some(observation::hurtbox_state(fighter)));
                     }
@@ -224,10 +241,21 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
             .any(|event| matches!(event, Event::Hit { .. }))
             && s.fighters[1].hitlag > 0.0
     }));
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|state| state.fighters[0].fast_fall)
+    );
+    assert!(recording.states.iter().any(|state| {
+        state.fighters[1].hitlag > 0.0
+            && state.fighters[1].hitstun > 0
+            && state.fighters[1].hitstun as f32 > 0.0
+    }));
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v3");
+    assert_eq!(report.policy, "fighter-post-v4");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -312,6 +340,49 @@ fn physical_z_drives_file_backed_grab_capture_and_detects_its_removal() {
 }
 
 #[test]
+fn physical_l_drives_file_backed_shield_state_and_detects_its_removal() {
+    #[derive(serde::Deserialize)]
+    struct ShieldProfile {
+        rules: skirmish::game::shield::Rules,
+        attributes: skirmish::game::shield::Attributes,
+    }
+    let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    let profile: ShieldProfile =
+        serde_json::from_str(include_str!("../../../tests/fixtures/game/shield.json")).unwrap();
+    data.rules.countdown_frames = 0;
+    data.rules.shield = Some(profile.rules);
+    for fighter in &mut data.fighters {
+        fighter.shield = Some(profile.attributes.clone());
+    }
+    let mut inputs = vec![IDLE; 4];
+    inputs[0][0].buttons = skirmish::game::BUTTON_L;
+    inputs[1][0].buttons = skirmish::game::BUTTON_L;
+    let recording = Recording::from_script(data, 19, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::GuardOn);
+    assert_ne!(
+        observation::state_flags(&recording.states[0].fighters[0])[2] & 0x80,
+        0
+    );
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn file_backed_ledge_intangibility_uses_hurtbox_state_two() {
     let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
         "../../../tests/fixtures/game/integration-match.json"
@@ -336,6 +407,7 @@ fn file_backed_ledge_intangibility_uses_hurtbox_state_two() {
     assert!(caught.fighters[0].intangibility > 0);
     assert_eq!(caught.fighters[0].invincibility, 0);
     assert_eq!(observation::hurtbox_state(&caught.fighters[0]), 2);
+    assert_ne!(observation::state_flags(&caught.fighters[0])[1] & 0x04, 0);
     assert_eq!(caught.fighters[0].last_ground_line, None);
 
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
@@ -471,10 +543,18 @@ fn first_late_post_mismatch_reports_the_matched_prefix_and_expected_bits() {
 #[test]
 fn every_reported_post_field_detects_its_first_file_backed_difference() {
     let recording = Recording::new();
-    let row = 37;
     let player = 1;
-    let fighter = &recording.states[row].fighters[player];
     for field in observation::fields(Version(3, 18, 0)) {
+        let row = if field == observation::MISC_HITSTUN_FIELD {
+            recording
+                .states
+                .iter()
+                .position(|state| state.fighters[player].hitstun > 0)
+                .unwrap()
+        } else {
+            37
+        };
+        let fighter = &recording.states[row].fighters[player];
         let bytes = recording.bytes(support::Fixture::default(), |frames| {
             let post = &mut frames.ports[player].leader.post;
             match field {
@@ -508,6 +588,41 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .as_mut()
                     .unwrap()
                     .set(row, Some(fighter.l_cancel_status ^ 1)),
+                "state_flags.protected" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .1
+                    .set(row, Some(observation::state_flags(fighter)[1] ^ 0x04)),
+                "state_flags.fast_fall" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .1
+                    .set(row, Some(observation::state_flags(fighter)[1] ^ 0x08)),
+                "state_flags.hitlag" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .1
+                    .set(row, Some(observation::state_flags(fighter)[1] ^ 0x20)),
+                "state_flags.shield" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .2
+                    .set(row, Some(observation::state_flags(fighter)[2] ^ 0x80)),
+                "state_flags.hitstun" => post
+                    .state_flags
+                    .as_mut()
+                    .unwrap()
+                    .3
+                    .set(row, Some(observation::state_flags(fighter)[3] ^ 0x02)),
+                "misc_as.hitstun" => post
+                    .misc_as
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.hitstun as f32 + 1.0)),
                 "hurtbox_state" => post
                     .hurtbox_state
                     .as_mut()
@@ -912,7 +1027,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v3");
+        assert_eq!(report["policy"], "fighter-post-v4");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

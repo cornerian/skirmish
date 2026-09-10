@@ -226,7 +226,7 @@ pub fn validate(
     };
     Ok(Report {
         replay: replay.summary(timeline)?,
-        policy: "fighter-post-v3",
+        policy: "fighter-post-v4",
         input_policy: observation::INPUT_POLICY,
         fields: observation::fields(settings.slippi.version),
         resources_sha256,
