@@ -265,6 +265,22 @@ impl PointerInput {
         }
     }
 
+    /// Re-hit-test after replacing the entire menu interaction map.
+    ///
+    /// Unlike viewport reprojection, a map replacement always queues its
+    /// target. Separate menus may deliberately reuse stable item identities,
+    /// and the destination runtime still needs an initial stationary hover.
+    /// Any old-map click is consumed by the handoff instead of leaking a
+    /// confirmation into the destination.
+    pub fn retarget(&mut self, transform: Option<PresentationTransform>, map: &InteractionMap) {
+        let target = self
+            .window_point
+            .and_then(|point| pointer_target(point, transform, map));
+        self.hovered = target.clone();
+        self.pending_focus = target;
+        self.pending_click = None;
+    }
+
     /// Drain commands for one fixed tick.
     ///
     /// `accepts_input` must reflect the canonical runtime's entrance/action
@@ -604,6 +620,19 @@ mod tests {
         pointer.reproject(resized, &map);
         assert!(pointer.sample(true).is_empty());
         pointer.reproject(original, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+    }
+
+    #[test]
+    fn pointer_retargets_when_a_new_map_reuses_the_same_item_identity() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([10.0, 300.0], transform, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+        pointer.primary_down([10.0, 300.0], transform, &map);
+        pointer.retarget(transform, &map);
         assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
     }
 

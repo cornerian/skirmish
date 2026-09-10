@@ -13,8 +13,8 @@ use sdl3::{
 use skirmish::{
     controller::host::ControllerHub,
     menu::{
-        MenuEffect,
-        melee::{main_definition, main_interaction_map},
+        DestinationId, MenuEffect,
+        melee::{main_definition, main_interaction_map, resolve_internal_destination},
     },
     presentation::AnimationPlayback,
     renderer::{
@@ -214,6 +214,48 @@ impl App {
         self.visible && width > 0 && height > 0
     }
 
+    fn enter_internal_menu(
+        &mut self,
+        destination: &DestinationId,
+        inherited_cooldown_frames: u16,
+    ) -> Result<bool> {
+        let entry = self.menu.as_ref().and_then(|menu| {
+            resolve_internal_destination(
+                &menu.runtime().definition().id,
+                destination,
+                inherited_cooldown_frames,
+            )
+        });
+        let Some(entry) = entry else {
+            return Ok(false);
+        };
+
+        let cue = entry
+            .definition
+            .items
+            .iter()
+            .find(|item| item.id == entry.definition.default_item)
+            .context("resolved menu has no default presentation")?
+            .presentation
+            .animation
+            .clone();
+        let next_playback =
+            AnimationPlayback::new(cue).context("initializing destination menu presentation")?;
+
+        let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
+        let menu = self.menu.as_mut().expect("resolved from an active menu");
+        menu.enter_menu(entry.definition, entry.interaction, [], transform)
+            .with_context(|| format!("entering internal menu {}", destination.as_str()))?;
+        let selected = menu.runtime().selected();
+        self.presentation = Some(next_playback);
+        println!(
+            "Melee menu entered: {} (selected {})",
+            menu.runtime().definition().id.as_str(),
+            selected.id.as_str()
+        );
+        Ok(true)
+    }
+
     fn apply_menu_effects(&mut self, effects: Vec<MenuEffect>) -> Result<()> {
         for effect in effects {
             match effect {
@@ -254,6 +296,7 @@ impl App {
                             .sound
                             .map_or_else(String::new, |sound| format!(" (sound {})", sound.0))
                     );
+                    self.enter_internal_menu(&action.destination, action.cooldown_frames)?;
                 }
             }
             self.dirty = true;

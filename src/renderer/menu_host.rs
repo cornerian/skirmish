@@ -58,6 +58,29 @@ impl MenuHost {
         &self.runtime
     }
 
+    /// Enter another declarative menu without resetting physical input state.
+    ///
+    /// Keeping the keyboard/controller edge detectors alive across a menu
+    /// handoff prevents a held confirm or back button from becoming a fresh
+    /// press in the destination. The last pointer position is re-hit-tested
+    /// against the new presentation map, so a stationary mouse can focus the
+    /// destination item once its canonical entrance cooldown expires.
+    pub fn enter_menu(
+        &mut self,
+        definition: MenuDefinition,
+        interaction: InteractionMap,
+        enabled_flags: impl IntoIterator<Item = ConditionId>,
+        transform: Option<PresentationTransform>,
+    ) -> Result<(), MenuHostError> {
+        interaction.validate(&definition)?;
+        let runtime = MenuRuntime::new(definition, enabled_flags)?;
+
+        self.runtime = runtime;
+        self.interaction = interaction;
+        self.pointer.retarget(transform, &self.interaction);
+        Ok(())
+    }
+
     pub fn key(&mut self, code: Scancode, down: bool, repeat: bool) {
         self.keyboard.key(code, down, repeat);
     }
@@ -174,7 +197,11 @@ mod tests {
         menu::{
             ActionTrigger, MenuEffect,
             interaction::{HitRect, ItemHitRegion},
-            melee::{MainItem, main_definition, main_interaction_map},
+            melee::{
+                MAIN_MENU_ID, MainItem, VERSUS_ENTRY_COOLDOWN_FRAMES, VERSUS_MENU_ID, VersusItem,
+                main_definition, main_interaction_map, resolve_internal_destination,
+                versus_definition, versus_interaction_map,
+            },
         },
         renderer::viewport::MELEE_AUTHORED_EXTENT,
     };
@@ -315,6 +342,171 @@ mod tests {
         assert!(matches!(
             host.tick(&[], true).as_slice(),
             [MenuEffect::ActionRequested { .. }]
+        ));
+    }
+
+    #[test]
+    fn entering_a_menu_preserves_button_edges_across_the_handoff() {
+        let mut host = MenuHost::new(main_definition(), main_interaction_map(), []).unwrap();
+        for _ in 0..20 {
+            assert!(host.tick(&[], true).is_empty());
+        }
+
+        host.key(Scancode::Return, true, false);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::ActionRequested { .. }]
+        ));
+
+        let mut destination = main_definition();
+        destination.initial_cooldown_frames = 0;
+        host.enter_menu(destination, main_interaction_map(), [], None)
+            .unwrap();
+
+        // The Return key is still physically held, so entering a new menu
+        // must not reinterpret it as a second press.
+        assert!(host.tick(&[], true).is_empty());
+        host.key(Scancode::Return, false, false);
+        assert!(host.tick(&[], true).is_empty());
+        host.key(Scancode::Return, true, false);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::ActionRequested { .. }]
+        ));
+    }
+
+    #[test]
+    fn entering_a_menu_reprojects_stationary_pointer_into_the_new_map() {
+        let mut host = MenuHost::new(main_definition(), main_interaction_map(), []).unwrap();
+        for _ in 0..20 {
+            assert!(host.tick(&[], true).is_empty());
+        }
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let versus_center = [193.227_35, 195.221_6];
+        host.pointer_motion(versus_center, transform);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::SelectionChanged { selected, .. }]
+                if selected.as_str() == MainItem::Versus.id()
+        ));
+
+        let mut destination = main_definition();
+        destination.id = "mod.menu".into();
+        destination.initial_cooldown_frames = 0;
+        for (index, item) in destination.items.iter_mut().enumerate() {
+            item.id = format!("mod.item.{index}").into();
+        }
+        destination.default_item = "mod.item.0".into();
+        let mut destination_map = main_interaction_map();
+        for (index, region) in destination_map.regions.iter_mut().enumerate() {
+            region.item = format!("mod.item.{index}").into();
+        }
+
+        host.enter_menu(destination, destination_map, [], transform)
+            .unwrap();
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::SelectionChanged { selected, .. }]
+                if selected.as_str() == "mod.item.1"
+        ));
+    }
+
+    #[test]
+    fn main_to_versus_mouse_handoff_uses_the_new_canonical_runtime() {
+        let mut host = MenuHost::new(main_definition(), main_interaction_map(), []).unwrap();
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        for _ in 0..20 {
+            assert!(host.tick(&[], true).is_empty());
+        }
+
+        let versus_center = [193.227_35, 195.221_6];
+        host.pointer_primary_down(versus_center, transform);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [
+                MenuEffect::SelectionChanged { selected, .. },
+                MenuEffect::ActionRequested { action, .. },
+            ] if selected.as_str() == MainItem::Versus.id()
+                && action.destination.as_str() == "melee.menu.versus"
+        ));
+
+        host.enter_menu(versus_definition(), versus_interaction_map(), [], transform)
+            .unwrap();
+        for _ in 0..VERSUS_ENTRY_COOLDOWN_FRAMES {
+            assert!(host.tick(&[], true).is_empty());
+        }
+
+        // The stationary pointer now addresses the VS slot at the same
+        // authored location. Its first open tick focuses without leaking the
+        // click that entered VS.
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::SelectionChanged { selected, .. }]
+                if selected.as_str() == VersusItem::Tournament.id()
+        ));
+        host.pointer_primary_down(versus_center, transform);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::ActionRequested { item: Some(item), action, .. }]
+                if item.as_str() == VersusItem::Tournament.id()
+                    && action.destination.as_str() == VersusItem::Tournament.destination()
+        ));
+    }
+
+    #[test]
+    fn held_back_does_not_fall_through_from_versus_to_the_title() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let mut host = MenuHost::new(versus_definition(), versus_interaction_map(), []).unwrap();
+        for _ in 0..VERSUS_ENTRY_COOLDOWN_FRAMES {
+            assert!(host.tick(&[], true).is_empty());
+        }
+
+        host.key(Scancode::Escape, true, false);
+        let effects = host.tick(&[], true);
+        let destination = match effects.as_slice() {
+            [MenuEffect::ActionRequested { action, .. }] => &action.destination,
+            other => panic!("unexpected VS Back effects: {other:?}"),
+        };
+        let entry = resolve_internal_destination(
+            &crate::menu::MenuId::from(VERSUS_MENU_ID),
+            destination,
+            5,
+        )
+        .unwrap();
+        host.enter_menu(entry.definition, entry.interaction, [], transform)
+            .unwrap();
+
+        for _ in 0..5 {
+            assert!(host.tick(&[], true).is_empty());
+        }
+        assert_eq!(host.runtime().definition().id.as_str(), MAIN_MENU_ID);
+        assert_eq!(host.runtime().selected().id.as_str(), MainItem::Versus.id());
+        assert!(
+            host.tick(&[], true).is_empty(),
+            "held Back must not become a new Main-menu edge"
+        );
+    }
+
+    #[test]
+    fn rejected_menu_entry_preserves_runtime_pointer_map_and_latches() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let mut host = MenuHost::new(main_definition(), main_interaction_map(), []).unwrap();
+        for _ in 0..20 {
+            assert!(host.tick(&[], true).is_empty());
+        }
+        host.pointer_motion([193.227_35, 195.221_6], transform);
+
+        let mut invalid_map = versus_interaction_map();
+        invalid_map.regions[0].item = "missing.item".into();
+        assert!(
+            host.enter_menu(versus_definition(), invalid_map, [], transform)
+                .is_err()
+        );
+        assert_eq!(host.runtime().definition().id.as_str(), MAIN_MENU_ID);
+        assert!(matches!(
+            host.tick(&[], true).as_slice(),
+            [MenuEffect::SelectionChanged { selected, .. }]
+                if selected.as_str() == MainItem::Versus.id()
         ));
     }
 }
