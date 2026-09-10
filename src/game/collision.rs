@@ -161,6 +161,7 @@ pub(crate) fn resolve(
     }
     f.position = previous_position;
     f.contacts = [None; 4];
+    let mut responded = false;
     for step in 0..plan.steps {
         f.ecb
             .interpolate(1.0 / (plan.steps - step) as f32)
@@ -169,6 +170,7 @@ pub(crate) fn resolve(
         f.position = add(previous, [plan.velocity[0], plan.velocity[1]]);
         let mut wall_positions = [None; 2];
         let mut ceiling_position = None;
+        let mut pending_reflection = None;
         for (surface, slot, old, point) in [
             (
                 Surface::LeftWall,
@@ -202,10 +204,11 @@ pub(crate) fn resolve(
                 stage
                     .project(surface, contact.line_id, world_point)
                     .map_err(physics)?
-                    .map(|projection| (projection.line_id, projection.delta))
+                    .map(|projection| (projection.line_id, projection.delta, projection.normal))
                     .or(Some((
                         contact.line_id,
                         contact.position[axis] - world_point[axis],
+                        contact.normal,
                     )))
             } else {
                 moved_projection(
@@ -217,9 +220,9 @@ pub(crate) fn resolve(
                     None,
                     true,
                 )?
-                .map(|projection| (projection.line_id, projection.delta))
+                .map(|projection| (projection.line_id, projection.delta, projection.normal))
             };
-            if let Some((line_id, delta)) = correction {
+            if let Some((line_id, delta, normal)) = correction {
                 f.position[axis] += delta;
                 f.contacts[slot] = Some(line_id);
                 if surface == Surface::LeftWall {
@@ -229,21 +232,26 @@ pub(crate) fn resolve(
                 } else {
                     ceiling_position = Some(f.position[1]);
                 }
-                // This slice stops motion into a surface. Damage wall/ceiling
-                // bounces, techs and velocity projection remain separate work.
-                let inward = if surface == Surface::RightWall {
-                    -1.0
+                if !responded
+                    && pending_reflection.is_none()
+                    && super::damage::can_reflect(f, surface, &rules.damage)
+                {
+                    pending_reflection = Some((surface, normal, line_id));
                 } else {
-                    1.0
-                };
-                if f.velocity[axis] * inward > 0.0 {
-                    f.velocity[axis] = 0.0;
-                }
-                if f.knockback[axis] * inward > 0.0 {
-                    f.knockback[axis] = 0.0;
-                }
-                if axis == 0 {
-                    f.ground_velocity = 0.0;
+                    let inward = if surface == Surface::RightWall {
+                        -1.0
+                    } else {
+                        1.0
+                    };
+                    if f.velocity[axis] * inward > 0.0 {
+                        f.velocity[axis] = 0.0;
+                    }
+                    if f.knockback[axis] * inward > 0.0 {
+                        f.knockback[axis] = 0.0;
+                    }
+                    if axis == 0 {
+                        f.ground_velocity = 0.0;
+                    }
                 }
             }
         }
@@ -276,7 +284,13 @@ pub(crate) fn resolve(
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
             if !super::special::transfer_ground_air(f, false)
-                && !matches!(f.action, Action::Damage | Action::DamageFall)
+                && !matches!(
+                    f.action,
+                    Action::Damage
+                        | Action::DamageFall
+                        | Action::FlyReflectWall
+                        | Action::FlyReflectCeiling
+                )
             {
                 simulation::enter(f, Action::Fall);
             }
@@ -332,6 +346,17 @@ pub(crate) fn resolve(
             f.ecb
                 .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
         }
+        if !f.grounded
+            && let Some((surface, normal, line)) = pending_reflection
+        {
+            super::damage::reflect(f, surface, normal, &rules.damage);
+            events.push(Event::SurfaceReflected {
+                player,
+                surface,
+                line,
+            });
+            responded = true;
+        }
     }
     Ok(())
 }
@@ -355,7 +380,10 @@ fn land(
     f.skip_floor = None;
     if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
         simulation::enter(f, Action::ShieldBreakDown);
-    } else if matches!(f.action, Action::Damage | Action::DamageFall) {
+    } else if matches!(
+        f.action,
+        Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+    ) {
         super::damage::land(f, &rules.damage);
     } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
         simulation::enter(f, Action::Landing);

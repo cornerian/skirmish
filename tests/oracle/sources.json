@@ -208,5 +208,15 @@
     "fixture": "tests/oracle/original/death.c",
     "upstream": "src/melee/ft/ft_0D31.c",
     "sha256": "014cdd01686238eb22398e87cc10784e899684beedccbba4eb41f02524bb94d5"
+  },
+  {
+    "fixture": "tests/oracle/original/fly_reflect.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FlyReflect.c",
+    "sha256": "474e82d6e690eef87275bb723ec620a853c05da600fd11fd9fc24415f68615e7"
+  },
+  {
+    "fixture": "tests/oracle/original/lbvector.c",
+    "upstream": "src/melee/lb/lbvector.c",
+    "sha256": "86fb5f0d484345ad9264ab8b9cafcc753b972a40d5d22156b3792e9567485bd5"
   }
 ]

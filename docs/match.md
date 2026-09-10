@@ -40,7 +40,7 @@ simulator state; it is not a player-information observation policy. `reset(seed)
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
-time, tumble eligibility, physical-L/R tech ages, swept hitbox centers, ECB
+time, tumble eligibility, damage-surface history/lockout, physical-L/R tech ages, swept hitbox centers, ECB
 interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
 random events and consumes no RNG draws. Checkpoints are opaque in-memory
@@ -100,7 +100,7 @@ growth checks: exactly twelve units takes three substeps. Grounded fighters
 project onto adjacent floor segments and use their normals for ground motion.
 Projection preserves the source's small separation bias. Side and ceiling
 contacts project the final collision point onto the contacted surface and stop
-inward velocity in this experimental profile. Platforms permit upward passage,
+inward velocity unless an eligible damage reflection consumes it. Platforms permit upward passage,
 descending landings and intentional drops with the explicit locomotion profile.
 Pass remembers and skips only its supporting line during every movement substep;
 other platforms remain collidable. The next action transition clears that skip.
@@ -161,8 +161,12 @@ Optional [`rules.damage.floor_response`](damage-floor.md) adds source-gated
 neutral techs plus the complete configured DownBound/DownWait/DownStand recovery
 chain. Physical-L/R ages are sampled during hitlag and ordinary frames. Damage
 at or above its inclusive threshold retains tumble eligibility through
-DamageFall until floor contact. Tech rolls, wall/ceiling responses, bounces,
-get-up choices and action-specific poses remain separate work.
+DamageFall until floor contact. Optional
+[`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
+wall/ceiling eligibility, normal-based reflected velocity, repeat state and
+configured FlyReflectWall/FlyReflectCeiling durations. Floor landing wins when
+both responses are possible in one collision pass. Wall/ceiling techs, tech
+rolls, get-up choices and action-specific poses remain separate work.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 catch entry, sampled bone-attached grab capsules, paired pull/hold states and
@@ -258,7 +262,8 @@ ledge-specific backward-push map branch remain unported. The optional
 [rebirth profile](rebirth.md) supplies the ordinary leader's static airborne
 platform lifecycle; moving-stage offsets, Nana coordination and the full
 priority action graph remain unported. The optional [damage-floor profile](damage-floor.md) supplies neutral
-tech and knockdown recovery; bounces, tech rolls and wall/ceiling techs remain
+tech and knockdown recovery. The [damage-surface profile](damage-surfaces.md)
+supplies ordinary tumble reflections; tech rolls and wall/ceiling techs remain
 unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,

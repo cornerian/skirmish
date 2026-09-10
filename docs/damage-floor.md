@@ -27,5 +27,6 @@ conformance scenarios run normally.
 
 This profile does not yet provide action-specific damage/down poses,
 invincibility windows, get-up choices, tech rolls, wall/ceiling techs, missed
-tech options, bounces, orientation selection or input-lock states. Those paths
-need their own native resources and scheduler integration.
+tech options, orientation selection or input-lock states. Ordinary tumble
+reflection is supplied separately by the [damage-surface profile](damage-surfaces.md).
+The remaining paths need their own native resources and scheduler integration.

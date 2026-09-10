@@ -233,6 +233,35 @@ pub fn can_tech(
         && i32::from(previous_press_age) >= repeat_lockout
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reflection {
+    pub knockback: [f32; 2],
+    pub facing: f32,
+}
+
+/// Velocity portion of `ftCo_800C18A8`: combine self/knockback velocity,
+/// mirror it across the contact plane, scale it, and choose reflected facing.
+pub fn reflect_velocity(
+    self_velocity: [f32; 2],
+    knockback: [f32; 2],
+    normal: [f32; 2],
+    multiplier: f32,
+) -> Reflection {
+    let mut reflected = [
+        self_velocity[0] + knockback[0],
+        self_velocity[1] + knockback[1],
+    ];
+    let projection = (normal[0] * reflected[0] + normal[1] * reflected[1]) * -2.0;
+    reflected[0] += normal[0] * projection;
+    reflected[1] += normal[1] * projection;
+    reflected[0] *= multiplier;
+    reflected[1] *= multiplier;
+    Reflection {
+        knockback: reflected,
+        facing: if reflected[0] < 0.0 { -1.0 } else { 1.0 },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +311,20 @@ mod tests {
         assert!(!can_tech(false, 3, 7, 3.0, 7));
         assert!(!can_tech(false, 2, 6, 3.0, 7));
         assert!(!can_tech(true, 0, 255, 3.0, 7));
+    }
+
+    #[test]
+    fn reflection_combines_velocities_before_mirroring_and_chooses_facing() {
+        assert_eq!(
+            reflect_velocity([1.0, 2.0], [3.0, -1.0], [-1.0, 0.0], 0.8),
+            Reflection {
+                knockback: [-3.2, 0.8],
+                facing: -1.0,
+            }
+        );
+        assert_eq!(
+            reflect_velocity([-0.0; 2], [0.0; 2], [0.0, -1.0], 1.0).facing,
+            1.0
+        );
     }
 }

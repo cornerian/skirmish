@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 damage-surface batch is recorded at:
+
+`/mnt/archive/runs/skirmish-damage-surface-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage runs wall and ceiling reflection,
+configured action timing, floor-first collision priority, omission and unmet
+threshold behavior, malformed resources and exact checkpoint replay. The
+retained reflection arithmetic compares against complete pinned original C and
+vector-helper bodies. Wall/ceiling techs and independent scheduler traces remain
+pending.
+
 The 2026-09-09 ECB-response batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ecb-response-20260909`

@@ -78,6 +78,8 @@ fn spawn(
         damage_angle_timer: 0,
         di_pending: false,
         tumbling: false,
+        last_damage_surface: None,
+        reflect_lockout: 0,
         invincibility,
         short_hop: false,
         fast_fall: false,
@@ -104,8 +106,13 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
-    if !matches!(action, Action::Damage | Action::DamageFall) {
+    if !matches!(
+        action,
+        Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+    ) {
         fighter.tumbling = false;
+        fighter.last_damage_surface = None;
+        fighter.reflect_lockout = 0;
     }
 }
 
@@ -998,7 +1005,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if f.action != Action::Damage && !shield::break_invulnerable(f.action) {
+        if !matches!(
+            f.action,
+            Action::Damage | Action::FlyReflectWall | Action::FlyReflectCeiling
+        ) && !shield::break_invulnerable(f.action)
+        {
             if !f.fast_fall
                 && f.velocity[1] < 0.0
                 && input.stick[1] <= -rules.fast_fall_threshold

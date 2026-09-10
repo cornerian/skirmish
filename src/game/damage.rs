@@ -26,6 +26,9 @@ pub struct CombatRules {
     /// Explicit damage-floor state profile. None preserves the legacy slice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_response: Option<FloorResponseRules>,
+    /// Optional ordinary wall/ceiling damage reflection profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_response: Option<SurfaceResponseRules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -38,6 +41,16 @@ pub struct FloorResponseRules {
     pub down_bound_frames: u32,
     pub down_wait_frames: u32,
     pub down_stand_frames: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceResponseRules {
+    pub knockback_threshold: f32,
+    pub velocity_multiplier: f32,
+    pub lockout_frames: u8,
+    pub wall_frames: u32,
+    pub ceiling_frames: u32,
 }
 
 /// Native common-data coefficients. Main-stick SDI/ASDI only; the current
@@ -142,6 +155,25 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
     {
         return Err(Error::Data(
             "invalid explicit damage-floor response rules".into(),
+        ));
+    }
+    if let Some(profile) = &rules.surface_response
+        && ((!profile.knockback_threshold.is_finite()
+            || !(0.0..=1_000_000.0).contains(&profile.knockback_threshold))
+            || !profile.velocity_multiplier.is_finite()
+            || !(0.0..=1.0).contains(&profile.velocity_multiplier)
+            || profile.wall_frames == 0
+            || profile.ceiling_frames == 0
+            || profile.wall_frames >= 1_000_000
+            || profile.ceiling_frames >= 1_000_000)
+    {
+        return Err(Error::Data(
+            "invalid explicit damage-surface response rules".into(),
+        ));
+    }
+    if rules.surface_response.is_some() && rules.floor_response.is_none() {
+        return Err(Error::Data(
+            "damage-surface response requires explicit tumble rules".into(),
         ));
     }
     Ok(())
@@ -261,6 +293,8 @@ pub(crate) fn apply_hit(
     target.locomotion.tilt_x_age = 254;
     target.locomotion.tilt_y_age = 254;
     target.damage_angle_flag = 0;
+    target.last_damage_surface = None;
+    target.reflect_lockout = 0;
     if let Some(timer) = angle.special_timer {
         target.damage_angle_flag = 1;
         target.damage_angle_timer = timer;
@@ -285,6 +319,23 @@ pub(crate) fn apply_hit(
 /// graph. Durations are explicit resources because animation data is not yet
 /// available for every fighter.
 pub(crate) fn update_animation(fighter: &mut Fighter, rules: &CombatRules) {
+    fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
+    let surface_next = rules
+        .surface_response
+        .as_ref()
+        .and_then(|response| match fighter.action {
+            Action::FlyReflectWall if fighter.action_frame >= response.wall_frames => {
+                Some(Action::DamageFall)
+            }
+            Action::FlyReflectCeiling if fighter.action_frame >= response.ceiling_frames => {
+                Some(Action::DamageFall)
+            }
+            _ => None,
+        });
+    if let Some(action) = surface_next {
+        super::simulation::enter(fighter, action);
+        return;
+    }
     let Some(profile) = &rules.floor_response else {
         if fighter.action == Action::Damage && fighter.hitstun == 0 {
             super::simulation::enter(
@@ -321,6 +372,67 @@ pub(crate) fn update_animation(fighter: &mut Fighter, rules: &CombatRules) {
     if let Some(action) = next {
         super::simulation::enter(fighter, action);
     }
+}
+
+pub(crate) fn can_reflect(
+    fighter: &Fighter,
+    surface: crate::collision::stage::Surface,
+    rules: &CombatRules,
+) -> bool {
+    use crate::collision::stage::Surface;
+    let Some(profile) = &rules.surface_response else {
+        return false;
+    };
+    if !fighter.tumbling
+        || fighter.reflect_lockout != 0
+        || fighter.last_damage_surface == Some(surface)
+        || !matches!(
+            fighter.action,
+            Action::Damage
+                | Action::DamageFall
+                | Action::FlyReflectWall
+                | Action::FlyReflectCeiling
+        )
+    {
+        return false;
+    }
+    match surface {
+        Surface::LeftWall => fighter.knockback[0] > profile.knockback_threshold,
+        Surface::RightWall => fighter.knockback[0] < -profile.knockback_threshold,
+        Surface::Ceiling => fighter.knockback[1] > profile.knockback_threshold,
+        Surface::Floor => false,
+    }
+}
+
+pub(crate) fn reflect(
+    fighter: &mut Fighter,
+    surface: crate::collision::stage::Surface,
+    normal: [f32; 3],
+    rules: &CombatRules,
+) {
+    let profile = rules.surface_response.as_ref().unwrap();
+    let reflected = damage::reflect_velocity(
+        fighter.velocity,
+        fighter.knockback,
+        [normal[0], normal[1]],
+        profile.velocity_multiplier,
+    );
+    fighter.velocity = [0.0; 2];
+    fighter.knockback = reflected.knockback;
+    fighter.ground_velocity = 0.0;
+    fighter.facing = reflected.facing;
+    fighter.grounded = false;
+    fighter.ground_line = None;
+    fighter.last_damage_surface = Some(surface);
+    fighter.reflect_lockout = profile.lockout_frames;
+    super::simulation::enter(
+        fighter,
+        if matches!(surface, crate::collision::stage::Surface::Ceiling) {
+            Action::FlyReflectCeiling
+        } else {
+            Action::FlyReflectWall
+        },
+    );
 }
 
 /// Damage-floor callback shared by Damage and DamageFall. False leaves a

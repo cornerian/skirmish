@@ -38,6 +38,14 @@ disabled; static collision response is tested through the native match instead.
 The horizontal stick-age branch is an exact excerpt of `Fighter_procInput`,
 verified against the preserved source before host compilation.
 
+`fly_reflect` selects complete `ftCo_800C18A8` and compiles it with complete
+`lbVector_Add_xy` and `lbVector_Mirror` from the separately pinned `lbvector.c`.
+The adapter stubs effects, camera, action entry, skeleton placement, collision
+services and sound selection. It compares the retained self-plus-knockback
+mirror/scale arithmetic, cleared self velocity, reflected facing and byte
+lockout. Match tests own contact eligibility, floor priority, line correction
+and action duration; the adapter does not claim the complete callback graph.
+
 `stale_queue` and `stale_damage` preserve plstale.c and ft_0881.c. Their selected
 whole functions use minimal host Fighter/table layouts and thread-local player,
 coefficient, debug and instance globals. The damage function's unused instance

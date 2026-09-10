@@ -127,6 +127,8 @@ pub enum Action {
     LandingAirLw,
     Damage,
     DamageFall,
+    FlyReflectWall,
+    FlyReflectCeiling,
     Passive,
     DownBound,
     DownWait,
@@ -193,6 +195,10 @@ pub struct Fighter {
     pub di_pending: bool,
     /// Whether the current damage launch uses the tumble floor-response graph.
     pub tumbling: bool,
+    /// Last wall/ceiling reflected during the current damage lifecycle.
+    pub last_damage_surface: Option<crate::collision::stage::Surface>,
+    /// Frames before another configured damage-surface reflection is eligible.
+    pub reflect_lockout: u8,
     pub invincibility: u32,
     pub short_hop: bool,
     pub fast_fall: bool,
@@ -255,6 +261,11 @@ pub enum Event {
     },
     Landed {
         player: usize,
+    },
+    SurfaceReflected {
+        player: usize,
+        surface: crate::collision::stage::Surface,
+        line: usize,
     },
     Knockout {
         player: usize,

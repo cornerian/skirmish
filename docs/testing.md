@@ -123,6 +123,13 @@ landings, DamageFall carry, invalid data, checkpoint replay and reset.
 the complete pinned original C function over generated timer, boundary and lock
 inputs.
 
+The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
+coverage for wall and ceiling launch reflection, exact configured action
+durations, floor-first collision priority, disabled/unmet profiles, malformed
+resources and checkpoint replay. `damage_reflect_differential` compares the
+retained velocity/facing/lockout portion of complete `ftCo_800C18A8`, including
+its two complete vector helpers, over arbitrary binary32 values.
+
 The [grab profile](grabs.md) promotes all three paired grab/throw conformance
 scenarios. `game_grab` covers bone-sampled catch contact, miss recovery, all four
 throw directions, main/C-stick priority and fresh-edge history, held-victim
@@ -191,6 +198,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |
 | `ecb_response` | Four-sided moving compression, ECB restoration, moving-floor landing, one-way direction and tangential-motion rejection, checkpoint replay |
+| `damage_surface` | Wall/ceiling launch reflection, action timing, floor priority, disabled/invalid profiles and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -207,7 +215,7 @@ explicitly disable unrelated state/environment branches.
 | Grab and throw | `conformance_actions` and `conformance_combat`: paired capture and throw release (implemented) |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
-| Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers |
+| Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers; `game_damage_surface` covers ordinary wall/ceiling reflection |
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release and implemented hitlag/floor responses |
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
 | Moving platforms/remapping | `game_stage_motion` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
