@@ -1175,18 +1175,22 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             && (f.surface_tech.timer != 0 || f.wall_jump.startup_timer != 0)
         {
             // Wall techs remain fixed until the source timer releases them.
-        } else if !matches!(
+        } else if (!matches!(
             f.action,
             Action::Damage
                 | Action::DownDamage
                 | Action::PassiveWall
                 | Action::PassiveWallJump
                 | Action::PassiveCeiling
-        ) && !shield::break_invulnerable(f.action)
+        ) || damage::damage_air_interruptible(f))
+            && !shield::break_invulnerable(f.action)
         {
             let damage_input_locked = matches!(
                 f.action,
-                Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+                Action::Damage
+                    | Action::DamageFall
+                    | Action::FlyReflectWall
+                    | Action::FlyReflectCeiling
             ) && f.hitstun != 0;
             if !damage_input_locked
                 && !f.fast_fall

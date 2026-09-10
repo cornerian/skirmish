@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-10 airborne Damage callback batch is recorded at:
+
+`/mnt/archive/runs/skirmish-damage-air-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. A long sampled airborne Damage motion proves the last hitstun
+frame retains locked physics and input, then checks ordinary drift, fast fall,
+neutral special, aerial attack and double jump on a fresh legal frame with
+checkpoint replay.
+
 The 2026-09-10 DamageFall air-callback batch is recorded at:
 
 `/mnt/archive/runs/skirmish-damage-fall-air-20260910`

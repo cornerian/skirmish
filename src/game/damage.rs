@@ -1209,7 +1209,10 @@ pub(crate) fn damage_air_interruptible(fighter: &Fighter) -> bool {
         && fighter.hitstun == 0
         && matches!(
             fighter.action,
-            Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+            Action::Damage
+                | Action::DamageFall
+                | Action::FlyReflectWall
+                | Action::FlyReflectCeiling
         )
 }
 

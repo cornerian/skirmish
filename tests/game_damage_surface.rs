@@ -7,11 +7,12 @@ mod special_resources;
 
 use skirmish::{
     collision::{ecb, stage},
+    fighter::damage::HurtHeight,
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
         damage::{
-            FloorResponseRules, SurfaceResponseAttributes, SurfaceResponseRules,
-            SurfaceTechAttributes, SurfaceTechRules,
+            DamageMotionRules, DamagePoseAttributes, FloorResponseRules, SurfaceResponseAttributes,
+            SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
         },
         data::{Bone, CollisionBox, MatchData, StageGeometry},
         stage_motion::{Rules as MotionRules, Track, Transform},
@@ -244,6 +245,28 @@ fn long_reflect_data(angle: f32) -> MatchData {
 
 fn damage_fall_data() -> MatchData {
     let mut data = interrupt_data(0.0);
+    lower_floor(&mut data);
+    data
+}
+
+fn long_damage_data() -> MatchData {
+    let mut data = interrupt_data(90.0);
+    data.rules.damage.damage_motion = Some(DamageMotionRules {
+        thresholds: [999_998.0, 999_999.0, 1_000_000.0],
+    });
+    data.rules.damage.surface_response = None;
+    data.rules.damage.surface_tech = None;
+    for fighter in &mut data.fighters {
+        let motion = vec![fighter.bones.clone(); 256];
+        fighter.damage_poses = Some(DamagePoseAttributes {
+            hurtbox_heights: vec![HurtHeight::Middle],
+            ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
+            air: core::array::from_fn(|_| motion.clone()),
+            fly: core::array::from_fn(|_| motion.clone()),
+        });
+        fighter.surface_response = None;
+        fighter.surface_tech = None;
+    }
     lower_floor(&mut data);
     data
 }
@@ -587,6 +610,56 @@ fn damage_fall_fast_fall_waits_for_hitstun_and_replays() {
     assert!(fast_fall.fighters[1].fast_fall);
     game.restore_checkpoint(&ready).unwrap();
     assert_eq!(step_with(&mut game, down), fast_fall);
+}
+
+#[test]
+fn airborne_damage_inputs_wait_for_hitstun_and_replay() {
+    for (buttons, stick, expected) in [
+        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
+        (BUTTON_X, [0.0; 2], Action::JumpAerial),
+    ] {
+        assert_air_input_boundary(
+            hit(long_damage_data()),
+            Action::Damage,
+            buttons,
+            stick,
+            expected,
+        );
+    }
+}
+
+#[test]
+fn airborne_damage_switches_to_ordinary_air_physics_after_hitstun() {
+    let mut resource = long_damage_data();
+    resource.fighters[1].movement.gravity = 0.2;
+    let mut game = hit(resource);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::Damage
+    });
+    while game.state().fighters[1].hitstun > 1 {
+        step(&mut game);
+    }
+    let boundary = game.checkpoint();
+    let mut input = IDLE;
+    input[1].stick = [1.0, -1.0];
+    let blocked = step_with(&mut game, input);
+    assert_eq!(blocked.fighters[1].action, Action::Damage);
+    assert_eq!(blocked.fighters[1].hitstun, 0);
+    assert_eq!(blocked.fighters[1].velocity[0], 0.0);
+    assert!(!blocked.fighters[1].fast_fall);
+
+    game.restore_checkpoint(&boundary).unwrap();
+    let ready = step(&mut game);
+    assert_eq!(ready.fighters[1].action, Action::Damage);
+    assert_eq!(ready.fighters[1].hitstun, 0);
+    let checkpoint = game.checkpoint();
+    let ordinary = step_with(&mut game, input);
+    assert_eq!(ordinary.fighters[1].action, Action::Damage);
+    assert!(ordinary.fighters[1].velocity[0] > ready.fighters[1].velocity[0]);
+    assert!(ordinary.fighters[1].fast_fall);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(step_with(&mut game, input), ordinary);
 }
 
 #[test]

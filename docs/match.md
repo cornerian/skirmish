@@ -163,7 +163,9 @@ ordinary knockback-level thresholds, while every fighter supplies complete
 ground, air and fly physics poses plus a height for each hurtbox. Selection uses
 post-armor knockback, the shared hitstun scale, pre-hit ground state and the
 contacted hurtbox. Sampled bones drive hurtboxes and ECBs; Damage waits for both
-animation and hitstun, holding its final pose when hitstun lasts longer.
+animation and hitstun, holding its final pose when hitstun lasts longer. When
+hitstun ends before an airborne motion, Damage switches to ordinary air physics
+and accepts fresh fast-fall or implemented air-action input.
 
 Optional `rules.staling` supplies the nine original common-data penalties and
 the debug bypass flag; each supported `Attack` then requires an explicit

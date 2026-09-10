@@ -17,7 +17,10 @@ Every motion contains one complete bone pose per physics frame. These evaluated
 bones drive environmental collision boxes, hurtboxes and later contacts without
 a renderer. Damage exits only after both hitstun and the supplied motion end. If
 hitstun is longer, the final pose remains active. A repeated hit immediately
-reselects the motion from its new post-armor knockback and contact height.
+reselects the motion from its new post-armor knockback and contact height. If a
+longer motion remains after hitstun, airborne Damage switches from locked damage
+physics to ordinary gravity, drift and fresh fast-fall input and can dispatch
+the implemented neutral special, aerial attack and double jump branches.
 
 Resources and rules are paired for every fighter. Validation rejects missing or
 extra profiles, incomplete hurtbox-height maps, empty or oversized motions,
@@ -32,9 +35,10 @@ through Rust and a host C adapter containing the byte-for-byte upstream level
 selection and motion table. `game_damage_motion` covers all ground/air levels
 and hurt heights, exact threshold equality, repeated-hit reselection,
 bone-derived hurtbox and ECB changes, animation/hitstun completion, final-pose
-holding, checkpoint replay, serialization and malformed resources.
+holding, airborne physics and air-action dispatch across the hitstun boundary,
+checkpoint replay, serialization and malformed resources.
 
 This profile does not supply authentic character poses or the rest of the
 damage callback graph. Floor-relative launch is supplied separately by the
 [grounded launch profile](grounded-launch.md). Elemental and character damage
-states, dynamic armor modifiers and input-lock behavior remain separate work.
+states and dynamic armor modifiers remain separate work.

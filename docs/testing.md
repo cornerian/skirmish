@@ -137,6 +137,7 @@ The [ordinary damage-motion profile](damage-motion.md) adds
 `game_damage_motion` coverage for every grounded/airborne knockback level and
 hurtbox height, strict threshold equality, repeated-hit reselection, sampled
 hurtbox/ECB geometry, animation versus hitstun completion, final-pose holding,
+airborne physics and special/aerial/jump dispatch across the hitstun boundary,
 checkpoint replay and malformed resources. `damage_motion_differential` runs
 arbitrary binary32 values through Rust and the byte-for-byte source level
 selection and 2x4x3 motion table in its host C adapter.
