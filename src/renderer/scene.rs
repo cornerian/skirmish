@@ -7,6 +7,7 @@ use std::{
     fs::File,
     io::{BufReader, Read},
     path::Path,
+    sync::Arc,
 };
 
 #[repr(C)]
@@ -26,12 +27,86 @@ pub enum CullMode {
     All,
 }
 
+/// Stable namespace of one archive represented by a visual export.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualResourceId(Arc<str>);
+
+impl VisualResourceId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(id: &str) -> Self {
+        Self(Arc::from(id))
+    }
+}
+
+/// Provenance required before visual offsets can be joined to a native manifest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VisualResourceProvenance {
+    id: VisualResourceId,
+    sha256: Arc<str>,
+}
+
+impl VisualResourceProvenance {
+    pub fn id(&self) -> &VisualResourceId {
+        &self.id
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+}
+
+/// Exact source JObj occurrence namespace for one exported draw.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualJointOccurrence {
+    pub resource_id: VisualResourceId,
+    /// Descriptor position in the visual export's declared joint offset space.
+    pub visual_offset: u32,
+}
+
+/// Exact DObj occurrence under one source JObj.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualDObjOccurrence {
+    pub owner_joint: VisualJointOccurrence,
+    pub dobj_index: u16,
+}
+
+/// Exact MObj occurrence used by one DObj.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualMaterialOccurrence {
+    pub owner_dobj: VisualDObjOccurrence,
+    /// Descriptor position in the visual export's declared material offset space.
+    pub visual_offset: MaterialSourceId,
+}
+
+/// Exact TObj occurrence used by one MObj.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VisualTextureOccurrence {
+    pub owner_material: VisualMaterialOccurrence,
+    pub tobj_index: u16,
+    /// Descriptor position in the visual export's declared texture offset space.
+    pub visual_offset: TextureSourceId,
+}
+
+/// Ordered source metadata for one authored texture stage.
+///
+/// `visual_offset` preserves legacy exporter metadata even when the complete
+/// resource/MObj/TObj occurrence tuple is unavailable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VisualTextureStageSource {
+    pub visual_offset: Option<TextureSourceId>,
+    pub occurrence: Option<VisualTextureOccurrence>,
+}
+
 /// Source MObj descriptor identity within one `skirmish-visual-v1` resource.
 ///
-/// The integer is an offset in the source archive's data section. It remains
-/// distinct from joints and texture stages so presentation adapters cannot
-/// accidentally target every material owned by one joint. Resource and runtime
-/// instance scope must be supplied by the future manifest/presentation bridge.
+/// The integer is retained in the visual export's coordinate space, which a
+/// presentation manifest must normalize before joining it to native data. It
+/// remains distinct from joints and texture stages so an adapter cannot target
+/// every material owned by one joint accidentally.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct MaterialSourceId(u32);
@@ -46,10 +121,11 @@ impl MaterialSourceId {
     }
 }
 
-/// Source TObj descriptor identity for the first texture stage retained by the preview.
+/// Source TObj visual offset for an authored texture stage.
 ///
-/// Like [`MaterialSourceId`], this offset is only unique within its visual
-/// resource; preserving all ordered stages belongs in the future manifest.
+/// Like [`MaterialSourceId`], this is resource-local and remains in the
+/// exporter's coordinate space. Ordered stage metadata is retained on
+/// [`Material::texture_sources`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct TextureSourceId(u32);
@@ -439,8 +515,10 @@ impl PixelEngineState {
 pub struct Material {
     /// Exact source MObj descriptor when exported; absent for legacy/procedural scenes.
     pub source_id: Option<MaterialSourceId>,
-    /// Exact source TObj descriptor for the previewed first texture stage.
-    pub texture_source_id: Option<TextureSourceId>,
+    /// Complete resource/JObj/DObj/MObj identity when exported by the exact schema.
+    pub source_occurrence: Option<VisualMaterialOccurrence>,
+    /// Source identity for every authored texture stage, in authored order.
+    pub texture_sources: Vec<VisualTextureStageSource>,
     /// Fixed source pass and the remaining original MObj render flags.
     pub render_mode: Option<RenderMode>,
     /// Effective exported pixel-engine state; absent only for legacy/procedural scenes.
@@ -457,6 +535,8 @@ pub struct Mesh {
     pub joint: Option<u32>,
     /// Stable exporter identity for repeated instances of the same source part.
     pub instance_id: Option<String>,
+    /// Complete resource/JObj/DObj identity, absent for legacy visual scenes.
+    pub source_occurrence: Option<VisualDObjOccurrence>,
     pub vertices: Vec<Vertex>,
     /// Counterclockwise front faces, converted from the source's winding at load time.
     pub indices: Vec<u32>,
@@ -508,6 +588,7 @@ pub struct Camera {
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub source: Option<String>,
+    pub resources: Vec<VisualResourceProvenance>,
     pub joints: Vec<Joint>,
     pub meshes: Vec<Mesh>,
     pub textures: Vec<Texture>,
@@ -524,6 +605,8 @@ struct Document {
     #[serde(default)]
     source: Option<String>,
     #[serde(default)]
+    resources: Vec<RawVisualResource>,
+    #[serde(default)]
     source_winding: Option<String>,
     meshes: Vec<RawMesh>,
     #[serde(default)]
@@ -539,6 +622,10 @@ struct RawMesh {
     name: String,
     #[serde(default)]
     joint: Option<u32>,
+    #[serde(default)]
+    resource_id: Option<String>,
+    #[serde(default)]
+    dobj_index: Option<u16>,
     #[serde(default)]
     instance_id: Option<String>,
     positions: Vec<[f32; 3]>,
@@ -561,6 +648,12 @@ struct RawMesh {
     material: Value,
     #[serde(default, alias = "cull")]
     cull_mode: Value,
+}
+
+#[derive(Deserialize)]
+struct RawVisualResource {
+    id: String,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -672,6 +765,8 @@ impl Scene {
             "unsupported scene schema: {}",
             document.schema
         );
+        let (resources, resource_ids) =
+            load_visual_resources(std::mem::take(&mut document.resources))?;
         let clockwise = match document.source_winding.as_deref() {
             None | Some("cw") => true,
             Some("ccw") => false,
@@ -691,6 +786,7 @@ impl Scene {
                 mesh.joint
             );
         }
+        validate_visual_joint_namespaces(&document.meshes, &resource_ids)?;
         if let Some(roots) = roots {
             for &root in roots {
                 ensure!(
@@ -721,6 +817,7 @@ impl Scene {
         let mut loaded = HashMap::new();
         let mut scene = Self {
             source: document.source,
+            resources,
             joints,
             meshes: Vec::new(),
             textures: Vec::new(),
@@ -781,9 +878,18 @@ impl Scene {
                 "{}: material must be an object",
                 raw.name
             );
+            let source_occurrence = visual_dobj_occurrence(&raw, &resource_ids)
+                .with_context(|| format!("{}: invalid source occurrence", raw.name))?;
             let material_source_id = optional_u32_field(&raw.material, "material_offset")
                 .with_context(|| format!("{}: invalid material_offset", raw.name))?
                 .map(MaterialSourceId::new);
+            let material_source_occurrence = source_occurrence
+                .as_ref()
+                .zip(material_source_id)
+                .map(|(owner_dobj, descriptor_offset)| VisualMaterialOccurrence {
+                    owner_dobj: owner_dobj.clone(),
+                    visual_offset: descriptor_offset,
+                });
             let render_mode = optional_u32_field(&raw.material, "render_mode")
                 .with_context(|| format!("{}: invalid render_mode", raw.name))?
                 .map(|bits| {
@@ -821,12 +927,52 @@ impl Scene {
             };
             let cull_mode =
                 cull_mode(cull).with_context(|| format!("{}: invalid cull mode", raw.name))?;
-            let (texture, texture_source_id) = if let Some(stages) =
+            let (texture, texture_sources) = if let Some(stages) =
                 raw.material.get("textures").filter(|v| !v.is_null())
             {
                 let stages = stages
                     .as_array()
                     .context("material textures must be an array")?;
+                let mut texture_sources = Vec::with_capacity(stages.len());
+                for (stage_index, stage) in stages.iter().enumerate() {
+                    ensure!(
+                        stage.is_object(),
+                        "{}: texture stage must be an object (index {stage_index})",
+                        raw.name
+                    );
+                    let descriptor_offset = optional_u32_field(stage, "tobj_offset")
+                        .with_context(|| {
+                            format!(
+                                "{}: invalid texture stage {stage_index} tobj_offset",
+                                raw.name
+                            )
+                        })?
+                        .map(TextureSourceId::new);
+                    let tobj_index =
+                        optional_u16_field(stage, "tobj_index").with_context(|| {
+                            format!(
+                                "{}: invalid texture stage {stage_index} tobj_index",
+                                raw.name
+                            )
+                        })?;
+                    let occurrence = visual_texture_occurrence(
+                        source_occurrence.as_ref(),
+                        material_source_occurrence.as_ref(),
+                        descriptor_offset,
+                        tobj_index,
+                        stage_index,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "{}: invalid texture stage {stage_index} occurrence",
+                            raw.name
+                        )
+                    })?;
+                    texture_sources.push(VisualTextureStageSource {
+                        visual_offset: descriptor_offset,
+                        occurrence,
+                    });
+                }
                 if stages.len() > 1 {
                     scene.warnings.push(format!(
                         "{}: only the first of {} texture stages is sampled.",
@@ -835,14 +981,6 @@ impl Scene {
                     ));
                 }
                 if let Some(stage) = stages.first() {
-                    ensure!(
-                        stage.is_object(),
-                        "{}: texture stage must be an object",
-                        raw.name
-                    );
-                    let texture_source_id = optional_u32_field(stage, "tobj_offset")
-                        .with_context(|| format!("{}: invalid first-stage tobj_offset", raw.name))?
-                        .map(TextureSourceId::new);
                     scene.warnings.push(format!("{}: first texture uses UV0, repeat wrapping and linear filtering; GX texture transforms, coordinate generation, LOD and texture operations are approximated.", raw.name));
                     if ["wrap_s", "wrap_t"].iter().any(|key| {
                         stage
@@ -880,12 +1018,12 @@ impl Scene {
                             None
                         }
                     };
-                    (texture, texture_source_id)
+                    (texture, texture_sources)
                 } else {
-                    (None, None)
+                    (None, Vec::new())
                 }
             } else {
-                (None, None)
+                (None, Vec::new())
             };
             for warning in raw
                 .material
@@ -970,11 +1108,13 @@ impl Scene {
                 name: raw.name,
                 joint: raw.joint,
                 instance_id: raw.instance_id,
+                source_occurrence,
                 vertices,
                 indices: raw.indices,
                 material: Material {
                     source_id: material_source_id,
-                    texture_source_id,
+                    source_occurrence: material_source_occurrence,
+                    texture_sources,
                     render_mode,
                     pixel_engine,
                     color,
@@ -1013,11 +1153,13 @@ impl Scene {
             name: "checker cube".into(),
             joint: None,
             instance_id: None,
+            source_occurrence: None,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
                 source_id: None,
-                texture_source_id: None,
+                source_occurrence: None,
+                texture_sources: Vec::new(),
                 render_mode: None,
                 pixel_engine: None,
                 color: [1.; 4],
@@ -1065,11 +1207,13 @@ impl Scene {
             name: "floor".into(),
             joint: None,
             instance_id: None,
+            source_occurrence: None,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
                 source_id: None,
-                texture_source_id: None,
+                source_occurrence: None,
+                texture_sources: Vec::new(),
                 render_mode: None,
                 pixel_engine: None,
                 color: [0.2, 0.24, 0.32, 1.],
@@ -1099,6 +1243,7 @@ impl Scene {
         }
         Self {
             source: None,
+            resources: Vec::new(),
             joints: Vec::new(),
             meshes: vec![cube, floor],
             textures: vec![Texture {
@@ -1185,6 +1330,124 @@ fn descends_from(joint: u32, roots: &[u32], parents: &HashMap<u32, Option<u32>>)
         current = parents[&offset];
     }
     false
+}
+
+fn load_visual_resources(
+    resources: Vec<RawVisualResource>,
+) -> Result<(
+    Vec<VisualResourceProvenance>,
+    HashMap<String, VisualResourceId>,
+)> {
+    let mut loaded = Vec::with_capacity(resources.len());
+    let mut ids = HashMap::with_capacity(resources.len());
+    for resource in resources {
+        ensure!(!resource.id.is_empty(), "visual resource ID is empty");
+        ensure!(
+            resource.sha256.len() == 64
+                && resource
+                    .sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+            "visual resource {:?} SHA-256 must be exactly 64 lowercase hexadecimal digits",
+            resource.id
+        );
+        let id = VisualResourceId(Arc::from(resource.id.as_str()));
+        ensure!(
+            ids.insert(resource.id.clone(), id.clone()).is_none(),
+            "duplicate visual resource ID {:?}",
+            resource.id
+        );
+        loaded.push(VisualResourceProvenance {
+            id,
+            sha256: Arc::from(resource.sha256),
+        });
+    }
+    Ok((loaded, ids))
+}
+
+fn visual_dobj_occurrence(
+    mesh: &RawMesh,
+    resource_ids: &HashMap<String, VisualResourceId>,
+) -> Result<Option<VisualDObjOccurrence>> {
+    let (resource_id, dobj_index) = match (&mesh.resource_id, mesh.dobj_index) {
+        (None, None) => return Ok(None),
+        (Some(resource_id), Some(dobj_index)) => (resource_id, dobj_index),
+        _ => bail!("resource_id and dobj_index must be present together"),
+    };
+    let resource_id = resource_ids
+        .get(resource_id)
+        .with_context(|| format!("undeclared visual resource {resource_id:?}"))?
+        .clone();
+    let descriptor_offset = mesh
+        .joint
+        .context("resource_id and dobj_index require a source joint")?;
+    Ok(Some(VisualDObjOccurrence {
+        owner_joint: VisualJointOccurrence {
+            resource_id,
+            visual_offset: descriptor_offset,
+        },
+        dobj_index,
+    }))
+}
+
+fn validate_visual_joint_namespaces(
+    meshes: &[RawMesh],
+    resource_ids: &HashMap<String, VisualResourceId>,
+) -> Result<()> {
+    let mut resources_by_joint = HashMap::<u32, VisualResourceId>::new();
+    for mesh in meshes {
+        let Some(occurrence) = visual_dobj_occurrence(mesh, resource_ids)
+            .with_context(|| format!("{}: invalid source occurrence", mesh.name))?
+        else {
+            continue;
+        };
+        let joint = &occurrence.owner_joint;
+        if let Some(previous) =
+            resources_by_joint.insert(joint.visual_offset, joint.resource_id.clone())
+        {
+            ensure!(
+                previous == joint.resource_id,
+                "source joint visual offset {} is shared by visual resources {:?} and {:?}; multi-resource joint topology is not yet representable",
+                joint.visual_offset,
+                previous.as_str(),
+                joint.resource_id.as_str()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn visual_texture_occurrence(
+    dobj_occurrence: Option<&VisualDObjOccurrence>,
+    material_occurrence: Option<&VisualMaterialOccurrence>,
+    descriptor_offset: Option<TextureSourceId>,
+    tobj_index: Option<u16>,
+    stage_index: usize,
+) -> Result<Option<VisualTextureOccurrence>> {
+    let Some(owner_material) = material_occurrence else {
+        if dobj_occurrence.is_some() {
+            bail!("exact mesh texture stages require material_offset");
+        } else {
+            ensure!(
+                tobj_index.is_none(),
+                "tobj_index requires an exact mesh resource_id/dobj_index occurrence"
+            );
+        }
+        return Ok(None);
+    };
+    let descriptor_offset = descriptor_offset
+        .context("exact material texture stages require tobj_offset and tobj_index")?;
+    let tobj_index =
+        tobj_index.context("exact material texture stages require tobj_offset and tobj_index")?;
+    ensure!(
+        usize::from(tobj_index) == stage_index,
+        "tobj_index {tobj_index} does not match texture-stage ordinal {stage_index}"
+    );
+    Ok(Some(VisualTextureOccurrence {
+        owner_material: owner_material.clone(),
+        tobj_index,
+        visual_offset: descriptor_offset,
+    }))
 }
 
 fn validate_attribute<const N: usize>(
@@ -1294,6 +1557,18 @@ fn optional_u32_field(value: &Value, field: &str) -> Result<Option<u32>> {
         .with_context(|| format!("{field} must be an unsigned integer"))?;
     Ok(Some(
         u32::try_from(integer).with_context(|| format!("{field} exceeds 32 bits"))?,
+    ))
+}
+
+fn optional_u16_field(value: &Value, field: &str) -> Result<Option<u16>> {
+    let Some(value) = value.get(field).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let integer = value
+        .as_u64()
+        .with_context(|| format!("{field} must be an unsigned integer"))?;
+    Ok(Some(
+        u16::try_from(integer).with_context(|| format!("{field} exceeds 16 bits"))?,
     ))
 }
 
@@ -1451,6 +1726,19 @@ mod tests {
         })
     }
 
+    fn exact_document(material: Value) -> Value {
+        let mut document = document(material);
+        document["resources"] = json!([{
+            "id": "fixture.dat",
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        }]);
+        document["joints"] = json!([{"name": "root", "offset": 256}]);
+        document["meshes"][0]["joint"] = json!(256);
+        document["meshes"][0]["resource_id"] = json!("fixture.dat");
+        document["meshes"][0]["dobj_index"] = json!(2);
+        document
+    }
+
     fn load_document(root: &Path, document: &Value) -> Result<Scene> {
         let path = root.join("scene.json");
         fs::write(&path, serde_json::to_vec(document)?)?;
@@ -1489,7 +1777,7 @@ mod tests {
             &document(json!({
                 "material_offset": material_offset,
                 "render_mode": render_mode,
-                "textures": [{"tobj_offset": texture_offset}],
+                "textures": [{"tobj_offset": texture_offset}, {}],
             })),
         )
         .unwrap();
@@ -1499,10 +1787,14 @@ mod tests {
             material.source_id,
             Some(MaterialSourceId::new(material_offset))
         );
+        assert_eq!(material.texture_sources.len(), 2);
         assert_eq!(
-            material.texture_source_id,
+            material.texture_sources[0].visual_offset,
             Some(TextureSourceId::new(texture_offset))
         );
+        assert_eq!(material.texture_sources[0].occurrence, None);
+        assert_eq!(material.texture_sources[1].visual_offset, None);
+        assert_eq!(material.texture_sources[1].occurrence, None);
         let mode = material.render_mode.unwrap();
         assert_eq!(mode.bits(), render_mode);
         assert_eq!(mode.class(), RenderModeClass::Translucent);
@@ -1511,12 +1803,194 @@ mod tests {
             Some(PixelEngineState::from_render_mode(mode))
         );
         assert_eq!(material.texture, None, "identity survives a missing PNG");
+        assert!(scene.resources.is_empty());
+        assert_eq!(scene.meshes[0].source_occurrence, None);
+        assert_eq!(material.source_occurrence, None);
 
         let legacy = load_document(directory.path(), &document(json!({}))).unwrap();
         assert_eq!(legacy.meshes[0].material.source_id, None);
-        assert_eq!(legacy.meshes[0].material.texture_source_id, None);
+        assert!(legacy.meshes[0].material.texture_sources.is_empty());
         assert_eq!(legacy.meshes[0].material.render_mode, None);
         assert_eq!(legacy.meshes[0].material.pixel_engine, None);
+        assert!(legacy.resources.is_empty());
+        assert_eq!(legacy.meshes[0].source_occurrence, None);
+    }
+
+    #[test]
+    fn exact_visual_resource_and_occurrence_metadata_is_retained() {
+        let directory = tempfile::tempdir().unwrap();
+        let material_offset = 0x440;
+        let texture_offset = 0x480;
+        let scene = load_document(
+            directory.path(),
+            &exact_document(json!({
+                "material_offset": material_offset,
+                "textures": [
+                    {"tobj_offset": texture_offset, "tobj_index": 0},
+                    {"tobj_offset": 0x4c0, "tobj_index": 1},
+                ],
+            })),
+        )
+        .unwrap();
+
+        assert_eq!(scene.resources.len(), 1);
+        assert_eq!(scene.resources[0].id().as_str(), "fixture.dat");
+        assert_eq!(
+            scene.resources[0].sha256(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+        let mesh = &scene.meshes[0];
+        let dobj = mesh.source_occurrence.as_ref().unwrap();
+        assert_eq!(dobj.owner_joint.resource_id.as_str(), "fixture.dat");
+        assert_eq!(dobj.owner_joint.visual_offset, 256);
+        assert_eq!(dobj.dobj_index, 2);
+
+        let material = mesh.material.source_occurrence.as_ref().unwrap();
+        assert_eq!(&material.owner_dobj, dobj);
+        assert_eq!(
+            material.visual_offset,
+            MaterialSourceId::new(material_offset)
+        );
+        assert_eq!(mesh.material.texture_sources.len(), 2);
+        assert_eq!(
+            mesh.material.texture_sources[0].visual_offset,
+            Some(TextureSourceId::new(texture_offset))
+        );
+        let texture = mesh.material.texture_sources[0]
+            .occurrence
+            .as_ref()
+            .unwrap();
+        assert_eq!(&texture.owner_material, material);
+        assert_eq!(texture.tobj_index, 0);
+        assert_eq!(texture.visual_offset, TextureSourceId::new(texture_offset));
+        assert_eq!(
+            mesh.material.texture_sources[1].visual_offset,
+            Some(TextureSourceId::new(0x4c0))
+        );
+        let second = mesh.material.texture_sources[1]
+            .occurrence
+            .as_ref()
+            .unwrap();
+        assert_eq!(second.tobj_index, 1);
+        assert_eq!(second.visual_offset, TextureSourceId::new(0x4c0));
+    }
+
+    #[test]
+    fn malformed_visual_resource_and_occurrence_metadata_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut empty_resource = exact_document(json!({}));
+        empty_resource["resources"][0]["id"] = json!("");
+        let mut invalid_hash = exact_document(json!({}));
+        invalid_hash["resources"][0]["sha256"] =
+            json!("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeF");
+        let mut duplicate_resource = exact_document(json!({}));
+        let duplicate = duplicate_resource["resources"][0].clone();
+        duplicate_resource["resources"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        let mut duplicate_joint = exact_document(json!({}));
+        let duplicate = duplicate_joint["joints"][0].clone();
+        duplicate_joint["joints"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        let mut colliding_resource_joint = exact_document(json!({}));
+        colliding_resource_joint["resources"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "id": "other.dat",
+                "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            }));
+        let mut colliding_mesh = colliding_resource_joint["meshes"][0].clone();
+        colliding_mesh["name"] = json!("other triangle");
+        colliding_mesh["resource_id"] = json!("other.dat");
+        colliding_mesh["dobj_index"] = json!(3);
+        colliding_resource_joint["meshes"]
+            .as_array_mut()
+            .unwrap()
+            .push(colliding_mesh);
+        let mut missing_dobj = exact_document(json!({}));
+        missing_dobj["meshes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("dobj_index");
+        let mut missing_resource = exact_document(json!({}));
+        missing_resource["meshes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("resource_id");
+        let mut missing_joint = exact_document(json!({}));
+        missing_joint["meshes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("joint");
+        let mut unknown_resource = exact_document(json!({}));
+        unknown_resource["meshes"][0]["resource_id"] = json!("other.dat");
+        let partial_texture = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480}],
+        }));
+        let missing_texture_identity = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{}],
+        }));
+        let mut missing_texture_offset = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0}],
+        }));
+        missing_texture_offset["meshes"][0]["material"]["textures"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("tobj_offset");
+        let wrong_texture_index = exact_document(json!({
+            "material_offset": 0x440,
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 1}],
+        }));
+        let texture_without_material = exact_document(json!({
+            "textures": [{"tobj_offset": 0x480, "tobj_index": 0}],
+        }));
+        let anonymous_texture_without_material = exact_document(json!({
+            "textures": [{}],
+        }));
+
+        let cases = [
+            (empty_resource, "resource ID is empty"),
+            (invalid_hash, "64 lowercase hexadecimal digits"),
+            (duplicate_resource, "duplicate visual resource ID"),
+            (duplicate_joint, "duplicate source joint offset"),
+            (colliding_resource_joint, "shared by visual resources"),
+            (
+                missing_dobj,
+                "resource_id and dobj_index must be present together",
+            ),
+            (
+                missing_resource,
+                "resource_id and dobj_index must be present together",
+            ),
+            (missing_joint, "require a source joint"),
+            (unknown_resource, "undeclared visual resource"),
+            (partial_texture, "require tobj_offset and tobj_index"),
+            (
+                missing_texture_identity,
+                "require tobj_offset and tobj_index",
+            ),
+            (missing_texture_offset, "require tobj_offset and tobj_index"),
+            (wrong_texture_index, "does not match texture-stage ordinal"),
+            (texture_without_material, "require material_offset"),
+            (
+                anonymous_texture_without_material,
+                "require material_offset",
+            ),
+        ];
+        for (document, expected) in cases {
+            let error = load_document(directory.path(), &document).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(expected),
+                "unexpected error: {error:#}"
+            );
+        }
     }
 
     #[test]

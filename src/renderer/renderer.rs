@@ -10,6 +10,7 @@ use super::platform::SdlSurface;
 use super::scene::{
     Camera, CullMode, MaterialSourceId, Mesh, PeAlphaTest, PeBlendFactor, PeBlendMode,
     PeBlendState, PeCompare, PixelEngineState, RenderMode, RenderModeClass, Scene, Texture, Vertex,
+    VisualDObjOccurrence, VisualJointOccurrence, VisualMaterialOccurrence,
 };
 use super::viewport::{PresentationTransform, fitted_viewport};
 
@@ -18,23 +19,26 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// Selects draw parts attached to one exported joint for visibility updates.
 ///
-/// `instance_id` is an exact match: `None` only selects untagged parts. A source
-/// joint may own several materials and draw parts, all of which intentionally
-/// share its branch visibility. This is not a runtime scene-instance identity.
+/// Exact selectors include resource provenance and never collide across visual
+/// resources. Bare visual offsets are available only for legacy scenes that do
+/// not carry exact occurrences. Runtime scene-instance identity is separate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExportDrawSelector<'a> {
-    pub joint: u32,
-    pub instance_id: Option<&'a str>,
+pub enum ExportDrawSelector<'a> {
+    Exact(&'a VisualJointOccurrence),
+    Legacy {
+        joint: u32,
+        instance_id: Option<&'a str>,
+    },
 }
 
-/// Selects every draw using one source MObj offset in the loaded visual resource.
+/// Selects every draw using one exact MObj occurrence or legacy visual offset.
 ///
-/// One MObj may intentionally feed several draw parts. Legacy/procedural draws
-/// without source metadata cannot be selected through this source-facing API.
-/// This transitional selector does not distinguish future runtime clones.
+/// The legacy form intentionally excludes draws that carry exact occurrence
+/// metadata, even if their bare MObj offsets happen to match.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExportMaterialSelector {
-    pub source_id: MaterialSourceId,
+pub enum ExportMaterialSelector<'a> {
+    Exact(&'a VisualMaterialOccurrence),
+    Legacy { source_id: MaterialSourceId },
 }
 
 /// One type-safe mutable update over immutable scene resources.
@@ -49,7 +53,7 @@ pub enum DrawUpdate<'a> {
         visible: bool,
     },
     MaterialColor {
-        target: ExportMaterialSelector,
+        target: ExportMaterialSelector<'a>,
         color: [f32; 4],
     },
 }
@@ -58,16 +62,35 @@ pub enum DrawUpdate<'a> {
 struct ExportDrawIdentity {
     joint: Option<u32>,
     instance_id: Option<String>,
+    source_occurrence: Option<VisualDObjOccurrence>,
     material_source_id: Option<MaterialSourceId>,
+    material_source_occurrence: Option<VisualMaterialOccurrence>,
 }
 
 impl ExportDrawIdentity {
     fn matches_joint(&self, selector: ExportDrawSelector<'_>) -> bool {
-        self.joint == Some(selector.joint) && self.instance_id.as_deref() == selector.instance_id
+        match selector {
+            ExportDrawSelector::Exact(target) => self
+                .source_occurrence
+                .as_ref()
+                .is_some_and(|source| &source.owner_joint == target),
+            ExportDrawSelector::Legacy { joint, instance_id } => {
+                self.source_occurrence.is_none()
+                    && self.joint == Some(joint)
+                    && self.instance_id.as_deref() == instance_id
+            }
+        }
     }
 
-    fn matches_material(&self, selector: ExportMaterialSelector) -> bool {
-        self.material_source_id == Some(selector.source_id)
+    fn matches_material(&self, selector: ExportMaterialSelector<'_>) -> bool {
+        match selector {
+            ExportMaterialSelector::Exact(target) => {
+                self.material_source_occurrence.as_ref() == Some(target)
+            }
+            ExportMaterialSelector::Legacy { source_id } => {
+                self.source_occurrence.is_none() && self.material_source_id == Some(source_id)
+            }
+        }
     }
 }
 
@@ -76,7 +99,9 @@ impl From<&Mesh> for ExportDrawIdentity {
         Self {
             joint: mesh.joint,
             instance_id: mesh.instance_id.clone(),
+            source_occurrence: mesh.source_occurrence.clone(),
             material_source_id: mesh.material.source_id,
+            material_source_occurrence: mesh.material.source_occurrence.clone(),
         }
     }
 }
@@ -1202,7 +1227,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use super::super::scene::{PeAlphaOp, RenderMode};
+    use super::super::scene::{PeAlphaOp, RenderMode, VisualResourceId};
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1259,6 +1284,31 @@ mod tests {
         DrawPresentation::from_mesh(mesh, &Scene::demo().textures)
     }
 
+    fn exact_exported_mesh(
+        resource_id: &str,
+        joint: u32,
+        dobj_index: u16,
+        material_offset: u32,
+    ) -> Mesh {
+        let mut mesh = exported_mesh(joint, None, true, [1.0; 4]);
+        let owner_joint = VisualJointOccurrence {
+            resource_id: VisualResourceId::for_test(resource_id),
+            visual_offset: joint,
+        };
+        let owner_dobj = VisualDObjOccurrence {
+            owner_joint,
+            dobj_index,
+        };
+        let visual_offset = MaterialSourceId::new(material_offset);
+        mesh.source_occurrence = Some(owner_dobj.clone());
+        mesh.material.source_id = Some(visual_offset);
+        mesh.material.source_occurrence = Some(VisualMaterialOccurrence {
+            owner_dobj,
+            visual_offset,
+        });
+        mesh
+    }
+
     fn solid_quad_scene(color: [f32; 4]) -> Scene {
         let vertices = [
             [-1.0, -1.0, 0.0],
@@ -1276,16 +1326,19 @@ mod tests {
         .collect();
         Scene {
             source: None,
+            resources: Vec::new(),
             joints: Vec::new(),
             meshes: vec![Mesh {
                 name: "solid quad".into(),
                 joint: Some(7),
                 instance_id: Some("quad".into()),
+                source_occurrence: None,
                 vertices,
                 indices: vec![0, 1, 2, 0, 2, 3],
                 material: super::super::scene::Material {
                     source_id: Some(MaterialSourceId::new(100)),
-                    texture_source_id: None,
+                    source_occurrence: None,
+                    texture_sources: Vec::new(),
                     render_mode: None,
                     pixel_engine: None,
                     color,
@@ -1491,7 +1544,9 @@ mod tests {
             ExportDrawIdentity {
                 joint: Some(0x1234),
                 instance_id: Some("cursor-2".into()),
+                source_occurrence: None,
                 material_source_id: None,
+                material_source_occurrence: None,
             }
         );
         assert_eq!(
@@ -1504,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn export_selector_matches_exact_joint_and_optional_instance() {
+    fn legacy_export_selector_matches_joint_and_optional_instance() {
         let meshes = [
             exported_mesh(7, Some("clone-a"), true, [1.; 4]),
             exported_mesh(7, Some("clone-a"), true, [1.; 4]),
@@ -1518,7 +1573,7 @@ mod tests {
             .iter_mut()
             .map(|draw| {
                 usize::from(draw.update(DrawUpdate::Visibility {
-                    target: ExportDrawSelector {
+                    target: ExportDrawSelector::Legacy {
                         joint: 7,
                         instance_id: Some("clone-a"),
                     },
@@ -1535,10 +1590,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             [true, true, false, false, false]
         );
-        assert!(presentations[3].identity.matches_joint(ExportDrawSelector {
-            joint: 7,
-            instance_id: None,
-        }));
+        assert!(
+            presentations[3]
+                .identity
+                .matches_joint(ExportDrawSelector::Legacy {
+                    joint: 7,
+                    instance_id: None,
+                })
+        );
     }
 
     #[test]
@@ -1548,7 +1607,7 @@ mod tests {
         let mut presentation = exported_presentation(&mesh);
 
         assert!(presentation.update(DrawUpdate::Visibility {
-            target: ExportDrawSelector {
+            target: ExportDrawSelector::Legacy {
                 joint: 42,
                 instance_id: None,
             },
@@ -1560,7 +1619,7 @@ mod tests {
     }
 
     #[test]
-    fn material_selector_requires_exact_source_identity() {
+    fn legacy_material_selector_requires_source_identity() {
         let material_a = MaterialSourceId::new(100);
         let material_b = MaterialSourceId::new(200);
         let mut meshes = [
@@ -1578,7 +1637,7 @@ mod tests {
             .iter_mut()
             .map(|draw| {
                 usize::from(draw.update(DrawUpdate::MaterialColor {
-                    target: ExportMaterialSelector {
+                    target: ExportMaterialSelector::Legacy {
                         source_id: material_a,
                     },
                     color: [0.25, 0.5, 0.75, 1.0],
@@ -1600,13 +1659,117 @@ mod tests {
             ]
         );
         assert!(!presentations[3].update(DrawUpdate::MaterialColor {
-            target: ExportMaterialSelector {
+            target: ExportMaterialSelector::Legacy {
                 source_id: material_a,
             },
             color: [0.0; 4],
         }));
         assert_eq!(presentations[3].state.material_color, [1.0; 4]);
         assert_eq!(presentations[2].state.material_color, [1.0; 4]);
+    }
+
+    #[test]
+    fn exact_visibility_does_not_broadcast_across_resource_colliding_joints() {
+        let mut legacy = exported_mesh(7, None, true, [1.0; 4]);
+        legacy.material.source_id = Some(MaterialSourceId::new(100));
+        let meshes = [
+            exact_exported_mesh("resource-a", 7, 0, 100),
+            exact_exported_mesh("resource-a", 7, 0, 100),
+            exact_exported_mesh("resource-a", 7, 1, 100),
+            exact_exported_mesh("resource-b", 7, 0, 100),
+            legacy,
+        ];
+        let joint_a = meshes[0]
+            .source_occurrence
+            .as_ref()
+            .unwrap()
+            .owner_joint
+            .clone();
+        let mut presentations = meshes.iter().map(exported_presentation).collect::<Vec<_>>();
+
+        let exact_matches = presentations
+            .iter_mut()
+            .map(|draw| {
+                usize::from(draw.update(DrawUpdate::Visibility {
+                    target: ExportDrawSelector::Exact(&joint_a),
+                    visible: true,
+                }))
+            })
+            .sum::<usize>();
+        let legacy_matches = presentations
+            .iter_mut()
+            .map(|draw| {
+                usize::from(draw.update(DrawUpdate::Visibility {
+                    target: ExportDrawSelector::Legacy {
+                        joint: 7,
+                        instance_id: None,
+                    },
+                    visible: true,
+                }))
+            })
+            .sum::<usize>();
+
+        assert_eq!(exact_matches, 3, "the exact joint owns three draw parts");
+        assert_eq!(legacy_matches, 1, "legacy offsets exclude exact draws");
+        assert_eq!(
+            presentations
+                .iter()
+                .map(|draw| draw.state.visible)
+                .collect::<Vec<_>>(),
+            [true, true, true, false, true]
+        );
+    }
+
+    #[test]
+    fn exact_material_does_not_broadcast_across_reused_offsets_or_dobjs() {
+        let mut legacy = exported_mesh(7, None, false, [1.0; 4]);
+        legacy.material.source_id = Some(MaterialSourceId::new(100));
+        let meshes = [
+            exact_exported_mesh("resource-a", 7, 0, 100),
+            exact_exported_mesh("resource-a", 7, 0, 100),
+            exact_exported_mesh("resource-a", 7, 1, 100),
+            exact_exported_mesh("resource-b", 7, 0, 100),
+            legacy,
+        ];
+        let material_a0 = meshes[0].material.source_occurrence.clone().unwrap();
+        let mut presentations = meshes.iter().map(exported_presentation).collect::<Vec<_>>();
+
+        let exact_matches = presentations
+            .iter_mut()
+            .map(|draw| {
+                usize::from(draw.update(DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector::Exact(&material_a0),
+                    color: [0.25, 0.5, 0.75, 1.0],
+                }))
+            })
+            .sum::<usize>();
+        let legacy_matches = presentations
+            .iter_mut()
+            .map(|draw| {
+                usize::from(draw.update(DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector::Legacy {
+                        source_id: MaterialSourceId::new(100),
+                    },
+                    color: [0.0, 1.0, 0.0, 1.0],
+                }))
+            })
+            .sum::<usize>();
+
+        assert_eq!(exact_matches, 2, "one exact MObj occurrence is reused");
+        assert_eq!(legacy_matches, 1, "legacy offsets exclude exact draws");
+        assert_eq!(
+            presentations
+                .iter()
+                .map(|draw| draw.state.material_color)
+                .collect::<Vec<_>>(),
+            [
+                [0.25, 0.5, 0.75, 1.0],
+                [0.25, 0.5, 0.75, 1.0],
+                [1.0; 4],
+                [1.0; 4],
+                [0.0, 1.0, 0.0, 1.0],
+            ]
+        );
     }
 
     #[test]
@@ -1644,7 +1807,7 @@ mod tests {
             let mut presentation = exported_presentation(&mesh);
 
             assert!(presentation.update(DrawUpdate::MaterialColor {
-                target: ExportMaterialSelector {
+                target: ExportMaterialSelector::Legacy {
                     source_id: material,
                 },
                 color: update,
@@ -1690,7 +1853,7 @@ mod tests {
             DrawRenderClass::Translucent
         );
         assert!(opaque_presentation.update(DrawUpdate::MaterialColor {
-            target: ExportMaterialSelector {
+            target: ExportMaterialSelector::Legacy {
                 source_id: material,
             },
             color: [1.0, 1.0, 1.0, 0.25],
@@ -1731,7 +1894,7 @@ mod tests {
         assert_eq!(presentation.render_class, DrawRenderClass::Opaque);
 
         assert!(presentation.update(DrawUpdate::MaterialColor {
-            target: ExportMaterialSelector {
+            target: ExportMaterialSelector::Legacy {
                 source_id: material,
             },
             color: [1.0, 1.0, 1.0, 0.25],
@@ -1835,7 +1998,7 @@ mod tests {
             let hidden = capture_gpu_rgba(&gpu, 257, 193).await?;
             assert_eq!(
                 gpu.update_draws(DrawUpdate::Visibility {
-                    target: ExportDrawSelector {
+                    target: ExportDrawSelector::Legacy {
                         joint: 7,
                         instance_id: Some("cube"),
                     },
@@ -1874,7 +2037,7 @@ mod tests {
             let red = capture_gpu_rgba(&gpu, 257, 193).await?;
             assert_eq!(
                 gpu.update_draws(DrawUpdate::MaterialColor {
-                    target: ExportMaterialSelector {
+                    target: ExportMaterialSelector::Legacy {
                         source_id: MaterialSourceId::new(100),
                     },
                     color: [0.0, 0.0, 1.0, 1.0],
@@ -1883,7 +2046,7 @@ mod tests {
             );
             assert_eq!(
                 gpu.update_draws(DrawUpdate::MaterialColor {
-                    target: ExportMaterialSelector {
+                    target: ExportMaterialSelector::Legacy {
                         source_id: MaterialSourceId::new(100),
                     },
                     color: [0.0, 1.0, 0.0, 1.0],
@@ -1896,7 +2059,7 @@ mod tests {
                 .position(|draw| {
                     draw.presentation
                         .identity
-                        .matches_joint(ExportDrawSelector {
+                        .matches_joint(ExportDrawSelector::Legacy {
                             joint: 7,
                             instance_id: Some("quad"),
                         })
