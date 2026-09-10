@@ -1,12 +1,15 @@
 //! Match-level wall-jump contacts, motion, stage speed and deterministic state.
 
-#[path = "support/conformance.rs"]
-mod support;
+#[path = "support/aerial.rs"]
+mod aerial_resources;
+#[path = "support/special.rs"]
+mod special_resources;
+use aerial_resources::conformance as support;
 
 use skirmish::{
     collision::{ecb, stage},
     game::{
-        Action, Controller, Event, Match, State,
+        Action, BUTTON_A, BUTTON_B, BUTTON_X, Controller, Event, Match, State,
         data::{CollisionBox, MatchData, StageGeometry},
         stage_motion::{Rules as MotionRules, Track, Transform},
         wall_jump::{Attributes, Rules},
@@ -173,6 +176,32 @@ fn startup_and_sampled_motion_replay_bit_exactly_from_a_checkpoint() {
     assert_eq!(actual, expected);
     assert_eq!(actual[0].fighters[0].wall_jump.startup_timer, 1);
     assert_eq!(actual[1].fighters[0].velocity[1], 4.0);
+}
+
+#[test]
+fn ordinary_wall_jump_dispatches_supported_air_actions_after_startup() {
+    for (buttons, expected) in [
+        (BUTTON_B, Action::SpecialAirN),
+        (BUTTON_A, Action::AttackAirN),
+        (BUTTON_X, Action::JumpAerial),
+        (BUTTON_A | BUTTON_X, Action::AttackAirN),
+        (BUTTON_A | BUTTON_B, Action::SpecialAirN),
+    ] {
+        let mut resource = data();
+        let mut aerial = aerial_resources::data();
+        for player in 0..2 {
+            resource.fighters[player].aerials = aerial.fighters[player].aerials.take();
+        }
+        let resource = special_resources::profile(resource);
+        let mut game = Match::new(resource, 23).unwrap();
+        approach(&mut game, 1.0);
+        while game.state().fighters[0].wall_jump.startup_timer != 0 {
+            step(&mut game, -1.0);
+        }
+        let mut input = IDLE;
+        input[0].buttons = buttons;
+        assert_eq!(game.step(input).unwrap().fighters[0].action, expected);
+    }
 }
 
 #[test]

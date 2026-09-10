@@ -63,10 +63,12 @@ pub(crate) fn update_actions(
                 | Action::SquatRv
         );
     let air = !fighter.grounded
-        && (matches!(
-            fighter.action,
-            Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass
-        ) || super::aerial::interruptible(fighter));
+        && (super::damage::wall_tech_interruptible(fighter)
+            || matches!(
+                fighter.action,
+                Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass
+            )
+            || super::aerial::interruptible(fighter));
     let pressed = input.buttons & !fighter.previous_input.buttons;
     if (ground || air) && neutral_input(pressed, input.stick, parameters.neutral_thresholds) {
         super::simulation::enter(

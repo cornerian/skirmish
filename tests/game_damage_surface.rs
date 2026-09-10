@@ -1,9 +1,14 @@
 //! Match-level wall and ceiling damage reflection through ordinary inputs.
 //! Exact mirror arithmetic is covered separately against the original C body.
+#[path = "support/aerial.rs"]
+mod aerial_resources;
+#[path = "support/special.rs"]
+mod special_resources;
+
 use skirmish::{
     collision::{ecb, stage},
     game::{
-        Action, BUTTON_A, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
+        Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
         damage::{
             FloorResponseRules, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
         },
@@ -181,6 +186,29 @@ fn add_ordinary_wall_jump(data: &mut MatchData) {
             frames,
         });
     }
+}
+
+fn interrupt_data(angle: f32) -> MatchData {
+    let mut data = tech_data(angle);
+    let mut aerial = aerial_resources::data();
+    for player in 0..2 {
+        data.fighters[player].locomotion = aerial.fighters[player].locomotion.take();
+        data.fighters[player].aerials = aerial.fighters[player].aerials.take();
+    }
+    special_resources::profile(data)
+}
+
+fn released_neutral_wall_tech(data: MatchData) -> Match {
+    let mut game = hit(data);
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::PassiveWall
+    });
+    while game.state().fighters[1].surface_tech.timer != 0 {
+        step(&mut game);
+    }
+    assert_eq!(game.state().fighters[1].action, Action::PassiveWall);
+    game
 }
 
 fn attack() -> [Controller; 2] {
@@ -540,6 +568,66 @@ fn jump_input_on_the_freeze_release_frame_does_not_convert_the_wall_tech() {
     assert_eq!(released.fighters[1].surface_tech.timer, 0);
     assert!(!released.fighters[1].surface_tech.jump_queued);
     assert_eq!(released.fighters[1].velocity, [-1.9, 0.0]);
+}
+
+#[test]
+fn released_wall_tech_dispatches_supported_air_actions_in_source_priority() {
+    for (buttons, stick, expected) in [
+        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
+        (BUTTON_X, [0.0; 2], Action::JumpAerial),
+        (BUTTON_A | BUTTON_X, [0.0, 1.0], Action::AttackAirHi),
+        (BUTTON_A | BUTTON_B, [0.0; 2], Action::SpecialAirN),
+    ] {
+        let mut game = released_neutral_wall_tech(interrupt_data(0.0));
+        let mut input = IDLE;
+        input[1].buttons = buttons;
+        input[1].stick = stick;
+        assert_eq!(step_with(&mut game, input).fighters[1].action, expected);
+    }
+}
+
+#[test]
+fn frozen_wall_tech_blocks_air_actions_and_requires_a_fresh_edge_after_release() {
+    let mut game = hit(interrupt_data(0.0));
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::PassiveWall
+    });
+    let mut held = IDLE;
+    held[1].buttons = BUTTON_B;
+    while game.state().fighters[1].surface_tech.timer != 0 {
+        assert_eq!(
+            step_with(&mut game, held).fighters[1].action,
+            Action::PassiveWall
+        );
+    }
+    assert_eq!(
+        step_with(&mut game, held).fighters[1].action,
+        Action::PassiveWall
+    );
+    step(&mut game);
+    assert_eq!(
+        step_with(&mut game, held).fighters[1].action,
+        Action::SpecialAirN
+    );
+}
+
+#[test]
+fn ceiling_tech_does_not_dispatch_wall_tech_air_interrupts() {
+    for buttons in [BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_A | BUTTON_B | BUTTON_X] {
+        let mut game = hit(interrupt_data(90.0));
+        buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+        until(&mut game, |state| {
+            state.fighters[1].action == Action::PassiveCeiling
+        });
+        let mut input = IDLE;
+        input[1].buttons = buttons;
+        assert_eq!(
+            step_with(&mut game, input).fighters[1].action,
+            Action::PassiveCeiling
+        );
+    }
 }
 
 #[test]

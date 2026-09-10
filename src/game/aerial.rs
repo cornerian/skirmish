@@ -119,11 +119,14 @@ pub(crate) fn update(f: &mut Fighter, data: &FighterData, input: Controller) -> 
     {
         return true;
     }
+    let wall_tech = super::damage::wall_tech_interruptible(f);
     if f.grounded
-        || !(matches!(
-            f.action,
-            Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass
-        ) || attack_index(f.action).is_some())
+        || !(wall_tech
+            || matches!(
+                f.action,
+                Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass
+            )
+            || attack_index(f.action).is_some())
     {
         return false;
     }
@@ -152,7 +155,7 @@ pub(crate) fn update(f: &mut Fighter, data: &FighterData, input: Controller) -> 
         commands(f, &p.moves[index]);
         return true;
     }
-    if attack_index(f.action).is_some() {
+    if attack_index(f.action).is_some() || wall_tech {
         super::locomotion::try_aerial_jump(f, data, input);
         return true;
     }

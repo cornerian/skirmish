@@ -1164,6 +1164,14 @@ pub(crate) fn update_actions(
     true
 }
 
+pub(crate) fn wall_tech_interruptible(fighter: &Fighter) -> bool {
+    matches!(
+        fighter.action,
+        Action::PassiveWall | Action::PassiveWallJump
+    ) && fighter.surface_tech.timer == 0
+        && fighter.wall_jump.startup_timer == 0
+}
+
 pub(crate) fn can_reflect(
     fighter: &Fighter,
     surface: crate::collision::stage::Surface,

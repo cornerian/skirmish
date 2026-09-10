@@ -16,6 +16,17 @@ and deterministic checkpoint suffix. Exact jump selection and launch arithmetic
 remain compared with their complete pinned C bodies over arbitrary binary32
 inputs.
 
+The 2026-09-10 wall-tech air-interrupt batch is recorded at:
+
+`/mnt/archive/runs/skirmish-wall-tech-air-interrupts-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage holds actions through frozen wall
+tech startup, rearms fresh input after release, dispatches neutral special,
+aerial attack and double jump in source priority, applies the same branches to
+ordinary wall jumps and preserves the ceiling tech's empty interrupt callback.
+
 The 2026-09-09 grounded-launch coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ground-launch-20260909`

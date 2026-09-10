@@ -30,6 +30,10 @@ A neutral wall tech can queue a fresh jump or inclusive upward-stick input while
 the freeze timer remains nonzero. When the timer expires, it switches to the
 damage wall-jump pose track at the same action frame and uses wall-jump launch
 velocity. Input first supplied on the release frame is too late to convert it.
+Once released, the wall actions dispatch the implemented airborne neutral
+special, aerial attack and available aerial jump branches in source priority.
+Inputs during the freeze cannot start those actions, and held buttons require a
+fresh edge afterward. Ceiling tech retains its empty source interrupt callback.
 A ceiling contact enters `PassiveCeiling`; its configured script frame samples
 horizontal input, applies the fighter's ceiling speed and then recovers to
 `Fall`. Their sampled skeletons drive hurtbox and bone-based ECB geometry in
@@ -56,8 +60,9 @@ neutral and jump wall techs, both wall orientations, ceiling input motion, exact
 configured action durations, floor and wall priority, shoulder repeat lockout,
 all three pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
-profile omission, an unmet threshold, malformed resources and deterministic
-checkpoint suffixes.
+post-freeze air-action timing and priority, ceiling non-interruption, profile
+omission, an unmet threshold, malformed resources and deterministic checkpoint
+suffixes.
 These fixtures use invented stage and fighter data.
 
 Missed-tech choices, invincibility, effect/audio commands, the complete collision

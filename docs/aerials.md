@@ -16,10 +16,10 @@ hitboxes, hurtboxes and bone ECB points through the same physics path as jab.
 
 Command-state samples carry the landing-lag and interrupt flags plus an optional
 one-shot facing reversal. Hitlag cannot replay the reversal. Interruptible
-frames permit another ordinary aerial or an available ordinary double jump;
-aerial selection has priority over that jump. Exhausting attack samples enters
-Fall. Item throws, character-specific overrides, aerial dodges, specials and
-the remaining interrupt branches are unported.
+frames and released wall-tech actions permit another ordinary aerial or an
+available ordinary double jump; aerial selection has priority over that jump.
+Exhausting attack samples enters Fall. Item throws, character-specific
+overrides, aerial dodges and the remaining interrupt branches are unported.
 
 Floor contact with the landing-lag flag enters the corresponding LandingAir
 action. Otherwise it uses ordinary Landing (autocancel). Logical shoulder input

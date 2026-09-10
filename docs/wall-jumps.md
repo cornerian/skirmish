@@ -21,13 +21,16 @@ configured startup callbacks. Launch multiplies the fighter's vertical speed by
 bone track for headless hurtbox and bone-based ECB physics. The count saturates
 at 255 and landing resets it. All interrupt, startup and repeat fields are part
 of `Fighter`, so checkpoints and counterfactual replay branches retain them.
+After startup, the action dispatches the implemented airborne neutral-special,
+aerial-attack and available aerial-jump branches. The timer blocks those
+interrupts, and aerial selection has priority over a simultaneous jump.
 
 `wall_jump_differential` compares arbitrary binary32 inputs and every mutated
 field against the complete pinned original interrupt. `passive_wall_launch_differential`
 runs the complete original animation callback and compares both launch velocity
 components bit for bit. `game_wall_jump` covers both wall directions, moving
 walls, startup, repeat decay, landing reset, incapable fighters, sampled motion,
-resource rejection and checkpoint replay.
+post-startup aerial interrupts, resource rejection and checkpoint replay.
 
 Authentic per-fighter values and pose tracks still need extraction. Wall cling,
 wall damage/bounce action coverage and character-specific collision callbacks
