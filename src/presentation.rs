@@ -5,6 +5,7 @@
 //! identities, so the same clock can drive replacement and modded resources.
 
 pub mod instance;
+pub mod manifest;
 
 use thiserror::Error;
 

@@ -52,6 +52,7 @@ macro_rules! source_id {
 source_id!(SourceJointId);
 source_id!(SourceMaterialId);
 source_id!(SourceTextureId);
+source_id!(SourceImageId);
 
 /// Caller-owned identity of one independently mutable runtime instance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -105,9 +106,11 @@ pub struct MaterialDescriptor {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextureDescriptor {
     pub source_id: SourceTextureId,
-    /// Number of ordered source images available to texture animation.
-    pub image_count: usize,
-    pub image_index: usize,
+    /// Immutable ordered source-image table. Null HSD slots remain `None`.
+    pub image_slots: Vec<Option<SourceImageId>>,
+    /// Image currently resolved on the TObj. It need not occur in the animation
+    /// table because an authored initial image may be replaced only later.
+    pub current_image: Option<SourceImageId>,
     pub translation: [f32; 2],
     pub blend: f32,
     pub konst_alpha: u8,
@@ -182,8 +185,8 @@ impl MaterialState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextureState {
     source_id: SourceTextureId,
-    image_count: usize,
-    image_index: usize,
+    image_slots: Vec<Option<SourceImageId>>,
+    current_image: Option<SourceImageId>,
     translation: [f32; 2],
     blend: f32,
     konst_alpha: u8,
@@ -195,12 +198,12 @@ impl TextureState {
         &self.source_id
     }
 
-    pub const fn image_count(&self) -> usize {
-        self.image_count
+    pub fn image_slots(&self) -> &[Option<SourceImageId>] {
+        &self.image_slots
     }
 
-    pub const fn image_index(&self) -> usize {
-        self.image_index
+    pub fn current_image(&self) -> Option<&SourceImageId> {
+        self.current_image.as_ref()
     }
 
     pub const fn translation(&self) -> [f32; 2] {
@@ -310,17 +313,13 @@ impl SceneInstance {
         let mut texture_indices = HashMap::with_capacity(descriptor.textures.len());
         for (index, texture) in descriptor.textures.iter().enumerate() {
             require_id(SourceKind::Texture, texture.source_id.as_str())?;
-            if texture.image_count == 0 {
-                return Err(InstanceError::EmptyTextureImageTable(
-                    texture.source_id.clone(),
-                ));
-            }
-            if texture.image_index >= texture.image_count {
-                return Err(InstanceError::InitialTextureImageOutOfRange {
-                    texture: texture.source_id.clone(),
-                    image_index: texture.image_index,
-                    image_count: texture.image_count,
-                });
+            for image in texture
+                .image_slots
+                .iter()
+                .filter_map(Option::as_ref)
+                .chain(texture.current_image.iter())
+            {
+                require_id(SourceKind::Image, image.as_str())?;
             }
             if !texture
                 .translation
@@ -367,8 +366,8 @@ impl SceneInstance {
             .into_iter()
             .map(|texture| TextureState {
                 source_id: texture.source_id,
-                image_count: texture.image_count,
-                image_index: texture.image_index,
+                image_slots: texture.image_slots,
+                current_image: texture.current_image,
                 translation: texture.translation,
                 blend: texture.blend,
                 konst_alpha: texture.konst_alpha,
@@ -497,8 +496,13 @@ impl SceneInstance {
                 for &value in values {
                     match value.channel {
                         Channel::TextureImage => {
-                            texture.image_index = image_index(value.value, texture.image_count)
+                            let index = image_index(value.value, texture.image_slots.len())
                                 .expect("image sample validated before mutation");
+                            // HSD intentionally retains the previously resolved
+                            // image when the selected table entry is null.
+                            if let Some(image) = &texture.image_slots[index] {
+                                texture.current_image = Some(image.clone());
+                            }
                         }
                         Channel::TextureTranslationU => texture.translation[0] = value.value,
                         Channel::TextureTranslationV => texture.translation[1] = value.value,
@@ -573,14 +577,13 @@ impl SceneInstance {
                 for value in values {
                     match value.channel {
                         Channel::TextureImage => {
-                            image_index(value.value, self.textures[index].image_count).map_err(
-                                |reason| ApplyError::InvalidTextureImage {
+                            image_index(value.value, self.textures[index].image_slots.len())
+                                .map_err(|reason| ApplyError::InvalidTextureImage {
                                     texture: id.clone(),
                                     value_bits: value.value.to_bits(),
-                                    image_count: self.textures[index].image_count,
+                                    image_count: self.textures[index].image_slots.len(),
                                     reason,
-                                },
-                            )?;
+                                })?;
                         }
                         Channel::TextureKonstAlpha | Channel::TextureTev0Alpha => {
                             validate_normalized(*value)?;
@@ -728,6 +731,7 @@ pub enum SourceKind {
     Joint,
     Material,
     Texture,
+    Image,
 }
 
 impl fmt::Display for SourceKind {
@@ -736,6 +740,7 @@ impl fmt::Display for SourceKind {
             Self::Joint => "joint",
             Self::Material => "material",
             Self::Texture => "texture",
+            Self::Image => "image",
         })
     }
 }
@@ -762,16 +767,6 @@ pub enum InstanceError {
         kind: SourceKind,
         source_id: String,
         field: &'static str,
-    },
-    #[error("texture {0} has an empty image table")]
-    EmptyTextureImageTable(SourceTextureId),
-    #[error(
-        "texture {texture} initial image {image_index} is outside its {image_count}-image table"
-    )]
-    InitialTextureImageOutOfRange {
-        texture: SourceTextureId,
-        image_index: usize,
-        image_count: usize,
     },
     #[error("runtime instance identity {} is already in use by this instance", .0.get())]
     ReusedInstanceId(InstanceId),
@@ -842,8 +837,13 @@ mod tests {
     fn texture(id: &str) -> TextureDescriptor {
         TextureDescriptor {
             source_id: id.into(),
-            image_count: 4,
-            image_index: 1,
+            image_slots: vec![
+                Some("image-0".into()),
+                None,
+                Some("image-2".into()),
+                Some("image-3".into()),
+            ],
+            current_image: Some("initial-image".into()),
             translation: [0.0, 0.0],
             blend: 1.0,
             konst_alpha: 255,
@@ -1029,33 +1029,24 @@ mod tests {
     }
 
     #[test]
-    fn validates_texture_image_tables() {
+    fn accepts_empty_and_nullable_texture_image_tables_but_rejects_empty_image_ids() {
         let mut empty = texture("empty");
-        empty.image_count = 0;
-        empty.image_index = 0;
+        empty.image_slots.clear();
         let descriptor = InstanceDescriptor {
             textures: vec![empty],
             ..InstanceDescriptor::default()
         };
-        assert_eq!(
-            SceneInstance::new(InstanceId::new(1), descriptor).unwrap_err(),
-            InstanceError::EmptyTextureImageTable("empty".into())
-        );
+        assert!(SceneInstance::new(InstanceId::new(1), descriptor).is_ok());
 
-        let mut out_of_range = texture("short");
-        out_of_range.image_count = 2;
-        out_of_range.image_index = 2;
+        let mut empty_slot_id = texture("bad-slot");
+        empty_slot_id.image_slots[0] = Some("".into());
         let descriptor = InstanceDescriptor {
-            textures: vec![out_of_range],
+            textures: vec![empty_slot_id],
             ..InstanceDescriptor::default()
         };
         assert_eq!(
             SceneInstance::new(InstanceId::new(1), descriptor).unwrap_err(),
-            InstanceError::InitialTextureImageOutOfRange {
-                texture: "short".into(),
-                image_index: 2,
-                image_count: 2,
-            }
+            InstanceError::EmptySourceId(SourceKind::Image)
         );
     }
 
@@ -1184,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    fn applies_every_texture_channel_and_truncates_image_index() {
+    fn applies_every_texture_channel_and_resolves_image_identity() {
         let mut instance = instance();
         instance
             .apply_channels(
@@ -1201,11 +1192,55 @@ mod tests {
             .unwrap();
 
         let state = instance.texture(&"texture".into()).unwrap();
-        assert_eq!(state.image_index(), 2);
+        assert_eq!(state.current_image(), Some(&SourceImageId::from("image-2")));
         assert_eq!(state.translation(), [-0.5, 1.5]);
         assert_eq!(state.blend(), 0.25);
         assert_eq!(state.konst_alpha(), 127);
         assert_eq!(state.tev0_alpha(), 191);
+    }
+
+    #[test]
+    fn null_texture_image_slot_is_a_noop_and_empty_table_rejects_only_timg() {
+        let mut instance = instance();
+        let slots_before = instance
+            .texture(&"texture".into())
+            .unwrap()
+            .image_slots()
+            .to_vec();
+        instance
+            .apply_channel(
+                &SourceTarget::Texture("texture".into()),
+                sample(Channel::TextureImage, 1.9),
+            )
+            .unwrap();
+        let state = instance.texture(&"texture".into()).unwrap();
+        assert_eq!(
+            state.current_image(),
+            Some(&SourceImageId::from("initial-image"))
+        );
+        assert_eq!(state.image_slots(), slots_before);
+
+        let mut descriptor = descriptor();
+        descriptor.textures[0].image_slots.clear();
+        let mut empty = SceneInstance::new(InstanceId::new(9), descriptor).unwrap();
+        empty
+            .apply_channel(
+                &SourceTarget::Texture("texture".into()),
+                sample(Channel::TextureBlend, 0.5),
+            )
+            .unwrap();
+        assert_eq!(empty.texture(&"texture".into()).unwrap().blend(), 0.5);
+        assert!(matches!(
+            empty.apply_channel(
+                &SourceTarget::Texture("texture".into()),
+                sample(Channel::TextureImage, 0.0),
+            ),
+            Err(ApplyError::InvalidTextureImage {
+                reason: ImageIndexError::OutOfRange,
+                image_count: 0,
+                ..
+            })
+        ));
     }
 
     #[test]

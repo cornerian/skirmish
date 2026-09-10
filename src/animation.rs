@@ -272,6 +272,25 @@ pub struct AObjAnimation {
     pub tracks: Vec<FObjTrack>,
 }
 
+/// One FObj omitted from a partially decoded AObj because its behavior is not
+/// modeled yet.
+///
+/// The descriptor identity is retained separately because some decode errors,
+/// notably an unsupported stream opcode, identify the program byte rather than
+/// the FObj that owns it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SkippedFObjTrack {
+    pub descriptor_offset: DataOffset,
+    pub error: DecodeError,
+}
+
+/// A decoded AObj whose supported FObjs remain usable independently.
+#[derive(Debug, PartialEq)]
+pub struct AObjDecodeReport {
+    pub animation: AObjAnimation,
+    pub skipped_tracks: Vec<SkippedFObjTrack>,
+}
+
 /// One channel update produced by [`AObjAnimation::sample_requested_frame`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ChannelValue {
@@ -323,6 +342,12 @@ pub struct HsdDataSection<'a> {
     limits: DecodeLimits,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnsupportedTrackPolicy {
+    Reject,
+    Skip,
+}
+
 impl<'a> HsdDataSection<'a> {
     pub fn new(bytes: &'a [u8]) -> Result<Self, DecodeError> {
         Self::with_limits(bytes, DecodeLimits::default())
@@ -344,6 +369,31 @@ impl<'a> HsdDataSection<'a> {
         descriptor_offset: DataOffset,
         target: ChannelTarget,
     ) -> Result<AObjAnimation, DecodeError> {
+        self.decode_aobj_with_policy(descriptor_offset, target, UnsupportedTrackPolicy::Reject)
+            .map(|report| report.animation)
+    }
+
+    /// Decode every supported FObj in one AObj while retaining precise
+    /// diagnostics for independently unsupported tracks.
+    ///
+    /// Structural corruption remains fatal. Only capability gaps that are
+    /// local to one FObj (channel, scalar encoding, or program opcode) are
+    /// skipped, so one future channel cannot suppress already modeled motion
+    /// on the same source object.
+    pub fn decode_aobj_supported(
+        &self,
+        descriptor_offset: DataOffset,
+        target: ChannelTarget,
+    ) -> Result<AObjDecodeReport, DecodeError> {
+        self.decode_aobj_with_policy(descriptor_offset, target, UnsupportedTrackPolicy::Skip)
+    }
+
+    fn decode_aobj_with_policy(
+        &self,
+        descriptor_offset: DataOffset,
+        target: ChannelTarget,
+        unsupported: UnsupportedTrackPolicy,
+    ) -> Result<AObjDecodeReport, DecodeError> {
         self.require_aligned(descriptor_offset, "AObj descriptor")?;
         let descriptor = self.range(descriptor_offset, AOBJ_DESC_SIZE, "AObj descriptor")?;
         let flags = be_u32(descriptor, 0);
@@ -357,6 +407,7 @@ impl<'a> HsdDataSection<'a> {
         tracks
             .try_reserve(descriptor_capacity)
             .map_err(|_| DecodeError::AllocationFailed { resource: "tracks" })?;
+        let mut skipped_tracks = Vec::new();
         let mut seen = HashSet::new();
         seen.try_reserve(descriptor_capacity)
             .map_err(|_| DecodeError::AllocationFailed {
@@ -364,34 +415,56 @@ impl<'a> HsdDataSection<'a> {
             })?;
         let mut total_keys = 0_usize;
         let mut current = first_fobj;
-        while let Some(descriptor_offset) = current {
-            if tracks.len() >= self.limits.max_tracks {
+        while let Some(fobj_offset) = current {
+            if seen.len() >= self.limits.max_tracks {
                 return Err(DecodeError::LimitExceeded {
                     resource: "FObj tracks per AObj",
                     limit: self.limits.max_tracks,
                 });
             }
-            if !seen.insert(descriptor_offset) {
+            if !seen.insert(fobj_offset) {
                 return Err(DecodeError::FObjCycle {
-                    descriptor_offset: descriptor_offset.get(),
+                    descriptor_offset: fobj_offset.get(),
                 });
             }
+
+            // Read the link independently so an unsupported track cannot hide
+            // the supported descriptors that follow it.
+            self.require_aligned(fobj_offset, "FObj descriptor")?;
+            let descriptor = self.range(fobj_offset, FOBJ_DESC_SIZE, "FObj descriptor")?;
+            let next = pointer(be_u32(descriptor, 0));
             let remaining_total_keys = self.limits.max_total_keys.saturating_sub(total_keys);
-            let (next, track) =
-                self.decode_fobj(descriptor_offset, target, remaining_total_keys)?;
-            total_keys = total_keys
-                .checked_add(track.keys.len())
-                .expect("decoded key total is bounded by usize limits");
-            tracks.push(track);
+            match self.decode_fobj(fobj_offset, target, remaining_total_keys) {
+                Ok((decoded_next, track)) => {
+                    debug_assert_eq!(decoded_next, next);
+                    total_keys = total_keys
+                        .checked_add(track.keys.len())
+                        .expect("decoded key total is bounded by usize limits");
+                    tracks.push(track);
+                }
+                Err(error)
+                    if unsupported == UnsupportedTrackPolicy::Skip
+                        && error.is_unsupported_track() =>
+                {
+                    skipped_tracks.push(SkippedFObjTrack {
+                        descriptor_offset: fobj_offset,
+                        error,
+                    });
+                }
+                Err(error) => return Err(error),
+            }
             current = next;
         }
 
-        Ok(AObjAnimation {
-            descriptor_offset,
-            flags,
-            end_frame,
-            object_id,
-            tracks,
+        Ok(AObjDecodeReport {
+            animation: AObjAnimation {
+                descriptor_offset,
+                flags,
+                end_frame,
+                object_id,
+                tracks,
+            },
+            skipped_tracks,
         })
     }
 
@@ -862,6 +935,17 @@ pub enum DecodeError {
     NonZeroTerminalWait { stream_offset: u32, wait: u16 },
 }
 
+impl DecodeError {
+    const fn is_unsupported_track(&self) -> bool {
+        matches!(
+            self,
+            Self::UnsupportedChannel { .. }
+                | Self::UnsupportedFractionEncoding { .. }
+                | Self::UnsupportedOpcode { .. }
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 pub enum EvaluationError {
     #[error("animation frame must be finite")]
@@ -1211,6 +1295,29 @@ mod tests {
                 .unwrap()
                 .decode_aobj(DataOffset::new(AOBJ as u32), ChannelTarget::Joint),
             Err(DecodeError::NonZeroTerminalWait { wait: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn strict_aobj_decode_still_returns_the_first_unsupported_track() {
+        const SECOND_FOBJ: usize = 52;
+        let mut bytes = fixture(&[0x11, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 14, 0, 0);
+        bytes.resize(SECOND_FOBJ + FOBJ_DESC_SIZE, 0);
+        write_be_u32(&mut bytes, FOBJ, SECOND_FOBJ as u32);
+        bytes[SECOND_FOBJ + 12] = 5;
+
+        let section = HsdDataSection::new(&bytes).unwrap();
+        assert!(matches!(
+            section.decode_aobj(DataOffset::new(AOBJ as u32), ChannelTarget::Material),
+            Err(DecodeError::UnsupportedChannel {
+                descriptor_offset,
+                ..
+            }) if descriptor_offset == FOBJ as u32
+        ));
+        assert!(matches!(
+            section.decode_aobj_supported(DataOffset::new(AOBJ as u32), ChannelTarget::Material),
+            Err(DecodeError::EmptyFObjProgram { descriptor_offset })
+                if descriptor_offset == SECOND_FOBJ as u32
         ));
     }
 }
