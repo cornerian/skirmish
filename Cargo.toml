@@ -45,6 +45,11 @@ name = "renderer_scene"
 path = "tests/renderer_scene.rs"
 required-features = ["renderer"]
 
+[[test]]
+name = "menu_mouse_events"
+path = "tests/menu_mouse_events.rs"
+required-features = ["renderer"]
+
 [dependencies]
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"], optional = true }

@@ -7,7 +7,11 @@ use crate::{
         interaction::{InteractionError, InteractionMap},
     },
 };
-use sdl3::keyboard::Scancode;
+use sdl3::{
+    event::{Event, WindowEvent},
+    keyboard::Scancode,
+    mouse::MouseButton,
+};
 use thiserror::Error;
 
 use super::{
@@ -109,6 +113,48 @@ impl MenuHost {
 
     pub fn pointer_leave(&mut self) {
         self.pointer.leave();
+    }
+
+    /// Adapt one SDL pointer event into the host's retained input latches.
+    ///
+    /// Window identity and focus are checked here so the production event loop
+    /// and tests share the same boundary before commands reach the canonical
+    /// menu runtime. This does not advance menu time; [`Self::tick`] remains the
+    /// only state-machine boundary.
+    pub fn handle_sdl_pointer_event(
+        &mut self,
+        event: &Event,
+        expected_window_id: u32,
+        focused: bool,
+        transform: Option<PresentationTransform>,
+    ) -> bool {
+        match event {
+            Event::MouseMotion {
+                window_id, x, y, ..
+            } if *window_id == expected_window_id && focused => {
+                self.pointer_motion([*x, *y], transform);
+                true
+            }
+            Event::MouseButtonDown {
+                window_id,
+                mouse_btn: MouseButton::Left,
+                x,
+                y,
+                ..
+            } if *window_id == expected_window_id && focused => {
+                self.pointer_primary_down([*x, *y], transform);
+                true
+            }
+            Event::Window {
+                window_id,
+                win_event: WindowEvent::MouseLeave,
+                ..
+            } if *window_id == expected_window_id => {
+                self.pointer_leave();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Release every host-side latch after focus loss.

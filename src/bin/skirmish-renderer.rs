@@ -8,7 +8,6 @@ use clap::Parser;
 use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
-    mouse::MouseButton,
 };
 use skirmish::{
     controller::host::ControllerHub,
@@ -75,6 +74,18 @@ struct App {
 
 impl App {
     fn event(&mut self, event: Event) {
+        let window_id = self.renderer.window_id();
+        let pointer_transform = if event.is_mouse() {
+            self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT)
+        } else {
+            None
+        };
+        if let Some(menu) = &mut self.menu
+            && menu.handle_sdl_pointer_event(&event, window_id, self.focused, pointer_transform)
+        {
+            return;
+        }
+
         match event {
             Event::Quit { .. } | Event::AppTerminating { .. } => self.quit = true,
             Event::Window {
@@ -90,11 +101,6 @@ impl App {
                     }
                 }
                 WindowEvent::FocusGained => self.focused = true,
-                WindowEvent::MouseLeave => {
-                    if let Some(menu) = &mut self.menu {
-                        menu.pointer_leave();
-                    }
-                }
                 // Occlusion can follow an Exposed event during a Wayland
                 // resize, whose requested frame must still be presented.
                 WindowEvent::Hidden | WindowEvent::Minimized => {
@@ -149,26 +155,6 @@ impl App {
             } if window_id == self.renderer.window_id() => {
                 if let Some(menu) = &mut self.menu {
                     menu.key(code, false, repeat);
-                }
-            }
-            Event::MouseMotion {
-                window_id, x, y, ..
-            } if window_id == self.renderer.window_id() && self.focused => {
-                let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
-                if let Some(menu) = &mut self.menu {
-                    menu.pointer_motion([x, y], transform);
-                }
-            }
-            Event::MouseButtonDown {
-                window_id,
-                mouse_btn: MouseButton::Left,
-                x,
-                y,
-                ..
-            } if window_id == self.renderer.window_id() && self.focused => {
-                let transform = self.renderer.presentation_transform(MELEE_AUTHORED_EXTENT);
-                if let Some(menu) = &mut self.menu {
-                    menu.pointer_primary_down([x, y], transform);
                 }
             }
             _ => {}
