@@ -302,6 +302,7 @@ fn an_opponent_hit_releases_ledge_ownership_before_entering_damage() {
         AttackFrame {
             bones: bones.clone(),
             hitboxes: vec![],
+            hurtbox_states: vec![],
         },
         AttackFrame {
             bones,
@@ -319,10 +320,12 @@ fn an_opponent_hit_releases_ledge_ownership_before_entering_damage() {
                 fixed: 0,
                 base: 30,
             }],
+            hurtbox_states: vec![],
         },
         AttackFrame {
             bones: resource.fighters[1].bones.clone(),
             hitboxes: vec![],
+            hurtbox_states: vec![],
         },
     ];
     let mut game = hanging(resource);

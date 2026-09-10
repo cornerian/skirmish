@@ -56,6 +56,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                     } else {
                         vec![]
                     },
+                    hurtbox_states: vec![],
                 })
                 .collect(),
         };

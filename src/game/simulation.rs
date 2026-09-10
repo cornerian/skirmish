@@ -520,7 +520,7 @@ pub(crate) fn advance(
             }
             let mut body_contact = None;
             for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
-                if !hurtbox.state.accepts_contact() {
+                if !hurtbox_state(target, &data.fighters[victim], index)?.accepts_contact() {
                     continue;
                 }
                 let hurt = hurtbox
@@ -1216,6 +1216,31 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .frames
         .get(fighter.action_frame as usize)
         .ok_or_else(|| Error::Physics("attack pose frame is outside the supplied animation".into()))
+}
+
+pub(crate) fn hurtbox_state(
+    fighter: &Fighter,
+    data: &FighterData,
+    index: usize,
+) -> Result<HurtboxState, Error> {
+    let base = data
+        .hurtboxes
+        .get(index)
+        .ok_or_else(|| Error::Physics("hurtbox index is outside supplied resources".into()))?
+        .state;
+    let Some(_) = data.attack(fighter.action, fighter.prone) else {
+        return Ok(base);
+    };
+    let frame = attack_frame(fighter, data)?;
+    if frame.hurtbox_states.is_empty() {
+        Ok(base)
+    } else {
+        frame
+            .hurtbox_states
+            .get(index)
+            .copied()
+            .ok_or_else(|| Error::Physics("incomplete attack hurtbox state sample".into()))
+    }
 }
 
 fn physics(error: impl core::fmt::Display) -> Error {

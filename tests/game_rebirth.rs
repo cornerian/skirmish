@@ -195,6 +195,7 @@ fn rebirth_actions_cannot_be_hit_or_leave_the_platform_during_wait() {
         AttackFrame {
             bones: bones.clone(),
             hitboxes: vec![],
+            hurtbox_states: vec![],
         },
         AttackFrame {
             bones,
@@ -212,10 +213,12 @@ fn rebirth_actions_cannot_be_hit_or_leave_the_platform_during_wait() {
                 fixed: 0,
                 base: 30,
             }],
+            hurtbox_states: vec![],
         },
         AttackFrame {
             bones: resource.fighters[1].bones.clone(),
             hitboxes: vec![],
+            hurtbox_states: vec![],
         },
     ];
     let mut game = reborn(resource, 0);

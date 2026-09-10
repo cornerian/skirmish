@@ -47,10 +47,12 @@ fn data(damage: [u32; 2]) -> MatchData {
         let active = AttackFrame {
             bones: active_pose,
             hitboxes: vec![hit],
+            hurtbox_states: vec![],
         };
         let idle = AttackFrame {
             bones: fighter.bones.clone(),
             hitboxes: vec![],
+            hurtbox_states: vec![],
         };
         fighter.jab.frames = vec![idle.clone(), active.clone(), active.clone(), active, idle];
         fighter.rebound = Some(clank::Animation {

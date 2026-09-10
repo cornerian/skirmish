@@ -34,6 +34,7 @@ fn frame(groups: &[u8]) -> AttackFrame {
     AttackFrame {
         bones: vec![],
         hitboxes: groups.iter().copied().map(hit).collect(),
+        hurtbox_states: vec![],
     }
 }
 
@@ -110,6 +111,7 @@ fn resource() -> MatchData {
     let mut start = AttackFrame {
         bones: bones.clone(),
         hitboxes: vec![hitbox],
+        hurtbox_states: vec![],
     };
     start.bones[1].translation = [0.0, 1.0, 0.0];
     start.bones[1].rotation = [0.0; 3];
@@ -118,6 +120,7 @@ fn resource() -> MatchData {
     let idle = AttackFrame {
         bones,
         hitboxes: vec![],
+        hurtbox_states: vec![],
     };
     data.fighters[0].jab.frames = vec![idle.clone(), start, end, idle.clone(), idle];
     data

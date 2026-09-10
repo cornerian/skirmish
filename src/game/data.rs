@@ -365,6 +365,10 @@ pub struct Attack {
 pub struct AttackFrame {
     pub bones: Vec<Bone>,
     pub hitboxes: Vec<Hitbox>,
+    /// Complete hurtbox eligibility sample for this frame. An empty sample
+    /// preserves legacy resources by inheriting each hurtbox's base state.
+    #[serde(default)]
+    pub hurtbox_states: Vec<HurtboxState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

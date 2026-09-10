@@ -169,6 +169,10 @@ complete retained C routine.
 `game_hurtbox_eligibility` covers enabled, disabled and intangible capsules,
 the independent grabbable property, scanning past an ineligible first entry,
 legacy resource defaults and directional matrix scale in the grab scheduler.
+`game_hurtbox_states` drives those states through a target's sampled attack
+frames for damage and grab contact. It also covers legacy base-state inheritance,
+explicit frame override, rejection of partial samples and checkpoint replay over
+the eligibility transition.
 
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
@@ -255,6 +259,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `hit_direction` | Both fighter positions and player slots, equal-X tie, victim facing, grounded projection, throw assignment, prone override and checkpoint replay |
 | `hurtbox_geometry` | Matrix-aware body contact, directional bone scale, long-axis hit and short-axis miss |
 | `hurtbox_eligibility` | Damage/grab state filtering, grabbable flag, later-entry scan, legacy defaults and matrix-aware grabs |
+| `hurtbox_states` | Frame-sampled damage/grab eligibility, base inheritance, explicit override, invalid partial samples and checkpoint replay |
 | `positional_angle` | Angle-362 matrix contact, three launch quadrants, vertical tie, validation and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them

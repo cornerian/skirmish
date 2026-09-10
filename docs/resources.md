@@ -48,6 +48,8 @@ For gameplay resources, retain:
 - Frame origin, tick rate, animation rate/interpolation rules and the relationship
   between action commands and pose samples. Preserve original tracks/commands
   when a converted representation has not yet been validated.
+- Complete per-frame hurtbox eligibility samples whenever an action command
+  changes enabled, disabled or intangible state; do not emit partial arrays.
 - Original numeric precision and relevant packed command fields; presentation
   conversion must not silently round or reinterpret gameplay data.
 

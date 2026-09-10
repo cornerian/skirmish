@@ -135,6 +135,7 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
                 .map(|frame| AttackFrame {
                     bones: fighter.bones.clone(),
                     hitboxes: (frame == 0).then_some(hit.clone()).into_iter().collect(),
+                    hurtbox_states: vec![],
                 })
                 .collect(),
         };

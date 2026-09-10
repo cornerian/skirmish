@@ -454,6 +454,11 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             for frame in &attack.frames {
                 let pose = validate_animation_pose(&frame.bones, fighter)?;
                 require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
+                require(
+                    frame.hurtbox_states.is_empty()
+                        || frame.hurtbox_states.len() == fighter.hurtboxes.len(),
+                    "attack hurtbox state samples must be empty or complete",
+                )?;
                 for hit in &frame.hitboxes {
                     require(
                         rules.clank.is_some() || !(hit.clank || hit.rebound),

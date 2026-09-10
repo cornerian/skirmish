@@ -48,7 +48,8 @@ pub fn data() -> MatchData {
                     frames: vec![
                         AttackFrame {
                             bones: fighter.bones.clone(),
-                            hitboxes: vec![]
+                            hitboxes: vec![],
+                            hurtbox_states: vec![],
                         };
                         8
                     ],

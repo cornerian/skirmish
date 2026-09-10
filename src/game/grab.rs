@@ -504,8 +504,11 @@ pub(crate) fn scan(
                 end: grab.end,
                 radius: grab.radius,
             };
-            for hurtbox in &data.fighters[victim].hurtboxes {
-                if !hurtbox.grabbable || !hurtbox.state.accepts_contact() {
+            for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
+                if !hurtbox.grabbable
+                    || !simulation::hurtbox_state(target, &data.fighters[victim], index)?
+                        .accepts_contact()
+                {
                     continue;
                 }
                 let hurt = hurtbox

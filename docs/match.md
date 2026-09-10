@@ -124,7 +124,11 @@ hits remain outside that helper. See the [shield profile](shield.md). Its C orac
 uses the SDK scalar matrix-vector routine in place of paired-single assembly,
 so passing comparisons establish native scalar agreement only.
 Ordinary damage and grabs accept only enabled hurtboxes; grabs also require each
-capsule's explicit grabbable property. Legacy resources default to both.
+capsule's explicit grabbable property. Attack resources can supply one complete
+hurtbox-state sample per frame, which both paths observe from the target's current
+action frame. Empty samples inherit the base states for legacy resources, while
+partial samples fail validation. Legacy hurtboxes default to enabled and
+grabbable.
 
 Damage rules explicitly supply DI limits, angle-361 coefficients and the
 knockback replacement window. Optional `rules.damage.displacement` supplies
