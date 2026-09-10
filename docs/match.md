@@ -114,13 +114,13 @@ arithmetic as described in the [ECB response profile](ecb-response.md).
 An active hitbox carries its previous and current world centers. New activation,
 a disabled slot or a changed group resets its sweep. Hitlag still updates these
 centers, preventing reuse of an old movement segment. Contacts use the source
-isotropic capsule solver, including its unusual near-parallel endpoint choice.
-The reusable `collision::shield` helper separately ports `lbColl_80006E58` and
+isotropic capsule solver for hitbox clashes, including its unusual near-parallel
+endpoint choice. Body [hurtbox contact](hurtbox-contact.md) and shields use the
+matrix-aware `collision::shield` helper, which ports `lbColl_80006E58` and
 the ordinary geometric branch of `lbColl_80007BCC`: transformed hurt volumes
 retain directional radii, contact position, overlap and the original broadphase.
-It accepts caller-prepared world endpoints and matrices; bone caching, forced
-hits remain outside that helper. Ordinary shield gameplay now uses it before
-hurtbox contact; see the [shield profile](shield.md). Its C oracle
+It accepts caller-prepared world endpoints and matrices; bone caching and forced
+hits remain outside that helper. See the [shield profile](shield.md). Its C oracle
 uses the SDK scalar matrix-vector routine in place of paired-single assembly,
 so passing comparisons establish native scalar agreement only.
 

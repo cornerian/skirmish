@@ -38,6 +38,12 @@ disabled; static collision response is tested through the native match instead.
 The horizontal stick-age branch is an exact excerpt of `Fighter_procInput`,
 verified against the preserved source before host compilation.
 
+`shield_collision` selects complete `lbColl_80006E58`, the matrix-aware narrow
+phase shared by ordinary body hurtboxes and shields. Differential tests cover
+closest axes, directional matrix radius, surface contact, overlap and
+broadphase behavior; native match tests own the evaluated hurt-bone matrix and
+scheduler routing.
+
 `fly_reflect` selects complete `ftCo_800C18A8` and compiles it with complete
 `lbVector_Add_xy` and `lbVector_Mirror` from the separately pinned `lbvector.c`.
 The adapter stubs effects, camera, action entry, skeleton placement, collision

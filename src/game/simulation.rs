@@ -3,7 +3,7 @@
 //! in docs/match.md, and every input resource carries an experimental profile.
 use super::{data::*, *};
 use crate::{
-    collision::{bones, ecb, stage, sweep},
+    collision::{bones, ecb, shield as body_collision, stage},
     fighter::{
         Movement, combat, damage as damage_math, locomotion as movement_math, nudge as push,
     },
@@ -522,16 +522,13 @@ pub(crate) fn advance(
                     end: hurt.end,
                     radius: hurt.radius,
                 };
-                let mut closest = sweep::ClosestPair::default();
-                let overlaps = sweep::capsule_capsule(attack, &capsule, &mut closest);
-                if closest
-                    .first
-                    .into_iter()
-                    .chain(closest.second)
-                    .any(|v| !v.is_finite())
-                {
-                    return Err(Error::NonFinite);
-                }
+                let matrix = poses[victim]
+                    .world_matrix(hurtbox.bone)
+                    .map_err(|error| Error::Physics(error.to_string()))?;
+                let mut contact = body_collision::Contact::default();
+                let overlaps =
+                    body_collision::capsule_matrix(attack, &capsule, matrix, 3.0, &mut contact)
+                        .map_err(physics)?;
                 if overlaps {
                     collided = true;
                     height = data.fighters[victim]

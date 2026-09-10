@@ -154,6 +154,14 @@ launches away while preserving its prior-facing override, and `game_grab`
 checks throw-facing assignment. `hit_direction_differential` compares fighter
 and throw assignments over 512 arbitrary binary32 inputs with verbatim pinned C.
 
+[Matrix-aware hurtbox contact](hurtbox-contact.md) adds
+`game_hurtbox_geometry`, where a scaled bone extends collision along one axis
+and contracts it along another. Existing `game_swept_hitboxes` and
+`game_damage_motion` cases ensure swept attack centers and action-selected hurt
+bones enter that path. The shared primitive is already covered by
+`shield_geometry` integration and `shield_collision_differential` against the
+complete retained C routine.
+
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
@@ -237,6 +245,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `damage_motion` | All ordinary ground/air/fly selectors, sampled hurtbox/ECB poses, dual animation/hitstun completion, repeated-hit reselection, invalid profiles and checkpoint replay |
 | `ground_launch` | Flat/sloped floor retention and tangent projection, departure and fly bounce boundaries, hitlag freeze, scalar friction, prone DownDamage override, invalid profiles and checkpoint replay |
 | `hit_direction` | Both fighter positions and player slots, equal-X tie, victim facing, grounded projection, throw assignment, prone override and checkpoint replay |
+| `hurtbox_geometry` | Matrix-aware body contact, directional bone scale, long-axis hit and short-axis miss |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
