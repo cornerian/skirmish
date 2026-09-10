@@ -6,8 +6,8 @@
 
 use super::{
     AnimationCue, AnimationId, DestinationId, EnableCondition, FrameRange, ItemId,
-    ItemPresentation, MenuAction, MenuDefinition, MenuId, MenuItem, NavigationAxis, SoundId,
-    StartBehavior, TextId,
+    ItemPresentation, MenuAction, MenuDefinition, MenuEntry, MenuId, MenuItem, NavigationAxis,
+    SoundId, StartBehavior, TextId,
     interaction::{HitRect, InteractionMap, ItemHitRegion},
 };
 
@@ -215,13 +215,6 @@ pub fn main_interaction_map() -> InteractionMap {
 /// the eight-pixel tolerance remains a replaceable host policy.
 pub fn versus_interaction_map() -> InteractionMap {
     five_slot_interaction_map(VersusItem::ALL.map(VersusItem::id))
-}
-
-/// One destination-owned menu entry ready for the shared host adapter.
-#[derive(Clone, Debug, PartialEq)]
-pub struct MenuEntry {
-    pub definition: MenuDefinition,
-    pub interaction: InteractionMap,
 }
 
 /// Resolve the internal menu handoffs whose destination screens are connected.

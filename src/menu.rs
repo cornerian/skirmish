@@ -13,6 +13,8 @@ use thiserror::Error;
 pub mod interaction;
 pub mod melee;
 
+use interaction::InteractionMap;
+
 macro_rules! string_id {
     ($name:ident, $description:literal) => {
         #[doc = $description]
@@ -58,6 +60,13 @@ string_id!(
     AnimationId,
     "Stable identity of an animation owned by the presentation layer."
 );
+
+/// One destination-owned menu entry ready for a shared host adapter.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MenuEntry {
+    pub definition: MenuDefinition,
+    pub interaction: InteractionMap,
+}
 
 /// Original audio-system cue identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
