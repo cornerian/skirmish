@@ -48,6 +48,17 @@ immediately after wall-tech entry and checks inward displacement, outward
 separation, contact state, frozen self velocity, one timer callback and
 deterministic checkpoint replay.
 
+The 2026-09-10 reflected-surface pose batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-reflect-poses-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Per-fighter complete `FlyReflectWall` and `FlyReflectCeiling`
+pose tracks now drive the headless bone ECB. Integration coverage checks both
+selectors and checkpoint replay; resource tests cover pairing, exact duration,
+skeleton topology, finite transforms and serialization.
+
 The 2026-09-09 grounded-launch coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ground-launch-20260909`

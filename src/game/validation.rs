@@ -331,6 +331,22 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.damage.surface_response, &fighter.surface_response) {
+            (Some(profile), Some(attributes)) => {
+                damage::validate_surface_response_attributes(attributes, profile, fighter)?
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "damage-surface response rules require attributes for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "damage-surface response attributes require common rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         match (&rules.damage.surface_tech, &fighter.surface_tech) {
             (Some(profile), Some(attributes)) => {
                 damage::validate_surface_tech_attributes(attributes, profile, fighter)?

@@ -200,7 +200,8 @@ missed-tech suffix. Optional low-damage rules add source-gated DownDamage poses,
 launch, landing and hitstun-countdown recovery without resetting DownWait. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
-configured FlyReflectWall/FlyReflectCeiling durations. Optional
+configured FlyReflectWall/FlyReflectCeiling durations with complete sampled
+physics poses. Optional
 `rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
 techs, ceiling tech input motion, complete sampled physics poses and configured
 recovery. Floor landing wins when multiple responses are possible in one

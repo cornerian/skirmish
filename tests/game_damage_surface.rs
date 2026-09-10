@@ -10,7 +10,8 @@ use skirmish::{
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
         damage::{
-            FloorResponseRules, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
+            FloorResponseRules, SurfaceResponseAttributes, SurfaceResponseRules,
+            SurfaceTechAttributes, SurfaceTechRules,
         },
         data::{Bone, CollisionBox, MatchData, StageGeometry},
         stage_motion::{Rules as MotionRules, Track, Transform},
@@ -78,6 +79,16 @@ fn tech_attributes(bones: &[Bone], profile: &SurfaceTechRules) -> SurfaceTechAtt
     }
 }
 
+fn response_attributes(
+    bones: &[Bone],
+    profile: &SurfaceResponseRules,
+) -> SurfaceResponseAttributes {
+    SurfaceResponseAttributes {
+        wall_poses: pose_track(bones, profile.wall_frames, [7.0, 0.0]),
+        ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 10.0]),
+    }
+}
+
 fn data(angle: f32) -> MatchData {
     let mut data: MatchData =
         serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap();
@@ -96,7 +107,8 @@ fn data(angle: f32) -> MatchData {
         down_wait_frames: 5,
         down_stand_frames: 3,
     });
-    data.rules.damage.surface_response = Some(profile());
+    let response = profile();
+    data.rules.damage.surface_response = Some(response.clone());
     data.stage.spawns = [[-2.0, 0.0], [2.0, 2.0]];
     data.stage.floor.left = -100.0;
     data.stage.floor.right = 100.0;
@@ -128,6 +140,7 @@ fn data(angle: f32) -> MatchData {
                 angle: 0.0,
             },
         };
+        fighter.surface_response = Some(response_attributes(&fighter.bones, &response));
     }
     data.fighters[1].movement.gravity = 0.0;
     for hit in data.fighters[0]
@@ -348,6 +361,30 @@ fn vertical_launch_reflects_from_ceiling_and_uses_its_duration() {
 }
 
 #[test]
+fn reflected_wall_and_ceiling_pose_tracks_drive_the_headless_bone_ecb() {
+    for (angle, action, expected) in [
+        (0.0, Action::FlyReflectWall, [-7.25, 0.0]),
+        (90.0, Action::FlyReflectCeiling, [0.0, 11.25]),
+    ] {
+        let mut resource = data(angle);
+        use_bone_ecb(&mut resource);
+        let mut game = hit(resource);
+        let reflected = until(&mut game, |state| state.fighters[1].action == action);
+        assert_eq!(reflected.fighters[1].action_frame, 1);
+        let checkpoint = game.checkpoint();
+        let sampled = step(&mut game);
+        let ecb = sampled.fighters[1].ecb.desired;
+        if expected[0] != 0.0 {
+            assert!((ecb.left[0] - expected[0]).abs() < 0.0001);
+        } else {
+            assert!((ecb.top[1] - expected[1]).abs() < 0.0001);
+        }
+        game.restore_checkpoint(&checkpoint).unwrap();
+        assert_eq!(step(&mut game), sampled);
+    }
+}
+
+#[test]
 fn simultaneous_floor_contact_wins_over_wall_reflection() {
     let mut game = hit(data(315.0));
     let landed = until(&mut game, |state| {
@@ -378,6 +415,11 @@ fn absent_or_unmet_profiles_stop_at_the_surface_without_reflecting() {
     ] {
         let mut resource = data(0.0);
         resource.rules.damage.surface_response = profile;
+        if resource.rules.damage.surface_response.is_none() {
+            for fighter in &mut resource.fighters {
+                fighter.surface_response = None;
+            }
+        }
         let mut game = hit(resource);
         let mut touched = false;
         for _ in 0..120 {
@@ -403,6 +445,10 @@ fn malformed_surface_profiles_are_rejected_and_valid_profiles_roundtrip() {
     let encoded = serde_json::to_string(&data(0.0)).unwrap();
     let decoded: MatchData = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded.rules.damage.surface_response, Some(profile()));
+    assert_eq!(
+        decoded.fighters[0].surface_response,
+        data(0.0).fighters[0].surface_response
+    );
 
     for mutate in [
         |rules: &mut SurfaceResponseRules| rules.knockback_threshold = f32::NAN,
@@ -417,6 +463,41 @@ fn malformed_surface_profiles_are_rejected_and_valid_profiles_roundtrip() {
     let mut missing_tumble_rules = data(0.0);
     missing_tumble_rules.rules.damage.floor_response = None;
     assert!(Match::new(missing_tumble_rules, 0).is_err());
+
+    let mut invalid = Vec::new();
+    let mut bad = data(0.0);
+    bad.fighters[0].surface_response = None;
+    invalid.push(bad);
+    let mut bad = data(0.0);
+    bad.rules.damage.surface_response = None;
+    invalid.push(bad);
+    let mut bad = data(0.0);
+    bad.fighters[0]
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .wall_poses
+        .pop();
+    invalid.push(bad);
+    let mut bad = data(0.0);
+    bad.fighters[0]
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .ceiling_poses[0][1]
+        .parent = None;
+    invalid.push(bad);
+    let mut bad = data(0.0);
+    bad.fighters[0]
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .wall_poses[0][1]
+        .translation[0] = f32::NAN;
+    invalid.push(bad);
+    for resource in invalid {
+        assert!(Match::new(resource, 0).is_err());
+    }
 }
 
 #[test]

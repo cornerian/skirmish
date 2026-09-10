@@ -217,6 +217,15 @@ pub struct SurfaceResponseRules {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SurfaceResponseAttributes {
+    /// Complete fighter-specific FlyReflectWall physics poses.
+    pub wall_poses: Vec<Vec<Bone>>,
+    /// Complete fighter-specific FlyReflectCeiling physics poses.
+    pub ceiling_poses: Vec<Vec<Bone>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SurfaceTechRules {
     pub wall_freeze_frames: u32,
     pub wall_frames: u32,
@@ -309,6 +318,27 @@ pub(crate) fn validate_surface_tech_attributes(
         if poses.len() != frames as usize {
             return Err(Error::Data(
                 "damage-surface tech poses must match the configured duration".into(),
+            ));
+        }
+        for pose in poses {
+            super::validation::validate_animation_pose(pose, fighter)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_surface_response_attributes(
+    attributes: &SurfaceResponseAttributes,
+    profile: &SurfaceResponseRules,
+    fighter: &FighterData,
+) -> Result<(), Error> {
+    for (poses, frames) in [
+        (&attributes.wall_poses, profile.wall_frames),
+        (&attributes.ceiling_poses, profile.ceiling_frames),
+    ] {
+        if poses.len() != frames as usize {
+            return Err(Error::Data(
+                "damage-surface response poses must match the configured duration".into(),
             ));
         }
         for pose in poses {
@@ -1298,6 +1328,19 @@ pub(crate) fn surface_tech_pose<'a>(
         Action::PassiveWall => &attributes.passive_wall_poses,
         Action::PassiveWallJump if !fighter.wall_jump.active => &attributes.passive_wall_jump_poses,
         Action::PassiveCeiling => &attributes.passive_ceiling_poses,
+        _ => return None,
+    };
+    poses.get(fighter.action_frame as usize)
+}
+
+pub(crate) fn surface_response_pose<'a>(
+    fighter: &Fighter,
+    data: &'a FighterData,
+) -> Option<&'a Vec<Bone>> {
+    let attributes = data.surface_response.as_ref()?;
+    let poses = match fighter.action {
+        Action::FlyReflectWall => &attributes.wall_poses,
+        Action::FlyReflectCeiling => &attributes.ceiling_poses,
         _ => return None,
     };
     poses.get(fighter.action_frame as usize)

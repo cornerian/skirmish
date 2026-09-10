@@ -3,7 +3,9 @@
 `rules.damage.surface_response` enables ordinary headless wall and ceiling
 reflection during tumbling damage. The resource explicitly supplies the strict
 directional knockback threshold, reflected-velocity multiplier, repeat lockout
-and synthetic wall/ceiling action durations. Optional
+and wall/ceiling action durations. Each paired fighter `surface_response`
+resource supplies one complete sampled bone pose per reflected action frame.
+Optional
 `rules.damage.surface_tech` supplies wall freeze, wall and ceiling action timing,
 the upward-stick threshold and the scripted ceiling-input frame. Each fighter
 then supplies its wall, wall-jump and ceiling launch speeds plus one complete
@@ -16,10 +18,11 @@ An eligible contact combines self velocity and knockback, mirrors the result
 across the sampled stage normal, applies the configured multiplier, clears self
 velocity and faces along the reflected horizontal component. Wall contacts enter
 `FlyReflectWall`; ceiling contacts enter `FlyReflectCeiling`. Their configured
-durations return to `DamageFall` while retaining tumble state. Collision corrects
-the ECB before the transition and reports `SurfaceReflected` with the player,
-surface class and stable line ID. Floor landing has priority over a wall or
-ceiling reflection found in the same collision pass.
+durations return to `DamageFall` while retaining tumble state. Their sampled
+skeletons drive hurtbox and bone-based ECB geometry headlessly. Collision
+corrects the ECB before the transition and reports `SurfaceReflected` with the
+player, surface class and stable line ID. Floor landing has priority over a wall
+or ceiling reflection found in the same collision pass.
 
 An eligible buffered physical-L/R press turns a wall contact into `PassiveWall`
 or `PassiveWallJump`. A fresh X/Y press inside the shared jump-input window, or
@@ -64,9 +67,10 @@ over arbitrary binary32 inputs. The match owns contact eligibility, shoulder
 lockout, launch scheduling and resource-driven speeds.
 
 `game_damage_surface` covers rightward wall and upward ceiling reflections,
-neutral and jump wall techs, both wall orientations, ceiling input motion, exact
-configured action durations, floor and wall priority, shoulder repeat lockout,
-all three pose tracks through the bone-based ECB, ordinary wall-jump resource
+their distinct reflected pose tracks through the bone-based ECB, neutral and
+jump wall techs, both wall orientations, ceiling input motion, exact configured
+action durations, floor and wall priority, shoulder repeat lockout, all three
+tech pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
 post-freeze air-action timing and priority, ceiling non-interruption, profile
 omission, all three floor-landing paths and cleanup, an unmet threshold,

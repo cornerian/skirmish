@@ -1251,6 +1251,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if let Some(pose) = wall_jump::pose(fighter, data) {
         pose
+    } else if let Some(pose) = damage::surface_response_pose(fighter, data) {
+        pose
     } else if let Some(pose) = damage::surface_tech_pose(fighter, data) {
         pose
     } else if let Some(pose) = damage::ground_recovery_pose(fighter, data) {
