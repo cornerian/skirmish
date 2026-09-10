@@ -51,6 +51,7 @@ struct App {
     renderer: WindowRenderer,
     audio: Option<AudioOutput>,
     orbit: [f32; 3],
+    focused: bool,
     visible: bool,
     quit: bool,
     dirty: bool,
@@ -69,6 +70,8 @@ impl App {
                 ..
             } if window_id == self.renderer.window_id() => match win_event {
                 WindowEvent::CloseRequested => self.quit = true,
+                WindowEvent::FocusLost => self.focused = false,
+                WindowEvent::FocusGained => self.focused = true,
                 // Occlusion can follow an Exposed event during a Wayland
                 // resize, whose requested frame must still be presented.
                 WindowEvent::Hidden | WindowEvent::Minimized => {
@@ -95,7 +98,7 @@ impl App {
                 scancode: Some(code),
                 repeat,
                 ..
-            } if window_id == self.renderer.window_id() => {
+            } if window_id == self.renderer.window_id() && self.focused => {
                 if !repeat && code == Scancode::Q {
                     self.quit = true;
                 } else {
@@ -255,6 +258,7 @@ fn main() -> Result<()> {
         renderer,
         audio,
         orbit: [0.0, 0.0, 1.0],
+        focused: true,
         visible: true,
         quit: false,
         dirty: true,

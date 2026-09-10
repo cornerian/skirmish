@@ -34,10 +34,10 @@ analog triggers use the standard trigger axes, while GameCube L/R clicks are
 available as Misc3/Misc4. Keep action bindings configurable rather than assuming
 that every controller has the GameCube layout.
 
-The renderer's direct-UI adapter maps South to A, Start to Start, and either
-East or West to B. Accepting both Back positions keeps standard-gamepad East
-and the GameCube's physical B usable. The adapter only produces an HSD button
-word for the original menu runtime; it does not implement menu navigation.
+The direct-UI input adapter maps South to A, Start to Start, and either East or
+West to B. Accepting both Back positions keeps standard-gamepad East and the
+GameCube's physical B usable. The adapter only produces an HSD button word for
+the menu runtime; it does not implement menu navigation.
 
 Create and poll `ControllerHub` on the main thread. `ControllerHub::new()` owns
 SDL's single process-wide event pump for standalone polling. It updates input

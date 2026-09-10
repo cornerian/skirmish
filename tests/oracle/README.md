@@ -5,11 +5,13 @@ its pinned path and SHA-256; provenance tests reject unlisted or altered fixture
 Git attributes preserve their original line endings and whitespace, including
 whitespace already present upstream; adapters and Rust code use normal checks.
 
-Each C snapshot produces `<stem>_original.inc` in Cargo's build output directory.
-An optional `<stem>.functions.json` selects complete original functions; the
-`ftcommon` selection is named `physics.functions.json`. Platform includes are
-removed and host declarations come from the corresponding C adapters. Documented
-bytecode pointer adaptations remain in `build.rs`.
+C snapshots used by scalar adapters produce `<stem>_original.inc` in Cargo's
+build output directory. Source-guard-only `mnmain.c` and `gm_controller.c`
+snapshots are deliberately excluded. An optional `<stem>.functions.json`
+selects complete original functions; the `ftcommon` selection is named
+`physics.functions.json`. Platform includes are removed and host declarations
+come from the corresponding C adapters. Documented bytecode pointer adaptations
+remain in `build.rs`.
 
 The stage adapter replaces GameCube pointer subtraction with native logical
 line indices, preserving the original eight-byte index calculation. It also

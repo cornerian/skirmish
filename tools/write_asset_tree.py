@@ -1,6 +1,6 @@
 """Write the exhaustive source asset tree from a verified extraction manifest.
 
-Documentation helper only; the in-game importer does not use Python.
+Documentation helper only; the runtime and extraction library do not use Python.
 """
 import argparse
 from collections import Counter

@@ -26,9 +26,12 @@ fn build_oracle() {
         .expect("C reference snapshots")
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
-        // The complete mnmain.c snapshot is a byte-for-byte source guard for
-        // melee-ui-sys. It is not a scalar root-oracle translation unit.
-        .filter(|path| path.file_stem().is_none_or(|stem| stem != "mnmain"))
+        // These complete snapshots remain byte-for-byte source guards and
+        // references; neither is a scalar root-oracle translation unit.
+        .filter(|path| {
+            path.file_stem()
+                .is_none_or(|stem| stem != "mnmain" && stem != "gm_controller")
+        })
         .map(|path| (path.file_stem().unwrap().to_str().unwrap().to_owned(), path))
         .collect();
     let aliases: BTreeMap<String, String> =
