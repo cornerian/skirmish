@@ -266,6 +266,24 @@ fn until_with(
     panic!("condition was not reached: {:?}", game.state());
 }
 
+fn until_replayed(game: &mut Match, condition: impl Fn(&State) -> bool) -> State {
+    let checkpoint = game.checkpoint();
+    let mut suffix = Vec::new();
+    let reached = loop {
+        let state = step(game);
+        suffix.push(state.clone());
+        if condition(&state) {
+            break state;
+        }
+        assert!(suffix.len() < 240);
+    };
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in suffix {
+        assert_eq!(step(game), expected);
+    }
+    reached
+}
+
 fn hit(data: MatchData) -> Match {
     let mut game = Match::new(data, 71).unwrap();
     game.step(attack()).unwrap();
@@ -382,6 +400,86 @@ fn reflected_wall_and_ceiling_pose_tracks_drive_the_headless_bone_ecb() {
         game.restore_checkpoint(&checkpoint).unwrap();
         assert_eq!(step(&mut game), sampled);
     }
+}
+
+#[test]
+fn wall_reflection_can_chain_into_ceiling_during_wall_lockout() {
+    let mut resource = data(45.0);
+    resource
+        .rules
+        .damage
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .lockout_frames = 20;
+    let ceiling = &mut resource.stage.geometry.as_mut().unwrap().lines[1];
+    ceiling.start[1] = 6.0;
+    ceiling.end[1] = 6.0;
+    let mut game = hit(resource);
+    let wall = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceReflected {
+            player: 1,
+            surface: stage::Surface::LeftWall,
+            line: 2,
+        })
+    });
+    assert_eq!(wall.fighters[1].action, Action::FlyReflectWall);
+    assert!(wall.fighters[1].reflect_lockout > 0);
+    let ceiling = until_replayed(&mut game, |state| {
+        state.events.contains(&Event::SurfaceReflected {
+            player: 1,
+            surface: stage::Surface::Ceiling,
+            line: 1,
+        })
+    });
+    assert_eq!(ceiling.fighters[1].action, Action::FlyReflectCeiling);
+    assert_eq!(
+        ceiling.fighters[1].last_damage_surface,
+        Some(stage::Surface::Ceiling)
+    );
+    assert!(ceiling.fighters[1].reflect_lockout > 0);
+}
+
+#[test]
+fn ceiling_reflection_can_chain_into_wall_during_reflect_lockout() {
+    let mut resource = data(135.0);
+    resource
+        .rules
+        .damage
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .lockout_frames = 20;
+    let geometry = resource.stage.geometry.as_mut().unwrap();
+    geometry.lines[1].start[1] = 20.0;
+    geometry.lines[1].end[1] = 20.0;
+    geometry
+        .lines
+        .push(line([-20.0, 40.0], [-20.0, -20.0], stage::RIGHT_WALL));
+    geometry.joints[0].right_wall = 3..4;
+    let mut game = hit(resource);
+    let ceiling = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceReflected {
+            player: 1,
+            surface: stage::Surface::Ceiling,
+            line: 1,
+        })
+    });
+    assert_eq!(ceiling.fighters[1].action, Action::FlyReflectCeiling);
+    assert!(ceiling.fighters[1].reflect_lockout > 0);
+    let wall = until_replayed(&mut game, |state| {
+        state.events.contains(&Event::SurfaceReflected {
+            player: 1,
+            surface: stage::Surface::RightWall,
+            line: 3,
+        })
+    });
+    assert_eq!(wall.fighters[1].action, Action::FlyReflectWall);
+    assert_eq!(
+        wall.fighters[1].last_damage_surface,
+        Some(stage::Surface::RightWall)
+    );
+    assert!(wall.fighters[1].reflect_lockout > 0);
 }
 
 #[test]

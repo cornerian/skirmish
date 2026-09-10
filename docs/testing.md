@@ -177,9 +177,10 @@ the eligibility transition.
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
-both reflected and tech sampled bone poses, delayed neutral-to-jump conversion, floor/wall collision
-priority, post-freeze special/aerial/jump dispatch, ceiling non-interruption,
-all three floor-landing and shared-state cleanup paths, shoulder repeat lockout,
+both reflected and tech sampled bone poses, delayed neutral-to-jump conversion,
+floor/wall collision priority, both cross-surface reflection chains during
+lockout, post-freeze special/aerial/jump dispatch, ceiling non-interruption, all
+three floor-landing and shared-state cleanup paths, shoulder repeat lockout,
 disabled/unmet profiles, moving-wall startup response, malformed resources and
 checkpoint replay.
 `damage_reflect_differential`

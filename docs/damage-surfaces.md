@@ -22,7 +22,11 @@ durations return to `DamageFall` while retaining tumble state. Their sampled
 skeletons drive hurtbox and bone-based ECB geometry headlessly. Collision
 corrects the ECB before the transition and reports `SurfaceReflected` with the
 player, surface class and stable line ID. Floor landing has priority over a wall
-or ceiling reflection found in the same collision pass.
+or ceiling reflection found in the same collision pass. The repeat field stores
+the native surface class. During `FlyReflectWall`, its wall lockout still permits
+a ceiling response; `FlyReflectCeiling` likewise permits a wall response. A
+second response replaces the remembered class, restarts the configured lockout
+and remains deterministic across checkpoint replay.
 
 An eligible buffered physical-L/R press turns a wall contact into `PassiveWall`
 or `PassiveWallJump`. A fresh X/Y press inside the shared jump-input window, or
@@ -74,13 +78,12 @@ tech pose tracks through the bone-based ECB, ordinary wall-jump resource
 coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
 post-freeze air-action timing and priority, ceiling non-interruption, profile
 omission, all three floor-landing paths and cleanup, an unmet threshold,
-inward/outward moving-wall startup response, malformed resources and deterministic checkpoint
-suffixes.
+inward/outward moving-wall startup response, both cross-surface reflection
+chains during lockout, malformed resources and deterministic checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
 Missed-tech choices, invincibility, effect/audio commands, the complete collision
 callback graph and independent Melee traces remain pending. Directional floor tech rolls are supplied by the
 [damage-floor profile](damage-floor.md).
-The current repeat guard records the most recent surface class; native
-line-specific and connected-corner behavior needs broader collision-state
+Connected-corner adjacency behavior still needs broader collision-state
 translation.

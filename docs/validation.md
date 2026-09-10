@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-10 reflected-surface chaining batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-reflect-chains-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Integration coverage drives wall-to-ceiling and
+ceiling-to-opposite-wall reflections while the configured repeat lockout remains
+active, checks response ordering and remembered surface-class replacement, and
+replays each cross-surface suffix from a checkpoint.
+
 The 2026-09-10 damage-surface pose and delayed-jump batches are recorded at:
 
 `/mnt/archive/runs/skirmish-surface-tech-poses-20260910`

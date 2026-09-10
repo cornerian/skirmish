@@ -205,8 +205,10 @@ physics poses. Optional
 `rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
 techs, ceiling tech input motion, complete sampled physics poses and configured
 recovery. Floor landing wins when multiple responses are possible in one
-collision pass; wall response wins over ceiling response at a corner. Bone-based
-ECBs and hurtboxes consume these poses in headless matches.
+collision pass; wall response wins over ceiling response at a corner. Reflected
+wall and ceiling actions can chain into the other surface class during the
+repeat lockout. Bone-based ECBs and hurtboxes consume these poses in headless
+matches.
 
 Optional [`rules.wall_jump`](wall-jumps.md) and paired fighter resources add the
 ordinary wall-jump interrupt. ECB wall contacts use fighter displacement relative
