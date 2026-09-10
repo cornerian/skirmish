@@ -1,20 +1,38 @@
 # Skirmish
 
-Port the pinned doldecomp/melee source into safe, concise Rust. Preserve observable
-semantics before reducing code. Prefer standard collections and established
-libraries where their behavior matches. Never replace a subsystem with a stub
-and call it translated; report partial function coverage explicitly.
+Reproduce Melee's observable behavior exactly in safe, concise, maintainable
+Rust. The finished presentation must be completely identical to the pinned game:
+assets, composition, transforms, animation, visibility, materials, timing, text,
+audio cues, input response, transitions, and scene handoffs have no intentional
+approximations. Verify visual work against reference captures and report every
+remaining difference explicitly.
+
+Implementation parity is not the goal. Do not recreate HSD/GObj internals or
+preserve source structure when a smaller, clearer design produces the same
+observable result. Prefer modular, data-driven systems and established libraries
+where their behavior matches. Keep archive decoding, immutable resources,
+animation evaluation, scene instances, input, menu flow, rendering, audio, and
+destination services behind explicit interfaces. Use stable source identities
+plus runtime instance identities so cloned objects remain distinguishable.
+
+Treat extensibility and modding as first-class requirements. Menu definitions,
+assets, transitions, destinations, themes, and optional elements should be
+replaceable or additive through declarative data and narrow extension points,
+not hardcoded branch tables or forks of the engine. The original C source is a
+behavioral specification and a focused test oracle; execute it in the product
+only when that is simpler and cleaner than an equivalent Rust implementation.
+Never replace a subsystem with a stub and call it complete; report partial
+coverage explicitly.
 
 Hard requirement: native modern-machine builds, execution, and tests must never
 require an ISO, DOL, emulator, or GameCube runtime. Use native game resources,
 host-compiled original C, generated scenarios and future replay observations.
 
 Visual conversion and reconstruction are owned by the separate resource project,
-`skirmish-assets`. The user explicitly requested the optional in-game Rust ISO
-importer: original-file discovery, verification, extraction, storage, and its
-graphical menu belong here. It must not make normal builds, tests, or gameplay
-require a disc. Consume the resource project's converted exports as they become
-available without duplicating its conversion pipeline or reorganizing its
+`skirmish-assets`; raw original-file extraction remains an independent library.
+Do not build a temporary custom menu or asset-import UI while the original menu
+runtime is incomplete. Consume the resource project's converted exports as they
+become available without duplicating its conversion pipeline or reorganizing its
 directories. Vector artwork and procedural visual effects are
 presentation resources. Bone animation, collision geometry, action scripts and
 gameplay-affecting effects must retain their simulation semantics. See
@@ -41,6 +59,7 @@ owned by the resource task.
   especially arithmetic edge cases; do not mirror refactored implementation
   structure in unit tests. Missing behavior and missing independent fixtures
   must be reported separately from passing coverage.
-- Commit and push substantial verified milestones to `origin/main`, as requested.
-  The old history is archived on `archive/pre-rust-rewrite-20260909`; `main`
-  starts with a fresh root commit, per the user's explicit instruction.
+- Commit substantial verified milestones and push the active feature branch to
+  `origin` continually, as requested. Do not push directly to `main` unless the
+  user explicitly asks for that destination. The old history is archived on
+  `archive/pre-rust-rewrite-20260909`; `main` starts with a fresh root commit.
