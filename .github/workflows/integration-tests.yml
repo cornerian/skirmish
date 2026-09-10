@@ -50,6 +50,6 @@ jobs:
         run: cargo test --locked --features melee-ui-source --test renderer_scene
       - name: Compare debug and release match traces
         run: |
-          cargo run --locked --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-debug.jsonl"
-          cargo run --locked --release --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-release.jsonl"
-          cargo run --locked --bin skirmish -- compare-traces "$RUNNER_TEMP/skirmish-debug.jsonl" "$RUNNER_TEMP/skirmish-release.jsonl"
+          cargo run --locked -p skirmish-cli --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-debug.jsonl"
+          cargo run --locked --release -p skirmish-cli --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-release.jsonl"
+          cargo run --locked -p skirmish-cli --bin skirmish -- compare-traces "$RUNNER_TEMP/skirmish-debug.jsonl" "$RUNNER_TEMP/skirmish-release.jsonl"
