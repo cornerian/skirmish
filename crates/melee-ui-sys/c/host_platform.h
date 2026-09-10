@@ -49,4 +49,8 @@ typedef bool (*Predicate)(void);
 #define STATIC_ASSERT(condition)
 #define ASSERT_SIZE(expression, size)
 
+/* glibc exports an incompatible internal symbol with this name. Rename the
+ * Melee declaration and every pinned-source call at preprocessing time. */
+#define __assert skirmish_mn_assert
+
 #endif

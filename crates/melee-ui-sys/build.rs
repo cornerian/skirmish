@@ -72,6 +72,13 @@ fn build_source() {
 
     let host = manifest.join("c/host_platform.h");
     let bridge = manifest.join("c/bridge.c");
+    let scene_runtime = manifest.join("c/scene_runtime.c");
+    let scene_runtime_header = manifest.join("c/scene_runtime.h");
+    let animation_helpers = upstream.join("src/melee/mn/mn_22EC.c");
+    let joint_lookup = upstream.join("src/melee/lb/lbspdisplay.c");
+    for input in [&host, &bridge, &scene_runtime, &scene_runtime_header] {
+        println!("cargo:rerun-if-changed={}", input.display());
+    }
     cc::Build::new()
         .std("gnu11")
         .include(upstream.join("src"))
@@ -85,7 +92,10 @@ fn build_source() {
         .flag_if_supported("-Wno-unused-parameter")
         .warnings(false)
         .file(source)
+        .file(animation_helpers)
+        .file(joint_lookup)
         .file(bridge)
+        .file(scene_runtime)
         .compile("skirmish_melee_ui_source");
     println!("cargo:rustc-cfg=skirmish_melee_source");
 }

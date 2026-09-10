@@ -3,14 +3,16 @@
 Skirmish now has a native-source path for the pinned Melee menus. The
 `melee-ui-sys` crate verifies the complete upstream `mnmain.c` byte-for-byte
 against revision `0bac93a5ee2f985dac6220bd36ed7078ae6ac0c9`, requires the source
-checkout and its headers to be clean at that exact revision, compiles the source
+checkout and its headers to be clean at that exact revision, compiles the
+complete `mnmain.c` plus the exact-revision animation and joint-lookup helpers
 for the host, and exposes only functions whose dependencies are already
 implemented. It does not contain a second menu state-machine rewrite.
 
 Set `SKIRMISH_MELEE_SOURCE` to a pinned doldecomp/melee checkout, or keep it at
 the repository's documented `../../External/melee` location. The
-`melee-ui-source` feature currently executes original scalar menu functions and
-is the expansion point for the original GObj/JObj scene setup:
+`melee-ui-source` feature executes original scalar menu functions and the exact
+`mn_80229B2C` background constructor and `mn_80229DC0` panel constructor with
+its original `fn_80229BF4` process callback:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
@@ -35,20 +37,31 @@ the previous renderer behavior that overlaid all 57 independent archive roots.
 ## Current boundary
 
 The output is a recognizable but noninteractive serialized default pose. It is
-not yet the completed Melee menu. The converted scene does not carry runtime
-joint, material, or shape animation descriptors, and the source runtime does
-not yet have native implementations of the HSD object scheduler, archive symbol
-loader, JObj operations, or SIS text bridge.
+not yet the completed Melee menu. The C-owned host runtime performs the
+background constructor's GObj ownership, GX/proc registration, JObj attachment,
+frame-zero request, one direct process-callback invocation, and configured
+render-callback invocation. It builds the exported 102-node background and
+106-node panel hierarchies before calling the unchanged constructors. The
+original preorder lookup resolves panel nodes 4 and 41, including their real
+subtrees. The original panel process moves from the Main entry frame 0 through
+the VS transition request at frame 400 to the idle request at frame 500, and
+the original user-data teardown runs. Pointer-free results cross into Rust as
+scene plans.
 
-The next complete source slice is `mnMain_Scene_OnEnter` followed by
-`mn_80229B2C`, `mn_80229DC0`, and `mn_8022B3A0`. The host boundary must implement
-real operations for loading a symbol, attaching animation descriptors,
-requesting/evaluating an animation frame, cloning/reparenting joints, changing
-visibility, and draining evaluated draws. Unsupported calls must remain errors;
-success stubs are not a substitute for executing the original UI.
+Both plans deliberately keep `pose_evaluated` false. The original functions
+drive a host implementation of the relevant HSD frame-clock semantics, but the
+converted scene does not yet carry runtime joint, material, or shape animation
+tracks. The next step is a companion runtime manifest keyed by stable source
+offsets that supplies the archive's actual hierarchy and tracks.
+Content setup in `mn_8022B3A0` follows and adds cursor cloning/reparenting,
+recursive visibility, SIS text, and material/shape animation masks. Unsupported
+calls remain errors; success stubs are not a substitute for executing the
+original UI.
 
-VS mode is implemented by the original source. After its 20-frame entrance
-cooldown, Main selection 1 enters `MENU_KIND_VS`; confirming the default Melee
-entry later requests `GM_VS`. The temporary host panel says **Original scene
-pending** because that scene-scheduler handoff is not connected yet, not because
-VS or its assets are unavailable.
+VS mode is implemented by the original source. The panel transition itself is
+now verified through the original callback: `MENU_KIND_VS` requests frame 400
+and settles into its frame-500 idle loop after 51 callback invocations. The
+remaining handoff is the full input/content path: after its 20-frame entrance cooldown,
+Main selection 1 enters `MENU_KIND_VS`; confirming the default Melee entry later
+requests `GM_VS`. Any temporary **Original scene pending** label refers to that
+unconnected scene handoff, not an unavailable VS mode or missing assets.

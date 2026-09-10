@@ -25,6 +25,42 @@ fn load_roots(root: &Path, document: &Value, roots: &[u32]) -> anyhow::Result<Sc
     Scene::load_joint_roots(&path, roots)
 }
 
+fn main_menu_joints() -> Vec<Value> {
+    let mut joints = Vec::new();
+    for index in 0..102 {
+        joints.push(json!({
+            "name": format!("background_{index}"),
+            "offset": 26_664 + index as u32,
+            "parent": (index != 0).then_some(26_664),
+        }));
+    }
+    let panel_offsets: Vec<u32> = (0..106)
+        .map(|index| match index {
+            0..=4 => 140_584 + index as u32 * 64,
+            5..=40 => 140_840 + (index as u32 - 4) * 64,
+            41 => 143_976,
+            _ => 143_976 + (index as u32 - 41) * 64,
+        })
+        .collect();
+    for (index, &offset) in panel_offsets.iter().enumerate() {
+        let parent = match index {
+            0 => None,
+            1..=4 | 41 => Some(panel_offsets[0]),
+            5..=40 => Some(panel_offsets[4]),
+            _ => Some(panel_offsets[41]),
+        };
+        joints.push(json!({
+            "name": format!("panel_{index}"),
+            "offset": offset,
+            "parent": parent,
+        }));
+    }
+    for root in &MAIN_MENU_ROOTS[2..] {
+        joints.push(json!({"name":root.name,"offset":root.offset,"parent":null}));
+    }
+    joints
+}
+
 #[test]
 fn source_joint_roots_select_only_the_original_scene_subtrees() {
     let directory = tempfile::tempdir().unwrap();
@@ -65,19 +101,14 @@ fn melee_main_menu_loader_uses_source_roots_camera_and_fog_color() {
     let directory = tempfile::tempdir().unwrap();
     let mut document = triangle();
     document["source"] = json!("MnMaAll.dat");
-    document["joints"] = Value::Array(
-        MAIN_MENU_ROOTS
-            .iter()
-            .map(|root| json!({"name":root.name,"offset":root.offset,"parent":null}))
-            .collect(),
-    );
+    document["joints"] = Value::Array(main_menu_joints());
     document["meshes"][0]["joint"] = json!(MAIN_MENU_ROOTS[0].offset);
     let path = directory.path().join("scene.json");
     fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
 
     let scene = load_main_menu_default_pose(&path).unwrap();
     assert_eq!(scene.meshes.len(), 1);
-    assert_eq!(scene.joints.len(), MAIN_MENU_ROOTS.len());
+    assert_eq!(scene.joints.len(), 102 + 106 + 2);
     let camera = scene.camera.unwrap();
     assert_eq!(camera.eye, [0.0, 0.0, 51.0]);
     assert_eq!(camera.interest, [0.0, 0.0, 0.0]);
@@ -101,6 +132,19 @@ fn melee_main_menu_loader_uses_source_roots_camera_and_fog_color() {
                 .iter()
                 .any(|warning| warning.contains(expected))
         );
+        if melee_ui_sys::available() {
+            assert!(scene.warnings.iter().any(|warning| {
+                warning.contains("mn_80229B2C")
+                    && warning.contains("mn_80229DC0")
+                    && warning.contains("fn_80229BF4")
+                    && warning.contains("Main-to-VS")
+                    && warning.contains("idle loop at frame 500")
+                    && warning.contains("render callback 1 time")
+                    && warning.contains("102-node background")
+                    && warning.contains("106-node panel")
+                    && warning.contains("evaluation is still pending")
+            }));
+        }
     }
 
     document["source"] = json!("AnotherArchive.dat");
