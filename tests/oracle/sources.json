@@ -218,5 +218,10 @@
     "fixture": "tests/oracle/original/lbvector.c",
     "upstream": "src/melee/lb/lbvector.c",
     "sha256": "86fb5f0d484345ad9264ab8b9cafcc753b972a40d5d22156b3792e9567485bd5"
+  },
+  {
+    "fixture": "tests/oracle/original/passive_wall.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveWall.c",
+    "sha256": "55e1ad5c190aa8653f665167f9e3e4da851fd941ee73d0226ffc4f6ae50b8e29"
   }
 ]

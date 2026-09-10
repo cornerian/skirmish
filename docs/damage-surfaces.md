@@ -3,10 +3,13 @@
 `rules.damage.surface_response` enables ordinary headless wall and ceiling
 reflection during tumbling damage. The resource explicitly supplies the strict
 directional knockback threshold, reflected-velocity multiplier, repeat lockout
-and synthetic wall/ceiling action durations. Omitting it retains ordinary solid
-surface stopping and does not infer common-data values.
-The profile requires `floor_response` because that profile defines the explicit
-tumble threshold used to enter the reflected damage graph.
+and synthetic wall/ceiling action durations. Optional
+`rules.damage.surface_tech` supplies wall freeze, wall and ceiling action timing,
+the upward-stick threshold and the scripted ceiling-input frame. Each fighter
+then supplies its wall, wall-jump and ceiling launch speeds in `surface_tech`.
+Omitting both profiles retains ordinary solid-surface stopping and does not infer
+common-data values. Either profile requires `floor_response` because that profile
+defines the explicit tumble threshold and physical-L/R tech window.
 
 An eligible contact combines self velocity and knockback, mirrors the result
 across the sampled stage normal, applies the configured multiplier, clears self
@@ -17,20 +20,38 @@ the ECB before the transition and reports `SurfaceReflected` with the player,
 surface class and stable line ID. Floor landing has priority over a wall or
 ceiling reflection found in the same collision pass.
 
+An eligible buffered physical-L/R press turns a wall contact into `PassiveWall`
+or `PassiveWallJump`. A fresh X/Y press inside the shared jump-input window, or
+an upward stick at the inclusive configured threshold, selects the jump. Both
+actions freeze for the configured opening frames, then launch away from the
+wall using fighter attributes and recover to `Fall` after their own durations.
+A ceiling contact enters `PassiveCeiling`; its configured script frame samples
+horizontal input, applies the fighter's ceiling speed and then recovers to
+`Fall`. Tech input is sampled during hitlag and active frames and survives
+checkpoints. Floor response wins over either surface response, and a wall wins
+over a ceiling at a simultaneous corner contact. A successful tech emits
+`SurfaceTeched` with the player, surface, stable line ID and wall-jump decision.
+
 `fighter::damage::reflect_velocity` retains the float operation order from the
 complete `ftCo_800C18A8` entry and its `lbVector_Add_xy`/`lbVector_Mirror`
 helpers. The C adapter stubs presentation, sound, camera, skeleton-placement and
 collision services; differential tests compare reflected velocity, cleared self
 velocity, facing and the byte lockout. Match tests own directional eligibility,
 ECB contact, floor priority, action scheduling and checkpoint replay.
+`fighter::damage::wall_tech_jumps` retains complete `ftCo_800C1E0C`; its C
+differential compares the strict jump-age window and inclusive stick threshold
+over arbitrary binary32 inputs. The match owns contact eligibility, shoulder
+lockout, launch scheduling and resource-driven speeds.
 
-`game_damage_surface` covers rightward wall and upward ceiling launches, exact
-configured action durations, floor-over-wall priority, profile omission, an
-unmet threshold, malformed resources and deterministic checkpoint suffixes.
+`game_damage_surface` covers rightward wall and upward ceiling reflections,
+neutral and jump wall techs, both wall orientations, ceiling input motion, exact
+configured action durations, floor and wall priority, shoulder repeat lockout,
+profile omission, an unmet threshold, malformed resources and deterministic
+checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
-Wall and ceiling techs, tech rolls, character-specific poses, effect/audio
-commands, the complete collision callback graph and independent Melee traces
-remain pending. The current repeat guard records the most recent surface class;
-native line-specific and connected-corner behavior needs broader collision-state
+Tech rolls, character-specific poses, invincibility, effect/audio commands, the
+complete collision callback graph and independent Melee traces remain pending.
+The current repeat guard records the most recent surface class; native
+line-specific and connected-corner behavior needs broader collision-state
 translation.

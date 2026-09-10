@@ -3,8 +3,10 @@
 use skirmish::{
     collision::{ecb, stage},
     game::{
-        Action, BUTTON_A, Controller, Event, Match, State,
-        damage::{FloorResponseRules, SurfaceResponseRules},
+        Action, BUTTON_A, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
+        damage::{
+            FloorResponseRules, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
+        },
         data::{CollisionBox, MatchData, StageGeometry},
     },
 };
@@ -32,6 +34,26 @@ fn profile() -> SurfaceResponseRules {
         lockout_frames: 2,
         wall_frames: 3,
         ceiling_frames: 4,
+    }
+}
+
+fn tech_profile() -> SurfaceTechRules {
+    SurfaceTechRules {
+        wall_freeze_frames: 3,
+        wall_frames: 6,
+        wall_jump_frames: 7,
+        ceiling_frames: 6,
+        ceiling_horizontal_frame: 2,
+        jump_stick_threshold: 0.8,
+    }
+}
+
+fn tech_attributes() -> SurfaceTechAttributes {
+    SurfaceTechAttributes {
+        passive_wall_velocity: 2.0,
+        wall_jump_horizontal_velocity: 3.0,
+        wall_jump_vertical_velocity: 4.0,
+        passive_ceiling_velocity: 3.0,
     }
 }
 
@@ -96,6 +118,15 @@ fn data(angle: f32) -> MatchData {
     data
 }
 
+fn tech_data(angle: f32) -> MatchData {
+    let mut data = data(angle);
+    data.rules.damage.surface_tech = Some(tech_profile());
+    for fighter in &mut data.fighters {
+        fighter.surface_tech = Some(tech_attributes());
+    }
+    data
+}
+
 fn attack() -> [Controller; 2] {
     let mut input = IDLE;
     input[0].buttons = BUTTON_A;
@@ -106,12 +137,24 @@ fn step(game: &mut Match) -> State {
     game.step(IDLE).unwrap().clone()
 }
 
+fn step_with(game: &mut Match, input: [Controller; 2]) -> State {
+    game.step(input).unwrap().clone()
+}
+
 fn until(game: &mut Match, condition: impl Fn(&State) -> bool) -> State {
+    until_with(game, IDLE, condition)
+}
+
+fn until_with(
+    game: &mut Match,
+    input: [Controller; 2],
+    condition: impl Fn(&State) -> bool,
+) -> State {
     for _ in 0..240 {
         if condition(game.state()) {
             return game.state().clone();
         }
-        step(game);
+        step_with(game, input);
     }
     panic!("condition was not reached: {:?}", game.state());
 }
@@ -122,6 +165,16 @@ fn hit(data: MatchData) -> Match {
     until(&mut game, |state| state.fighters[1].percent > 0.0);
     assert!(game.state().fighters[1].tumbling);
     game
+}
+
+fn buffer_tech(game: &mut Match, buttons: u16, stick: [f32; 2]) {
+    while game.state().fighters[1].hitlag > 1.0 {
+        step(game);
+    }
+    let mut input = IDLE;
+    input[1].buttons = buttons;
+    input[1].stick = stick;
+    step_with(game, input);
 }
 
 #[test]
@@ -270,4 +323,258 @@ fn malformed_surface_profiles_are_rejected_and_valid_profiles_roundtrip() {
     let mut missing_tumble_rules = data(0.0);
     missing_tumble_rules.rules.damage.floor_response = None;
     assert!(Match::new(missing_tumble_rules, 0).is_err());
+}
+
+#[test]
+fn buffered_shoulder_enters_neutral_wall_tech_then_launches_away() {
+    let mut game = hit(tech_data(0.0));
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let checkpoint = game.checkpoint();
+    let teched = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceTeched {
+            player: 1,
+            surface: stage::Surface::LeftWall,
+            line: 2,
+            jump: false,
+        })
+    });
+    let fighter = &teched.fighters[1];
+    assert_eq!(fighter.action, Action::PassiveWall);
+    assert_eq!(fighter.velocity, [0.0; 2]);
+    assert_eq!(fighter.knockback, [0.0; 2]);
+    assert_eq!(fighter.facing, -1.0);
+    assert_eq!(
+        fighter.surface_tech.timer,
+        tech_profile().wall_freeze_frames
+    );
+    assert_eq!(fighter.locomotion.tilt_x_age, 254);
+    assert_eq!(fighter.locomotion.tilt_y_age, 254);
+    assert!(
+        !teched
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::SurfaceReflected { .. }))
+    );
+
+    let mut expected = (0..3).map(|_| step(&mut game)).collect::<Vec<_>>();
+    assert_eq!(expected[0].fighters[1].surface_tech.timer, 2);
+    assert_eq!(expected[0].fighters[1].position, fighter.position);
+    assert_eq!(expected[1].fighters[1].surface_tech.timer, 1);
+    assert_eq!(expected[1].fighters[1].position, fighter.position);
+    assert_eq!(expected[2].fighters[1].surface_tech.timer, 0);
+    assert!(expected[2].fighters[1].velocity[0] < 0.0);
+    assert!(expected[2].fighters[1].position[0] < fighter.position[0]);
+    while game.state().fighters[1].action == Action::PassiveWall {
+        expected.push(step(&mut game));
+    }
+    assert_eq!(
+        1 + expected
+            .iter()
+            .filter(|state| state.fighters[1].action == Action::PassiveWall)
+            .count(),
+        tech_profile().wall_frames as usize
+    );
+    assert_eq!(game.state().fighters[1].action, Action::Fall);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    until(&mut game, |state| {
+        matches!(state.fighters[1].action, Action::PassiveWall)
+    });
+    for expected in expected {
+        assert_eq!(step(&mut game), expected);
+    }
+}
+
+#[test]
+fn buffered_jump_and_upward_stick_select_wall_jump_tech() {
+    for (buttons, stick) in [
+        (BUTTON_L | BUTTON_X, [0.0; 2]),
+        (BUTTON_L, [0.0, tech_profile().jump_stick_threshold]),
+    ] {
+        let mut game = hit(tech_data(0.0));
+        buffer_tech(&mut game, buttons, stick);
+        let mut held = IDLE;
+        held[1].stick = stick;
+        let teched = until_with(&mut game, held, |state| {
+            state.events.contains(&Event::SurfaceTeched {
+                player: 1,
+                surface: stage::Surface::LeftWall,
+                line: 2,
+                jump: true,
+            })
+        });
+        assert_eq!(teched.fighters[1].action, Action::PassiveWallJump);
+        let mut samples = 1;
+        while game.state().fighters[1].surface_tech.timer != 0 {
+            step(&mut game);
+            samples += usize::from(game.state().fighters[1].action == Action::PassiveWallJump);
+        }
+        let fighter = &game.state().fighters[1];
+        assert_eq!(fighter.velocity, [-2.9, 4.0]);
+        assert!(fighter.position[0] < teched.fighters[1].position[0]);
+        assert!(fighter.position[1] > teched.fighters[1].position[1]);
+        while game.state().fighters[1].action == Action::PassiveWallJump {
+            step(&mut game);
+            samples += usize::from(game.state().fighters[1].action == Action::PassiveWallJump);
+        }
+        assert_eq!(samples, tech_profile().wall_jump_frames as usize);
+        assert_eq!(game.state().fighters[1].action, Action::Fall);
+    }
+}
+
+#[test]
+fn ceiling_tech_applies_scripted_horizontal_input_and_recovers() {
+    let mut game = hit(tech_data(90.0));
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let teched = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceTeched {
+            player: 1,
+            surface: stage::Surface::Ceiling,
+            line: 1,
+            jump: false,
+        })
+    });
+    assert_eq!(teched.fighters[1].action, Action::PassiveCeiling);
+    assert_eq!(teched.fighters[1].velocity, [0.0; 2]);
+    let mut horizontal = IDLE;
+    horizontal[1].stick[0] = 0.5;
+    let before_command = step_with(&mut game, horizontal);
+    assert_eq!(before_command.fighters[1].velocity[0], 0.0);
+    let commanded = step_with(&mut game, horizontal);
+    assert_eq!(commanded.fighters[1].velocity[0], 1.4);
+    assert!(commanded.fighters[1].surface_tech.ceiling_velocity_applied);
+
+    let mut samples = 3;
+    while game.state().fighters[1].action == Action::PassiveCeiling {
+        step(&mut game);
+        samples += usize::from(game.state().fighters[1].action == Action::PassiveCeiling);
+    }
+    assert_eq!(samples, tech_profile().ceiling_frames as usize);
+    assert_eq!(game.state().fighters[1].action, Action::Fall);
+}
+
+#[test]
+fn floor_tech_wins_over_armed_wall_tech_in_a_diagonal_collision() {
+    let mut game = hit(tech_data(315.0));
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let landed = until(&mut game, |state| {
+        state.events.contains(&Event::Landed { player: 1 })
+    });
+    assert_eq!(landed.fighters[1].action, Action::Passive);
+    assert!(
+        !landed
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::SurfaceTeched { .. }))
+    );
+}
+
+#[test]
+fn wall_tech_has_priority_over_ceiling_tech_at_a_corner() {
+    let mut resource = tech_data(45.0);
+    let ceiling = &mut resource.stage.geometry.as_mut().unwrap().lines[1];
+    ceiling.start[1] = 6.0;
+    ceiling.end[1] = 6.0;
+    let mut game = hit(resource);
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let state = until(&mut game, |state| {
+        state
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::SurfaceTeched { .. }))
+    });
+    assert_eq!(state.fighters[1].action, Action::PassiveWall);
+    assert!(state.events.contains(&Event::SurfaceTeched {
+        player: 1,
+        surface: stage::Surface::LeftWall,
+        line: 2,
+        jump: false,
+    }));
+}
+
+#[test]
+fn leftward_launch_techs_the_opposite_wall_and_faces_away() {
+    let mut resource = tech_data(180.0);
+    let geometry = resource.stage.geometry.as_mut().unwrap();
+    geometry
+        .lines
+        .push(line([-5.0, 20.0], [-5.0, -20.0], stage::RIGHT_WALL));
+    geometry.joints[0].right_wall = 3..4;
+    let mut game = hit(resource);
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let state = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceTeched {
+            player: 1,
+            surface: stage::Surface::RightWall,
+            line: 3,
+            jump: false,
+        })
+    });
+    assert_eq!(state.fighters[1].action, Action::PassiveWall);
+    assert_eq!(state.fighters[1].facing, 1.0);
+    assert_eq!(state.fighters[1].contacts[3], Some(3));
+}
+
+#[test]
+fn a_second_recent_shoulder_press_fails_surface_tech_lockout() {
+    let mut game = hit(tech_data(0.0));
+    while game.state().fighters[1].hitlag > 3.0 {
+        step(&mut game);
+    }
+    let mut shoulder = IDLE;
+    shoulder[1].buttons = BUTTON_L;
+    step_with(&mut game, shoulder);
+    step(&mut game);
+    shoulder[1].buttons = BUTTON_R;
+    step_with(&mut game, shoulder);
+    let state = until(&mut game, |state| {
+        state
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::SurfaceReflected { .. }))
+    });
+    assert!(state.fighters[1].locomotion.previous_tech_press_age < 40);
+    assert!(
+        !state
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::SurfaceTeched { .. }))
+    );
+}
+
+#[test]
+fn malformed_surface_tech_resources_are_rejected() {
+    let mut cases = Vec::new();
+    let mut bad = tech_data(0.0);
+    bad.rules
+        .damage
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .wall_freeze_frames = 0;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.rules
+        .damage
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .ceiling_horizontal_frame = 6;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.fighters[0].surface_tech = None;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.fighters[0]
+        .surface_tech
+        .as_mut()
+        .unwrap()
+        .wall_jump_vertical_velocity = f32::NAN;
+    cases.push(bad);
+    let mut bad = tech_data(0.0);
+    bad.rules.damage.floor_response = None;
+    cases.push(bad);
+    for resource in cases {
+        assert!(Match::new(resource, 0).is_err());
+    }
 }

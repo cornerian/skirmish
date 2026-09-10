@@ -40,7 +40,8 @@ simulator state; it is not a player-information observation policy. `reset(seed)
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
-time, tumble eligibility, damage-surface history/lockout, physical-L/R tech ages, swept hitbox centers, ECB
+time, tumble eligibility, damage-surface history/lockout and tech timer, physical-L/R
+tech ages, jump-press age, swept hitbox centers, ECB
 interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
 random events and consumes no RNG draws. Checkpoints are opaque in-memory
@@ -164,9 +165,12 @@ at or above its inclusive threshold retains tumble eligibility through
 DamageFall until floor contact. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
-configured FlyReflectWall/FlyReflectCeiling durations. Floor landing wins when
-both responses are possible in one collision pass. Wall/ceiling techs, tech
-rolls, get-up choices and action-specific poses remain separate work.
+configured FlyReflectWall/FlyReflectCeiling durations. Optional
+`rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
+techs, ceiling tech input motion and configured recovery. Floor landing wins
+when multiple responses are possible in one collision pass; wall response wins
+over ceiling response at a corner. Tech rolls, get-up choices and
+action-specific poses remain separate work.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 catch entry, sampled bone-attached grab capsules, paired pull/hold states and
@@ -263,7 +267,7 @@ ledge-specific backward-push map branch remain unported. The optional
 platform lifecycle; moving-stage offsets, Nana coordination and the full
 priority action graph remain unported. The optional [damage-floor profile](damage-floor.md) supplies neutral
 tech and knockdown recovery. The [damage-surface profile](damage-surfaces.md)
-supplies ordinary tumble reflections; tech rolls and wall/ceiling techs remain
+supplies ordinary tumble reflections and wall/ceiling techs; tech rolls remain
 unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,

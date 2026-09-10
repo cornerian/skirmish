@@ -66,6 +66,8 @@ pub struct State {
     /// Fighter x680/x684: current and previous physical L/R press ages.
     pub tech_press_age: u8,
     pub previous_tech_press_age: u8,
+    /// Fighter x67E: age of the most recent fresh physical X/Y press.
+    pub jump_press_age: u8,
     pub jumps_used: u8,
     pub jump_input: JumpInput,
     pub turn_frames: f32,
@@ -84,6 +86,7 @@ impl Default for State {
             trigger_age: 255,
             tech_press_age: 255,
             previous_tech_press_age: 255,
+            jump_press_age: 255,
             jumps_used: 0,
             jump_input: JumpInput::Buttons,
             turn_frames: 0.0,

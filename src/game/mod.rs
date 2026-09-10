@@ -129,6 +129,9 @@ pub enum Action {
     DamageFall,
     FlyReflectWall,
     FlyReflectCeiling,
+    PassiveWall,
+    PassiveWallJump,
+    PassiveCeiling,
     Passive,
     DownBound,
     DownWait,
@@ -199,6 +202,7 @@ pub struct Fighter {
     pub last_damage_surface: Option<crate::collision::stage::Surface>,
     /// Frames before another configured damage-surface reflection is eligible.
     pub reflect_lockout: u8,
+    pub surface_tech: damage::SurfaceTechState,
     pub invincibility: u32,
     pub short_hop: bool,
     pub fast_fall: bool,
@@ -266,6 +270,12 @@ pub enum Event {
         player: usize,
         surface: crate::collision::stage::Surface,
         line: usize,
+    },
+    SurfaceTeched {
+        player: usize,
+        surface: crate::collision::stage::Surface,
+        line: usize,
+        jump: bool,
     },
     Knockout {
         player: usize,

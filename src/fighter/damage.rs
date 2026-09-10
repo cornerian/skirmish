@@ -233,6 +233,17 @@ pub fn can_tech(
         && i32::from(previous_press_age) >= repeat_lockout
 }
 
+/// `ftCo_800C1E0C`: a recent X/Y press or an upward stick at the inclusive
+/// threshold upgrades a wall tech to its jump variant.
+pub fn wall_tech_jumps(
+    jump_press_age: u8,
+    stick_y: f32,
+    input_window: f32,
+    stick_threshold: f32,
+) -> bool {
+    f32::from(jump_press_age) < input_window || stick_y >= stick_threshold
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Reflection {
     pub knockback: [f32; 2],
@@ -311,6 +322,13 @@ mod tests {
         assert!(!can_tech(false, 3, 7, 3.0, 7));
         assert!(!can_tech(false, 2, 6, 3.0, 7));
         assert!(!can_tech(true, 0, 255, 3.0, 7));
+    }
+
+    #[test]
+    fn wall_tech_jump_uses_strict_timer_and_inclusive_stick_boundaries() {
+        assert!(wall_tech_jumps(2, 0.0, 3.0, 0.8));
+        assert!(!wall_tech_jumps(3, 0.799, 3.0, 0.8));
+        assert!(wall_tech_jumps(3, 0.8, 3.0, 0.8));
     }
 
     #[test]

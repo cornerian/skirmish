@@ -229,6 +229,20 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(armor) = &fighter.armor {
             damage::validate_armor(armor)?;
         }
+        match (&rules.damage.surface_tech, &fighter.surface_tech) {
+            (Some(_), Some(attributes)) => damage::validate_surface_tech_attributes(attributes)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "damage-surface tech rules require attributes for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "damage-surface tech attributes require common rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         let m = &fighter.movement;
         require(
             nonnegative([

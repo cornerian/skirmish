@@ -80,6 +80,7 @@ fn spawn(
         tumbling: false,
         last_damage_surface: None,
         reflect_lockout: 0,
+        surface_tech: damage::SurfaceTechState::default(),
         invincibility,
         short_hop: false,
         fast_fall: false,
@@ -113,6 +114,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         fighter.tumbling = false;
         fighter.last_damage_surface = None;
         fighter.reflect_lockout = 0;
+    }
+    if !matches!(
+        action,
+        Action::PassiveWall | Action::PassiveWallJump | Action::PassiveCeiling
+    ) {
+        fighter.surface_tech = damage::SurfaceTechState::default();
     }
 }
 
@@ -241,8 +248,7 @@ pub(crate) fn advance(
                     (&stage, &geometry, &previous_geometry),
                     player,
                     &mut state.events,
-                    &data.fighters[player],
-                    &data.rules,
+                    (&data.fighters[player], &data.rules, input),
                 )?;
             }
             staling::flush(
@@ -387,8 +393,7 @@ pub(crate) fn advance(
             (&stage, &geometry, &previous_geometry),
             player,
             &mut state.events,
-            &data.fighters[player],
-            &data.rules,
+            (&data.fighters[player], &data.rules, input),
         )?;
         staling::flush(
             fighter,
@@ -787,6 +792,12 @@ fn update_nudge(
 // Input sampling continues during hitlag; SDI/jump transitions consume the
 // same history, so old held inputs cannot become fresh after a state change.
 fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+    f.locomotion.jump_press_age =
+        if input.buttons & !f.previous_input.buttons & (BUTTON_X | BUTTON_Y) != 0 {
+            0
+        } else {
+            f.locomotion.jump_press_age.saturating_add(1)
+        };
     if input.buttons & !f.previous_input.buttons & (BUTTON_L | BUTTON_R) != 0 {
         f.locomotion.previous_tech_press_age = f.locomotion.tech_press_age;
         f.locomotion.tech_press_age = 0;
@@ -878,7 +889,7 @@ fn update_animation(
         }
         _ => {}
     }
-    damage::update_animation(f, &rules.damage);
+    damage::update_animation(f, data, &rules.damage, input);
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1005,9 +1016,18 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if !matches!(
+        if matches!(f.action, Action::PassiveWall | Action::PassiveWallJump)
+            && f.surface_tech.timer != 0
+        {
+            // Wall techs remain fixed until the source timer releases them.
+        } else if !matches!(
             f.action,
-            Action::Damage | Action::FlyReflectWall | Action::FlyReflectCeiling
+            Action::Damage
+                | Action::FlyReflectWall
+                | Action::FlyReflectCeiling
+                | Action::PassiveWall
+                | Action::PassiveWallJump
+                | Action::PassiveCeiling
         ) && !shield::break_invulnerable(f.action)
         {
             if !f.fast_fall

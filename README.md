@@ -45,13 +45,13 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | Library | Translated behavior |
 | --- | --- |
 | `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
-| `fighter` | Movement, locomotion, neutral-special input, blast-death selection, knockback, DI, hitlag and damage-reflection mechanics |
+| `fighter` | Movement, locomotion, neutral-special input, blast-death selection, knockback, DI, hitlag, damage reflection and wall-tech selection |
 | `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze and swept capsules |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
-| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks/catches, paired capture/four-direction throws, damage, DI, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
+| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks/catches, paired capture/four-direction throws, damage, DI, wall/ceiling reflection and techs, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
@@ -89,7 +89,8 @@ geometry and carries supported fighters with the original line-remap arithmetic.
 The [ECB response profile](docs/ecb-response.md) adds moving-surface penetration,
 ordinary four-sided squeeze and deterministic shape restoration.
 The [damage-surface profile](docs/damage-surfaces.md) composes exact reflection
-arithmetic with wall/ceiling ECB contacts and configured headless action timing.
+and wall-tech input arithmetic with wall/ceiling ECB contacts, headless tech
+motion and configured action timing.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

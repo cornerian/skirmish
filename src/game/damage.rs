@@ -29,6 +29,9 @@ pub struct CombatRules {
     /// Optional ordinary wall/ceiling damage reflection profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_response: Option<SurfaceResponseRules>,
+    /// Optional wall/ceiling tech timing and input profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_tech: Option<SurfaceTechRules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -51,6 +54,32 @@ pub struct SurfaceResponseRules {
     pub lockout_frames: u8,
     pub wall_frames: u32,
     pub ceiling_frames: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceTechRules {
+    pub wall_freeze_frames: u32,
+    pub wall_frames: u32,
+    pub wall_jump_frames: u32,
+    pub ceiling_frames: u32,
+    pub ceiling_horizontal_frame: u32,
+    pub jump_stick_threshold: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceTechAttributes {
+    pub passive_wall_velocity: f32,
+    pub wall_jump_horizontal_velocity: f32,
+    pub wall_jump_vertical_velocity: f32,
+    pub passive_ceiling_velocity: f32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct SurfaceTechState {
+    pub timer: u32,
+    pub ceiling_velocity_applied: bool,
 }
 
 /// Native common-data coefficients. Main-stick SDI/ASDI only; the current
@@ -83,6 +112,26 @@ pub(crate) fn validate_armor(armor: &Armor) -> Result<(), Error> {
         return Err(Error::Data("invalid explicit armor parameters".into()));
     }
     Ok(())
+}
+
+pub(crate) fn validate_surface_tech_attributes(
+    attributes: &SurfaceTechAttributes,
+) -> Result<(), Error> {
+    if [
+        attributes.passive_wall_velocity,
+        attributes.wall_jump_horizontal_velocity,
+        attributes.wall_jump_vertical_velocity,
+        attributes.passive_ceiling_velocity,
+    ]
+    .into_iter()
+    .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value))
+    {
+        Ok(())
+    } else {
+        Err(Error::Data(
+            "invalid fighter damage-surface tech attributes".into(),
+        ))
+    }
 }
 
 impl CombatRules {
@@ -174,6 +223,31 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
     if rules.surface_response.is_some() && rules.floor_response.is_none() {
         return Err(Error::Data(
             "damage-surface response requires explicit tumble rules".into(),
+        ));
+    }
+    if let Some(profile) = &rules.surface_tech
+        && (!profile.jump_stick_threshold.is_finite()
+            || !(0.0..=1.0).contains(&profile.jump_stick_threshold)
+            || profile.jump_stick_threshold == 0.0
+            || profile.wall_freeze_frames == 0
+            || profile.wall_freeze_frames >= profile.wall_frames
+            || profile.wall_freeze_frames >= profile.wall_jump_frames
+            || profile.ceiling_horizontal_frame >= profile.ceiling_frames
+            || [
+                profile.wall_frames,
+                profile.wall_jump_frames,
+                profile.ceiling_frames,
+            ]
+            .into_iter()
+            .any(|frames| frames == 0 || frames >= 1_000_000))
+    {
+        return Err(Error::Data(
+            "invalid explicit damage-surface tech rules".into(),
+        ));
+    }
+    if rules.surface_tech.is_some() && rules.floor_response.is_none() {
+        return Err(Error::Data(
+            "damage-surface tech requires explicit tumble rules".into(),
         ));
     }
     Ok(())
@@ -318,8 +392,51 @@ pub(crate) fn apply_hit(
 /// Priority-1 portions of the ordinary tumble, knockdown and neutral-tech
 /// graph. Durations are explicit resources because animation data is not yet
 /// available for every fighter.
-pub(crate) fn update_animation(fighter: &mut Fighter, rules: &CombatRules) {
+pub(crate) fn update_animation(
+    fighter: &mut Fighter,
+    data: &super::data::FighterData,
+    rules: &CombatRules,
+    input: super::Controller,
+) {
     fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
+    if let (Some(profile), Some(attributes)) = (&rules.surface_tech, &data.surface_tech) {
+        let duration = match fighter.action {
+            Action::PassiveWall | Action::PassiveWallJump => {
+                if fighter.surface_tech.timer != 0 {
+                    fighter.surface_tech.timer -= 1;
+                    if fighter.surface_tech.timer == 0 {
+                        if fighter.action == Action::PassiveWall {
+                            fighter.velocity[0] = fighter.facing * attributes.passive_wall_velocity;
+                        } else {
+                            fighter.velocity = [
+                                fighter.facing * attributes.wall_jump_horizontal_velocity,
+                                attributes.wall_jump_vertical_velocity,
+                            ];
+                        }
+                    }
+                }
+                Some(if fighter.action == Action::PassiveWall {
+                    profile.wall_frames
+                } else {
+                    profile.wall_jump_frames
+                })
+            }
+            Action::PassiveCeiling => {
+                if !fighter.surface_tech.ceiling_velocity_applied
+                    && fighter.action_frame >= profile.ceiling_horizontal_frame
+                {
+                    fighter.velocity[0] = input.stick[0] * attributes.passive_ceiling_velocity;
+                    fighter.surface_tech.ceiling_velocity_applied = true;
+                }
+                Some(profile.ceiling_frames)
+            }
+            _ => None,
+        };
+        if duration.is_some_and(|duration| fighter.action_frame >= duration) {
+            super::simulation::enter(fighter, Action::Fall);
+            return;
+        }
+    }
     let surface_next = rules
         .surface_response
         .as_ref()
@@ -384,7 +501,6 @@ pub(crate) fn can_reflect(
         return false;
     };
     if !fighter.tumbling
-        || fighter.reflect_lockout != 0
         || fighter.last_damage_surface == Some(surface)
         || !matches!(
             fighter.action,
@@ -396,12 +512,96 @@ pub(crate) fn can_reflect(
     {
         return false;
     }
+    if matches!(surface, Surface::LeftWall | Surface::RightWall)
+        && fighter.action == Action::FlyReflectWall
+        && fighter.reflect_lockout != 0
+    {
+        return false;
+    }
     match surface {
         Surface::LeftWall => fighter.knockback[0] > profile.knockback_threshold,
         Surface::RightWall => fighter.knockback[0] < -profile.knockback_threshold,
         Surface::Ceiling => fighter.knockback[1] > profile.knockback_threshold,
         Surface::Floor => false,
     }
+}
+
+pub(crate) fn can_surface_tech(
+    fighter: &Fighter,
+    surface: crate::collision::stage::Surface,
+    rules: &CombatRules,
+) -> bool {
+    use crate::collision::stage::Surface;
+    let (Some(_), Some(floor)) = (&rules.surface_tech, &rules.floor_response) else {
+        return false;
+    };
+    fighter.tumbling
+        && !matches!(surface, Surface::Floor)
+        && matches!(
+            fighter.action,
+            Action::Damage
+                | Action::DamageFall
+                | Action::FlyReflectWall
+                | Action::FlyReflectCeiling
+        )
+        && !(matches!(surface, Surface::LeftWall | Surface::RightWall)
+            && fighter.action == Action::FlyReflectWall
+            && fighter.reflect_lockout != 0)
+        && damage::can_tech(
+            false,
+            fighter.locomotion.tech_press_age,
+            fighter.locomotion.previous_tech_press_age,
+            floor.tech_window,
+            floor.tech_repeat_lockout,
+        )
+}
+
+pub(crate) fn surface_tech(
+    fighter: &mut Fighter,
+    surface: crate::collision::stage::Surface,
+    rules: &CombatRules,
+    input: super::Controller,
+) -> bool {
+    use crate::collision::stage::Surface;
+    let profile = rules.surface_tech.as_ref().unwrap();
+    fighter.velocity = [0.0; 2];
+    fighter.knockback = [0.0; 2];
+    fighter.ground_velocity = 0.0;
+    fighter.grounded = false;
+    fighter.ground_line = None;
+    let jump = matches!(surface, Surface::LeftWall | Surface::RightWall)
+        && damage::wall_tech_jumps(
+            fighter.locomotion.jump_press_age,
+            input.stick[1],
+            rules.floor_response.as_ref().unwrap().tech_window,
+            profile.jump_stick_threshold,
+        );
+    if matches!(surface, Surface::LeftWall | Surface::RightWall) {
+        fighter.facing = if surface == Surface::LeftWall {
+            -1.0
+        } else {
+            1.0
+        };
+        fighter.locomotion.tilt_x_age = 254;
+        fighter.locomotion.tilt_y_age = 254;
+    }
+    super::simulation::enter(
+        fighter,
+        match (surface, jump) {
+            (Surface::Ceiling, _) => Action::PassiveCeiling,
+            (_, true) => Action::PassiveWallJump,
+            _ => Action::PassiveWall,
+        },
+    );
+    fighter.surface_tech = SurfaceTechState {
+        timer: if surface == Surface::Ceiling {
+            0
+        } else {
+            profile.wall_freeze_frames
+        },
+        ceiling_velocity_applied: false,
+    };
+    jump
 }
 
 pub(crate) fn reflect(

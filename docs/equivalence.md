@@ -21,10 +21,11 @@ checkpoints, counterfactual branches and strict trace-adapter behavior. CI compa
 debug and optimized native match executable traces. This checks the experimental
 slice's consistency across compiler optimization; it does not establish agreement
 with original Melee. Original-C differential coverage includes the selected bone,
-contact, knockback, DI, hitlag, damage reflection, walking, jump, neutral-special input, blast-death selection and RNG, rebirth travel, stage query/remapping and ECB
+contact, knockback, DI, hitlag, damage reflection, wall-tech selection, walking, jump, neutral-special input, blast-death selection and RNG, rebirth travel, stage query/remapping and ECB
 arithmetic used by the slice. Generated cases also exercise directed crossings,
 adjacency/tie order, collision-box state mutations and subdivision thresholds.
-Match integration tests cover slopes, walls, ceilings, damage reflection, static and moving platforms,
+Match integration tests cover slopes, walls, ceilings, damage reflection and
+wall/ceiling techs, static and moving platforms,
 moving-surface penetration, opposing-surface ECB squeeze/restoration, swept attack
 history and bone-sampled environmental geometry using synthetic resources.
 The file-backed replay harness also advances the actual native match and reports

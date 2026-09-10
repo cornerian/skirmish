@@ -141,10 +141,10 @@ pub(crate) fn resolve(
     environment: (&stage::Stage<'_>, &StageGeometry, &StageGeometry),
     player: usize,
     events: &mut Vec<Event>,
-    data: &FighterData,
-    rules: &Rules,
+    resources: (&FighterData, &Rules, super::Controller),
 ) -> Result<(), Error> {
     let (stage, geometry, previous_geometry) = environment;
+    let (data, rules, input) = resources;
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
         [f.position[0], f.position[1], 0.0],
@@ -170,7 +170,7 @@ pub(crate) fn resolve(
         f.position = add(previous, [plan.velocity[0], plan.velocity[1]]);
         let mut wall_positions = [None; 2];
         let mut ceiling_position = None;
-        let mut pending_reflection = None;
+        let mut surface_contacts = [None; 2];
         for (surface, slot, old, point) in [
             (
                 Surface::LeftWall,
@@ -232,11 +232,12 @@ pub(crate) fn resolve(
                 } else {
                     ceiling_position = Some(f.position[1]);
                 }
-                if !responded
-                    && pending_reflection.is_none()
-                    && super::damage::can_reflect(f, surface, &rules.damage)
-                {
-                    pending_reflection = Some((surface, normal, line_id));
+                let response_eligible = !responded
+                    && (super::damage::can_surface_tech(f, surface, &rules.damage)
+                        || super::damage::can_reflect(f, surface, &rules.damage));
+                if response_eligible {
+                    let candidate = &mut surface_contacts[usize::from(surface == Surface::Ceiling)];
+                    candidate.get_or_insert((surface, normal, line_id));
                 } else {
                     let inward = if surface == Surface::RightWall {
                         -1.0
@@ -346,16 +347,50 @@ pub(crate) fn resolve(
             f.ecb
                 .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
         }
-        if !f.grounded
-            && let Some((surface, normal, line)) = pending_reflection
-        {
-            super::damage::reflect(f, surface, normal, &rules.damage);
-            events.push(Event::SurfaceReflected {
-                player,
-                surface,
-                line,
-            });
-            responded = true;
+        if !f.grounded && !responded {
+            let [wall, ceiling] = surface_contacts;
+            let order = match f.action {
+                Action::FlyReflectWall => [
+                    (ceiling, true),
+                    (ceiling, false),
+                    (wall, true),
+                    (wall, false),
+                ],
+                Action::FlyReflectCeiling => {
+                    [(wall, true), (wall, false), (None, true), (None, false)]
+                }
+                _ => [
+                    (wall, true),
+                    (ceiling, true),
+                    (wall, false),
+                    (ceiling, false),
+                ],
+            };
+            for (candidate, tech) in order {
+                let Some((surface, normal, line)) = candidate else {
+                    continue;
+                };
+                if tech && super::damage::can_surface_tech(f, surface, &rules.damage) {
+                    let jump = super::damage::surface_tech(f, surface, &rules.damage, input);
+                    events.push(Event::SurfaceTeched {
+                        player,
+                        surface,
+                        line,
+                        jump,
+                    });
+                } else if !tech && super::damage::can_reflect(f, surface, &rules.damage) {
+                    super::damage::reflect(f, surface, normal, &rules.damage);
+                    events.push(Event::SurfaceReflected {
+                        player,
+                        surface,
+                        line,
+                    });
+                } else {
+                    continue;
+                }
+                responded = true;
+                break;
+            }
         }
     }
     Ok(())

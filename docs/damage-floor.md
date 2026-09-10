@@ -26,7 +26,7 @@ resource rejection, checkpoint replay and reset. The two tech/knockdown
 conformance scenarios run normally.
 
 This profile does not yet provide action-specific damage/down poses,
-invincibility windows, get-up choices, tech rolls, wall/ceiling techs, missed
-tech options, orientation selection or input-lock states. Ordinary tumble
-reflection is supplied separately by the [damage-surface profile](damage-surfaces.md).
+invincibility windows, get-up choices, tech rolls, missed-tech options,
+orientation selection or input-lock states. Wall/ceiling reflection and techs
+are supplied separately by the [damage-surface profile](damage-surfaces.md).
 The remaining paths need their own native resources and scheduler integration.

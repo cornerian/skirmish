@@ -46,6 +46,13 @@ mirror/scale arithmetic, cleared self velocity, reflected facing and byte
 lockout. Match tests own contact eligibility, floor priority, line correction
 and action duration; the adapter does not claim the complete callback graph.
 
+`passive_wall` selects complete `ftCo_800C1E0C`. Its minimal host fighter and
+common-data layouts expose the jump-press age, current vertical stick, input
+window and upward-stick threshold. Differential tests compare the strict age
+boundary and inclusive stick boundary, including arbitrary binary32 values.
+Native match tests own shoulder eligibility, wall/ceiling contact, action entry,
+fighter-specific launch speeds and timing.
+
 `stale_queue` and `stale_damage` preserve plstale.c and ft_0881.c. Their selected
 whole functions use minimal host Fighter/table layouts and thread-local player,
 coefficient, debug and instance globals. The damage function's unused instance
