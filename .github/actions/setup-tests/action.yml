@@ -14,3 +14,7 @@ runs:
       with:
         version: 3.4.16
         install-linux-dependencies: true
+    - name: Make SDL3 available to test executables
+      shell: bash
+      run: |
+        echo "LD_LIBRARY_PATH=${SDL3_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "$GITHUB_ENV"
