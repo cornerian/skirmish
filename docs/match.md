@@ -160,17 +160,18 @@ active frame including hitlag. When both optional profiles are supplied, their
 axis thresholds must agree; inconsistent resources are rejected at load time.
 Optional [`rules.damage.floor_response`](damage-floor.md) adds source-gated
 neutral techs plus the complete configured DownBound/DownWait/DownStand recovery
-chain. Physical-L/R ages are sampled during hitlag and ordinary frames. Damage
-at or above its inclusive threshold retains tumble eligibility through
-DamageFall until floor contact. Optional
+chain. Its optional roll profile adds forward/backward selection and per-frame
+root motion and bone poses. Physical-L/R ages are sampled during hitlag and
+ordinary frames. Damage at or above its inclusive threshold retains tumble
+eligibility through DamageFall until floor contact. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
 configured FlyReflectWall/FlyReflectCeiling durations. Optional
 `rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
 techs, ceiling tech input motion and configured recovery. Floor landing wins
 when multiple responses are possible in one collision pass; wall response wins
-over ceiling response at a corner. Tech rolls, get-up choices and
-action-specific poses remain separate work.
+over ceiling response at a corner. Missed-tech choices and action-specific
+damage/surface-tech poses remain separate work.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 catch entry, sampled bone-attached grab capsules, paired pull/hold states and
@@ -266,9 +267,9 @@ ledge-specific backward-push map branch remain unported. The optional
 [rebirth profile](rebirth.md) supplies the ordinary leader's static airborne
 platform lifecycle; moving-stage offsets, Nana coordination and the full
 priority action graph remain unported. The optional [damage-floor profile](damage-floor.md) supplies neutral
-tech and knockdown recovery. The [damage-surface profile](damage-surfaces.md)
-supplies ordinary tumble reflections and wall/ceiling techs; tech rolls remain
-unported.
+and directional floor techs plus knockdown recovery. The
+[damage-surface profile](damage-surfaces.md) supplies ordinary tumble
+reflections and wall/ceiling techs. Missed-tech options remain unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

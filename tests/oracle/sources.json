@@ -223,5 +223,10 @@
     "fixture": "tests/oracle/original/passive_wall.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveWall.c",
     "sha256": "55e1ad5c190aa8653f665167f9e3e4da851fd941ee73d0226ffc4f6ae50b8e29"
+  },
+  {
+    "fixture": "tests/oracle/original/passive_stand.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveStand.c",
+    "sha256": "2a14e2143752cafe018e49a04a792d9063c1cd9e4f3953c758158afded208078"
   }
 ]

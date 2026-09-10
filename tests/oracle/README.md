@@ -113,6 +113,12 @@ ftCo_DownAttack.c. The adapter supplies only the input-lock result, current and
 previous physical-L/R press ages, and the two common-data boundaries. Match
 tests own floor contact and the subsequent Passive/Down action graph.
 
+`passive_stand` selects complete `ftCo_80098928`. Its host adapter supplies the
+already-tested buffered-tech result and captures the requested forward/backward
+motion ID; the original callback owns the comparison-based absolute value,
+inclusive stick threshold and stick/facing product. Match tests own floor
+contact, sampled TransN root motion, bone poses, ECB changes and action timing.
+
 `throw_input` preserves ftCo_Throw.c and selects the three complete static-inline
 main-stick crossing predicates used by `ftCo_800DD1E4`. The host adapter supplies
 only the current/previous stick samples and each common-data threshold. The Rust

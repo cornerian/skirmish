@@ -979,6 +979,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
             // Rebound's first physics callback retains projected self velocity.
+        } else if let Some(target) = damage::floor_tech_velocity(f, data) {
+            // ft_80085030 converts the animation's local TransN delta into the
+            // exact target ground velocity before projecting it onto the floor.
+            movement.ground_acceleration = target - movement.ground_velocity;
+            movement.project_ground();
         } else if locomotion::ground_motion(f, data, &mut movement, input) {
             // Explicit locomotion parameters supply dash/run acceleration.
         } else if f.action == Action::Walk {
@@ -1076,6 +1081,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     let local = if let Some(pose) = grab::pose(fighter, data) {
         pose
     } else if let Some(pose) = ledge::pose(fighter, data) {
+        pose
+    } else if let Some(pose) = damage::floor_tech_pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

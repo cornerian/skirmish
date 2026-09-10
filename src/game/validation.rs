@@ -229,6 +229,29 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(armor) = &fighter.armor {
             damage::validate_armor(armor)?;
         }
+        match (
+            rules
+                .damage
+                .floor_response
+                .as_ref()
+                .and_then(|profile| profile.tech_roll.as_ref()),
+            &fighter.floor_tech,
+        ) {
+            (Some(_), Some(attributes)) => {
+                damage::validate_floor_tech_attributes(attributes, fighter)?
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "floor-tech roll rules require attributes for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "floor-tech roll attributes require common rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         match (&rules.damage.surface_tech, &fighter.surface_tech) {
             (Some(_), Some(attributes)) => damage::validate_surface_tech_attributes(attributes)?,
             (Some(_), None) => {

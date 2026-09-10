@@ -233,6 +233,22 @@ pub fn can_tech(
         && i32::from(previous_press_age) >= repeat_lockout
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TechRoll {
+    Forward,
+    Backward,
+}
+
+/// Directional portion of `ftCo_80098928`. The caller owns the already-tested
+/// `ftCo_800986B0` tech predicate and the subsequent action transition.
+pub fn tech_roll_direction(stick_x: f32, facing: f32, threshold: f32) -> Option<TechRoll> {
+    (super::compat::comparison_abs(stick_x) >= threshold).then_some(if stick_x * facing >= 0.0 {
+        TechRoll::Forward
+    } else {
+        TechRoll::Backward
+    })
+}
+
 /// `ftCo_800C1E0C`: a recent X/Y press or an upward stick at the inclusive
 /// threshold upgrades a wall tech to its jump variant.
 pub fn wall_tech_jumps(
@@ -329,6 +345,20 @@ mod tests {
         assert!(wall_tech_jumps(2, 0.0, 3.0, 0.8));
         assert!(!wall_tech_jumps(3, 0.799, 3.0, 0.8));
         assert!(wall_tech_jumps(3, 0.8, 3.0, 0.8));
+    }
+
+    #[test]
+    fn floor_tech_roll_uses_inclusive_threshold_and_relative_facing() {
+        assert_eq!(tech_roll_direction(0.699, 1.0, 0.7), None);
+        assert_eq!(tech_roll_direction(0.7, 1.0, 0.7), Some(TechRoll::Forward));
+        assert_eq!(
+            tech_roll_direction(0.7, -1.0, 0.7),
+            Some(TechRoll::Backward)
+        );
+        assert_eq!(
+            tech_roll_direction(-0.7, -1.0, 0.7),
+            Some(TechRoll::Forward)
+        );
     }
 
     #[test]

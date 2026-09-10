@@ -1,5 +1,12 @@
 //! Native damage-floor scheduling with explicit synthetic state durations.
-use skirmish::game::{Action, BUTTON_A, BUTTON_L, BUTTON_R, Controller, Event, Match, State};
+use skirmish::{
+    collision::ecb,
+    game::{
+        Action, BUTTON_A, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
+        damage::{FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules},
+        data::{Bone, CollisionBox},
+    },
+};
 
 const IDLE: [Controller; 2] = [Controller {
     buttons: 0,
@@ -13,6 +20,7 @@ fn profile() -> skirmish::game::damage::FloorResponseRules {
         tumble_knockback_threshold: 20.0,
         tech_window: 20.0,
         tech_repeat_lockout: 40,
+        tech_roll: None,
         passive_frames: 3,
         down_bound_frames: 4,
         down_wait_frames: 5,
@@ -39,9 +47,58 @@ fn data() -> skirmish::game::data::MatchData {
     data
 }
 
+fn roll_motion(bones: &[Bone], roots: &[f32], extension: f32) -> FloorTechMotion {
+    FloorTechMotion {
+        frames: roots
+            .iter()
+            .enumerate()
+            .map(|(index, &root_translation)| {
+                let mut bones = bones.to_vec();
+                if index != 0 {
+                    bones[1].translation[0] = extension;
+                }
+                FloorTechFrame {
+                    bones,
+                    root_translation,
+                }
+            })
+            .collect(),
+    }
+}
+
+fn roll_data() -> skirmish::game::data::MatchData {
+    let mut resource = data();
+    let profile = resource.rules.damage.floor_response.as_mut().unwrap();
+    profile.tech_roll = Some(FloorTechRules {
+        stick_threshold: 0.7,
+    });
+    for fighter in &mut resource.fighters {
+        fighter.floor_tech = Some(FloorTechAttributes {
+            forward: roll_motion(&fighter.bones, &[0.0, 0.75, 1.0, 0.5], 6.0),
+            backward: roll_motion(&fighter.bones, &[0.0, -0.5, -0.75, -0.25, -0.1], -6.0),
+        });
+    }
+    resource.fighters[1].collision_box = CollisionBox::Bones {
+        indices: [0, 1, 0, 1, 0, 1],
+        parameters: ecb::JointParameters {
+            side_y_offset: 0.0,
+            height_threshold: 4.0,
+            width_threshold: 4.0,
+        },
+        flags: 5,
+    };
+    resource
+}
+
 fn input(player: usize, buttons: u16) -> [Controller; 2] {
     let mut input = IDLE;
     input[player].buttons = buttons;
+    input
+}
+
+fn directional_input(player: usize, buttons: u16, stick_x: f32) -> [Controller; 2] {
+    let mut input = input(player, buttons);
+    input[player].stick[0] = stick_x;
     input
 }
 
@@ -73,6 +130,20 @@ fn arm_tech(game: &mut Match) {
         step(game, IDLE);
     }
     step(game, input(1, BUTTON_L));
+}
+
+fn arm_directional_tech(game: &mut Match, stick_x: f32) -> State {
+    while game.state().fighters[1].hitlag > 1.0 {
+        step(game, IDLE);
+    }
+    step(game, directional_input(1, BUTTON_L, stick_x));
+    for _ in 0..240 {
+        if game.state().fighters[1].grounded {
+            return game.state().clone();
+        }
+        step(game, directional_input(1, 0, stick_x));
+    }
+    panic!("directional floor tech was not reached: {:?}", game.state());
 }
 
 fn lingering_tumble_data() -> skirmish::game::data::MatchData {
@@ -111,6 +182,69 @@ fn buffered_neutral_tech_stops_launch_and_recovers_for_input() {
     }
     assert_eq!(passive_samples, profile().passive_frames as usize);
     assert_eq!(game.state().fighters[1].action, Action::Wait);
+}
+
+#[test]
+fn directional_floor_tech_rolls_use_sampled_root_motion_and_bone_ecbs() {
+    for (stick_x, action, roots, ecb_side) in [
+        (-0.7, Action::PassiveStandF, vec![0.0, 0.75, 1.0, 0.5], -6.0),
+        (
+            0.7,
+            Action::PassiveStandB,
+            vec![0.0, -0.5, -0.75, -0.25, -0.1],
+            6.0,
+        ),
+    ] {
+        let mut game = downward_hit(roll_data());
+        let landed = arm_directional_tech(&mut game, stick_x);
+        let fighter = &landed.fighters[1];
+        assert_eq!(fighter.action, action);
+        assert_eq!(fighter.action_frame, 1);
+        assert_eq!(fighter.facing, -1.0);
+        assert_eq!(fighter.velocity, [0.0; 2]);
+        assert!(landed.events.contains(&Event::Landed { player: 1 }));
+        let checkpoint = game.checkpoint();
+        let mut expected = Vec::new();
+        let mut previous_x = fighter.position[0];
+        let mut previous_ground_velocity = fighter.ground_velocity;
+        for &local_delta in &roots[1..] {
+            let controls = directional_input(1, 0, stick_x);
+            let state = step(&mut game, controls);
+            let fighter = &state.fighters[1];
+            assert_eq!(fighter.action, action);
+            let target = local_delta * fighter.facing;
+            let velocity = previous_ground_velocity + (target - previous_ground_velocity);
+            assert_eq!(
+                fighter.position[0].to_bits(),
+                (previous_x + velocity).to_bits()
+            );
+            assert_eq!(fighter.ground_velocity.to_bits(), velocity.to_bits());
+            assert_eq!(fighter.velocity[0].to_bits(), velocity.to_bits());
+            if ecb_side > 0.0 {
+                assert!((fighter.ecb.current.right[0] - ecb_side).abs() < 1e-5);
+            } else {
+                assert!((fighter.ecb.current.left[0] - ecb_side).abs() < 1e-5);
+            }
+            previous_x = fighter.position[0];
+            previous_ground_velocity = fighter.ground_velocity;
+            expected.push((controls, state));
+        }
+        assert_eq!(1 + expected.len(), roots.len());
+        expected.push((IDLE, step(&mut game, IDLE)));
+        assert_eq!(game.state().fighters[1].action, Action::Wait);
+
+        game.restore_checkpoint(&checkpoint).unwrap();
+        for (controls, state) in expected {
+            assert_eq!(step(&mut game, controls), state);
+        }
+    }
+}
+
+#[test]
+fn below_threshold_floor_tech_remains_neutral() {
+    let mut game = downward_hit(roll_data());
+    let landed = arm_directional_tech(&mut game, 0.699);
+    assert_eq!(landed.fighters[1].action, Action::Passive);
 }
 
 #[test]
@@ -186,7 +320,12 @@ fn non_tumbling_damage_does_not_enter_the_tumble_floor_graph() {
         }
         assert!(!matches!(
             state.fighters[1].action,
-            Action::Passive | Action::DownBound | Action::DownWait | Action::DownStand
+            Action::Passive
+                | Action::PassiveStandF
+                | Action::PassiveStandB
+                | Action::DownBound
+                | Action::DownWait
+                | Action::DownStand
         ));
         if state.fighters[1].action == Action::Wait {
             break;
@@ -242,6 +381,24 @@ fn checkpoint_and_reset_preserve_tech_history_and_floor_suffixes() {
 
 #[test]
 fn malformed_floor_profiles_are_rejected_transactionally() {
+    let encoded = serde_json::to_string(&roll_data()).unwrap();
+    let decoded: skirmish::game::data::MatchData = serde_json::from_str(&encoded).unwrap();
+    assert!(
+        decoded
+            .rules
+            .damage
+            .floor_response
+            .unwrap()
+            .tech_roll
+            .is_some()
+    );
+    assert!(
+        decoded
+            .fighters
+            .iter()
+            .all(|fighter| fighter.floor_tech.is_some())
+    );
+
     let mut cases = Vec::new();
     let mut bad = data();
     bad.rules
@@ -266,6 +423,40 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
         .as_mut()
         .unwrap()
         .passive_frames = 0;
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .tech_roll
+        .as_mut()
+        .unwrap()
+        .stick_threshold = 0.0;
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.fighters[0].floor_tech = None;
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.fighters[0]
+        .floor_tech
+        .as_mut()
+        .unwrap()
+        .forward
+        .frames
+        .clear();
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.fighters[0].floor_tech.as_mut().unwrap().backward.frames[0].root_translation = f32::NAN;
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.fighters[0].floor_tech.as_mut().unwrap().forward.frames[0]
+        .bones
+        .pop();
+    cases.push(bad);
+    let mut bad = roll_data();
+    bad.rules.damage.floor_response.as_mut().unwrap().tech_roll = None;
     cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());

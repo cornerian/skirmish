@@ -333,12 +333,12 @@ pub(crate) fn resolve(
                 f.ground_line = Some(contact.line_id);
                 f.floor_normal = contact.normal;
             }
-            land(f, rules, data, events, player)?;
+            land(f, rules, data, input, events, player)?;
         } else if let Some(projection) = moved_floor {
             f.position[1] += projection.delta;
             f.ground_line = Some(projection.line_id);
             f.floor_normal = projection.normal;
-            land(f, rules, data, events, player)?;
+            land(f, rules, data, input, events, player)?;
         }
         if f.grounded
             && let Some(after_ceiling) = ceiling_position
@@ -400,6 +400,7 @@ fn land(
     f: &mut Fighter,
     rules: &Rules,
     data: &FighterData,
+    input: super::Controller,
     events: &mut Vec<Event>,
     player: usize,
 ) -> Result<(), Error> {
@@ -419,7 +420,7 @@ fn land(
         f.action,
         Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
     ) {
-        super::damage::land(f, &rules.damage);
+        super::damage::land(f, &rules.damage, input);
     } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
         simulation::enter(f, Action::Landing);
     }

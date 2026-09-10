@@ -3,7 +3,7 @@
 //! selection, and floor response remain the documented match-slice policy.
 use super::{
     Action, Error, Event, Fighter, State,
-    data::{Hitbox, MatchData},
+    data::{Bone, FighterData, Hitbox, MatchData},
 };
 use crate::fighter::{combat, damage};
 use serde::{Deserialize, Serialize};
@@ -40,10 +40,40 @@ pub struct FloorResponseRules {
     pub tumble_knockback_threshold: f32,
     pub tech_window: f32,
     pub tech_repeat_lockout: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tech_roll: Option<FloorTechRules>,
     pub passive_frames: u32,
     pub down_bound_frames: u32,
     pub down_wait_frames: u32,
     pub down_stand_frames: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloorTechRules {
+    pub stick_threshold: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloorTechAttributes {
+    pub forward: FloorTechMotion,
+    pub backward: FloorTechMotion,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloorTechMotion {
+    /// One headless physics/pose sample per action frame.
+    pub frames: Vec<FloorTechFrame>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloorTechFrame {
+    pub bones: Vec<Bone>,
+    /// Source TransN delta along local forward for this frame.
+    pub root_translation: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +164,36 @@ pub(crate) fn validate_surface_tech_attributes(
     }
 }
 
+pub(crate) fn validate_floor_tech_attributes(
+    attributes: &FloorTechAttributes,
+    fighter: &FighterData,
+) -> Result<(), Error> {
+    for motion in [&attributes.forward, &attributes.backward] {
+        if motion.frames.is_empty() || motion.frames.len() > 4096 {
+            return Err(Error::Data(
+                "floor-tech roll requires 1..4096 physics samples".into(),
+            ));
+        }
+        for frame in &motion.frames {
+            if !frame.root_translation.is_finite() || frame.root_translation.abs() > 1_000_000.0 {
+                return Err(Error::Data("invalid floor-tech root translation".into()));
+            }
+            super::validation::validate_animation_pose(&frame.bones, fighter)?;
+        }
+    }
+    Ok(())
+}
+
+impl FloorTechAttributes {
+    pub(crate) fn motion(&self, action: Action) -> Option<&FloorTechMotion> {
+        match action {
+            Action::PassiveStandF => Some(&self.forward),
+            Action::PassiveStandB => Some(&self.backward),
+            _ => None,
+        }
+    }
+}
+
 impl CombatRules {
     fn angle_rules(&self) -> damage::LaunchAngleRules {
         damage::LaunchAngleRules {
@@ -205,6 +265,16 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
         return Err(Error::Data(
             "invalid explicit damage-floor response rules".into(),
         ));
+    }
+    if let Some(profile) = rules
+        .floor_response
+        .as_ref()
+        .and_then(|profile| profile.tech_roll.as_ref())
+        && (!profile.stick_threshold.is_finite()
+            || profile.stick_threshold <= 0.0
+            || profile.stick_threshold > 1.0)
+    {
+        return Err(Error::Data("invalid explicit floor-tech roll rules".into()));
     }
     if let Some(profile) = &rules.surface_response
         && ((!profile.knockback_threshold.is_finite()
@@ -399,6 +469,15 @@ pub(crate) fn update_animation(
     input: super::Controller,
 ) {
     fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
+    if let Some(motion) = data
+        .floor_tech
+        .as_ref()
+        .and_then(|attributes| attributes.motion(fighter.action))
+        && fighter.action_frame as usize >= motion.frames.len()
+    {
+        super::simulation::enter(fighter, Action::Wait);
+        return;
+    }
     if let (Some(profile), Some(attributes)) = (&rules.surface_tech, &data.surface_tech) {
         let duration = match fighter.action {
             Action::PassiveWall | Action::PassiveWallJump => {
@@ -637,7 +716,7 @@ pub(crate) fn reflect(
 
 /// Damage-floor callback shared by Damage and DamageFall. False leaves a
 /// non-tumbling or profile-free damage action under its existing policy.
-pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules) -> bool {
+pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules, input: super::Controller) -> bool {
     let Some(profile) = &rules.floor_response else {
         return false;
     };
@@ -651,12 +730,40 @@ pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules) -> bool {
         profile.tech_window,
         profile.tech_repeat_lockout,
     ) {
-        Action::Passive
+        profile
+            .tech_roll
+            .as_ref()
+            .and_then(|roll| {
+                damage::tech_roll_direction(input.stick[0], fighter.facing, roll.stick_threshold)
+            })
+            .map_or(Action::Passive, |direction| match direction {
+                damage::TechRoll::Forward => Action::PassiveStandF,
+                damage::TechRoll::Backward => Action::PassiveStandB,
+            })
     } else {
         Action::DownBound
     };
     super::simulation::enter(fighter, action);
     true
+}
+
+pub(crate) fn floor_tech_pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [Bone]> {
+    data.floor_tech
+        .as_ref()?
+        .motion(fighter.action)?
+        .frames
+        .get(fighter.action_frame as usize)
+        .map(|frame| frame.bones.as_slice())
+}
+
+pub(crate) fn floor_tech_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
+    let frame = data
+        .floor_tech
+        .as_ref()?
+        .motion(fighter.action)?
+        .frames
+        .get(fighter.action_frame as usize)?;
+    Some(frame.root_translation * fighter.facing)
 }
 
 /// Called on frozen damage frames after the timer decrement, while it remains

@@ -133,6 +133,8 @@ pub enum Action {
     PassiveWallJump,
     PassiveCeiling,
     Passive,
+    PassiveStandF,
+    PassiveStandB,
     DownBound,
     DownWait,
     DownStand,

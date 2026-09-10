@@ -25,15 +25,17 @@ pub enum Direction {
 /// ftCo_800DF478. Either axis must newly cross its absolute threshold. A direct
 /// sign reversal while still outside the threshold is not a fresh excursion.
 pub fn fresh_cstick(previous: [f32; 2], current: [f32; 2], thresholds: [f32; 2]) -> bool {
-    (absolute(previous[0]) < thresholds[0] && absolute(current[0]) >= thresholds[0])
-        || (absolute(previous[1]) < thresholds[1] && absolute(current[1]) >= thresholds[1])
+    (super::compat::comparison_abs(previous[0]) < thresholds[0]
+        && super::compat::comparison_abs(current[0]) >= thresholds[0])
+        || (super::compat::comparison_abs(previous[1]) < thresholds[1]
+            && super::compat::comparison_abs(current[1]) >= thresholds[1])
 }
 
 /// ftCo_GetLStickAngle / ftCo_GetCStickAngle use atan2(y, ABS(x)), independent
 /// of facing. Runtime/platform.h's comparison-based ABS retains negative zero.
 /// libm replaces the target transcendental routine; numerical parity is tested.
 pub fn stick_angle([x, y]: [f32; 2]) -> f32 {
-    libm::atan2f(y, absolute(x))
+    libm::atan2f(y, super::compat::comparison_abs(x))
 }
 
 /// ftCo_AttackAir_GetMsidFromCStick. Only a fresh C-stick overrides the main
@@ -52,7 +54,9 @@ pub fn select(
         main
     };
     let angle = stick_angle([x, y]);
-    if absolute(x) < rules.thresholds[0] && absolute(y) < rules.thresholds[1] {
+    if super::compat::comparison_abs(x) < rules.thresholds[0]
+        && super::compat::comparison_abs(y) < rules.thresholds[1]
+    {
         Direction::Neutral
     } else if angle > rules.vertical_angle {
         Direction::Up
@@ -90,10 +94,6 @@ pub fn landing_lag(
 /// comes from ftAnim_8006F484's selected animation, not a count of sampled poses.
 pub fn landing_animation_rate(end_frame: f32, lag: f32) -> f32 {
     (end_frame + 0.1) / lag
-}
-
-fn absolute(value: f32) -> f32 {
-    if value < 0.0 { -value } else { value }
 }
 
 #[cfg(test)]

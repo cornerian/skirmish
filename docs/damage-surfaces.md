@@ -50,8 +50,10 @@ profile omission, an unmet threshold, malformed resources and deterministic
 checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
-Tech rolls, character-specific poses, invincibility, effect/audio commands, the
-complete collision callback graph and independent Melee traces remain pending.
+Missed-tech choices, character-specific surface-tech poses, invincibility,
+effect/audio commands, the complete collision callback graph and independent
+Melee traces remain pending. Directional floor tech rolls are supplied by the
+[damage-floor profile](damage-floor.md).
 The current repeat guard records the most recent surface class; native
 line-specific and connected-corner behavior needs broader collision-state
 translation.

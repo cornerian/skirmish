@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 floor-tech roll batch is recorded at:
+
+`/mnt/archive/runs/skirmish-floor-tech-roll-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage runs neutral, forward and backward
+floor techs, inclusive input selection, separate sampled action durations,
+TransN root motion, bone-derived ECB changes, serialization, malformed resources
+and exact checkpoint replay. Direction selection compares against complete
+pinned original C across arbitrary binary32 inputs. Independent scheduler traces
+remain pending.
+
 The 2026-09-09 damage-surface tech batch is recorded at:
 
 `/mnt/archive/runs/skirmish-damage-surface-tech-20260909`

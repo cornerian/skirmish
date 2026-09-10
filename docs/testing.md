@@ -117,11 +117,13 @@ outside the declared profile.
 
 The [damage-floor profile](damage-floor.md) promotes both tumble-landing
 conformance scenarios. `game_damage_floor` exercises buffered neutral tech,
+directional forward/backward rolls, sampled TransN motion and bone-derived ECBs,
 repeat lockout, exact configured knockdown/recovery durations, non-tumble
-landings, DamageFall carry, invalid data, checkpoint replay and reset.
+landings, DamageFall carry, invalid data, serialization, checkpoint replay and reset.
 `damage_floor_differential` compares the retained eligibility predicate with
 the complete pinned original C function over generated timer, boundary and lock
-inputs.
+inputs. `floor_tech_roll_differential` compares complete `ftCo_80098928` with a
+stubbed tech result over selector boundaries and arbitrary binary32 values.
 
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
@@ -201,6 +203,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |
 | `ecb_response` | Four-sided moving compression, ECB restoration, moving-floor landing, one-way direction and tangential-motion rejection, checkpoint replay |
+| `damage_floor` | Neutral and directional techs, sampled roll root motion and bone ECBs, knockdown recovery, input boundaries, invalid profiles and checkpoint replay |
 | `damage_surface` | Wall/ceiling reflection and techs, neutral/jump choice, both wall orientations, ceiling motion, action timing, collision priority, repeat lockout, disabled/invalid profiles and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
