@@ -11,16 +11,26 @@ use thiserror::Error;
 
 use crate::{
     animation::DataOffset,
+    menu::{AnimationCue, AnimationId},
     presentation::{
-        instance::{SourceJointId, SourceMaterialId, SourceTarget, SourceTextureId},
+        AnimationPlayback, PlaybackError,
+        instance::{
+            InstanceError, InstanceId, SceneInstance, SourceJointId, SourceMaterialId,
+            SourceTarget, SourceTextureId,
+        },
         manifest::{
-            BindError, BoundHierarchy, BoundPresentation, SourceBindingIdentity, SourceObjectKind,
+            BatchApplyError, BindError, BoundClip, BoundHierarchy, BoundPresentation,
+            PresentationUpdate, SampleError, SourceBindingIdentity, SourceObjectKind,
         },
     },
 };
 
-use super::scene::{
-    Scene, VisualJointOccurrence, VisualMaterialOccurrence, VisualTextureOccurrence,
+use super::{
+    gpu::{
+        DrawUpdate, ExportDrawSelector, ExportMaterialSelector, RuntimeDrawBatchError,
+        RuntimeDrawUpdate, WindowRenderer,
+    },
+    scene::{Scene, VisualJointOccurrence, VisualMaterialOccurrence, VisualTextureOccurrence},
 };
 
 /// A provenance-checked correspondence between one native hierarchy and its
@@ -86,6 +96,411 @@ impl VisualPresentationBinding {
     pub fn texture_occurrence(&self, source: &SourceTextureId) -> Option<&VisualTextureOccurrence> {
         self.textures.get(source)
     }
+}
+
+/// One independently mutable native presentation instance routed to exact
+/// visual occurrences.
+///
+/// Playback and scene state remain private so every source sample is applied as
+/// one transaction. GPU application is deliberately separate: a caller may
+/// retry the returned tick after a surface or renderer error without sampling
+/// another authored frame.
+#[derive(Debug)]
+pub struct RenderedPresentationInstance {
+    binding: Arc<VisualPresentationBinding>,
+    instance: SceneInstance,
+    playback: AnimationPlayback,
+}
+
+impl RenderedPresentationInstance {
+    pub fn instantiate(
+        binding: Arc<VisualPresentationBinding>,
+        instance_id: InstanceId,
+        cue: AnimationCue,
+    ) -> Result<Self, PresentationDriverError> {
+        let playback = validated_playback(binding.as_ref(), cue)?;
+        let hierarchy = binding
+            .presentation()
+            .hierarchy(binding.hierarchy())
+            .expect("a visual binding retains its validated native hierarchy");
+        let instance = hierarchy.instantiate(instance_id)?;
+        Ok(Self {
+            binding,
+            instance,
+            playback,
+        })
+    }
+
+    pub fn binding(&self) -> &VisualPresentationBinding {
+        self.binding.as_ref()
+    }
+
+    pub fn scene_instance(&self) -> &SceneInstance {
+        &self.instance
+    }
+
+    pub fn playback(&self) -> &AnimationPlayback {
+        &self.playback
+    }
+
+    /// Replace the current cue only after its generic range and bound-HSD
+    /// sampling contract have both been validated.
+    pub fn restart(&mut self, cue: AnimationCue) -> Result<(), PresentationDriverError> {
+        let playback = validated_playback(self.binding.as_ref(), cue)?;
+        self.playback = playback;
+        Ok(())
+    }
+
+    /// Return every current native state field without consuming a playback
+    /// tick.
+    ///
+    /// This is the explicit initial/recovery synchronization path. Joint-local
+    /// and texture state remain retained as unsupported instead of assuming the
+    /// visual export already agrees with the native resource.
+    pub fn state_snapshot(&self) -> RenderedPresentationTick {
+        RenderedPresentationTick {
+            frame: self.playback.frame(),
+            updates: route_updates(self.binding.as_ref(), current_state_updates(&self.instance)),
+        }
+    }
+
+    /// Sample and atomically commit one authored presentation tick.
+    ///
+    /// Playback is cloned and committed last.
+    /// [`SampleBatch::apply`](crate::presentation::manifest::SampleBatch::apply)
+    /// stages the scene mutation, so either sampling/apply failure leaves both
+    /// retained states unchanged.
+    pub fn tick(&mut self) -> Result<RenderedPresentationTick, PresentationDriverError> {
+        let mut playback = self.playback.clone();
+        let frame = playback.tick();
+        let clip = resolve_clip(self.binding.as_ref(), playback.animation_id())?;
+        let batch = clip.sample(frame)?;
+        let source_updates = batch.apply(&mut self.instance)?;
+        let updates = route_updates(self.binding.as_ref(), source_updates);
+        self.playback = playback;
+        Ok(RenderedPresentationTick { frame, updates })
+    }
+}
+
+/// One sampled authored frame plus lossless renderer-routing decisions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderedPresentationTick {
+    frame: f32,
+    updates: Vec<RoutedPresentationUpdate>,
+}
+
+impl RenderedPresentationTick {
+    pub const fn frame(&self) -> f32 {
+        self.frame
+    }
+
+    pub fn updates(&self) -> &[RoutedPresentationUpdate] {
+        &self.updates
+    }
+
+    /// Apply all renderable updates as one prevalidated batch.
+    ///
+    /// The returned vector is one-to-one with [`Self::updates`]. A mapped
+    /// update that reaches no retained draw is reported as `MatchedDraws(0)`;
+    /// unsupported and unmapped source deltas remain explicit. This result
+    /// describes only this tick and is not a claim of whole-presentation parity.
+    pub fn apply_to(
+        &self,
+        renderer: &mut WindowRenderer,
+    ) -> Result<Vec<PresentationApplyOutcome>, PresentationRendererError> {
+        self.apply_with(|updates| renderer.update_instance_draws_batch(updates))
+    }
+
+    fn apply_with(
+        &self,
+        submit: impl FnOnce(&[RuntimeDrawUpdate<'_>]) -> Result<Vec<usize>, RuntimeDrawBatchError>,
+    ) -> Result<Vec<PresentationApplyOutcome>, PresentationRendererError> {
+        let mut source_indices = Vec::new();
+        let mut draw_updates = Vec::new();
+        for (index, routed) in self.updates.iter().enumerate() {
+            if let Some(update) = routed.runtime_draw_update() {
+                source_indices.push(index);
+                draw_updates.push(update);
+            }
+        }
+        let match_counts = submit(&draw_updates).map_err(|source| PresentationRendererError {
+            update_index: source_indices[source.index()],
+            source,
+        })?;
+        assert_eq!(
+            match_counts.len(),
+            source_indices.len(),
+            "renderer batch result must preserve one count per update"
+        );
+        let mut match_counts = match_counts.into_iter();
+        Ok(self
+            .updates
+            .iter()
+            .map(|update| match &update.route {
+                PresentationUpdateRoute::JointVisibility(_)
+                | PresentationUpdateRoute::Material(_) => PresentationApplyOutcome::MatchedDraws(
+                    match_counts
+                        .next()
+                        .expect("every routed draw update has one match count"),
+                ),
+                PresentationUpdateRoute::Retained(reason) => {
+                    PresentationApplyOutcome::Retained(*reason)
+                }
+            })
+            .collect())
+    }
+}
+
+/// One source delta paired with an immutable routing decision.
+///
+/// Fields stay private so callers cannot associate a source update with the
+/// wrong visual occurrence.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoutedPresentationUpdate {
+    update: PresentationUpdate,
+    route: PresentationUpdateRoute,
+}
+
+impl RoutedPresentationUpdate {
+    pub fn update(&self) -> &PresentationUpdate {
+        &self.update
+    }
+
+    pub fn route(&self) -> &PresentationUpdateRoute {
+        &self.route
+    }
+
+    fn runtime_draw_update(&self) -> Option<RuntimeDrawUpdate<'_>> {
+        match (&self.update, &self.route) {
+            (
+                PresentationUpdate::JointVisibility {
+                    instance_id,
+                    visible,
+                    ..
+                },
+                PresentationUpdateRoute::JointVisibility(occurrence),
+            ) => Some(RuntimeDrawUpdate {
+                instance_id: *instance_id,
+                update: DrawUpdate::Visibility {
+                    target: ExportDrawSelector::Exact(occurrence),
+                    visible: *visible,
+                },
+            }),
+            (
+                PresentationUpdate::Material {
+                    instance_id,
+                    diffuse,
+                    alpha,
+                    ..
+                },
+                PresentationUpdateRoute::Material(occurrence),
+            ) => Some(RuntimeDrawUpdate {
+                instance_id: *instance_id,
+                update: DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector::Exact(occurrence),
+                    color: [
+                        f32::from(diffuse[0]) / 255.0,
+                        f32::from(diffuse[1]) / 255.0,
+                        f32::from(diffuse[2]) / 255.0,
+                        *alpha,
+                    ],
+                },
+            }),
+            (_, PresentationUpdateRoute::Retained(_)) => None,
+            _ => unreachable!("routing is constructed from the same source update"),
+        }
+    }
+}
+
+/// How one native source delta can reach the current renderer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PresentationUpdateRoute {
+    JointVisibility(VisualJointOccurrence),
+    Material(VisualMaterialOccurrence),
+    Retained(RetainedPresentationReason),
+}
+
+/// Why a lossless native source delta was retained instead of rendered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RetainedPresentationReason {
+    UnsupportedJointLocal,
+    UnsupportedTexture,
+    UnmappedJointVisibility,
+    UnmappedMaterial,
+}
+
+/// Renderer result corresponding to exactly one routed source delta.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationApplyOutcome {
+    MatchedDraws(usize),
+    Retained(RetainedPresentationReason),
+}
+
+#[derive(Debug, Error)]
+pub enum PresentationDriverError {
+    #[error("presentation clip {clip:?} does not exist")]
+    MissingClip { clip: AnimationId },
+    #[error(
+        "presentation clip {clip:?} belongs to hierarchy {actual:?}, not bound hierarchy {expected:?}"
+    )]
+    ClipHierarchyMismatch {
+        clip: AnimationId,
+        expected: String,
+        actual: String,
+    },
+    #[error(
+        "presentation clip {clip:?} has non-integral HSD-v1 {field} frame bits 0x{frame_bits:08x}"
+    )]
+    NonIntegralCueRange {
+        clip: AnimationId,
+        field: &'static str,
+        frame_bits: u32,
+    },
+    #[error(transparent)]
+    Playback(#[from] PlaybackError),
+    #[error(transparent)]
+    Instance(#[from] InstanceError),
+    #[error(transparent)]
+    Sample(#[from] SampleError),
+    #[error(transparent)]
+    Apply(#[from] BatchApplyError),
+}
+
+#[derive(Debug, Error)]
+#[error("apply presentation update {update_index}: {source}")]
+pub struct PresentationRendererError {
+    update_index: usize,
+    #[source]
+    source: RuntimeDrawBatchError,
+}
+
+impl PresentationRendererError {
+    pub const fn update_index(&self) -> usize {
+        self.update_index
+    }
+}
+
+fn validated_playback(
+    binding: &VisualPresentationBinding,
+    cue: AnimationCue,
+) -> Result<AnimationPlayback, PresentationDriverError> {
+    let playback = AnimationPlayback::new(cue)?;
+    resolve_clip(binding, playback.animation_id())?;
+    let range = playback.frame_range();
+    for (field, frame) in [
+        ("start", Some(range.start)),
+        ("end", Some(range.end)),
+        ("loop_start", range.loop_start),
+    ] {
+        if let Some(frame) = frame
+            && frame.fract() != 0.0
+        {
+            return Err(PresentationDriverError::NonIntegralCueRange {
+                clip: playback.animation_id().clone(),
+                field,
+                frame_bits: frame.to_bits(),
+            });
+        }
+    }
+    Ok(playback)
+}
+
+fn resolve_clip<'a>(
+    binding: &'a VisualPresentationBinding,
+    animation: &AnimationId,
+) -> Result<&'a BoundClip, PresentationDriverError> {
+    let clip = binding.presentation().clip(animation).ok_or_else(|| {
+        PresentationDriverError::MissingClip {
+            clip: animation.clone(),
+        }
+    })?;
+    if clip.hierarchy() != binding.hierarchy() {
+        return Err(PresentationDriverError::ClipHierarchyMismatch {
+            clip: animation.clone(),
+            expected: binding.hierarchy().to_owned(),
+            actual: clip.hierarchy().to_owned(),
+        });
+    }
+    Ok(clip)
+}
+
+fn current_state_updates(instance: &SceneInstance) -> Vec<PresentationUpdate> {
+    let instance_id = instance.id();
+    let mut updates = Vec::with_capacity(
+        instance.joints().len() * 2 + instance.materials().len() + instance.textures().len(),
+    );
+    for joint in instance.joints() {
+        updates.push(PresentationUpdate::JointVisibility {
+            instance_id,
+            source_id: joint.source_id().clone(),
+            visible: joint.visible(),
+        });
+        updates.push(PresentationUpdate::JointLocal {
+            instance_id,
+            source_id: joint.source_id().clone(),
+            local: joint.local(),
+        });
+    }
+    for material in instance.materials() {
+        updates.push(PresentationUpdate::Material {
+            instance_id,
+            source_id: material.source_id().clone(),
+            diffuse: material.diffuse(),
+            alpha: material.alpha(),
+        });
+    }
+    for texture in instance.textures() {
+        updates.push(PresentationUpdate::Texture {
+            instance_id,
+            source_id: texture.source_id().clone(),
+            current_image: texture.current_image().cloned(),
+            translation: texture.translation(),
+            scale: texture.scale(),
+            blend: texture.blend(),
+            konst: texture.konst(),
+            tev0: texture.tev0(),
+        });
+    }
+    updates
+}
+
+fn route_updates(
+    binding: &VisualPresentationBinding,
+    updates: Vec<PresentationUpdate>,
+) -> Vec<RoutedPresentationUpdate> {
+    updates
+        .into_iter()
+        .map(|update| route_update(binding, update))
+        .collect()
+}
+
+fn route_update(
+    binding: &VisualPresentationBinding,
+    update: PresentationUpdate,
+) -> RoutedPresentationUpdate {
+    let route = match &update {
+        PresentationUpdate::JointVisibility { source_id, .. } => binding
+            .joint_occurrence(source_id)
+            .cloned()
+            .map(PresentationUpdateRoute::JointVisibility)
+            .unwrap_or(PresentationUpdateRoute::Retained(
+                RetainedPresentationReason::UnmappedJointVisibility,
+            )),
+        PresentationUpdate::JointLocal { .. } => {
+            PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+        }
+        PresentationUpdate::Material { source_id, .. } => binding
+            .material_occurrence(source_id)
+            .cloned()
+            .map(PresentationUpdateRoute::Material)
+            .unwrap_or(PresentationUpdateRoute::Retained(
+                RetainedPresentationReason::UnmappedMaterial,
+            )),
+        PresentationUpdate::Texture { .. } => {
+            PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedTexture)
+        }
+    };
+    RoutedPresentationUpdate { update, route }
 }
 
 #[derive(Debug, Error)]
@@ -362,9 +777,10 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use crate::{
+        menu::{AnimationCue, FrameRange},
         presentation::manifest::{
-            HierarchySpec, OffsetSpace, PRESENTATION_MANIFEST_SCHEMA, PresentationManifest,
-            ResourceSpec, VisualOffsetSpaces,
+            ClipScope, ClipSpec, HierarchySpec, OffsetSpace, PRESENTATION_MANIFEST_SCHEMA,
+            PresentationManifest, ResourceSpec, VisualOffsetSpaces,
         },
         renderer::scene::{VisualDObjOccurrence, VisualResourceId},
     };
@@ -458,14 +874,24 @@ mod tests {
                 materials: offset_space,
                 textures: offset_space,
             },
-            hierarchies: vec![HierarchySpec {
-                id: "root".into(),
-                model_root: MODEL_ROOT,
-                joint_animation_root: None,
-                material_animation_root: None,
-                shape_animation_root: None,
-            }],
-            clips: Vec::new(),
+            hierarchies: ["root", "other"]
+                .into_iter()
+                .map(|id| HierarchySpec {
+                    id: id.into(),
+                    model_root: MODEL_ROOT,
+                    joint_animation_root: None,
+                    material_animation_root: None,
+                    shape_animation_root: None,
+                })
+                .collect(),
+            clips: ["root", "other"]
+                .into_iter()
+                .map(|hierarchy| ClipSpec {
+                    id: AnimationId::from(format!("{hierarchy}.empty")),
+                    hierarchy: hierarchy.into(),
+                    scope: ClipScope::Subtree { joint: MODEL_ROOT },
+                })
+                .collect(),
         };
         Arc::new(manifest.bind_hsd_dat(&archive).unwrap())
     }
@@ -534,7 +960,13 @@ mod tests {
                 material_animation_root: Some(MAT_ANIM_JOINT),
                 shape_animation_root: None,
             }],
-            clips: Vec::new(),
+            clips: vec![ClipSpec {
+                id: AnimationId::from("animated.full"),
+                hierarchy: "animated".into(),
+                scope: ClipScope::Subtree {
+                    joint: ANIMATED_MODEL,
+                },
+            }],
         };
         Arc::new(manifest.bind_hsd_dat(&archive).unwrap())
     }
@@ -596,6 +1028,47 @@ mod tests {
             dobj_index: 0,
         });
         mesh
+    }
+
+    fn cue(id: &str, start: f32, end: f32, loop_start: Option<f32>) -> AnimationCue {
+        AnimationCue {
+            id: AnimationId::from(id),
+            frames: FrameRange {
+                start,
+                end,
+                loop_start,
+            },
+        }
+    }
+
+    fn exact_joint_binding(
+        directory: &Path,
+        presentation: Arc<BoundPresentation>,
+    ) -> Arc<VisualPresentationBinding> {
+        let mut scene = scene_with_resources(
+            &directory.join("joint.json"),
+            json!([{
+                "id": RESOURCE_ID,
+                "sha256": presentation.resource().sha256,
+            }]),
+        );
+        scene.meshes.push(exact_joint_mesh(
+            scene.resources[0].id().clone(),
+            MODEL_ROOT,
+        ));
+        Arc::new(VisualPresentationBinding::bind(&scene, presentation, "root").unwrap())
+    }
+
+    fn repeated_material_binding(
+        directory: &Path,
+        presentation: Arc<BoundPresentation>,
+    ) -> Arc<VisualPresentationBinding> {
+        let scene = repeated_material_scene(
+            &directory.join("material.json"),
+            &presentation.resource().sha256,
+            MOBJ,
+        );
+        Arc::new(VisualPresentationBinding::bind(&scene, presentation, "animated").unwrap())
     }
 
     #[test]
@@ -688,6 +1161,293 @@ mod tests {
                 ..
             }) if actual == MOBJ + 4
         ));
+    }
+
+    #[test]
+    fn presentation_driver_validates_and_restarts_without_partial_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let binding = exact_joint_binding(
+            directory.path(),
+            one_joint_presentation(OffsetSpace::DataSection),
+        );
+        let mut driver = RenderedPresentationInstance::instantiate(
+            binding,
+            InstanceId::new(77),
+            cue("root.empty", 0.0, 2.0, None),
+        )
+        .unwrap();
+        assert_eq!(driver.scene_instance().id(), InstanceId::new(77));
+        assert_eq!(driver.playback().frame(), 0.0);
+
+        let snapshot = driver.state_snapshot();
+        assert_eq!(snapshot.frame(), 0.0);
+        assert!(matches!(
+            snapshot.updates(),
+            [
+                RoutedPresentationUpdate {
+                    route: PresentationUpdateRoute::JointVisibility(_),
+                    ..
+                },
+                RoutedPresentationUpdate {
+                    route: PresentationUpdateRoute::Retained(
+                        RetainedPresentationReason::UnsupportedJointLocal
+                    ),
+                    ..
+                },
+            ]
+        ));
+
+        assert_eq!(driver.tick().unwrap().frame(), 0.0);
+        assert_eq!(driver.tick().unwrap().frame(), 1.0);
+        let before_playback = driver.playback().clone();
+        let before_joints = driver.scene_instance().joints().to_vec();
+
+        assert!(matches!(
+            driver.restart(cue("missing", 0.0, 2.0, None)),
+            Err(PresentationDriverError::MissingClip { .. })
+        ));
+        assert!(matches!(
+            driver.restart(cue("other.empty", 0.0, 2.0, None)),
+            Err(PresentationDriverError::ClipHierarchyMismatch { .. })
+        ));
+        assert!(matches!(
+            driver.restart(cue("root.empty", 0.5, 2.0, None)),
+            Err(PresentationDriverError::NonIntegralCueRange { field: "start", .. })
+        ));
+        assert!(matches!(
+            driver.restart(cue("root.empty", 2.0, 1.0, None)),
+            Err(PresentationDriverError::Playback(_))
+        ));
+        assert_eq!(driver.playback(), &before_playback);
+        assert_eq!(driver.scene_instance().joints(), before_joints);
+
+        driver.restart(cue("root.empty", 0.0, 2.0, None)).unwrap();
+        assert_eq!(driver.tick().unwrap().frame(), 0.0);
+    }
+
+    #[test]
+    fn presentation_routes_are_lossless_and_apply_counts_stay_aligned() {
+        let directory = tempfile::tempdir().unwrap();
+        let presentation = repeated_material_presentation();
+        let hierarchy = presentation.hierarchy("animated").unwrap();
+        let joint = hierarchy.joints()[0].source_id.clone();
+        let local = hierarchy.joints()[0].local.initial_runtime_local();
+        let material = hierarchy.materials()[0].source_id.clone();
+        let texture = hierarchy.textures()[0].source_id.clone();
+        let binding = repeated_material_binding(directory.path(), presentation);
+        let instance_id = InstanceId::new(91);
+        let source_updates = vec![
+            PresentationUpdate::JointVisibility {
+                instance_id,
+                source_id: joint.clone(),
+                visible: false,
+            },
+            PresentationUpdate::JointVisibility {
+                instance_id,
+                source_id: SourceJointId::from("missing-joint"),
+                visible: true,
+            },
+            PresentationUpdate::JointLocal {
+                instance_id,
+                source_id: joint,
+                local,
+            },
+            PresentationUpdate::Material {
+                instance_id,
+                source_id: material,
+                diffuse: [1, 128, 255],
+                alpha: 0.25,
+            },
+            PresentationUpdate::Material {
+                instance_id,
+                source_id: SourceMaterialId::from("missing-material"),
+                diffuse: [2, 3, 4],
+                alpha: 0.5,
+            },
+            PresentationUpdate::Texture {
+                instance_id,
+                source_id: texture,
+                current_image: None,
+                translation: [1.0, 2.0],
+                scale: [3.0, 4.0],
+                blend: 0.75,
+                konst: Some([1, 2, 3, 4]),
+                tev0: Some([5, 6, 7, 8]),
+            },
+        ];
+        let tick = RenderedPresentationTick {
+            frame: 3.0,
+            updates: route_updates(binding.as_ref(), source_updates.clone()),
+        };
+
+        assert_eq!(
+            tick.updates()
+                .iter()
+                .map(RoutedPresentationUpdate::update)
+                .cloned()
+                .collect::<Vec<_>>(),
+            source_updates
+        );
+        assert!(matches!(
+            tick.updates()[0].route(),
+            PresentationUpdateRoute::JointVisibility(_)
+        ));
+        assert_eq!(
+            tick.updates()[1].route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedJointVisibility)
+        );
+        assert_eq!(
+            tick.updates()[2].route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+        );
+        assert!(matches!(
+            tick.updates()[3].route(),
+            PresentationUpdateRoute::Material(_)
+        ));
+        assert_eq!(
+            tick.updates()[4].route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedMaterial)
+        );
+        assert_eq!(
+            tick.updates()[5].route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedTexture)
+        );
+
+        let outcomes = tick
+            .apply_with(|updates| {
+                assert_eq!(updates.len(), 2);
+                assert_eq!(updates[0].instance_id, instance_id);
+                assert!(matches!(
+                    updates[0].update,
+                    DrawUpdate::Visibility {
+                        target: ExportDrawSelector::Exact(_),
+                        visible: false,
+                    }
+                ));
+                assert!(matches!(
+                    updates[1].update,
+                    DrawUpdate::MaterialColor {
+                        target: ExportMaterialSelector::Exact(_),
+                        color,
+                    } if color == [1.0 / 255.0, 128.0 / 255.0, 1.0, 0.25]
+                ));
+                Ok(vec![0, 2])
+            })
+            .unwrap();
+        assert_eq!(
+            outcomes,
+            [
+                PresentationApplyOutcome::MatchedDraws(0),
+                PresentationApplyOutcome::Retained(
+                    RetainedPresentationReason::UnmappedJointVisibility
+                ),
+                PresentationApplyOutcome::Retained(
+                    RetainedPresentationReason::UnsupportedJointLocal
+                ),
+                PresentationApplyOutcome::MatchedDraws(2),
+                PresentationApplyOutcome::Retained(RetainedPresentationReason::UnmappedMaterial),
+                PresentationApplyOutcome::Retained(RetainedPresentationReason::UnsupportedTexture),
+            ]
+        );
+
+        let error = tick
+            .apply_with(|_| Err(RuntimeDrawBatchError::new(1, anyhow::anyhow!("rejected"))))
+            .unwrap_err();
+        assert_eq!(error.update_index(), 3);
+    }
+
+    #[test]
+    fn sampled_driver_ticks_keep_instances_isolated_and_fail_transactionally() {
+        let directory = tempfile::tempdir().unwrap();
+        let binding = repeated_material_binding(directory.path(), repeated_material_presentation());
+        let mut first = RenderedPresentationInstance::instantiate(
+            binding.clone(),
+            InstanceId::new(101),
+            cue("animated.full", 0.0, 4.0, None),
+        )
+        .unwrap();
+        let mut second = RenderedPresentationInstance::instantiate(
+            binding,
+            InstanceId::new(102),
+            cue("animated.full", 0.0, 4.0, None),
+        )
+        .unwrap();
+
+        let initial = first.state_snapshot();
+        assert_eq!(
+            initial
+                .updates()
+                .iter()
+                .filter(|update| matches!(update.route(), PresentationUpdateRoute::Material(_)))
+                .count(),
+            2
+        );
+        assert_eq!(
+            initial
+                .updates()
+                .iter()
+                .filter(|update| {
+                    update.route()
+                        == &PresentationUpdateRoute::Retained(
+                            RetainedPresentationReason::UnsupportedTexture,
+                        )
+                })
+                .count(),
+            2
+        );
+
+        let first_tick = first.tick().unwrap();
+        let second_tick = second.tick().unwrap();
+        assert_eq!(first_tick.frame(), 0.0);
+        assert_eq!(second_tick.frame(), 0.0);
+        assert!(
+            first_tick
+                .updates()
+                .iter()
+                .any(|update| matches!(update.route(), PresentationUpdateRoute::Material(_)))
+        );
+        assert!(
+            first_tick
+                .updates()
+                .iter()
+                .all(|update| match update.update() {
+                    PresentationUpdate::JointVisibility { instance_id, .. }
+                    | PresentationUpdate::JointLocal { instance_id, .. }
+                    | PresentationUpdate::Material { instance_id, .. }
+                    | PresentationUpdate::Texture { instance_id, .. } => {
+                        *instance_id == InstanceId::new(101)
+                    }
+                })
+        );
+        assert!(
+            second_tick
+                .updates()
+                .iter()
+                .all(|update| match update.update() {
+                    PresentationUpdate::JointVisibility { instance_id, .. }
+                    | PresentationUpdate::JointLocal { instance_id, .. }
+                    | PresentationUpdate::Material { instance_id, .. }
+                    | PresentationUpdate::Texture { instance_id, .. } => {
+                        *instance_id == InstanceId::new(102)
+                    }
+                })
+        );
+
+        first.playback = AnimationPlayback::new(cue("animated.full", 0.5, 4.5, None)).unwrap();
+        let before_playback = first.playback.clone();
+        let before_joints = first.instance.joints().to_vec();
+        let before_materials = first.instance.materials().to_vec();
+        let before_textures = first.instance.textures().to_vec();
+        assert!(matches!(
+            first.tick(),
+            Err(PresentationDriverError::Sample(
+                SampleError::FractionalFrame { .. }
+            ))
+        ));
+        assert_eq!(first.playback, before_playback);
+        assert_eq!(first.instance.joints(), before_joints);
+        assert_eq!(first.instance.materials(), before_materials);
+        assert_eq!(first.instance.textures(), before_textures);
     }
 
     #[test]

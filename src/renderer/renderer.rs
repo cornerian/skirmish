@@ -10,6 +10,7 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use glam::Vec3;
 use sdl3::video::Window;
+use thiserror::Error;
 use wgpu::util::DeviceExt;
 
 use crate::presentation::instance::InstanceId;
@@ -82,6 +83,25 @@ pub enum DrawUpdate<'a> {
 pub struct RuntimeDrawUpdate<'a> {
     pub instance_id: InstanceId,
     pub update: DrawUpdate<'a>,
+}
+
+/// A rejected member of an otherwise atomic runtime draw batch.
+#[derive(Debug, Error)]
+#[error("runtime draw update {index}: {source}")]
+pub struct RuntimeDrawBatchError {
+    index: usize,
+    #[source]
+    source: anyhow::Error,
+}
+
+impl RuntimeDrawBatchError {
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+
+    pub(super) fn new(index: usize, source: anyhow::Error) -> Self {
+        Self { index, source }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,6 +249,31 @@ fn ensure_runtime_instance(
         "runtime draw instance {} does not exist",
         instance_id.get()
     );
+    Ok(())
+}
+
+fn validate_runtime_draw_update(
+    instance_ids: &HashSet<InstanceId>,
+    update: RuntimeDrawUpdate<'_>,
+) -> Result<()> {
+    ensure_runtime_instance(instance_ids, update.instance_id)?;
+    if let DrawUpdate::MaterialColor { color, .. } = update.update {
+        ensure!(
+            color.iter().all(|component| component.is_finite()),
+            "material color must contain finite components"
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_draw_batch(
+    instance_ids: &HashSet<InstanceId>,
+    updates: &[RuntimeDrawUpdate<'_>],
+) -> std::result::Result<(), RuntimeDrawBatchError> {
+    for (index, update) in updates.iter().copied().enumerate() {
+        validate_runtime_draw_update(instance_ids, update)
+            .map_err(|source| RuntimeDrawBatchError::new(index, source))?;
+    }
     Ok(())
 }
 
@@ -900,13 +945,23 @@ impl GpuScene {
     }
 
     fn update_instance_draws(&mut self, update: RuntimeDrawUpdate<'_>) -> Result<usize> {
-        ensure_runtime_instance(&self.instance_ids, update.instance_id)?;
-        if let DrawUpdate::MaterialColor { color, .. } = update.update {
-            ensure!(
-                color.iter().all(|component| component.is_finite()),
-                "material color must contain finite components"
-            );
-        }
+        validate_runtime_draw_update(&self.instance_ids, update)?;
+        Ok(self.apply_instance_draw_update(update))
+    }
+
+    fn update_instance_draws_batch(
+        &mut self,
+        updates: &[RuntimeDrawUpdate<'_>],
+    ) -> std::result::Result<Vec<usize>, RuntimeDrawBatchError> {
+        validate_runtime_draw_batch(&self.instance_ids, updates)?;
+        Ok(updates
+            .iter()
+            .copied()
+            .map(|update| self.apply_instance_draw_update(update))
+            .collect())
+    }
+
+    fn apply_instance_draw_update(&mut self, update: RuntimeDrawUpdate<'_>) -> usize {
         let mut matched = 0;
         for draw in &mut self.draws {
             if !update_runtime_presentation(draw.instance_id, &mut draw.presentation, update) {
@@ -926,7 +981,7 @@ impl GpuScene {
             }
             matched += 1;
         }
-        Ok(matched)
+        matched
     }
 
     fn draw(
@@ -1197,6 +1252,18 @@ impl WindowRenderer {
     /// grouped draw parts; immutable geometry and textures remain resident.
     pub fn update_instance_draws(&mut self, update: RuntimeDrawUpdate<'_>) -> Result<usize> {
         self.gpu.update_instance_draws(update)
+    }
+
+    /// Applies a complete renderer-facing presentation batch after validating
+    /// every runtime instance and material color.
+    ///
+    /// No draw state changes if validation fails. The returned vector retains
+    /// one exact match count per requested update, including zero matches.
+    pub fn update_instance_draws_batch(
+        &mut self,
+        updates: &[RuntimeDrawUpdate<'_>],
+    ) -> std::result::Result<Vec<usize>, RuntimeDrawBatchError> {
+        self.gpu.update_instance_draws_batch(updates)
     }
 
     /// Compatibility update for the original one-scene renderer.
@@ -2016,6 +2083,40 @@ mod tests {
         );
         ensure_new_runtime_instance(&instance_ids, missing).unwrap();
         ensure_runtime_instance(&instance_ids, existing).unwrap();
+    }
+
+    #[test]
+    fn runtime_batch_validation_reports_the_rejected_member() {
+        let instance = InstanceId::new(41);
+        let instance_ids = HashSet::from([instance]);
+        let mesh = exact_exported_mesh("resource", 7, 0, 100);
+        let joint = mesh.source_occurrence.as_ref().unwrap().owner_joint.clone();
+        let material = mesh.material.source_occurrence.as_ref().unwrap().clone();
+        let updates = [
+            RuntimeDrawUpdate {
+                instance_id: instance,
+                update: DrawUpdate::Visibility {
+                    target: ExportDrawSelector::Exact(&joint),
+                    visible: true,
+                },
+            },
+            RuntimeDrawUpdate {
+                instance_id: instance,
+                update: DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector::Exact(&material),
+                    color: [1.0, f32::NAN, 1.0, 1.0],
+                },
+            },
+        ];
+
+        let error = validate_runtime_draw_batch(&instance_ids, &updates).unwrap_err();
+
+        assert_eq!(error.index(), 1);
+        assert_eq!(
+            error.to_string(),
+            "runtime draw update 1: material color must contain finite components"
+        );
+        assert!(validate_runtime_draw_batch(&instance_ids, &[]).is_ok());
     }
 
     #[test]
