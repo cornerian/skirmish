@@ -251,6 +251,7 @@ impl RenderedPresentationTick {
             .iter()
             .map(|update| match &update.route {
                 PresentationUpdateRoute::JointVisibility(_)
+                | PresentationUpdateRoute::JointTransform(_)
                 | PresentationUpdateRoute::Material(_) => PresentationApplyOutcome::MatchedDraws(
                     match_counts
                         .next()
@@ -319,16 +320,45 @@ impl RoutedPresentationUpdate {
                     ],
                 },
             }),
+            (
+                PresentationUpdate::JointWorld {
+                    instance_id, world, ..
+                },
+                PresentationUpdateRoute::JointTransform(occurrence),
+            ) => Some(RuntimeDrawUpdate {
+                instance_id: *instance_id,
+                update: DrawUpdate::JointTransform {
+                    target: ExportDrawSelector::Exact(occurrence),
+                    world: column_major(world),
+                },
+            }),
             (_, PresentationUpdateRoute::Retained(_)) => None,
             _ => unreachable!("routing is constructed from the same source update"),
         }
     }
 }
 
+/// Convert HSD's row-major 3x4 matrix into the GPU's column-major 4x4 layout.
+fn column_major(world: &[[f32; 4]; 3]) -> [[f32; 4]; 4] {
+    std::array::from_fn(|column| {
+        std::array::from_fn(|row| {
+            if row < 3 {
+                world[row][column]
+            } else if column == 3 {
+                1.0
+            } else {
+                0.0
+            }
+        })
+    })
+}
+
 /// How one native source delta can reach the current renderer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PresentationUpdateRoute {
     JointVisibility(VisualJointOccurrence),
+    /// A composed joint world matrix reaching this joint's joint-local draws.
+    JointTransform(VisualJointOccurrence),
     Material(VisualMaterialOccurrence),
     Retained(RetainedPresentationReason),
 }
@@ -336,18 +366,16 @@ pub enum PresentationUpdateRoute {
 /// Why a lossless native source delta was retained instead of rendered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetainedPresentationReason {
-    /// The joint owns joint-local draws and the renderer accepts per-draw
-    /// joint transforms, but this driver does not yet compose native local
-    /// SRT deltas into HSD world matrices (classical-scale compensation,
-    /// billboards, instance boundaries), so nothing is sent.
-    UnsupportedJointLocal,
-    /// The joint's exported draws were baked into world space, so a native
-    /// local transform cannot move them without double-transforming.
+    /// A local SRT delta is not itself renderable; the instance composes it
+    /// into the joint's (and its descendants') `JointWorld` deltas.
+    ComposedIntoJointWorld,
+    /// The joint's exported draws were baked into world space, so a composed
+    /// world matrix cannot move them without double-transforming.
     BakedWorldGeometry,
     UnsupportedTexture,
-    /// No exported draw is attached directly to this joint. Descendant draws
-    /// are not repositioned until hierarchy composition exists.
-    UnmappedJointLocal,
+    /// No exported draw is attached directly to this joint; its transform is
+    /// already folded into descendants' own `JointWorld` deltas.
+    UnmappedJointWorld,
     UnmappedJointVisibility,
     UnmappedMaterial,
 }
@@ -450,7 +478,7 @@ fn resolve_clip<'a>(
 fn current_state_updates(instance: &SceneInstance) -> Vec<PresentationUpdate> {
     let instance_id = instance.id();
     let mut updates = Vec::with_capacity(
-        instance.joints().len() * 2 + instance.materials().len() + instance.textures().len(),
+        instance.joints().len() * 3 + instance.materials().len() + instance.textures().len(),
     );
     for joint in instance.joints() {
         updates.push(PresentationUpdate::JointVisibility {
@@ -462,6 +490,11 @@ fn current_state_updates(instance: &SceneInstance) -> Vec<PresentationUpdate> {
             instance_id,
             source_id: joint.source_id().clone(),
             local: joint.local(),
+        });
+        updates.push(PresentationUpdate::JointWorld {
+            instance_id,
+            source_id: joint.source_id().clone(),
+            world: joint.world(),
         });
     }
     for material in instance.materials() {
@@ -509,14 +542,24 @@ fn route_update(
             .unwrap_or(PresentationUpdateRoute::Retained(
                 RetainedPresentationReason::UnmappedJointVisibility,
             )),
-        PresentationUpdate::JointLocal { source_id, .. } => {
-            PresentationUpdateRoute::Retained(match binding.joint_geometry_space(source_id) {
-                Some(GeometrySpace::JointLocal) => {
-                    RetainedPresentationReason::UnsupportedJointLocal
-                }
-                Some(GeometrySpace::World) => RetainedPresentationReason::BakedWorldGeometry,
-                None => RetainedPresentationReason::UnmappedJointLocal,
-            })
+        PresentationUpdate::JointLocal { .. } => {
+            PresentationUpdateRoute::Retained(RetainedPresentationReason::ComposedIntoJointWorld)
+        }
+        PresentationUpdate::JointWorld { source_id, .. } => {
+            match binding.joint_geometry_space(source_id) {
+                Some(GeometrySpace::JointLocal) => PresentationUpdateRoute::JointTransform(
+                    binding
+                        .joint_occurrence(source_id)
+                        .cloned()
+                        .expect("a joint with a geometry space has an exact occurrence"),
+                ),
+                Some(GeometrySpace::World) => PresentationUpdateRoute::Retained(
+                    RetainedPresentationReason::BakedWorldGeometry,
+                ),
+                None => PresentationUpdateRoute::Retained(
+                    RetainedPresentationReason::UnmappedJointWorld,
+                ),
+            }
         }
         PresentationUpdate::Material { source_id, .. } => binding
             .material_occurrence(source_id)
@@ -1272,6 +1315,12 @@ mod tests {
                 },
                 RoutedPresentationUpdate {
                     route: PresentationUpdateRoute::Retained(
+                        RetainedPresentationReason::ComposedIntoJointWorld
+                    ),
+                    ..
+                },
+                RoutedPresentationUpdate {
+                    route: PresentationUpdateRoute::Retained(
                         RetainedPresentationReason::BakedWorldGeometry
                     ),
                     ..
@@ -1380,7 +1429,7 @@ mod tests {
         );
         assert_eq!(
             tick.updates()[2].route(),
-            &PresentationUpdateRoute::Retained(RetainedPresentationReason::BakedWorldGeometry)
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::ComposedIntoJointWorld)
         );
         assert!(matches!(
             tick.updates()[3].route(),
@@ -1423,7 +1472,9 @@ mod tests {
                 PresentationApplyOutcome::Retained(
                     RetainedPresentationReason::UnmappedJointVisibility
                 ),
-                PresentationApplyOutcome::Retained(RetainedPresentationReason::BakedWorldGeometry),
+                PresentationApplyOutcome::Retained(
+                    RetainedPresentationReason::ComposedIntoJointWorld
+                ),
                 PresentationApplyOutcome::MatchedDraws(2),
                 PresentationApplyOutcome::Retained(RetainedPresentationReason::UnmappedMaterial),
                 PresentationApplyOutcome::Retained(RetainedPresentationReason::UnsupportedTexture),
@@ -1493,6 +1544,7 @@ mod tests {
                 .all(|update| match update.update() {
                     PresentationUpdate::JointVisibility { instance_id, .. }
                     | PresentationUpdate::JointLocal { instance_id, .. }
+                    | PresentationUpdate::JointWorld { instance_id, .. }
                     | PresentationUpdate::Material { instance_id, .. }
                     | PresentationUpdate::Texture { instance_id, .. } => {
                         *instance_id == InstanceId::new(101)
@@ -1506,6 +1558,7 @@ mod tests {
                 .all(|update| match update.update() {
                     PresentationUpdate::JointVisibility { instance_id, .. }
                     | PresentationUpdate::JointLocal { instance_id, .. }
+                    | PresentationUpdate::JointWorld { instance_id, .. }
                     | PresentationUpdate::Material { instance_id, .. }
                     | PresentationUpdate::Texture { instance_id, .. } => {
                         *instance_id == InstanceId::new(102)
@@ -1613,18 +1666,28 @@ mod tests {
     }
 
     #[test]
-    fn joint_local_geometry_is_retained_explicitly_until_transforms_exist() {
+    fn composed_joint_worlds_route_to_joint_local_draws_and_retain_elsewhere() {
         let presentation = one_joint_presentation(OffsetSpace::DataSection);
         let directory = tempfile::tempdir().unwrap();
         let joint = presentation.hierarchy("root").unwrap().joints()[0]
             .source_id
             .clone();
+        let world = [
+            [1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, -1.0, 5.0],
+            [0.0, 1.0, 0.0, 6.0],
+        ];
         let local_update = |source_id: SourceJointId| PresentationUpdate::JointLocal {
             instance_id: InstanceId::new(5),
             source_id,
             local: presentation.hierarchy("root").unwrap().joints()[0]
                 .local
                 .initial_runtime_local(),
+        };
+        let world_update = |source_id: SourceJointId| PresentationUpdate::JointWorld {
+            instance_id: InstanceId::new(5),
+            source_id,
+            world,
         };
 
         let mut scene = scene_with_resources(
@@ -1656,15 +1719,43 @@ mod tests {
         );
         assert_eq!(
             route_update(&binding, local_update(joint.clone())).route(),
-            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::ComposedIntoJointWorld)
         );
+        let routed = route_update(&binding, world_update(joint.clone()));
+        assert!(matches!(
+            routed.route(),
+            PresentationUpdateRoute::JointTransform(occurrence)
+                if occurrence.visual_offset == MODEL_ROOT
+        ));
+        assert!(matches!(
+            routed.runtime_draw_update(),
+            Some(RuntimeDrawUpdate {
+                instance_id,
+                update: DrawUpdate::JointTransform {
+                    target: ExportDrawSelector::Exact(_),
+                    world: columns,
+                },
+            }) if instance_id == InstanceId::new(5)
+                && columns == [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0, 0.0],
+                    [4.0, 5.0, 6.0, 1.0],
+                ]
+        ));
         assert_eq!(
             binding.joint_geometry_space(&SourceJointId::from("absent")),
             None
         );
         assert_eq!(
-            route_update(&binding, local_update(SourceJointId::from("absent"))).route(),
-            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedJointLocal)
+            route_update(&binding, world_update(SourceJointId::from("absent"))).route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedJointWorld)
+        );
+
+        let baked = exact_joint_binding(directory.path(), presentation.clone());
+        assert_eq!(
+            route_update(&baked, world_update(joint.clone())).route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::BakedWorldGeometry)
         );
 
         scene.meshes[1].geometry_space = GeometrySpace::World;

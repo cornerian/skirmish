@@ -344,6 +344,9 @@ pub struct BoundJointSource {
     pub source_id: SourceJointId,
     pub parent: Option<SourceJointId>,
     pub local: AuthoredJointLocal,
+    /// `JOBJ_CLASSICAL_SCALE`: this joint's scale is not compensated in its
+    /// descendants' local matrices.
+    pub classical_scale: bool,
     pub visible: bool,
     /// False at `JOBJ_INSTANCE`, where HSD recursive flag operations stop.
     pub branch_recurses: bool,
@@ -436,6 +439,12 @@ pub enum BindingDiagnosticKind {
         stream_offset: DataOffset,
     },
     ShapeAnimationNotModeled,
+    /// The joint carries HSD pose flags whose matrix construction is not
+    /// modeled (billboards, quaternion rotation), so its composed world
+    /// matrix follows the plain Euler SRT path.
+    UnmodeledJointFlags {
+        flags: u32,
+    },
 }
 
 /// Manifest, provenance, and HSD graph validation failures.
@@ -626,6 +635,7 @@ impl BoundHierarchy {
                     source_id: source.source_id.clone(),
                     parent: source.parent.clone(),
                     local: source.local.initial_runtime_local(),
+                    classical_scale: source.classical_scale,
                     visible: source.visible,
                     branch_recurses: source.branch_recurses,
                 })
@@ -905,6 +915,13 @@ pub enum PresentationUpdate {
         source_id: SourceJointId,
         local: crate::presentation::instance::JointLocal,
     },
+    /// Composed HSD world matrix (row-major 3x4) after a joint or one of its
+    /// ancestors changed. Renderers position joint-local draws from this.
+    JointWorld {
+        instance_id: InstanceId,
+        source_id: SourceJointId,
+        world: [[f32; 4]; 3],
+    },
     Material {
         instance_id: InstanceId,
         source_id: SourceMaterialId,
@@ -929,6 +946,7 @@ struct InstanceSnapshot {
         SourceJointId,
         bool,
         crate::presentation::instance::JointLocal,
+        [[f32; 4]; 3],
     )>,
     materials: Vec<(SourceMaterialId, [u8; 3], f32)>,
     textures: Vec<TextureSnapshot>,
@@ -951,7 +969,14 @@ impl InstanceSnapshot {
             joints: instance
                 .joints()
                 .iter()
-                .map(|joint| (joint.source_id().clone(), joint.visible(), joint.local()))
+                .map(|joint| {
+                    (
+                        joint.source_id().clone(),
+                        joint.visible(),
+                        joint.local(),
+                        joint.world(),
+                    )
+                })
                 .collect(),
             materials: instance
                 .materials()
@@ -983,7 +1008,9 @@ impl InstanceSnapshot {
     fn diff(self, instance: &SceneInstance) -> Vec<PresentationUpdate> {
         let instance_id = instance.id();
         let mut updates = Vec::new();
-        for ((source_id, visible, local), after) in self.joints.into_iter().zip(instance.joints()) {
+        for ((source_id, visible, local, world), after) in
+            self.joints.into_iter().zip(instance.joints())
+        {
             if visible != after.visible() {
                 updates.push(PresentationUpdate::JointVisibility {
                     instance_id,
@@ -994,8 +1021,15 @@ impl InstanceSnapshot {
             if local != after.local() {
                 updates.push(PresentationUpdate::JointLocal {
                     instance_id,
-                    source_id,
+                    source_id: source_id.clone(),
                     local: after.local(),
+                });
+            }
+            if world != after.world() {
+                updates.push(PresentationUpdate::JointWorld {
+                    instance_id,
+                    source_id,
+                    world: after.world(),
                 });
             }
         }

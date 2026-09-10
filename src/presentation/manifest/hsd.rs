@@ -27,11 +27,17 @@ const TOBJ_DESC_SIZE: usize = 0x5c;
 const IMAGE_DESC_SIZE: usize = 0x18;
 const TOBJ_TEV_DESC_SIZE: usize = 0x20;
 
+const JOBJ_CLASSICAL_SCALE: u32 = 1 << 3;
 const JOBJ_HIDDEN: u32 = 1 << 4;
 const JOBJ_PTCL: u32 = 1 << 5;
+const JOBJ_BILLBOARD: u32 = 1 << 9;
 const JOBJ_INSTANCE: u32 = 1 << 12;
+const JOBJ_PBILLBOARD: u32 = 1 << 13;
 const JOBJ_SPLINE: u32 = 1 << 14;
+const JOBJ_USE_QUATERNION: u32 = 1 << 17;
 const JOBJ_USER_DEF_MTX: u32 = 1 << 23;
+/// Pose flags whose matrix construction the instance layer does not model.
+const JOBJ_UNMODELED_POSE_FLAGS: u32 = JOBJ_BILLBOARD | JOBJ_PBILLBOARD | JOBJ_USE_QUATERNION;
 
 #[derive(Clone, Debug)]
 pub(super) struct DerivedHierarchy {
@@ -194,11 +200,22 @@ pub(super) fn derive_hierarchy(
             .parent
             .map(|offset| joint_source_id(resource_id, joint_identity(offset)));
         let local = joint_local(view, pending.model, flags)?;
+        if flags & JOBJ_UNMODELED_POSE_FLAGS != 0 {
+            output.diagnostics.push(BindingDiagnostic {
+                hierarchy: spec.id.clone(),
+                owner_joint_offset: Some(DataOffset::new(pending.model)),
+                descriptor_offset: DataOffset::new(pending.model),
+                kind: BindingDiagnosticKind::UnmodeledJointFlags {
+                    flags: flags & JOBJ_UNMODELED_POSE_FLAGS,
+                },
+            });
+        }
         output.joints.push(BoundJointSource {
             identity,
             source_id,
             parent,
             local,
+            classical_scale: flags & JOBJ_CLASSICAL_SCALE != 0,
             visible: flags & JOBJ_HIDDEN == 0,
             branch_recurses: flags & JOBJ_INSTANCE == 0,
             instance_target,

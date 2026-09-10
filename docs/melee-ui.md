@@ -87,9 +87,9 @@ scene still lacks the animation target graph and alternate texture tables
 needed to bind archive tracks to runtime objects.
 
 The generic presentation-instance layer models independently mutable joint
-hierarchy and SRT-or-matrix state, effective branch visibility, material state,
-and texture-animation state under stable source identities and distinct runtime
-identities. Clones therefore retain their source provenance without sharing
+hierarchy and SRT-or-matrix state, composed HSD world matrices, effective
+branch visibility, material state, and texture-animation state under stable
+source identities and distinct runtime identities. Clones therefore retain their source provenance without sharing
 mutable state. The layer consumes sampled channel values but does not decode an
 asset schema, schedule playback, upload GPU state, or implement skinning. The
 menu host does not yet construct these instances from `MnMaAll` or synchronize
@@ -134,12 +134,15 @@ scene-instance identities. The exact join is specified in the
 declared resource hash and offset spaces, JObj/DObj/MObj/TObj occurrence
 ordinals, and a per-draw `geometry_space`. `VisualPresentationBinding`
 cross-checks that declaration against the manifest and routes sampled
-visibility and material color to exact draws. The GPU keeps one column-major
-joint transform per runtime draw, so joint-local geometry can be posed per
-instance, but joint-local deltas are still retained with an explicit reason
-(`BakedWorldGeometry`, `UnmappedJointLocal`, or `UnsupportedJointLocal`)
-because no driver composes native local SRT deltas into HSD world matrices
-yet.
+visibility and material color to exact draws. Each scene instance composes
+HSD world matrices from its joint locals (the original `HSD_MtxSRT` and
+`C_MTXConcat` ports, honoring `JOBJ_CLASSICAL_SCALE`, with user-defined
+matrices taken verbatim), and every composed `JointWorld` delta is routed to
+the GPU's per-draw joint transform when the joint's draws are joint-local.
+World-baked draws retain it as `BakedWorldGeometry` and draw-less joints as
+`UnmappedJointWorld`. Billboards, quaternion rotation, constraints, and
+skinning are not modeled; the manifest reports the one billboard joint in the
+panel hierarchy as `UnmodeledJointFlags`.
 The resource project's current MnMaAll export carries none of that metadata
 and bakes every part into world space, so the interactive host still advances
 a plain `AnimationPlayback` and cannot construct exact bindings. Joint posing,

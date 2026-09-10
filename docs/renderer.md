@@ -116,8 +116,8 @@ the loader rejects partial declarations. Every runtime draw carries its own
 column-major model matrix in its per-instance uniform: joint-local draws
 start at their owning joint's serialized world matrix and accept
 `DrawUpdate::JointTransform`, while world-baked draws stay at identity and
-reject transforms explicitly. No driver composes native local SRT deltas
-into those matrices yet. Texture transforms, coordinate
+reject transforms explicitly. The presentation driver feeds those transforms
+from each instance's composed HSD world matrices. Texture transforms, coordinate
 generation, LOD, wrapping, and filtering are approximated. Enabled destination
 alpha override, dithering, logic blending, and observable depth-before-texture
 combinations that reject fragments while writing depth are rejected explicitly

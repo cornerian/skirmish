@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use skirmish::{
+    collision::bones::{self, LocalTransform},
     menu::{AnimationCue, AnimationId, FrameRange},
     presentation::{
         instance::{InstanceId, JointLocal},
@@ -207,15 +208,9 @@ fn pinned_joint_rotation_flows_from_archive_bytes_to_an_explicit_route() {
         .clone();
     let directory = tempfile::tempdir().unwrap();
 
-    for (space, expected_reason) in [
-        (
-            GeometrySpace::World,
-            RetainedPresentationReason::BakedWorldGeometry,
-        ),
-        (
-            GeometrySpace::JointLocal,
-            RetainedPresentationReason::UnsupportedJointLocal,
-        ),
+    for (space, expects_transform) in [
+        (GeometrySpace::World, false),
+        (GeometrySpace::JointLocal, true),
     ] {
         let scene = load_export(
             directory.path(),
@@ -242,25 +237,64 @@ fn pinned_joint_rotation_flows_from_archive_bytes_to_an_explicit_route() {
                 )
             })
             .collect();
-        let mut routed_deltas = 0;
+        let mut routed_transforms = 0;
         let mut checked_frames = 0;
         for _ in 0..=60 {
             let tick = instance.tick().unwrap();
             for update in tick.updates() {
-                let PresentationUpdate::JointLocal {
-                    source_id,
-                    local: JointLocal::Srt(_),
-                    ..
-                } = update.update()
-                else {
-                    panic!("unexpected update {:?}", update.update());
-                };
-                assert_eq!(source_id, &joint_source);
-                assert_eq!(
-                    update.route(),
-                    &PresentationUpdateRoute::Retained(expected_reason)
-                );
-                routed_deltas += 1;
+                match update.update() {
+                    PresentationUpdate::JointLocal {
+                        source_id,
+                        local: JointLocal::Srt(_),
+                        ..
+                    } => {
+                        assert_eq!(source_id, &joint_source);
+                        assert_eq!(
+                            update.route(),
+                            &PresentationUpdateRoute::Retained(
+                                RetainedPresentationReason::ComposedIntoJointWorld
+                            )
+                        );
+                    }
+                    PresentationUpdate::JointWorld {
+                        source_id, world, ..
+                    } => {
+                        assert_eq!(source_id, &joint_source);
+                        let JointLocal::Srt(srt) =
+                            instance.scene_instance().joint(source_id).unwrap().local()
+                        else {
+                            panic!("the pinned joint is SRT authored");
+                        };
+                        // The single-joint hierarchy composes exactly HSD_MtxSRT.
+                        assert_eq!(
+                            *world,
+                            bones::srt(
+                                LocalTransform {
+                                    translation: srt.translation,
+                                    rotation: srt.rotation,
+                                    scale: srt.scale,
+                                },
+                                None,
+                            )
+                        );
+                        if expects_transform {
+                            assert!(matches!(
+                                update.route(),
+                                PresentationUpdateRoute::JointTransform(occurrence)
+                                    if occurrence.visual_offset == archive.joint
+                            ));
+                            routed_transforms += 1;
+                        } else {
+                            assert_eq!(
+                                update.route(),
+                                &PresentationUpdateRoute::Retained(
+                                    RetainedPresentationReason::BakedWorldGeometry
+                                )
+                            );
+                        }
+                    }
+                    other => panic!("unexpected update {other:?}"),
+                }
             }
             if let Some(&expected) = pinned.get(&tick.frame().to_bits()) {
                 let JointLocal::Srt(srt) = instance
@@ -281,7 +315,11 @@ fn pinned_joint_rotation_flows_from_archive_bytes_to_an_explicit_route() {
             }
         }
         assert_eq!(checked_frames, fixture.expected_samples.len());
-        assert!(routed_deltas > 0, "the pinned curve must emit joint deltas");
+        assert_eq!(
+            routed_transforms > 0,
+            expects_transform,
+            "joint-local draws must receive composed transforms; baked draws must not"
+        );
     }
 }
 

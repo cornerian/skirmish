@@ -13,6 +13,7 @@ use std::{
 use thiserror::Error;
 
 use crate::animation::{Channel, ChannelValue};
+use crate::collision::bones::{self, LocalTransform};
 
 macro_rules! source_id {
     ($name:ident) => {
@@ -90,6 +91,9 @@ pub struct JointDescriptor {
     pub source_id: SourceJointId,
     pub parent: Option<SourceJointId>,
     pub local: JointLocal,
+    /// HSD `JOBJ_CLASSICAL_SCALE`: descendants do not compensate this joint's
+    /// scale in their own local matrices.
+    pub classical_scale: bool,
     pub visible: bool,
     /// Whether a recursive branch update continues into this joint's children.
     /// Instance-boundary nodes set this to false.
@@ -131,8 +135,12 @@ pub struct JointState {
     source_id: SourceJointId,
     parent: Option<SourceJointId>,
     local: JointLocal,
+    classical_scale: bool,
     visible: bool,
     branch_recurses: bool,
+    /// Composed HSD world matrix, row-major 3x4, kept current after every
+    /// applied transaction.
+    world: bones::Matrix,
 }
 
 impl JointState {
@@ -142,6 +150,15 @@ impl JointState {
 
     pub fn parent(&self) -> Option<&SourceJointId> {
         self.parent.as_ref()
+    }
+
+    pub const fn classical_scale(&self) -> bool {
+        self.classical_scale
+    }
+
+    /// Row-major 3x4 world matrix composed from this joint's ancestors.
+    pub const fn world(&self) -> bones::Matrix {
+        self.world
     }
 
     pub const fn local(&self) -> JointLocal {
@@ -360,8 +377,10 @@ impl SceneInstance {
                 source_id: joint.source_id,
                 parent: joint.parent,
                 local: joint.local,
+                classical_scale: joint.classical_scale,
                 visible: joint.visible,
                 branch_recurses: joint.branch_recurses,
+                world: bones::IDENTITY,
             })
             .collect();
         let materials = descriptor
@@ -387,7 +406,7 @@ impl SceneInstance {
                 tev0: texture.tev0,
             })
             .collect();
-        let instance = Self {
+        let mut instance = Self {
             id,
             joints,
             materials,
@@ -397,7 +416,88 @@ impl SceneInstance {
             texture_indices,
             children,
         };
+        instance.recompose_worlds()?;
         Ok(instance)
+    }
+
+    /// Recompute every joint's world matrix from the current local state.
+    ///
+    /// SRT joints follow the Euler subset of `HSD_JObjSetupMatrix`: the
+    /// original `HSD_MtxSRT`, compensating an accumulated ancestor scale
+    /// unless the chain is classical, then `C_MTXConcat` with the parent.
+    /// Matrix joints hold HSD's user-defined matrix, which the owning
+    /// application supplies fully composed, so they are used verbatim and
+    /// contribute no known scale to descendants. Billboards, quaternion
+    /// rotation, and constraints are not modeled; adapters report them.
+    fn recompose_worlds(&mut self) -> Result<(), InstanceError> {
+        #[derive(Clone, Copy)]
+        enum Accumulated {
+            None,
+            Scale([f32; 3]),
+            Unknown,
+        }
+        let count = self.joints.len();
+        let mut accumulated = vec![Accumulated::None; count];
+        let mut order = Vec::with_capacity(count);
+        let mut stack: Vec<usize> = (0..count)
+            .rev()
+            .filter(|&index| self.joints[index].parent.is_none())
+            .collect();
+        while let Some(index) = stack.pop() {
+            order.push(index);
+            stack.extend(self.children[index].iter().rev().copied());
+        }
+        for index in order {
+            let id = self.joints[index].source_id.clone();
+            let parent = self.joints[index]
+                .parent
+                .as_ref()
+                .map(|parent| self.joint_indices[parent]);
+            let inherited = parent.map_or(Accumulated::None, |parent| accumulated[parent]);
+            let (world, own_scale) = match self.joints[index].local {
+                JointLocal::Srt(srt) => {
+                    let parent_scale = match inherited {
+                        Accumulated::None => None,
+                        Accumulated::Scale(scale) => Some(scale),
+                        Accumulated::Unknown => {
+                            return Err(InstanceError::ScaleCompensationUnderMatrixJoint(id));
+                        }
+                    };
+                    if parent_scale.is_some_and(|scale| scale.contains(&0.0)) {
+                        return Err(InstanceError::SingularParentScale(id));
+                    }
+                    let local = bones::srt(
+                        LocalTransform {
+                            translation: srt.translation,
+                            rotation: srt.rotation,
+                            scale: srt.scale,
+                        },
+                        parent_scale,
+                    );
+                    let world = parent.map_or(local, |parent| {
+                        bones::concat(&self.joints[parent].world, &local)
+                    });
+                    (world, Some(srt.scale))
+                }
+                JointLocal::Matrix(matrix) => ([matrix[0], matrix[1], matrix[2]], None),
+            };
+            if !world.iter().flatten().all(|value| value.is_finite()) {
+                return Err(InstanceError::NonFiniteWorld(id));
+            }
+            accumulated[index] = if self.joints[index].classical_scale {
+                inherited
+            } else {
+                match (own_scale, inherited) {
+                    (Some(scale), Accumulated::None) => Accumulated::Scale(scale),
+                    (Some(scale), Accumulated::Scale(parent)) => {
+                        Accumulated::Scale(std::array::from_fn(|axis| scale[axis] * parent[axis]))
+                    }
+                    (Some(_), Accumulated::Unknown) | (None, _) => Accumulated::Unknown,
+                }
+            };
+            self.joints[index].world = world;
+        }
+        Ok(())
     }
 
     pub const fn id(&self) -> InstanceId {
@@ -462,7 +562,9 @@ impl SceneInstance {
         match target {
             SourceTarget::Joint(id) => {
                 let index = self.joint_indices[id];
+                let mut srt_changed = false;
                 for &value in values {
+                    srt_changed |= is_srt_channel(value.channel);
                     match value.channel {
                         Channel::JointRotationX => self.srt_mut(index).rotation[0] = value.value,
                         Channel::JointRotationY => self.srt_mut(index).rotation[1] = value.value,
@@ -490,6 +592,9 @@ impl SceneInstance {
                         }
                         _ => unreachable!("channel family validated before mutation"),
                     }
+                }
+                if srt_changed {
+                    self.recompose_worlds()?;
                 }
             }
             SourceTarget::Material(id) => {
@@ -824,7 +929,7 @@ impl fmt::Display for SourceKind {
     }
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum InstanceError {
     #[error("{0} source identity must not be empty")]
     EmptySourceId(SourceKind),
@@ -851,6 +956,14 @@ pub enum InstanceError {
     },
     #[error("runtime instance identity {} is already in use by this instance", .0.get())]
     ReusedInstanceId(InstanceId),
+    #[error("joint {0} composes a non-finite world matrix")]
+    NonFiniteWorld(SourceJointId),
+    #[error("joint {0} must compensate a zero ancestor scale")]
+    SingularParentScale(SourceJointId),
+    #[error(
+        "joint {0} must compensate the scale of a matrix-authored ancestor, which HSD does not track"
+    )]
+    ScaleCompensationUnderMatrixJoint(SourceJointId),
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -888,6 +1001,8 @@ pub enum ApplyError {
         image_count: usize,
         reason: ImageIndexError,
     },
+    #[error("recompose joint world matrices: {0}")]
+    World(#[from] InstanceError),
 }
 
 #[cfg(test)]
@@ -907,6 +1022,7 @@ mod tests {
             source_id: id.into(),
             parent: parent.map(SourceJointId::from),
             local: JointLocal::Srt(srt()),
+            classical_scale: false,
             visible,
             branch_recurses: true,
         }
@@ -1070,6 +1186,7 @@ mod tests {
                 source_id: "matrix".into(),
                 parent: None,
                 local: JointLocal::Matrix(matrix),
+                classical_scale: false,
                 visible: true,
                 branch_recurses: true,
             }],
@@ -1501,6 +1618,7 @@ mod tests {
                 source_id: "matrix".into(),
                 parent: None,
                 local: JointLocal::Matrix(matrix),
+                classical_scale: false,
                 visible: true,
                 branch_recurses: true,
             }],
@@ -1559,5 +1677,215 @@ mod tests {
             original.joint(&"root".into()).unwrap().local(),
             cloned.joint(&"root".into()).unwrap().local()
         );
+    }
+
+    fn posed(
+        id: &str,
+        parent: Option<&str>,
+        local: LocalSrt,
+        classical_scale: bool,
+    ) -> JointDescriptor {
+        JointDescriptor {
+            local: JointLocal::Srt(local),
+            classical_scale,
+            ..joint(id, parent, true)
+        }
+    }
+
+    fn world_of(instance: &SceneInstance, id: &str) -> bones::Matrix {
+        instance.joint(&SourceJointId::from(id)).unwrap().world()
+    }
+
+    #[test]
+    fn composed_worlds_match_the_oracle_backed_bone_pose_for_both_scale_modes() {
+        let root = LocalSrt {
+            scale: [2.0, 0.5, 1.5],
+            rotation: [0.3, -0.2, 0.7],
+            translation: [4.0, -1.0, 2.5],
+        };
+        let child = LocalSrt {
+            scale: [1.0, 3.0, 1.0],
+            rotation: [-0.4, 0.1, 0.25],
+            translation: [1.0, 2.0, -3.0],
+        };
+        let grandchild = LocalSrt {
+            scale: [0.5, 0.5, 2.0],
+            rotation: [0.0, 1.1, 0.0],
+            translation: [-2.0, 0.0, 1.0],
+        };
+        for classical in [false, true] {
+            let instance = SceneInstance::new(
+                InstanceId::new(1),
+                InstanceDescriptor {
+                    joints: vec![
+                        posed("root", None, root, classical),
+                        posed("child", Some("root"), child, classical),
+                        posed("grandchild", Some("child"), grandchild, classical),
+                    ],
+                    ..InstanceDescriptor::default()
+                },
+            )
+            .unwrap();
+            let bone = |local: LocalSrt, parent| bones::Bone {
+                parent,
+                local: LocalTransform {
+                    translation: local.translation,
+                    rotation: local.rotation,
+                    scale: local.scale,
+                },
+                classical_scale: classical,
+            };
+            let pose = bones::Pose::evaluate(&[
+                bone(root, None),
+                bone(child, Some(0)),
+                bone(grandchild, Some(1)),
+            ])
+            .unwrap();
+            for (index, id) in ["root", "child", "grandchild"].into_iter().enumerate() {
+                assert_eq!(
+                    world_of(&instance, id),
+                    *pose.world_matrix(index).unwrap(),
+                    "{id} classical={classical}"
+                );
+            }
+        }
+        let compensated = SceneInstance::new(
+            InstanceId::new(2),
+            InstanceDescriptor {
+                joints: vec![
+                    posed("root", None, root, false),
+                    posed("child", Some("root"), child, false),
+                ],
+                ..InstanceDescriptor::default()
+            },
+        )
+        .unwrap();
+        let classical = SceneInstance::new(
+            InstanceId::new(3),
+            InstanceDescriptor {
+                joints: vec![
+                    posed("root", None, root, true),
+                    posed("child", Some("root"), child, true),
+                ],
+                ..InstanceDescriptor::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(world_of(&compensated, "root"), world_of(&classical, "root"));
+        assert_ne!(
+            world_of(&compensated, "child"),
+            world_of(&classical, "child"),
+            "classical scale must skip HSD parent-scale compensation"
+        );
+    }
+
+    #[test]
+    fn matrix_joints_are_used_verbatim_and_cannot_feed_scale_compensation() {
+        let matrix = [
+            [0.0, -1.0, 0.0, 5.0],
+            [1.0, 0.0, 0.0, 6.0],
+            [0.0, 0.0, 1.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let child = LocalSrt {
+            scale: [1.0; 3],
+            rotation: [0.0; 3],
+            translation: [1.0, 0.0, 0.0],
+        };
+        let matrix_joint = |classical_scale| JointDescriptor {
+            source_id: "matrix".into(),
+            parent: Some("root".into()),
+            local: JointLocal::Matrix(matrix),
+            classical_scale,
+            visible: true,
+            branch_recurses: true,
+        };
+        let instance = SceneInstance::new(
+            InstanceId::new(4),
+            InstanceDescriptor {
+                joints: vec![
+                    posed("root", None, srt(), true),
+                    matrix_joint(true),
+                    posed("child", Some("matrix"), child, true),
+                ],
+                ..InstanceDescriptor::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            world_of(&instance, "matrix"),
+            [matrix[0], matrix[1], matrix[2]],
+            "a user-defined matrix is HSD's final matrix, not concatenated with its parent"
+        );
+        assert_eq!(
+            world_of(&instance, "child")[0][3],
+            5.0 + 0.0 * 1.0 - 1.0 * 0.0
+        );
+        assert_eq!(world_of(&instance, "child")[1][3], 6.0 + 1.0);
+
+        let rejected = SceneInstance::new(
+            InstanceId::new(5),
+            InstanceDescriptor {
+                joints: vec![
+                    posed("root", None, srt(), true),
+                    matrix_joint(false),
+                    posed("child", Some("matrix"), child, false),
+                ],
+                ..InstanceDescriptor::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            rejected,
+            InstanceError::ScaleCompensationUnderMatrixJoint("child".into())
+        );
+    }
+
+    #[test]
+    fn applying_srt_channels_recomposes_the_whole_subtree() {
+        let mut instance = SceneInstance::new(
+            InstanceId::new(6),
+            InstanceDescriptor {
+                joints: vec![
+                    posed("root", None, srt(), true),
+                    posed(
+                        "child",
+                        Some("root"),
+                        LocalSrt {
+                            translation: [0.0, 2.0, 0.0],
+                            ..srt()
+                        },
+                        true,
+                    ),
+                    posed("sibling", None, srt(), true),
+                ],
+                ..InstanceDescriptor::default()
+            },
+        )
+        .unwrap();
+        let before_sibling = world_of(&instance, "sibling");
+        instance
+            .apply_channel(
+                &SourceTarget::Joint("root".into()),
+                sample(Channel::JointTranslationX, 3.0),
+            )
+            .unwrap();
+        assert_eq!(world_of(&instance, "root")[0][3], 3.0);
+        assert_eq!(world_of(&instance, "child")[0][3], 3.0);
+        assert_eq!(world_of(&instance, "child")[1][3], 2.0);
+        assert_eq!(world_of(&instance, "sibling"), before_sibling);
+
+        let clone = instance.clone_as(InstanceId::new(7)).unwrap();
+        assert_eq!(world_of(&clone, "child"), world_of(&instance, "child"));
+
+        let non_finite = instance.apply_channel(
+            &SourceTarget::Joint("root".into()),
+            sample(Channel::JointTranslationX, f32::NAN),
+        );
+        assert_eq!(
+            non_finite,
+            Err(ApplyError::NonFiniteSample(Channel::JointTranslationX))
+        );
+        assert_eq!(world_of(&instance, "root")[0][3], 3.0);
     }
 }

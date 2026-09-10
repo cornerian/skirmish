@@ -393,6 +393,7 @@ fn sampled_batch_applies_atomically_and_exposes_state_deltas() {
                 source_id: joint.source_id.clone(),
                 parent: joint.parent.clone(),
                 local,
+                classical_scale: joint.classical_scale,
                 visible: joint.visible,
                 branch_recurses: joint.branch_recurses,
             }],
@@ -773,7 +774,13 @@ fn audit_pinned_mnmaall_bindings_and_color_domains() {
         );
     }
     eprintln!("diagnostics={:?}", bound.diagnostics());
-    assert_eq!(bound.diagnostics().len(), 4);
+    // Four shape-animation roots plus the panel's single billboard joint.
+    assert_eq!(bound.diagnostics().len(), 5);
+    assert!(bound.diagnostics().iter().any(|diagnostic| {
+        diagnostic.hierarchy == "panel"
+            && diagnostic.descriptor_offset == DataOffset::new(142_376)
+            && diagnostic.kind == BindingDiagnosticKind::UnmodeledJointFlags { flags: 1 << 9 }
+    }));
 
     let mut extrema: BTreeMap<String, (f32, f32)> = BTreeMap::new();
     for hierarchy in ["back", "panel", "contop", "cursor"]
