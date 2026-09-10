@@ -258,7 +258,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 
 | Passing target | Additional contracts |
 | --- | --- |
-| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, velocity-gated marker freeze, trigger priority, checkpoint replay, jump exhaustion and restoration |
+| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, Run and RunBrake trigger priority, velocity-gated marker freeze, animation-time carry, checkpoint replay, jump exhaustion and restoration |
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |

@@ -28,6 +28,7 @@ pub struct Parameters {
     pub run_turn_flip_frame: u32,
     pub run_turn_velocity_scale: f32,
     pub run_brake_animation_frames: u32,
+    pub run_brake_turn_frame: u32,
     pub run_brake_max_frames: f32,
     pub turn_threshold: f32,
     pub standing_turn_frames: f32,
@@ -160,6 +161,7 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         || !durations.into_iter().all(|n| (1..=1_000_000).contains(&n))
         || p.dash_run_frame >= p.dash_animation_frames
         || p.run_turn_flip_frame >= p.run_turn_animation_frames
+        || p.run_brake_turn_frame >= p.run_brake_animation_frames
         || p.run_turn_velocity_scale == 0.0
         || ![p.dash_window, p.tap_jump_window, p.pass_window]
             .into_iter()
@@ -220,9 +222,10 @@ fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     f.locomotion.turn_smash = smash;
 }
 
-fn start_run_turn(f: &mut Fighter) {
+fn start_run_turn(f: &mut Fighter, frame: u32) {
     let facing = f.facing;
     enter(f, Action::RunTurn);
+    f.action_frame = frame;
     f.locomotion.run_turn_facing = facing;
     f.locomotion.run_turn_waiting = false;
     f.locomotion.turn_has_turned = false;
@@ -414,13 +417,21 @@ pub(crate) fn update_actions(
         }
         Action::Run => {
             if input.stick[0] * f.facing <= p.turn_threshold {
-                start_run_turn(f);
+                start_run_turn(f, 0);
             } else if input.stick[0].abs() < p.run_threshold {
                 enter(f, Action::RunBrake);
                 f.locomotion.run_brake_frames = p.run_brake_max_frames;
             }
         }
-        Action::RunBrake if input.stick[1] < -p.crouch_enter_threshold => enter(f, Action::Squat),
+        Action::RunBrake => {
+            if f.action_frame >= p.run_brake_turn_frame
+                && input.stick[0] * f.facing <= p.turn_threshold
+            {
+                start_run_turn(f, f.action_frame);
+            } else if input.stick[1] < -p.crouch_enter_threshold {
+                enter(f, Action::Squat);
+            }
+        }
         Action::Turn => {
             let facing_after = if f.locomotion.turn_has_turned {
                 f.facing

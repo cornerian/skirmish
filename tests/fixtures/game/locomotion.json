@@ -17,6 +17,7 @@
   "run_turn_flip_frame": 3,
   "run_turn_velocity_scale": 1.0,
   "run_brake_animation_frames": 8,
+  "run_brake_turn_frame": 2,
   "run_brake_max_frames": 8.0,
   "turn_threshold": -0.3,
   "standing_turn_frames": 3.0,

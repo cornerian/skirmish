@@ -258,8 +258,9 @@ are implied. With that data, the scheduler supports Dash/Run/TurnRun/RunBrake,
 standing Turn, Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass.
 TurnRun tests its reversed-stick boundary before braking, stores entry facing,
 decelerates with the source branch, and pauses at an explicit script marker until
-its scaled ground velocity reaches x0.01. Jump button history, tilt ages, consumed
-jumps and transition timers are checkpointed.
+its scaled ground velocity reaches x0.01. RunBrake has its own explicit command
+marker and carries its current action time into a later TurnRun. Jump button
+history, tilt ages, consumed jumps and transition timers are checkpointed.
 `tests/fixtures/game/locomotion.json` contains invented values used by
 the conformance and movement integration tests. These actions still use the
 supplied static non-jab pose; action-specific animation resources are needed
@@ -295,8 +296,8 @@ poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
-history. Directional specials, character-specific special state, the
-script-gated RunBrake-to-TurnRun handoff and character multijumps remain unported. Some accepted stick/button
+history. Directional specials, character-specific special state and character
+multijumps remain unported. Some accepted stick/button
 combinations consequently have no action in this experimental profile.
 
 The optional [blast-death profile](deaths.md) adds normal directional deaths and

@@ -45,6 +45,15 @@ fn launch(game: &mut Match, buttons: u16, stick: [f32; 2]) -> State {
     panic!("ground jump did not launch: {:?}", game.state());
 }
 
+fn reach_run(game: &mut Match) {
+    for _ in 0..20 {
+        if step(game, 0, [1.0, 0.0]).fighters[0].action == Action::Run {
+            return;
+        }
+    }
+    panic!("dash did not reach Run: {:?}", game.state());
+}
+
 // ftCo_Dash_Enter writes gr_accel2; Fighter_procUpdate integrates it after
 // ApplyGroundMovement projected the old speed for this frame's displacement.
 #[test]
@@ -78,12 +87,7 @@ fn dash_entry_then_held_input_runs_without_reapplying_initial_speed() {
 #[test]
 fn reversed_run_turns_after_deceleration_and_checkpoints_the_frozen_marker() {
     let mut game = game();
-    for _ in 0..20 {
-        if step(&mut game, 0, [1.0, 0.0]).fighters[0].action == Action::Run {
-            break;
-        }
-    }
-    assert_eq!(game.state().fighters[0].action, Action::Run);
+    reach_run(&mut game);
     let boundary = game.data().fighters[0]
         .locomotion
         .as_ref()
@@ -130,6 +134,42 @@ fn reversed_run_turns_after_deceleration_and_checkpoints_the_frozen_marker() {
     assert_eq!(game.state().fighters[0].action, Action::Run);
     assert_eq!(game.state().fighters[0].facing, -1.0);
     assert!(game.state().fighters[0].ground_velocity < 0.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in expected {
+        assert_eq!(step(&mut game, 0, [-1.0, 0.0]), expected);
+    }
+}
+
+// RunBrake exposes TurnRun only after cmd_vars[0] is set by its animation and
+// passes its current animation time into the destination motion state.
+#[test]
+fn run_brake_turn_waits_for_its_marker_and_preserves_animation_time() {
+    let mut game = game();
+    reach_run(&mut game);
+    assert_eq!(
+        step(&mut game, 0, [0.0; 2]).fighters[0].action,
+        Action::RunBrake
+    );
+    let parameters = game.data().fighters[0].locomotion.as_ref().unwrap();
+    let gate = parameters.run_brake_turn_frame;
+    let boundary = parameters.turn_threshold;
+    let early = step(&mut game, 0, [boundary, 0.0]);
+    assert_eq!(early.fighters[0].action, Action::RunBrake);
+    assert_eq!(early.fighters[0].action_frame, gate);
+    let checkpoint = game.checkpoint();
+    let mut expected = Vec::new();
+    for _ in 0..80 {
+        let state = step(&mut game, 0, [-1.0, 0.0]);
+        expected.push(state);
+        if game.state().fighters[0].action == Action::Run {
+            break;
+        }
+    }
+    assert_eq!(expected[0].fighters[0].action, Action::RunTurn);
+    assert_eq!(expected[0].fighters[0].action_frame, gate + 1);
+    assert_eq!(expected[0].fighters[0].locomotion.run_turn_facing, 1.0);
+    assert_eq!(game.state().fighters[0].action, Action::Run);
+    assert_eq!(game.state().fighters[0].facing, -1.0);
     game.restore_checkpoint(&checkpoint).unwrap();
     for expected in expected {
         assert_eq!(step(&mut game, 0, [-1.0, 0.0]), expected);
@@ -493,5 +533,9 @@ fn legacy_profiles_remain_optional_and_unsupported_multijumps_are_rejected() {
         .as_mut()
         .unwrap()
         .run_turn_velocity_scale = 0.0;
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = data();
+    let p = invalid.fighters[0].locomotion.as_mut().unwrap();
+    p.run_brake_turn_frame = p.run_brake_animation_frames;
     assert!(Match::new(invalid, 42).is_err());
 }
