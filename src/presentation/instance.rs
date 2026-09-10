@@ -90,6 +90,9 @@ pub struct JointDescriptor {
     pub parent: Option<SourceJointId>,
     pub local: JointLocal,
     pub visible: bool,
+    /// Whether a recursive branch update continues into this joint's children.
+    /// Instance-boundary nodes set this to false.
+    pub branch_recurses: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +128,7 @@ pub struct JointState {
     parent: Option<SourceJointId>,
     local: JointLocal,
     visible: bool,
+    branch_recurses: bool,
 }
 
 impl JointState {
@@ -147,6 +151,10 @@ impl JointState {
     /// to every descendant, rather than by inheriting an ancestor's state.
     pub const fn visible(&self) -> bool {
         self.visible
+    }
+
+    pub const fn branch_recurses(&self) -> bool {
+        self.branch_recurses
     }
 }
 
@@ -342,6 +350,7 @@ impl SceneInstance {
                 parent: joint.parent,
                 local: joint.local,
                 visible: joint.visible,
+                branch_recurses: joint.branch_recurses,
             })
             .collect();
         let materials = descriptor
@@ -595,7 +604,9 @@ impl SceneInstance {
         let mut stack = vec![root];
         while let Some(index) = stack.pop() {
             self.joints[index].visible = visible;
-            stack.extend(self.children[index].iter().copied());
+            if self.joints[index].branch_recurses {
+                stack.extend(self.children[index].iter().copied());
+            }
         }
     }
 }
@@ -816,6 +827,7 @@ mod tests {
             parent: parent.map(SourceJointId::from),
             local: JointLocal::Srt(srt()),
             visible,
+            branch_recurses: true,
         }
     }
 
@@ -972,6 +984,7 @@ mod tests {
                 parent: None,
                 local: JointLocal::Matrix(matrix),
                 visible: true,
+                branch_recurses: true,
             }],
             ..InstanceDescriptor::default()
         };
@@ -1117,6 +1130,37 @@ mod tests {
             .unwrap();
         assert!(instance.joint(&"branch".into()).unwrap().visible());
         assert!(instance.joint(&"leaf".into()).unwrap().visible());
+    }
+
+    #[test]
+    fn branch_updates_stop_after_setting_an_instance_boundary() {
+        let descriptor = InstanceDescriptor {
+            joints: vec![
+                joint("root", None, true),
+                JointDescriptor {
+                    branch_recurses: false,
+                    ..joint("instance", Some("root"), true)
+                },
+                joint("instance-child", Some("instance"), true),
+                joint("ordinary", Some("root"), true),
+                joint("ordinary-child", Some("ordinary"), true),
+            ],
+            ..InstanceDescriptor::default()
+        };
+        let mut instance = SceneInstance::new(InstanceId::new(1), descriptor).unwrap();
+
+        instance
+            .apply_channel(
+                &SourceTarget::Joint("root".into()),
+                sample(Channel::JointBranchVisibility, 0.0),
+            )
+            .unwrap();
+
+        assert!(!instance.joint(&"root".into()).unwrap().visible());
+        assert!(!instance.joint(&"instance".into()).unwrap().visible());
+        assert!(instance.joint(&"instance-child".into()).unwrap().visible());
+        assert!(!instance.joint(&"ordinary".into()).unwrap().visible());
+        assert!(!instance.joint(&"ordinary-child".into()).unwrap().visible());
     }
 
     #[test]
@@ -1273,6 +1317,7 @@ mod tests {
                 parent: None,
                 local: JointLocal::Matrix(matrix),
                 visible: true,
+                branch_recurses: true,
             }],
             ..InstanceDescriptor::default()
         };
