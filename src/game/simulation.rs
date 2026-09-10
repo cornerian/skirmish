@@ -1187,7 +1187,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             } else {
                 movement.fall_basic();
             }
-            movement.drift_air();
+            if !locomotion::multi_jump_drift(f, data, &mut movement) {
+                movement.drift_air();
+            }
             if f.action == Action::Jump && movement.self_velocity[1] < 0.0 {
                 enter(f, Action::Fall);
             }
@@ -1250,7 +1252,16 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else {
         &data.bones
     };
-    let bones = local.iter().map(Bone::physics).collect::<Vec<_>>();
+    let mut bones = local.iter().map(Bone::physics).collect::<Vec<_>>();
+    if fighter.action == Action::JumpAerial
+        && data
+            .locomotion
+            .as_ref()
+            .is_some_and(|parameters| parameters.multi_jump.is_some())
+        && let Some(root) = bones.first_mut()
+    {
+        root.local.rotation[1] += fighter.locomotion.multi_jump_yaw;
+    }
     // Native match coordinates: local +X faces forward, +Y up, +Z depth.
     let root = [
         [

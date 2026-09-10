@@ -258,7 +258,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 
 | Passing target | Additional contracts |
 | --- | --- |
-| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, Run and RunBrake trigger priority, velocity-gated marker freeze, animation-time carry, checkpoint replay, jump exhaustion and restoration |
+| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, Run and RunBrake trigger priority, velocity-gated marker freeze, animation-time carry, ordinary and five-aerial-jump exhaustion/restoration, multijump held-input markers, bone turn/facing, drift and checkpoint replay |
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |
@@ -280,8 +280,10 @@ These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
 and unported character/state branches still need independent validation.
 `damage_differential` additionally compares the retained armor arithmetic,
-stick-age branch and displacement callbacks with pinned original C. Adapters
-explicitly disable unrelated state/environment branches.
+stick-age branch and displacement callbacks with pinned original C.
+`locomotion_differential` compares the multijump root turn, including arbitrary
+integer state and binary32 facing/yaw, with its complete pinned C callback.
+Adapters explicitly disable unrelated state/environment branches.
 
 | Required behavior | Integration cases |
 | --- | --- |

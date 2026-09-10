@@ -22,6 +22,7 @@ unsafe extern "C" {
     );
     fn oracle_locomotion_walk(state: *mut f32, parameters: *const f32) -> f32;
     fn oracle_turn_run(state: *mut f32, parameters: *const f32);
+    fn oracle_multi_jump_turn(remaining: *mut i32, facing: *mut f32, yaw: *mut f32, total: i32);
 }
 
 fn same(actual: f32, expected: f32) {
@@ -192,6 +193,24 @@ fn compare_turn_run(initial: [f32; 8], parameters: [f32; 5]) {
     assert_eq!(actual.animation_velocity[2], 0.0);
 }
 
+fn compare_multi_jump_turn(mut remaining: i32, mut facing: f32, mut yaw: f32, total: i32) {
+    let (mut expected_remaining, mut expected_facing, mut expected_yaw) = (remaining, facing, yaw);
+    skirmish::fighter::locomotion::multi_jump_turn(&mut remaining, &mut facing, &mut yaw, total);
+    // SAFETY: all pointers address live scalars; the selected original callback
+    // touches only the adapter's stack-owned fighter and root joint.
+    unsafe {
+        oracle_multi_jump_turn(
+            &mut expected_remaining,
+            &mut expected_facing,
+            &mut expected_yaw,
+            total,
+        )
+    };
+    assert_eq!(remaining, expected_remaining);
+    same(facing, expected_facing);
+    same(yaw, expected_yaw);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 
@@ -220,6 +239,17 @@ proptest! {
     ) {
         compare_turn_run(initial, parameters);
     }
+
+
+    #[test]
+    fn multijump_root_turn_matches_c_over_arbitrary_binary32_inputs(
+        remaining in any::<i32>(),
+        facing in any::<f32>(),
+        yaw in any::<f32>(),
+        total in any::<i32>(),
+    ) {
+        compare_multi_jump_turn(remaining, facing, yaw, total);
+    }
 }
 
 #[test]
@@ -227,6 +257,13 @@ fn running_turn_adapter_uses_the_complete_pinned_callback() {
     let original = include_str!("oracle/original/turn_run.c");
     assert!(original.contains("void ftCo_TurnRun_Phys(Fighter_GObj* gobj)\n{"));
     assert!(include_str!("oracle/turn_run.c").contains("#include \"turn_run_original.inc\""));
+}
+
+#[test]
+fn multijump_adapter_uses_the_complete_pinned_callback() {
+    let original = include_str!("oracle/original/multi_jump.c");
+    assert!(original.contains("void ft_800CB6EC(Fighter* fp, s32 arg1)\n{"));
+    assert!(include_str!("oracle/multi_jump.c").contains("#include \"multi_jump_original.inc\""));
 }
 
 #[test]

@@ -1,6 +1,14 @@
-//! Input-to-state tests of ordinary ftCo movement branches in a synthetic world.
+//! Input-to-state tests of ordinary and resource-driven multijump ftCo movement
+//! branches in a synthetic world.
 //! Explicit timings are test resources, not extracted character attributes.
-use skirmish::game::{Action, BUTTON_A, BUTTON_X, Controller, Match, State, data::MatchData};
+use skirmish::{
+    collision::ecb,
+    game::{
+        Action, BUTTON_A, BUTTON_X, Controller, Match, State,
+        data::{CollisionBox, MatchData},
+        locomotion::MultiJump,
+    },
+};
 
 fn data() -> MatchData {
     let mut data: MatchData =
@@ -21,6 +29,24 @@ fn data() -> MatchData {
 
 fn game() -> Match {
     Match::new(data(), 42).unwrap()
+}
+
+fn multi_jump_data() -> MatchData {
+    let mut data = data();
+    let parameters = data.fighters[0].locomotion.as_mut().unwrap();
+    parameters.max_jumps = 6;
+    parameters.multi_jump = Some(MultiJump {
+        turn_frames: 4,
+        backward_turn_threshold: 0.2,
+        horizontal_velocity: 1.25,
+        air_drift_threshold: 0.3,
+        air_drift_acceleration_multiplier: 0.5,
+        air_drift_max_velocity_multiplier: 0.5,
+        vertical_velocities: [3.0, 2.75, 2.5, 2.25, 2.0],
+        animation_frames: [8; 5],
+        repeat_input_frames: [3; 5],
+    });
+    data
 }
 fn step(game: &mut Match, buttons: u16, stick: [f32; 2]) -> State {
     game.step([
@@ -350,6 +376,91 @@ fn air_jump_needs_repress_exhausts_and_landing_restores_it() {
 }
 
 #[test]
+fn multijumps_use_fresh_then_held_input_after_each_command_marker() {
+    let mut game = Match::new(multi_jump_data(), 42).unwrap();
+    launch(&mut game, BUTTON_X, [0.0; 2]);
+    step(&mut game, 0, [0.0; 2]);
+    let first = step(&mut game, BUTTON_X, [0.0; 2]);
+    assert_eq!(first.fighters[0].action, Action::JumpAerial);
+    assert_eq!(first.fighters[0].action_frame, 1);
+    assert_eq!(first.fighters[0].locomotion.jumps_used, 2);
+    assert_eq!(first.fighters[0].velocity[1], 3.0 - 0.2);
+
+    let checkpoint = game.checkpoint();
+    let mut expected = Vec::new();
+    let mut impulses = vec![first.fighters[0].velocity[1]];
+    let mut jumps_used = 2;
+    for _ in 0..20 {
+        let state = step(&mut game, BUTTON_X, [0.0; 2]);
+        if state.fighters[0].locomotion.jumps_used > jumps_used {
+            jumps_used = state.fighters[0].locomotion.jumps_used;
+            impulses.push(state.fighters[0].velocity[1]);
+        }
+        expected.push(state);
+        if game.state().fighters[0].locomotion.jumps_used == 6 {
+            break;
+        }
+    }
+    assert_eq!(expected[0].fighters[0].action_frame, 2);
+    assert_eq!(expected[0].fighters[0].locomotion.jumps_used, 2);
+    assert_eq!(expected[1].fighters[0].action_frame, 3);
+    assert_eq!(expected[1].fighters[0].locomotion.jumps_used, 2);
+    assert_eq!(expected[2].fighters[0].action_frame, 1);
+    assert_eq!(expected[2].fighters[0].locomotion.jumps_used, 3);
+    assert_eq!(expected[2].fighters[0].velocity[1], 2.75 - 0.2);
+    assert_eq!(impulses, [2.8, 2.55, 2.3, 2.05, 1.8]);
+    assert_eq!(game.state().fighters[0].locomotion.jumps_used, 6);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in expected {
+        assert_eq!(step(&mut game, BUTTON_X, [0.0; 2]), expected);
+    }
+    for _ in 0..12 {
+        step(&mut game, BUTTON_X, [0.0; 2]);
+    }
+    assert_eq!(game.state().fighters[0].locomotion.jumps_used, 6);
+    assert_eq!(game.state().fighters[0].action, Action::Fall);
+    for _ in 0..240 {
+        if step(&mut game, 0, [0.0; 2]).fighters[0].grounded {
+            break;
+        }
+    }
+    assert!(game.state().fighters[0].grounded);
+    assert_eq!(game.state().fighters[0].locomotion.jumps_used, 0);
+}
+
+#[test]
+fn multijump_turn_rotates_bone_physics_and_flips_facing_at_halfway() {
+    let mut data = multi_jump_data();
+    data.fighters[0].bones[1].translation[0] = 8.0;
+    data.fighters[0].collision_box = CollisionBox::Bones {
+        indices: [0, 1, 0, 1, 0, 1],
+        parameters: ecb::JointParameters {
+            side_y_offset: 0.0,
+            height_threshold: 4.0,
+            width_threshold: 4.0,
+        },
+        flags: 5,
+    };
+    let mut game = Match::new(data, 42).unwrap();
+    launch(&mut game, BUTTON_X, [0.0; 2]);
+    step(&mut game, 0, [0.0; 2]);
+    let entered = step(&mut game, BUTTON_X, [-1.0, 0.0]);
+    assert_eq!(entered.fighters[0].facing, 1.0);
+    assert_eq!(entered.fighters[0].locomotion.multi_jump_turn_remaining, 3);
+    assert!(entered.fighters[0].locomotion.multi_jump_yaw < 0.0);
+    assert_eq!(entered.fighters[0].velocity[0], -1.15);
+    assert!(entered.fighters[0].ecb.desired.right[0] < 8.0);
+    let checkpoint = game.checkpoint();
+    let halfway = step(&mut game, 0, [-1.0, 0.0]);
+    assert_eq!(halfway.fighters[0].locomotion.multi_jump_turn_remaining, 2);
+    assert_eq!(halfway.fighters[0].facing, -1.0);
+    assert!(halfway.fighters[0].ecb.desired.left[0] > -8.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(step(&mut game, 0, [-1.0, 0.0]), halfway);
+}
+
+#[test]
 fn held_up_does_not_spend_air_jump_but_a_new_up_flick_does() {
     let mut game = game();
     launch(&mut game, 0, [0.0, 1.0]);
@@ -507,7 +618,7 @@ fn checkpoints_restore_pending_turn_and_input_window_history() {
 }
 
 #[test]
-fn legacy_profiles_remain_optional_and_unsupported_multijumps_are_rejected() {
+fn legacy_profiles_and_invalid_locomotion_resources_are_explicit() {
     let mut legacy = data();
     legacy.fighters[0].locomotion = None;
     let mut game = Match::new(legacy, 42).unwrap();
@@ -526,6 +637,26 @@ fn legacy_profiles_remain_optional_and_unsupported_multijumps_are_rejected() {
     }
     let mut invalid = data();
     invalid.fighters[0].locomotion.as_mut().unwrap().max_jumps = 3;
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = multi_jump_data();
+    invalid.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .multi_jump
+        .as_mut()
+        .unwrap()
+        .vertical_velocities[0] = 0.0;
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = multi_jump_data();
+    let multi = invalid.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .multi_jump
+        .as_mut()
+        .unwrap();
+    multi.repeat_input_frames[0] = multi.animation_frames[0];
     assert!(Match::new(invalid, 42).is_err());
     let mut invalid = data();
     invalid.fighters[0]

@@ -1,5 +1,6 @@
-//! Scalar jump, walk, and running-turn physics from ftCo_Jump.c,
-//! ftwalkcommon.c, and ftCo_TurnRun.c.
+//! Scalar jump, walk, running-turn, and multijump physics from ftCo_Jump.c,
+//! ftwalkcommon.c, ftCo_TurnRun.c, ftCo_JumpAerial.c, and
+//! ftCo_JumpAerialF1.c.
 //!
 //! Callers own motion transitions, jump state/timers, and sound events. The jump
 //! helper translates the velocity result of ftCo_800CB110. The walk helper includes
@@ -7,6 +8,11 @@
 //! the caller; it does not perform a platform lookup or integrate ground velocity.
 
 use super::Movement;
+
+// Keep the source literal: the C oracle uses this exact single-precision
+// degrees-to-radians factor.
+#[allow(clippy::excessive_precision)]
+const DEGREES_TO_RADIANS: f32 = 0.017_453_292_52_f32;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct JumpAttributes {
@@ -41,6 +47,19 @@ pub fn jump_velocity(
         horizontal = if horizontal < 0.0 { -maximum } else { maximum };
     }
     [horizontal, vertical, 0.0]
+}
+
+/// `ft_800CB6EC`: advance a multijump's root-bone turn and flip facing at the
+/// source's integer halfway point. Signed wrapping matches the host C oracle's
+/// PowerPC-style integer behavior for arbitrary differential inputs.
+pub fn multi_jump_turn(remaining: &mut i32, facing: &mut f32, yaw: &mut f32, total: i32) {
+    if *remaining != 0 {
+        *remaining = remaining.wrapping_sub(1);
+        *yaw += -((180.0_f32 / total as f32) * DEGREES_TO_RADIANS);
+        if *remaining == total / 2 {
+            *facing = -*facing;
+        }
+    }
 }
 
 /// Walking coefficients, including the environment query result used by the
@@ -142,6 +161,28 @@ mod tests {
             jump_velocity([-9.0, 100.0, 9.0], -1.0, true, 0.5, &attributes),
             [-1.0, 1.0, 0.0]
         );
+    }
+
+    #[test]
+    fn multijump_turn_uses_the_source_integer_halfway_point() {
+        let (mut remaining, mut facing, mut yaw) = (5, 1.0, 0.0);
+        multi_jump_turn(&mut remaining, &mut facing, &mut yaw, 5);
+        assert_eq!(remaining, 4);
+        assert_eq!(facing, 1.0);
+        for _ in 0..2 {
+            multi_jump_turn(&mut remaining, &mut facing, &mut yaw, 5);
+        }
+        assert_eq!(remaining, 2);
+        assert_eq!(facing, -1.0);
+        for _ in 0..2 {
+            multi_jump_turn(&mut remaining, &mut facing, &mut yaw, 5);
+        }
+        assert_eq!(remaining, 0);
+        assert_eq!(facing, -1.0);
+        assert_eq!(yaw.to_bits(), (-core::f32::consts::PI).to_bits());
+        let stopped = yaw;
+        multi_jump_turn(&mut remaining, &mut facing, &mut yaw, 5);
+        assert_eq!(yaw.to_bits(), stopped.to_bits());
     }
 
     #[test]

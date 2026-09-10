@@ -1,8 +1,8 @@
 //! Ordinary locomotion callbacks from ftCo_{Dash,Run,TurnRun,RunBrake,Turn,Squat,
 //! SquatWait,SquatRv,Jump,KneeBend,JumpAerial,Pass}.c and fighter.c input history.
 //! Parameters are supplied resources, not character presets. Animation lengths
-//! and script events are explicit; animation poses, character-specific jumps,
-//! multijumps and other interrupt chains remain absent.
+//! and script events are explicit; animation poses and other character-specific
+//! interrupt chains remain absent.
 use super::{Action, BUTTON_A, BUTTON_X, BUTTON_Y, Controller, Error, Fighter, data::FighterData};
 use crate::fighter::{Movement, locomotion as math};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,8 @@ pub struct Parameters {
     pub tap_jump_release_threshold: f32,
     pub tap_jump_window: u8,
     pub max_jumps: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_jump: Option<MultiJump>,
     pub air_jump_horizontal_multiplier: f32,
     pub air_jump_vertical_multiplier: f32,
     pub air_jump_animation_frames: u32,
@@ -50,6 +52,20 @@ pub struct Parameters {
     pub pass_delay: f32,
     pub pass_velocity: f32,
     pub pass_animation_frames: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MultiJump {
+    pub turn_frames: u32,
+    pub backward_turn_threshold: f32,
+    pub horizontal_velocity: f32,
+    pub air_drift_threshold: f32,
+    pub air_drift_acceleration_multiplier: f32,
+    pub air_drift_max_velocity_multiplier: f32,
+    pub vertical_velocities: [f32; 5],
+    pub animation_frames: [u32; 5],
+    pub repeat_input_frames: [u32; 5],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +103,9 @@ pub struct State {
     pub run_turn_waiting: bool,
     pub run_brake_frames: f32,
     pub pass_delay: Option<f32>,
+    /// Root-joint turn state from `ft_800CB6EC`; yaw affects bone physics.
+    pub multi_jump_turn_remaining: i32,
+    pub multi_jump_yaw: f32,
 }
 
 impl Default for State {
@@ -110,6 +129,8 @@ impl Default for State {
             run_turn_waiting: false,
             run_brake_frames: 0.0,
             pass_delay: None,
+            multi_jump_turn_remaining: 0,
+            multi_jump_yaw: 0.0,
         }
     }
 }
@@ -166,13 +187,43 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         || ![p.dash_window, p.tap_jump_window, p.pass_window]
             .into_iter()
             .all(|n| (1..254).contains(&n))
-        || !(1..=2).contains(&p.max_jumps)
         || p.pass_delay.fract() != 0.0
         || p.crouch_release_threshold > p.crouch_enter_threshold
     {
-        return Err(Error::Data(
-            "invalid ordinary locomotion parameters (multijump callbacks are unsupported)".into(),
-        ));
+        return Err(Error::Data("invalid ordinary locomotion parameters".into()));
+    }
+    match &p.multi_jump {
+        None if !(1..=2).contains(&p.max_jumps) => {
+            return Err(Error::Data(
+                "more than two jumps require multijump parameters".into(),
+            ));
+        }
+        Some(m)
+            if !(3..=6).contains(&p.max_jumps)
+                || m.turn_frames == 0
+                || m.turn_frames > i32::MAX as u32
+                || !(0.0..=1.0).contains(&m.backward_turn_threshold)
+                || !(0.0..=1.0).contains(&m.air_drift_threshold)
+                || [
+                    m.horizontal_velocity,
+                    m.air_drift_acceleration_multiplier,
+                    m.air_drift_max_velocity_multiplier,
+                ]
+                .into_iter()
+                .any(|x| !(0.0..=1_000_000.0).contains(&x))
+                || m.vertical_velocities
+                    .iter()
+                    .any(|x| !x.is_finite() || *x <= 0.0 || *x > 1_000_000.0)
+                || m.animation_frames.iter().any(|n| *n == 0 || *n > 1_000_000)
+                || m.repeat_input_frames
+                    .iter()
+                    .zip(&m.animation_frames)
+                    .any(|(repeat, length)| repeat >= length) =>
+        {
+            return Err(Error::Data("invalid multijump parameters".into()));
+        }
+        Some(_) => {}
+        None => {}
     }
     Ok(())
 }
@@ -180,13 +231,28 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
 pub fn landed(f: &mut Fighter) {
     f.locomotion.jumps_used = 0;
     f.locomotion.pass_delay = None;
+    f.locomotion.multi_jump_turn_remaining = 0;
+    f.locomotion.multi_jump_yaw = 0.0;
 }
 
 fn enter(f: &mut Fighter, action: Action) {
     if !matches!(action, Action::Squat | Action::SquatWait) {
         f.locomotion.pass_delay = None;
     }
+    if action != Action::JumpAerial {
+        f.locomotion.multi_jump_turn_remaining = 0;
+        f.locomotion.multi_jump_yaw = 0.0;
+    }
     super::simulation::enter(f, action);
+}
+
+fn advance_multi_jump_turn(f: &mut Fighter, total: u32) {
+    math::multi_jump_turn(
+        &mut f.locomotion.multi_jump_turn_remaining,
+        &mut f.facing,
+        &mut f.locomotion.multi_jump_yaw,
+        total as i32,
+    );
 }
 
 fn jump_input(f: &Fighter, p: &Parameters, input: Controller, relaxed: bool) -> Option<JumpInput> {
@@ -327,8 +393,20 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
         }
         Action::Squat if f.action_frame >= p.crouch_animation_frames => enter(f, Action::SquatWait),
         Action::SquatRv if f.action_frame >= p.crouch_reverse_frames => enter(f, Action::Wait),
-        Action::JumpAerial if f.action_frame >= p.air_jump_animation_frames => {
-            enter(f, Action::Fall)
+        Action::JumpAerial => {
+            if let Some(multi) = &p.multi_jump {
+                advance_multi_jump_turn(f, multi.turn_frames);
+                let index = usize::from(f.locomotion.jumps_used.saturating_sub(2));
+                if multi
+                    .animation_frames
+                    .get(index)
+                    .is_some_and(|length| f.action_frame >= *length)
+                {
+                    enter(f, Action::Fall);
+                }
+            } else if f.action_frame >= p.air_jump_animation_frames {
+                enter(f, Action::Fall)
+            }
         }
         Action::Pass if f.action_frame >= p.pass_animation_frames => enter(f, Action::Fall),
         _ => {}
@@ -472,23 +550,77 @@ pub(crate) fn try_aerial_jump(f: &mut Fighter, data: &FighterData, input: Contro
     let Some(p) = &data.locomotion else {
         return false;
     };
-    if f.grounded
-        || f.locomotion.jumps_used >= p.max_jumps
-        || jump_input(f, p, input, false).is_none()
-    {
+    if f.grounded || f.locomotion.jumps_used >= p.max_jumps {
+        return false;
+    }
+    let index = usize::from(f.locomotion.jumps_used.saturating_sub(1));
+    let Some(multi) = &p.multi_jump else {
+        if jump_input(f, p, input, false).is_none() {
+            return false;
+        }
+        f.ground_velocity = 0.0;
+        f.ecb_lock = 10;
+        f.ecb.bottom_locked = true;
+        f.velocity = [
+            input.stick[0] * p.air_jump_horizontal_multiplier,
+            data.movement.jump_vertical_velocity * p.air_jump_vertical_multiplier,
+        ];
+        f.fast_fall = false;
+        f.locomotion.jumps_used += 1;
+        f.locomotion.tilt_y_age = 254;
+        enter(f, Action::JumpAerial);
+        return true;
+    };
+    let requested = if f.locomotion.jumps_used == 1 {
+        jump_input(f, p, input, false).is_some()
+    } else {
+        let marker_ready = f.action != Action::JumpAerial
+            || multi
+                .repeat_input_frames
+                .get(index.saturating_sub(1))
+                .is_some_and(|frame| f.action_frame >= *frame);
+        marker_ready
+            && (input.stick[1] >= p.tap_jump_threshold
+                || input.buttons & (BUTTON_X | BUTTON_Y) != 0)
+    };
+    if !requested {
         return false;
     }
     f.ground_velocity = 0.0;
     f.ecb_lock = 10;
     f.ecb.bottom_locked = true;
     f.velocity = [
-        input.stick[0] * p.air_jump_horizontal_multiplier,
-        data.movement.jump_vertical_velocity * p.air_jump_vertical_multiplier,
+        input.stick[0] * multi.horizontal_velocity,
+        multi.vertical_velocities[index],
     ];
     f.fast_fall = false;
     f.locomotion.jumps_used += 1;
-    f.locomotion.tilt_y_age = 254;
     enter(f, Action::JumpAerial);
+    f.locomotion.multi_jump_turn_remaining =
+        if input.stick[0] * f.facing < -multi.backward_turn_threshold {
+            multi.turn_frames as i32
+        } else {
+            0
+        };
+    f.locomotion.multi_jump_yaw = 0.0;
+    advance_multi_jump_turn(f, multi.turn_frames);
+    true
+}
+
+/// Horizontal portion of `ftCo_JumpAerialF1_Phys`; fall/fast-fall remains in
+/// the shared scheduler because it is identical to other aerial actions.
+pub(crate) fn multi_jump_drift(f: &Fighter, data: &FighterData, movement: &mut Movement) -> bool {
+    let Some(multi) = data.locomotion.as_ref().and_then(|p| p.multi_jump.as_ref()) else {
+        return false;
+    };
+    if f.action != Action::JumpAerial {
+        return false;
+    }
+    movement.control_air(
+        multi.air_drift_threshold,
+        data.movement.air_drift_stick_mul * multi.air_drift_acceleration_multiplier,
+        data.movement.air_drift_max * multi.air_drift_max_velocity_multiplier,
+    );
     true
 }
 
