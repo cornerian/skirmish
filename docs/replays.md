@@ -134,7 +134,7 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v5`** policy compares these post-frame fields for each
+The named **`fighter-post-v6`** policy compares these post-frame fields for each
 mapped actor:
 
 | Replay field | Native observation | Comparison |
@@ -154,6 +154,8 @@ mapped actor:
 | `last_attack_landed` | Attacker's retained move-table ID | Exact low byte |
 | `combo_count` | Attacker's retained `ftColl_800763C0` counter | Exact low byte |
 | `last_hit_by` | Recorded source physical port, or Melee's initial sentinel 6 | Exact integer |
+| `last_hit_by_instance` (Slippi 3.16+) | Victim's retained source action-instance ID | Exact `u16` |
+| `instance_id` (Slippi 3.16+) | Fighter's current motion-family instance ID | Exact `u16` |
 | selected `state_flags` | Protection, fast-fall, hitlag, active shield and hitstun bits | Exact bits |
 | `misc_as` while in hitstun | Remaining hitstun | Exact `f32` bits |
 | `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
@@ -168,7 +170,10 @@ ground and air startup families using GameStart character metadata; other
 character-specific specials and internal respawn or elimination phases remain
 unmapped and therefore produce an action-state mismatch. Zelda/Sheik
 transformations are also unimplemented, so a post-frame internal character
-change produces a character mismatch. RNG, collision-line
+change produces a character mismatch. Action-instance retention covers the
+implemented common motion families and Fox neutral-special startup. Luigi and
+held-item metadata branches in the original callback remain outside the native
+fighter model. RNG, collision-line
 geometry, unselected state-flag bits, items and stage state are not compared.
 Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not

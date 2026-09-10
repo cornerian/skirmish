@@ -1,5 +1,6 @@
 //! Fighter movement and combat mechanics.
 
+pub mod action_instance;
 pub mod aerial;
 pub mod clank;
 pub mod combat;
@@ -8,6 +9,7 @@ mod compat;
 pub mod damage;
 pub mod death;
 pub mod grab;
+pub mod instance;
 pub mod ledge;
 pub mod locomotion;
 pub mod movement;

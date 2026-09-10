@@ -26,6 +26,8 @@ pub struct State {
     pub escape_timer: u16,
     pub push_timer: u16,
     pub last_hit_by: Option<usize>,
+    /// Source action instance copied into victim x18ec on the last hit.
+    pub last_hit_by_instance: u16,
 }
 
 /// Exact non-self fighter branch of `ftColl_800763C0`; the caller supplies a

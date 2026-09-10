@@ -213,6 +213,8 @@ pub struct Fighter {
     pub stocks: u8,
     pub hitlag: f32,
     pub hitstun: u32,
+    /// Current motion-family instance recorded by Slippi 3.16+.
+    pub action_instance: crate::fighter::action_instance::State,
     /// Retained hit attribution and raw combo-counter state recorded by Slippi.
     pub combo: crate::fighter::combo::State,
     /// Time since the previous damage transition; freezes during hitlag.
@@ -351,6 +353,8 @@ pub struct State {
     pub fighters: [Fighter; 2],
     pub rng_seed: u32,
     pub attack_instances: crate::fighter::stale::InstanceCounter,
+    /// Independent `plAttack_80037B08` sequence for fighter/item actions.
+    pub action_instances: crate::fighter::instance::Counter,
     pub events: Vec<Event>,
 }
 

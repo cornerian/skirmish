@@ -37,6 +37,7 @@ pub(crate) fn record_hit(
     };
     combo::record(&mut source.combo, victim, attack_id, rules);
     target.combo.last_hit_by = Some(attacker);
+    target.combo.last_hit_by_instance = source.action_instance.id;
 }
 
 pub(crate) fn push(fighter: &mut Fighter, rules: &combo::Rules) {

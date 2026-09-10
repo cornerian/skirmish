@@ -122,6 +122,16 @@ bypass and exceptional float behavior. `game_staling` checks percent versus
 knockback damage, hitbox caching and instance deduplication, simultaneous trades,
 death/reset lifecycle and checkpoint replay with wholly synthetic resources.
 
+The action-instance batch selects the complete `ft_800895E0` and
+`ft_80089824` bodies from `ft_0892.c` plus the `plAttack_80037B08` allocator
+from `plattack.c`. `action_instance_differential` compares 512 arbitrary
+previous/next motion identities and retained IDs and 512 explicit restarts,
+including 16-bit wrap and zero skipping. Focused unit tests cover the shared
+counter and native motion-family table. Match tests cover attribution, retained
+aerial-to-landing IDs, zero-identity changes, stock cleanup, independent match
+instances and reset. File-backed Peppi tests gate both replay fields at Slippi
+3.16 and corrupt each independently.
+
 The [ordinary clank profile](clanks.md) adds native `game_clank` scenarios and
 enables equal-grounded-jab conformance. Original-C kernels compare response and
 victim-table mutations; match tests cover source slot order, staled fractional

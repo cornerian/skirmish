@@ -258,5 +258,15 @@
     "fixture": "tests/oracle/original/turn_run.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_TurnRun.c",
     "sha256": "162624ab052be87b8d8046070059164de0b7c822be5c51ff54878f00a67d81f1"
+  },
+  {
+    "fixture": "tests/oracle/original/action_instance.c",
+    "upstream": "src/melee/ft/ft_0892.c",
+    "sha256": "02975b4fe744bf053a17f164dee7622a337b90391631d4bfd8938fe4ba2ff084"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_counter.c",
+    "upstream": "src/melee/pl/plattack.c",
+    "sha256": "8ac9163d7ade4af6740167098b7daa6bea50c6881ec31d8f0cb34db71fe90316"
   }
 ]

@@ -316,6 +316,7 @@ fn landing_game(index: usize, autocancel: bool, triggers: impl Fn(usize) -> Cont
         }
     }
     let mut game = Match::new(resource, 0).unwrap();
+    let mut attack_instance = 0;
     for frame in 0..8 {
         let mut controller = triggers(frame);
         if frame == 0 {
@@ -323,10 +324,18 @@ fn landing_game(index: usize, autocancel: bool, triggers: impl Fn(usize) -> Cont
             controller.stick = STICKS[index];
         }
         let state = step(&mut game, controller);
+        if frame == 0 {
+            attack_instance = state.fighters[0].action_instance.id;
+        }
         if state.fighters[0].grounded {
             assert_eq!(
                 frame, 5,
                 "the explicit four-unit fall must land on the sixth step"
+            );
+            assert_eq!(
+                state.fighters[0].action_instance.id == attack_instance,
+                !autocancel,
+                "aerial and matching landing retain one nonzero motion identity"
             );
             return game;
         }

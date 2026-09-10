@@ -182,11 +182,17 @@ and pending damage use the staled float; knockback's attack-damage term retains
 the original integer, as in `ftColl_8007ABD0`. The frame-resource representation
 does not encode arbitrary same-value damage-command reissues or item ownership.
 
-Stale queues, hitbox damage caches and the match-wide nonzero 16-bit instance
-sequence are checkpointed. Native motion transitions allocate identities in the
+Stale queues, hitbox damage caches and the match-wide nonzero 16-bit stale
+instance sequence are checkpointed. A separate nonzero 16-bit sequence tracks
+fighter action instances. Each implemented action queues the low byte of its
+original motion flags: a zero identity or change from the previous identity
+allocates a new ID, while matching aerial attack/landing and other shared motion
+families retain it. Hits copy the source ID into the victim's retained
+`last_hit_by_instance`. Native motion transitions allocate identities in the
 experimental scheduler's order; the complete original callback allocation order
-is not claimed. A KO clears only the deceased player's queue, preserving the
-global counter and other players' histories; match reset starts both fresh.
+is not claimed. A KO clears the deceased player's stale queue and attribution,
+preserving both global counters and other players' histories; match reset starts
+both counters fresh.
 
 Movement and displacement share the source stick-age timers, sampled once per
 active frame including hitlag. When both optional profiles are supplied, their

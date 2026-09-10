@@ -12,6 +12,7 @@ use crate::{
 pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
     let geometry = stage_motion::geometry(&data.stage, stage_state.frame);
+    let mut action_instances = crate::fighter::instance::Counter::default();
     Ok(State {
         next_frame: 0,
         remaining_frames: data.rules.time_limit_frames,
@@ -24,11 +25,26 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
         },
         stage: stage_state,
         fighters: [
-            spawn(data, &geometry, 0, data.rules.stocks, 0)?,
-            spawn(data, &geometry, 1, data.rules.stocks, 0)?,
+            spawn(
+                data,
+                &geometry,
+                0,
+                data.rules.stocks,
+                0,
+                &mut action_instances,
+            )?,
+            spawn(
+                data,
+                &geometry,
+                1,
+                data.rules.stocks,
+                0,
+                &mut action_instances,
+            )?,
         ],
         rng_seed: seed,
         attack_instances: crate::fighter::stale::InstanceCounter::default(),
+        action_instances,
         events: vec![],
     })
 }
@@ -39,6 +55,7 @@ fn spawn(
     player: usize,
     stocks: u8,
     invincibility: u32,
+    action_instances: &mut crate::fighter::instance::Counter,
 ) -> Result<Fighter, Error> {
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
@@ -75,6 +92,7 @@ fn spawn(
         stocks,
         hitlag: 0.0,
         hitstun: 0,
+        action_instance: crate::fighter::action_instance::State::default(),
         combo: crate::fighter::combo::State::default(),
         damage_elapsed: -1,
         damage_angle_flag: 0,
@@ -103,10 +121,16 @@ fn spawn(
     if !fighter.grounded {
         fighter.locomotion.jumps_used = 1;
     }
+    let identity = crate::fighter::action_instance::motion_identity(Action::Fall, None, false);
+    crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
+    crate::fighter::action_instance::flush(&mut fighter.action_instance, action_instances);
     Ok(fighter)
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
+    let identity =
+        crate::fighter::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
+    crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
     if !ledge::owns_action(action) {
@@ -230,6 +254,7 @@ pub(crate) fn advance(
                     player,
                     fighter.stocks,
                     data.rules.respawn_invincibility_frames,
+                    &mut state.action_instances,
                 )?;
                 if let Some(rules) = &data.rules.rebirth {
                     rebirth::enter(
@@ -303,6 +328,7 @@ pub(crate) fn advance(
                 &data.fighters[player],
                 data.rules.staling.as_ref(),
                 &mut state.attack_instances,
+                &mut state.action_instances,
             )?;
             fighter.previous_input = input;
             frozen[player] = true;
@@ -386,6 +412,7 @@ pub(crate) fn advance(
                 &data.fighters[player],
                 data.rules.staling.as_ref(),
                 &mut state.attack_instances,
+                &mut state.action_instances,
             )?;
             fighter.previous_input = input;
             continue;
@@ -408,6 +435,7 @@ pub(crate) fn advance(
                 &data.fighters[player],
                 data.rules.staling.as_ref(),
                 &mut state.attack_instances,
+                &mut state.action_instances,
             )?;
             fighter.previous_input = input;
             continue;
@@ -425,6 +453,7 @@ pub(crate) fn advance(
                 &data.fighters[player],
                 data.rules.staling.as_ref(),
                 &mut state.attack_instances,
+                &mut state.action_instances,
             )?;
             fighter.previous_input = input;
             continue;
@@ -455,6 +484,7 @@ pub(crate) fn advance(
             &data.fighters[player],
             data.rules.staling.as_ref(),
             &mut state.attack_instances,
+            &mut state.action_instances,
         )?;
         fighter.previous_input = input;
     }
@@ -502,6 +532,7 @@ pub(crate) fn advance(
             &data.fighters[player],
             data.rules.staling.as_ref(),
             &mut state.attack_instances,
+            &mut state.action_instances,
         )?;
     }
     let mut swept = [[None; 4]; 2];
@@ -656,6 +687,7 @@ pub(crate) fn advance(
             &data.fighters[1 - attacker],
             data.rules.staling.as_ref(),
             &mut state.attack_instances,
+            &mut state.action_instances,
         )?;
     }
 
@@ -721,6 +753,7 @@ pub(crate) fn advance(
             &data.fighters[player],
             data.rules.staling.as_ref(),
             &mut state.attack_instances,
+            &mut state.action_instances,
         )?;
     }
 
@@ -758,6 +791,7 @@ pub(crate) fn advance(
                         &data.fighters[player],
                         data.rules.staling.as_ref(),
                         &mut state.attack_instances,
+                        &mut state.action_instances,
                     )?;
                 }
                 continue;
@@ -866,6 +900,7 @@ fn lose_stock(
     fighter.ground_knockback = 0.0;
     fighter.hitlag = 0.0;
     fighter.hitstun = 0;
+    fighter.action_instance = crate::fighter::action_instance::State::default();
     fighter.combo = crate::fighter::combo::State::default();
     fighter.di_pending = false;
     fighter.ledge = ledge::State::default();
@@ -883,6 +918,7 @@ fn lose_stock(
         &data.fighters[player],
         data.rules.staling.as_ref(),
         &mut state.attack_instances,
+        &mut state.action_instances,
     )?;
     Ok(())
 }

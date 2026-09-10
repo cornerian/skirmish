@@ -27,6 +27,7 @@ pub const PROVENANCE_FIELDS: &[&str] = &[
     "combo_count",
     "last_hit_by",
 ];
+pub const INSTANCE_FIELDS: &[&str] = &["last_hit_by_instance", "instance_id"];
 pub const HURTBOX_FIELD: &str = "hurtbox_state";
 pub const VELOCITY_FIELDS: &[&str] = &[
     "velocities.self_x_air",
@@ -58,6 +59,9 @@ pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     }
     if version.gte(3, 8) {
         fields.push(HITLAG_FIELD);
+    }
+    if version.gte(3, 16) {
+        fields.extend_from_slice(INSTANCE_FIELDS);
     }
     fields
 }
@@ -100,6 +104,8 @@ pub struct FighterObservation {
     pub last_attack_landed: u8,
     pub combo_count: u8,
     pub last_hit_by: u8,
+    pub last_hit_by_instance: Option<u16>,
+    pub instance_id: Option<u16>,
     /// Raw Melee flag bytes. The policy selects only bits modeled by Skirmish.
     pub state_flags: Option<[u8; 5]>,
     /// Action-state union slot, compared only while the hitstun flag is set.
@@ -261,6 +267,8 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
             last_attack_landed: post.last_attack_landed,
             combo_count: post.combo_count,
             last_hit_by: post.last_hit_by,
+            last_hit_by_instance: post.last_hit_by_instance,
+            instance_id: post.instance_id,
             state_flags: Some([flags.0, flags.1, flags.2, flags.3, flags.4]),
             misc_as: Some(
                 post.misc_as
@@ -316,6 +324,8 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                     .combo
                     .last_hit_by
                     .map_or(6, |source| ports[source] as u8),
+                last_hit_by_instance: Some(fighter.combo.last_hit_by_instance),
+                instance_id: Some(fighter.action_instance.id),
                 state_flags: Some(state_flags(fighter)),
                 misc_as: Some(fighter.hitstun as f32),
                 hurtbox_state: Some(hurtbox_state(fighter)),
@@ -597,6 +607,30 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
             }
         }
         for (field, expected, actual) in [
+            (
+                INSTANCE_FIELDS[0],
+                expected.last_hit_by_instance,
+                actual.last_hit_by_instance,
+            ),
+            (INSTANCE_FIELDS[1], expected.instance_id, actual.instance_id),
+        ] {
+            if let Some(expected) = expected {
+                let Some(actual) = actual else {
+                    return Some(Difference {
+                        port,
+                        field,
+                        expected: format!("0x{expected:04x}"),
+                        actual: "unavailable".into(),
+                    });
+                };
+                if let Some(difference) =
+                    difference(port, field, u32::from(expected), u32::from(actual), 4)
+                {
+                    return Some(difference);
+                }
+            }
+        }
+        for (field, expected, actual) in [
             (BASE_FIELDS[7], expected.stocks, actual.stocks),
             (
                 BASE_FIELDS[8],
@@ -785,6 +819,8 @@ mod tests {
                         last_attack_landed: 0,
                         combo_count: 0,
                         last_hit_by: 6,
+                        last_hit_by_instance: Some(0),
+                        instance_id: Some(1),
                         state_flags: Some(row::StateFlags(0, 0, 0, 2, 0)),
                         misc_as: Some(0.0),
                         hurtbox_state: Some(0),
@@ -909,6 +945,7 @@ mod tests {
         for &field in BASE_FIELDS
             .iter()
             .chain(PROVENANCE_FIELDS)
+            .chain(INSTANCE_FIELDS)
             .chain(STATE_FLAG_FIELDS)
             .chain([MISC_HITSTUN_FIELD].iter())
             .chain([HURTBOX_FIELD].iter())
@@ -934,6 +971,8 @@ mod tests {
                 "last_attack_landed" => fighter.last_attack_landed = 7,
                 "combo_count" => fighter.combo_count = 1,
                 "last_hit_by" => fighter.last_hit_by = 0,
+                "last_hit_by_instance" => fighter.last_hit_by_instance = Some(7),
+                "instance_id" => fighter.instance_id = Some(7),
                 "state_flags.protected" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x04,
                 "state_flags.fast_fall" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x08,
                 "state_flags.hitlag" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x20,
@@ -1005,6 +1044,8 @@ mod tests {
             );
             assert_eq!(fighter.combo_count, native.combo.count as u8);
             assert_eq!(fighter.last_hit_by, 6);
+            assert_eq!(fighter.last_hit_by_instance, Some(0));
+            assert_eq!(fighter.instance_id, Some(native.action_instance.id));
             assert_eq!(fighter.state_flags, Some(state_flags(native)));
             assert_eq!(fighter.misc_as, Some(native.hitstun as f32));
             assert_eq!(fighter.hurtbox_state, Some(hurtbox_state(native)));

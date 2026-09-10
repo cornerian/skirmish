@@ -67,7 +67,9 @@ pub(crate) fn flush(
     data: &FighterData,
     rules: Option<&Rules>,
     counter: &mut InstanceCounter,
+    action_counter: &mut crate::fighter::instance::Counter,
 ) -> Result<(), Error> {
+    crate::fighter::action_instance::flush(&mut fighter.action_instance, action_counter);
     for action in fighter.staling.transitions.drain(..) {
         if rules.is_some() {
             let move_id = match data.attack(action, fighter.prone, fighter.ledge.slow) {

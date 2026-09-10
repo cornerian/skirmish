@@ -115,6 +115,11 @@ fn repeated_same_move_updates_retained_combo_push_and_source_attribution() {
     assert_eq!(hit.fighters[0].combo.count, 1);
     assert_eq!(hit.fighters[0].combo.victim, Some(1));
     assert_eq!(hit.fighters[1].combo.last_hit_by, Some(0));
+    assert_eq!(
+        hit.fighters[1].combo.last_hit_by_instance,
+        hit.fighters[0].action_instance.id
+    );
+    assert_ne!(hit.fighters[1].combo.last_hit_by_instance, 0);
     until(&mut game, 60, |state| {
         state
             .fighters
@@ -259,6 +264,8 @@ fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
         stocks: 1
     }));
     assert_eq!(game.state().fighters[1].combo, Default::default());
+    assert_eq!(game.state().fighters[1].action_instance.motion_identity, 0);
+    assert_ne!(game.state().fighters[1].action_instance.id, 0);
     let respawn = until(&mut game, 10, |state| {
         state.fighters[1].action != Action::Respawn
     });
@@ -603,6 +610,17 @@ fn finite_inputs_that_produce_invalid_combat_arithmetic_leave_state_unchanged() 
 
 #[test]
 fn independent_parallel_instances_and_reset_reproduce_the_same_native_state() {
+    let fresh = playing(data());
+    assert_eq!(
+        fresh
+            .state()
+            .fighters
+            .each_ref()
+            .map(|fighter| fighter.action_instance.id),
+        [1, 2]
+    );
+    assert_eq!(fresh.state().action_instances.next_value(), 3);
+    assert_eq!(fresh.state().attack_instances.next_value(), 1);
     let workers: Vec<_> = (0..4)
         .map(|_| {
             std::thread::spawn(|| {

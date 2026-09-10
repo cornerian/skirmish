@@ -3,6 +3,8 @@
 //! affect damage. Fresh moves have factor 1.0, with no invented fresh bonus.
 use serde::{Deserialize, Serialize};
 
+pub use super::instance::Counter as InstanceCounter;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rules {
@@ -76,31 +78,6 @@ impl Queue {
         }
         let factor = self.multiplier(move_id, &rules.penalties);
         if factor != 1.0 { base * factor } else { base }
-    }
-}
-
-/// The match-wide plstale.c sequence, independent of any one player's stock.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct InstanceCounter(u16);
-impl Default for InstanceCounter {
-    fn default() -> Self {
-        Self(1)
-    }
-}
-impl InstanceCounter {
-    pub fn from_next(next: u16) -> Option<Self> {
-        (next != 0).then_some(Self(next))
-    }
-    pub fn next_value(self) -> u16 {
-        self.0
-    }
-    pub fn allocate(&mut self) -> u16 {
-        let before = self.0;
-        self.0 = self.0.wrapping_add(1);
-        if self.0 == 0 {
-            self.0 = 1;
-        }
-        before
     }
 }
 

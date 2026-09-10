@@ -316,6 +316,7 @@ pub(crate) fn finish(
             &data.fighters[player],
             data.rules.staling.as_ref(),
             &mut state.attack_instances,
+            &mut state.action_instances,
         )?;
     }
     Ok(())

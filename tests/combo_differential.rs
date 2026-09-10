@@ -117,6 +117,7 @@ proptest! {
             escape_timer: escape,
             push_timer,
             last_hit_by: None,
+            last_hit_by_instance: 0,
         };
         record_case(&mut state, attack_id, push_count, push_frames);
 

@@ -145,6 +145,12 @@ impl Recording {
                                 .map_or(6, |source| PORTS[source] as u8),
                         ),
                     );
+                    if let Some(instance) = &mut post.last_hit_by_instance {
+                        instance.set(row, Some(fighter.combo.last_hit_by_instance));
+                    }
+                    if let Some(instance) = &mut post.instance_id {
+                        instance.set(row, Some(fighter.action_instance.id));
+                    }
                     post.stocks.set(row, Some(fighter.stocks));
                     post.airborne
                         .as_mut()
@@ -275,7 +281,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v5");
+    assert_eq!(report.policy, "fighter-post-v6");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -564,7 +570,7 @@ fn first_late_post_mismatch_reports_the_matched_prefix_and_expected_bits() {
 fn every_reported_post_field_detects_its_first_file_backed_difference() {
     let recording = Recording::new();
     for field in observation::fields(Version(3, 18, 0)) {
-        let player = if matches!(field, "last_attack_landed" | "combo_count") {
+        let player = if matches!(field, "last_attack_landed" | "combo_count" | "instance_id") {
             0
         } else {
             1
@@ -575,7 +581,10 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                 .iter()
                 .position(|state| state.fighters[player].hitstun > 0)
                 .unwrap()
-        } else if matches!(field, "last_attack_landed" | "combo_count" | "last_hit_by") {
+        } else if matches!(
+            field,
+            "last_attack_landed" | "combo_count" | "last_hit_by" | "last_hit_by_instance"
+        ) {
             recording
                 .states
                 .iter()
@@ -629,6 +638,16 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .combo_count
                     .set(row, Some((fighter.combo.count as u8) ^ 1)),
                 "last_hit_by" => post.last_hit_by.set(row, Some(6)),
+                "last_hit_by_instance" => post
+                    .last_hit_by_instance
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.combo.last_hit_by_instance ^ 1)),
+                "instance_id" => post
+                    .instance_id
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.action_instance.id ^ 1)),
                 "state_flags.protected" => post
                     .state_flags
                     .as_mut()
@@ -733,6 +752,7 @@ fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
         Version(2, 1, 0),
         Version(3, 5, 0),
         Version(3, 8, 0),
+        Version(3, 16, 0),
     ] {
         let bytes = recording.bytes(
             support::Fixture {
@@ -750,6 +770,11 @@ fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
         );
         assert_eq!(report.fields.contains(&"hitlag"), version.gte(3, 8));
         assert_eq!(report.fields.contains(&"hurtbox_state"), version.gte(2, 1));
+        assert_eq!(
+            report.fields.contains(&"last_hit_by_instance"),
+            version.gte(3, 16)
+        );
+        assert_eq!(report.fields.contains(&"instance_id"), version.gte(3, 16));
     }
 }
 
@@ -1094,7 +1119,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v5");
+        assert_eq!(report["policy"], "fighter-post-v6");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

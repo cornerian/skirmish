@@ -1,5 +1,22 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi action-instance batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-action-instance-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 566 native
+workspace tests, and 760 original-C differential tests in both debug and release
+modes. The `fighter-post-v6` replay policy now compares Slippi 3.16's current
+action-instance ID and retained last-hit source instance. Independent nonzero
+16-bit match counters reproduce identity changes, shared motion-family
+retention, explicit restarts, wrap and zero skipping. The selected complete
+`ft_800895E0`, `ft_80089824` and `plAttack_80037B08` bodies are compared over
+1,024 arbitrary states. Match coverage checks hit attribution,
+aerial-to-landing retention, zero-identity actions, stock cleanup, checkpointed
+state and independent resets; Peppi-written replay files version-gate and corrupt
+each new field independently. The 19 ignored tests require external references,
+extracted assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 retained-combo push batch is recorded at:
 
 `/mnt/archive/runs/skirmish-combo-push-20260910`
