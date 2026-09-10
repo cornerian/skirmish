@@ -113,6 +113,12 @@ ftCo_DownAttack.c. The adapter supplies only the input-lock result, current and
 previous physical-L/R press ages, and the two common-data boundaries. Match
 tests own floor contact and the subsequent Passive/Down action graph.
 
+`knockdown_input_differential` reuses the pinned `ft_0DF1.c` snapshot behind the
+`aerial_input` adapter and selects complete `ftCo_800DF644` and `ftCo_800DF678`.
+The adapter supplies current/previous C-stick samples plus explicit thresholds;
+tests compare upward and horizontal fresh-edge predicates over arbitrary
+binary32 values. Match tests own DownWait priority and recovery transitions.
+
 `passive_stand` selects complete `ftCo_80098928`. Its host adapter supplies the
 already-tested buffered-tech result and captures the requested forward/backward
 motion ID; the original callback owns the comparison-based absolute value,

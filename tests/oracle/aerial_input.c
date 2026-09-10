@@ -15,7 +15,7 @@ typedef struct {
         landingairhi_lag,landingairlw_lag; } co_attrs;
 } Fighter;
 typedef struct {Fighter* user_data;} Fighter_GObj;
-typedef struct {float xDC,xE0,x20_radians,xE8; int xE4;} ftCommonData;
+typedef struct {float xDC,xE0,x20_radians,xE8,x248,x7F4; int xE4;} ftCommonData;
 static _Thread_local ftCommonData* p_ftCommonData;
 static _Thread_local float captured_lag;
 static _Thread_local int captured_motion;
@@ -63,4 +63,16 @@ float oracle_aerial_lag(float base,uint8_t age,int window,float divisor,int dire
     captured_lag=-999;
     ftCo_LandingAir_EnterWithLag(&object);
     return captured_lag;
+}
+int oracle_knockdown_cstick_up(float previous,float current,float threshold) {
+    static _Thread_local ftCommonData common;
+    common=(ftCommonData){.x7F4=threshold};p_ftCommonData=&common;
+    Fighter fighter={.input={.cstick={{0,current},{0,previous}}}};
+    return ftCo_800DF644(&fighter);
+}
+int oracle_knockdown_cstick_horizontal(const float* values,float threshold,float angle) {
+    static _Thread_local ftCommonData common;
+    common=(ftCommonData){.x248=threshold,.x20_radians=angle};p_ftCommonData=&common;
+    Fighter fighter={.input={.cstick={{values[2],values[3]},{values[0],values[1]}}}};
+    return ftCo_800DF678(&fighter);
 }

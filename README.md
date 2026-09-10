@@ -85,7 +85,8 @@ stage data subsets are preserved with [provenance and missing fields](docs/nativ
 Optional [blast-death resources](docs/deaths.md) expose normal, star and screen
 KO timelines, exact selector RNG and delayed stock loss to headless consumers.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
-techs with sampled roll root motion and bones.
+techs plus missed-tech rolls, standing and get-up attacks with sampled root
+motion and bones.
 Resource-driven [stage motion](docs/stage-motion.md) exposes current collision
 geometry and carries supported fighters with the original line-remap arithmetic.
 The [ECB response profile](docs/ecb-response.md) adds moving-surface penetration,

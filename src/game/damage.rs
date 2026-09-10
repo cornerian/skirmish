@@ -42,10 +42,30 @@ pub struct FloorResponseRules {
     pub tech_repeat_lockout: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tech_roll: Option<FloorTechRules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knockdown_options: Option<KnockdownRules>,
     pub passive_frames: u32,
     pub down_bound_frames: u32,
     pub down_wait_frames: u32,
     pub down_stand_frames: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnockdownRules {
+    pub horizontal_stick_threshold: f32,
+    pub stand_stick_threshold: f32,
+    pub vertical_angle_radians: f32,
+    pub attack_cstick_threshold: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnockdownAttributes {
+    pub forward: FloorTechMotion,
+    pub backward: FloorTechMotion,
+    pub stand_poses: Vec<Vec<Bone>>,
+    pub attack: super::data::Attack,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,17 +189,43 @@ pub(crate) fn validate_floor_tech_attributes(
     fighter: &FighterData,
 ) -> Result<(), Error> {
     for motion in [&attributes.forward, &attributes.backward] {
-        if motion.frames.is_empty() || motion.frames.len() > 4096 {
+        validate_ground_motion(motion, fighter)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_knockdown_attributes(
+    attributes: &KnockdownAttributes,
+    fighter: &FighterData,
+    stand_frames: u32,
+) -> Result<(), Error> {
+    for motion in [&attributes.forward, &attributes.backward] {
+        validate_ground_motion(motion, fighter)?;
+    }
+    if attributes.stand_poses.len() != stand_frames as usize {
+        return Err(Error::Data(
+            "knockdown stand poses must match the configured duration".into(),
+        ));
+    }
+    for pose in &attributes.stand_poses {
+        super::validation::validate_animation_pose(pose, fighter)?;
+    }
+    Ok(())
+}
+
+fn validate_ground_motion(motion: &FloorTechMotion, fighter: &FighterData) -> Result<(), Error> {
+    if motion.frames.is_empty() || motion.frames.len() > 4096 {
+        return Err(Error::Data(
+            "ground recovery requires 1..4096 physics samples".into(),
+        ));
+    }
+    for frame in &motion.frames {
+        if !frame.root_translation.is_finite() || frame.root_translation.abs() > 1_000_000.0 {
             return Err(Error::Data(
-                "floor-tech roll requires 1..4096 physics samples".into(),
+                "invalid ground-recovery root translation".into(),
             ));
         }
-        for frame in &motion.frames {
-            if !frame.root_translation.is_finite() || frame.root_translation.abs() > 1_000_000.0 {
-                return Err(Error::Data("invalid floor-tech root translation".into()));
-            }
-            super::validation::validate_animation_pose(&frame.bones, fighter)?;
-        }
+        super::validation::validate_animation_pose(&frame.bones, fighter)?;
     }
     Ok(())
 }
@@ -189,6 +235,16 @@ impl FloorTechAttributes {
         match action {
             Action::PassiveStandF => Some(&self.forward),
             Action::PassiveStandB => Some(&self.backward),
+            _ => None,
+        }
+    }
+}
+
+impl KnockdownAttributes {
+    pub(crate) fn motion(&self, action: Action) -> Option<&FloorTechMotion> {
+        match action {
+            Action::DownForward => Some(&self.forward),
+            Action::DownBack => Some(&self.backward),
             _ => None,
         }
     }
@@ -275,6 +331,25 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
             || profile.stick_threshold > 1.0)
     {
         return Err(Error::Data("invalid explicit floor-tech roll rules".into()));
+    }
+    if let Some(profile) = rules
+        .floor_response
+        .as_ref()
+        .and_then(|profile| profile.knockdown_options.as_ref())
+        && (![
+            profile.horizontal_stick_threshold,
+            profile.stand_stick_threshold,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0 && value <= 1.0)
+            || !profile.attack_cstick_threshold.is_finite()
+            || !(0.0..=1.0).contains(&profile.attack_cstick_threshold)
+            || !profile.vertical_angle_radians.is_finite()
+            || !(0.0..=core::f32::consts::FRAC_PI_2).contains(&profile.vertical_angle_radians))
+    {
+        return Err(Error::Data(
+            "invalid explicit knockdown-option rules".into(),
+        ));
     }
     if let Some(profile) = &rules.surface_response
         && ((!profile.knockback_threshold.is_finite()
@@ -469,11 +544,16 @@ pub(crate) fn update_animation(
     input: super::Controller,
 ) {
     fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
-    if let Some(motion) = data
-        .floor_tech
-        .as_ref()
-        .and_then(|attributes| attributes.motion(fighter.action))
+    if let Some(motion) = ground_motion(fighter.action, data)
         && fighter.action_frame as usize >= motion.frames.len()
+    {
+        super::simulation::enter(fighter, Action::Wait);
+        return;
+    }
+    if fighter.action == Action::DownAttack
+        && data.knockdown.as_ref().is_some_and(|attributes| {
+            fighter.action_frame as usize >= attributes.attack.frames.len()
+        })
     {
         super::simulation::enter(fighter, Action::Wait);
         return;
@@ -568,6 +648,53 @@ pub(crate) fn update_animation(
     if let Some(action) = next {
         super::simulation::enter(fighter, action);
     }
+}
+
+/// DownWait's source priority: get-up attack, roll, then stand. This owns the
+/// action even when no option is selected so unrelated state machines cannot
+/// consume input while the fighter remains knocked down.
+pub(crate) fn update_actions(
+    fighter: &mut Fighter,
+    rules: &CombatRules,
+    input: super::Controller,
+) -> bool {
+    if fighter.action != Action::DownWait {
+        return false;
+    }
+    let Some(rules) = rules
+        .floor_response
+        .as_ref()
+        .and_then(|profile| profile.knockdown_options.as_ref())
+    else {
+        return true;
+    };
+    let pressed = input.buttons & !fighter.previous_input.buttons;
+    let action = damage::knockdown_option(
+        damage::KnockdownInput {
+            main: input.stick,
+            cstick: input.cstick,
+            previous_cstick: fighter.previous_input.cstick,
+            facing: fighter.facing,
+            attack_pressed: pressed & (super::BUTTON_A | super::BUTTON_B) != 0,
+            shoulder_pressed: pressed & (super::BUTTON_L | super::BUTTON_R) != 0,
+        },
+        &damage::KnockdownRules {
+            horizontal_stick_threshold: rules.horizontal_stick_threshold,
+            stand_stick_threshold: rules.stand_stick_threshold,
+            vertical_angle_radians: rules.vertical_angle_radians,
+            attack_cstick_threshold: rules.attack_cstick_threshold,
+        },
+    )
+    .map(|option| match option {
+        damage::KnockdownOption::Attack => Action::DownAttack,
+        damage::KnockdownOption::Forward => Action::DownForward,
+        damage::KnockdownOption::Backward => Action::DownBack,
+        damage::KnockdownOption::Stand => Action::DownStand,
+    });
+    if let Some(action) = action {
+        super::simulation::enter(fighter, action);
+    }
+    true
 }
 
 pub(crate) fn can_reflect(
@@ -747,23 +874,40 @@ pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules, input: super::Con
     true
 }
 
-pub(crate) fn floor_tech_pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [Bone]> {
-    data.floor_tech
-        .as_ref()?
-        .motion(fighter.action)?
+pub(crate) fn ground_recovery_pose<'a>(
+    fighter: &Fighter,
+    data: &'a FighterData,
+) -> Option<&'a [Bone]> {
+    if fighter.action == Action::DownStand {
+        return data
+            .knockdown
+            .as_ref()?
+            .stand_poses
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice);
+    }
+    ground_motion(fighter.action, data)?
         .frames
         .get(fighter.action_frame as usize)
         .map(|frame| frame.bones.as_slice())
 }
 
-pub(crate) fn floor_tech_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
-    let frame = data
-        .floor_tech
-        .as_ref()?
-        .motion(fighter.action)?
+pub(crate) fn ground_recovery_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
+    let frame = ground_motion(fighter.action, data)?
         .frames
         .get(fighter.action_frame as usize)?;
     Some(frame.root_translation * fighter.facing)
+}
+
+fn ground_motion(action: Action, data: &FighterData) -> Option<&FloorTechMotion> {
+    data.floor_tech
+        .as_ref()
+        .and_then(|attributes| attributes.motion(action))
+        .or_else(|| {
+            data.knockdown
+                .as_ref()
+                .and_then(|attributes| attributes.motion(action))
+        })
 }
 
 /// Called on frozen damage frames after the timer decrement, while it remains

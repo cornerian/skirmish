@@ -920,6 +920,9 @@ fn update_actions(
     ) {
         return;
     }
+    if damage::update_actions(f, &rules.damage, input) {
+        return;
+    }
     if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
         return;
     }
@@ -979,7 +982,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
             // Rebound's first physics callback retains projected self velocity.
-        } else if let Some(target) = damage::floor_tech_velocity(f, data) {
+        } else if let Some(target) = damage::ground_recovery_velocity(f, data) {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.
             movement.ground_acceleration = target - movement.ground_velocity;
@@ -1082,7 +1085,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if let Some(pose) = ledge::pose(fighter, data) {
         pose
-    } else if let Some(pose) = damage::floor_tech_pose(fighter, data) {
+    } else if let Some(pose) = damage::ground_recovery_pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

@@ -31,14 +31,33 @@ supplies the already-tested tech result and compares every selector output.
 The match samples x680/x684-style physical L/R ages during hitlag and ordinary
 frames and checkpoints both timers.
 
-`game_damage_floor` covers neutral tech recovery, forward/backward rolls at the
-inclusive threshold, sampled root motion, bone-derived ECB changes, exact state
-durations, repeat lockout, non-tumble separation, DamageFall persistence,
-resource rejection, serialization, checkpoint replay and reset. The two
-tech/knockdown conformance scenarios run normally.
+Optional `floor_response.knockdown_options` supplies the two stick thresholds,
+vertical angle and upward C-stick threshold used while in DownWait. Each fighter
+then supplies forward/backward missed-tech motions, one DownStand bone pose per
+configured frame and a complete get-up `Attack`. The scheduler preserves the
+source input priority: a fresh A/B or upward C-stick starts DownAttack; otherwise
+a fresh horizontal C-stick overrides the main stick for DownForward/DownBack;
+otherwise held horizontal input can roll, and upward main stick or fresh L/R can
+stand. Roll direction is relative to facing. A C-stick held before DownWait is
+not treated as fresh.
 
-This profile does not yet provide action-specific damage/down poses,
-invincibility windows, missed-tech get-up/attack choices, prone orientation or
+`fighter::damage::fresh_up_cstick` and `fresh_horizontal_cstick` retain complete
+`ftCo_800DF644` and `ftCo_800DF678` predicates. Original-C property tests cover
+their inclusive/exclusive thresholds, comparison-based absolute value, angle
+test and arbitrary binary32 values. The combined priority selector is refactored
+match policy and has unit and integration coverage rather than whole-callback
+parity claims.
+
+`game_damage_floor` covers neutral tech recovery, tech and missed-tech rolls in
+both directions, attack/roll/stand priority, fresh and held C-stick histories,
+inclusive thresholds, sampled root motion, bone-derived ECB changes, get-up
+attack contact through the shared combat pipeline, exact state durations, repeat
+lockout, non-tumble separation, DamageFall persistence, resource rejection,
+serialization, checkpoint replay and reset. The two tech/knockdown conformance
+scenarios run normally.
+
+This profile does not yet provide action-specific airborne damage/DownBound/
+DownWait poses, recovery invincibility windows, prone orientation variants or
 input-lock states. Wall/ceiling reflection and techs
 are supplied separately by the [damage-surface profile](damage-surfaces.md).
 The remaining paths need their own native resources and scheduler integration.

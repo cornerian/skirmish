@@ -1,5 +1,17 @@
 # Local validation provenance
 
+The 2026-09-09 missed-tech recovery batch is recorded at:
+
+`/mnt/archive/runs/skirmish-knockdown-options-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage exercises attack/roll/stand input
+priority, both roll directions, fresh and held C-stick history, exact sampled
+root motion and bones, get-up attack contact, resource rejection and checkpoint
+replay. The two exact C-stick predicates are compared against pinned original C
+over arbitrary binary32 values.
+
 The 2026-09-09 floor-tech roll batch is recorded at:
 
 `/mnt/archive/runs/skirmish-floor-tech-roll-20260909`

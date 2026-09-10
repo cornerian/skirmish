@@ -249,6 +249,89 @@ pub fn tech_roll_direction(stick_x: f32, facing: f32, threshold: f32) -> Option<
     })
 }
 
+/// `ftCo_800DF644`: the C-stick's Y sample newly crosses the upward threshold.
+pub fn fresh_up_cstick(previous_y: f32, current_y: f32, threshold: f32) -> bool {
+    previous_y < threshold && current_y >= threshold
+}
+
+/// `ftCo_800DF678`: a new horizontal C-stick excursion whose angle is below
+/// the common get-up vertical boundary.
+pub fn fresh_horizontal_cstick(
+    previous: [f32; 2],
+    current: [f32; 2],
+    horizontal_threshold: f32,
+    vertical_angle: f32,
+) -> bool {
+    super::compat::comparison_abs(previous[0]) < horizontal_threshold
+        && super::compat::comparison_abs(current[0]) >= horizontal_threshold
+        && super::aerial::stick_angle(current) < vertical_angle
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KnockdownInput {
+    pub main: [f32; 2],
+    pub cstick: [f32; 2],
+    pub previous_cstick: [f32; 2],
+    pub facing: f32,
+    pub attack_pressed: bool,
+    pub shoulder_pressed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KnockdownRules {
+    pub horizontal_stick_threshold: f32,
+    pub stand_stick_threshold: f32,
+    pub vertical_angle_radians: f32,
+    pub attack_cstick_threshold: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KnockdownOption {
+    Attack,
+    Forward,
+    Backward,
+    Stand,
+}
+
+/// Refactored DownWait IASA composition. The original callback gives get-up
+/// attack priority, then a fresh C-stick or held main-stick roll, then stand.
+pub fn knockdown_option(input: KnockdownInput, rules: &KnockdownRules) -> Option<KnockdownOption> {
+    if input.attack_pressed
+        || fresh_up_cstick(
+            input.previous_cstick[1],
+            input.cstick[1],
+            rules.attack_cstick_threshold,
+        )
+    {
+        return Some(KnockdownOption::Attack);
+    }
+    let stick_x = if fresh_horizontal_cstick(
+        input.previous_cstick,
+        input.cstick,
+        rules.horizontal_stick_threshold,
+        rules.vertical_angle_radians,
+    ) {
+        Some(input.cstick[0])
+    } else if super::compat::comparison_abs(input.main[0]) >= rules.horizontal_stick_threshold
+        && super::aerial::stick_angle(input.main) < rules.vertical_angle_radians
+    {
+        Some(input.main[0])
+    } else {
+        None
+    };
+    if let Some(stick_x) = stick_x {
+        return Some(if stick_x * input.facing >= 0.0 {
+            KnockdownOption::Forward
+        } else {
+            KnockdownOption::Backward
+        });
+    }
+    ((input.main[1] >= rules.stand_stick_threshold
+        && super::aerial::stick_angle(input.main) >= rules.vertical_angle_radians)
+        || input.shoulder_pressed)
+        .then_some(KnockdownOption::Stand)
+}
+
 /// `ftCo_800C1E0C`: a recent X/Y press or an upward stick at the inclusive
 /// threshold upgrades a wall tech to its jump variant.
 pub fn wall_tech_jumps(
@@ -359,6 +442,51 @@ mod tests {
             tech_roll_direction(-0.7, -1.0, 0.7),
             Some(TechRoll::Forward)
         );
+    }
+
+    #[test]
+    fn exact_knockdown_cstick_predicates_preserve_source_boundaries() {
+        assert!(!fresh_up_cstick(0.8, 0.9, 0.8));
+        assert!(fresh_up_cstick(0.799, 0.8, 0.8));
+        assert!(!fresh_horizontal_cstick([0.7, 0.0], [1.0, 0.0], 0.7, 0.8));
+        assert!(fresh_horizontal_cstick([0.699, 0.0], [-0.7, 0.0], 0.7, 0.8));
+        assert!(!fresh_horizontal_cstick([0.0, 0.0], [0.7, 1.0], 0.7, 0.8));
+    }
+
+    #[test]
+    fn knockdown_option_keeps_attack_roll_stand_priority_and_relative_facing() {
+        let rules = KnockdownRules {
+            horizontal_stick_threshold: 0.7,
+            stand_stick_threshold: 0.7,
+            vertical_angle_radians: 0.8,
+            attack_cstick_threshold: 0.8,
+        };
+        let mut input = KnockdownInput {
+            main: [-0.7, 0.0],
+            cstick: [0.0, 0.0],
+            previous_cstick: [0.0, 0.0],
+            facing: -1.0,
+            attack_pressed: false,
+            shoulder_pressed: true,
+        };
+        assert_eq!(
+            knockdown_option(input, &rules),
+            Some(KnockdownOption::Forward)
+        );
+        input.attack_pressed = true;
+        assert_eq!(
+            knockdown_option(input, &rules),
+            Some(KnockdownOption::Attack)
+        );
+        input.attack_pressed = false;
+        input.main = [0.0, 0.7];
+        assert_eq!(
+            knockdown_option(input, &rules),
+            Some(KnockdownOption::Stand)
+        );
+        input.main = [0.0, 0.0];
+        input.shoulder_pressed = false;
+        assert_eq!(knockdown_option(input, &rules), None);
     }
 
     #[test]

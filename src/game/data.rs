@@ -168,6 +168,8 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_tech: Option<super::damage::FloorTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knockdown: Option<super::damage::KnockdownAttributes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_tech: Option<super::damage::SurfaceTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shield: Option<super::shield::Attributes>,
@@ -195,6 +197,9 @@ impl FighterData {
         }
         if action == super::Action::CliffAttack {
             return Some(&self.ledge.as_ref()?.attack.attack);
+        }
+        if action == super::Action::DownAttack {
+            return Some(&self.knockdown.as_ref()?.attack);
         }
         if let Some(attack) = self
             .special
