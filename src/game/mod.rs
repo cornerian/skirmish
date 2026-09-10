@@ -10,6 +10,7 @@ mod combat_history;
 pub mod damage;
 pub mod data;
 pub mod death;
+pub mod escape;
 pub mod grab;
 pub mod hitboxes;
 pub mod ledge;
@@ -93,6 +94,9 @@ pub enum Action {
     ShieldBreakDown,
     ShieldBreakStand,
     Furafura,
+    EscapeF,
+    EscapeB,
+    EscapeN,
     Pass,
     Fall,
     Jab,
@@ -243,6 +247,9 @@ pub struct Fighter {
     /// Intangibility has priority over ordinary invincibility in Melee's
     /// fighter-wide hurtbox collision state.
     pub intangibility: u32,
+    /// Script-driven `Fighter::x1988` collision state sampled from the current
+    /// motion; Slippi reports it ahead of the timed counters above.
+    pub body_state: data::BodyState,
     /// Slippi's per-frame landing result: none, successful, unsuccessful.
     pub l_cancel_status: u8,
     pub short_hop: bool,

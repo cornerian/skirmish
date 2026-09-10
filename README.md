@@ -87,8 +87,9 @@ stage data subsets are preserved with [provenance and missing fields](docs/nativ
 Optional [blast-death resources](docs/deaths.md) expose normal, star and screen
 KO timelines, exact selector RNG and delayed stock loss to headless consumers.
 The [shield profile](docs/shield.md) includes direct digital and analog
-shield-to-Pass drops through one-way platforms and C-stick shield jumps with
-pinned input predicates.
+shield-to-Pass drops through one-way platforms, C-stick shield jumps and
+resource-driven grounded rolls and spot dodges with sampled root motion, bones
+and scripted hurtbox state, all with pinned input predicates.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.

@@ -22,9 +22,10 @@ and hitlag field and requires the first
 divergence at that row. Slippi 2.0, 2.1, 3.5 and 3.8 fixtures prove the report's
 version-dependent field set. Separate Peppi-written replay cases drive physical
 B through neutral-special combat, physical Z through grab/capture and physical L
-through shield entry and direct platform drop, and processed C-stick through a
-shield jump, then remove or change each recorded input and require divergence
-on that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
+through shield entry and direct platform drop, processed C-stick through a
+shield jump, and fresh main-stick or held C-stick samples through forward and
+backward rolls and a spot dodge, then remove or change each recorded input and
+require divergence on that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
 and fighter-hit attribution. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. Exact unit cases cover every retained
@@ -309,6 +310,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input, digital/analog shield drops, scheduler transition ownership and checkpoint history |
+| `escape` | Fresh main-stick and held C-stick rolls, facing-relative direction, main-stick priority, both spot-dodge channels and their priority over rolls, GuardOff/GuardReflect eligibility, exact sampled root motion and bones, shield clearing, scripted intangibility against hits and grabs, edge departure into Fall, overlap-nudge exemption, checkpoint replay and invalid resources |
 | `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |

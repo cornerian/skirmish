@@ -8,6 +8,7 @@ pub mod combo;
 mod compat;
 pub mod damage;
 pub mod death;
+pub mod escape;
 pub mod grab;
 pub mod instance;
 pub mod ledge;

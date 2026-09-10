@@ -1,7 +1,8 @@
 //! Shield callbacks with caller-supplied native common/character data. Yoshi
-//! shields, shield-tilt animation, rolls/grabs and reflected-projectile motion
-//! are separate unported branches. Shield break uses explicit native animation
-//! durations rather than guessed character timing or render state.
+//! shields, shield-tilt animation, shield grabs and reflected-projectile motion
+//! are separate unported branches; rolls and spot dodges live in `escape`.
+//! Shield break uses explicit native animation durations rather than guessed
+//! character timing or render state.
 use super::{
     Action, Controller, Error, Event, Fighter, State,
     data::{FighterData, Hitbox, MatchData},
@@ -330,16 +331,16 @@ pub(crate) fn update_animation(
 }
 
 /// Priority-3 shield input callback. Entry honors the existing supported attack
-/// priority; missing roll and grab paths remain explicit.
+/// priority; the shield-grab path remains explicitly missing.
 pub(crate) fn update_actions(
     f: &mut Fighter,
     data: &FighterData,
-    rules: Option<&Rules>,
+    rules: &super::data::Rules,
     input: Controller,
     own_action: bool,
-) -> bool {
-    let (Some(r), Some(_a)) = (rules, data.shield.as_ref()) else {
-        return false;
+) -> Result<bool, Error> {
+    let (Some(r), Some(_a)) = (rules.shield.as_ref(), data.shield.as_ref()) else {
+        return Ok(false);
     };
     if own_action {
         if matches!(
@@ -353,7 +354,17 @@ pub(crate) fn update_actions(
                 && f.locomotion.trigger_age < r.powershield_input_window
             {
                 start_powershield(f, r, false, input);
-                return true;
+                return Ok(true);
+            }
+            // Every guard IASA chain checks ftCo_8009980C before ftCo_8009917C;
+            // GuardOff_IASA offers only the spot dodge and the jump dispatcher.
+            if super::escape::try_spot_dodge(f, data, rules.escape.as_ref(), input)? {
+                return Ok(true);
+            }
+            if f.action != Action::GuardOff
+                && super::escape::try_roll(f, data, rules.escape.as_ref(), input)?
+            {
+                return Ok(true);
             }
             if let Some(source) = data
                 .locomotion
@@ -365,7 +376,7 @@ pub(crate) fn update_actions(
                 enter(f, Action::JumpSquat);
             }
         }
-        return true;
+        return Ok(true);
     }
     if f.grounded
         && matches!(
@@ -385,10 +396,10 @@ pub(crate) fn update_actions(
             && f.locomotion.trigger_age < r.powershield_input_window
         {
             start_powershield(f, r, true, input);
-            return true;
+            return Ok(true);
         }
         if !input.shield_held() || f.shield.health == 0.0 {
-            return false;
+            return Ok(false);
         }
         f.shield.strength = math::strength(input.shield_pressure(), r.analog_deadzone, 0.0);
         f.shield.minimum_hold = r.minimum_hold_frames;
@@ -396,9 +407,9 @@ pub(crate) fn update_actions(
         f.shield.raise_progress = 0.0;
         clear_powershield(f);
         enter(f, Action::GuardOn);
-        return true;
+        return Ok(true);
     }
-    false
+    Ok(false)
 }
 
 fn clear_powershield(f: &mut Fighter) {

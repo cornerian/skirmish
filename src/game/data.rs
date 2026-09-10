@@ -108,6 +108,8 @@ pub struct Rules {
     pub ledge: Option<super::ledge::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_jump: Option<super::wall_jump::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escape: Option<super::escape::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -189,6 +191,8 @@ pub struct FighterData {
     pub ledge: Option<super::ledge::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub special: Option<super::special::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escape: Option<super::escape::Parameters>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
@@ -325,6 +329,26 @@ impl HurtboxState {
     /// and grabboxes.
     pub const fn accepts_contact(self) -> bool {
         matches!(self, Self::Enabled)
+    }
+}
+
+/// Fighter-wide `Fighter::x1988` collision state written by subaction body
+/// scripts. Slippi serializes these exact values (0, 1, 2) before the timed
+/// game-induced counters.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyState {
+    #[default]
+    Normal,
+    Invincible,
+    Intangible,
+}
+
+impl BodyState {
+    /// `ftcoll.c` skips every hurt capsule while the fighter is intangible or
+    /// invincible; the invincible branch registers no damage in this profile.
+    pub const fn accepts_contact(self) -> bool {
+        matches!(self, Self::Normal)
     }
 }
 

@@ -366,10 +366,11 @@ pub fn internal_character(external: u8) -> Option<u8> {
 /// Project Slippi serializes the move-induced state first, then the timed
 /// game-induced state. Skirmish currently models the latter as two timers.
 pub fn hurtbox_state(fighter: &game::Fighter) -> u8 {
-    if fighter.intangibility > 0 {
-        2
-    } else {
-        u8::from(fighter.invincibility > 0)
+    match fighter.body_state {
+        game::data::BodyState::Invincible => 1,
+        game::data::BodyState::Intangible => 2,
+        game::data::BodyState::Normal if fighter.intangibility > 0 => 2,
+        game::data::BodyState::Normal => u8::from(fighter.invincibility > 0),
     }
 }
 
@@ -494,6 +495,9 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         ShieldBreakDown => prone_state(fighter, 207, 208),
         ShieldBreakStand => prone_state(fighter, 209, 210),
         Furafura => 211,
+        EscapeF => 233,
+        EscapeB => 234,
+        EscapeN => 235,
         Catch => 212,
         CatchPull => 213,
         CatchDash => 214,
@@ -587,6 +591,8 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         212 | 213 => 242,
         214 | 215 => 243,
         216..=229 => u32::from(state + 28),
+        233 | 234 => u32::from(state - 191),
+        235 => 41,
         238 => 45,
         239..=242 => u32::from(state + 23),
         244 => 209,
@@ -1181,6 +1187,9 @@ mod tests {
             (game::Action::AttackAirLw, 69, 72),
             (game::Action::Guard, 179, 38),
             (game::Action::GuardReflect, 182, 37),
+            (game::Action::EscapeF, 233, 42),
+            (game::Action::EscapeB, 234, 43),
+            (game::Action::EscapeN, 235, 41),
             (game::Action::PassiveWallJump, 203, 203),
             (game::Action::ThrowLw, 222, 250),
             (game::Action::FlyReflectCeiling, 248, 214),

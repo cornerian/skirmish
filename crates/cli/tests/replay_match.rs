@@ -19,6 +19,8 @@ use std::{fs, process::Command};
 mod aerial_support;
 #[path = "../../../tests/support/death.rs"]
 mod death_support;
+#[path = "../../../tests/support/escape.rs"]
+mod escape_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
 #[path = "../../../tests/support/ledge.rs"]
@@ -549,6 +551,118 @@ fn file_backed_cstick_shield_jump_matches_and_detects_the_first_changed_frame() 
             ..
         } if frame == FIRST + 1
     ));
+}
+
+#[test]
+fn file_backed_shield_escapes_match_and_detect_their_first_changed_input_frame() {
+    // Fighter 0 faces +X on a flat platform. Each recording shields on the
+    // first frame and evades on the first Guard callback.
+    struct Case {
+        name: &'static str,
+        pre: fn(&mut [Controller; 2], usize),
+        action: Action,
+        state: u16,
+        animation: u32,
+        edit: fn(&mut mutable::Frame),
+    }
+    let cases = [
+        Case {
+            name: "fresh main-stick forward roll",
+            pre: |input, row| {
+                input[0].buttons = BUTTON_L;
+                if row == 1 {
+                    input[0].stick[0] = 1.0;
+                }
+            },
+            action: Action::EscapeF,
+            state: 233,
+            animation: 42,
+            edit: |frames| frames.ports[0].leader.pre.joystick.x.set(1, Some(0.0)),
+        },
+        Case {
+            name: "held C-stick backward roll",
+            pre: |input, _| {
+                input[0].buttons = BUTTON_L;
+                input[0].cstick[0] = -1.0;
+            },
+            action: Action::EscapeB,
+            state: 234,
+            animation: 43,
+            edit: |frames| frames.ports[0].leader.pre.cstick.x.set(1, Some(0.0)),
+        },
+        Case {
+            name: "held C-stick spot dodge",
+            pre: |input, _| {
+                input[0].buttons = BUTTON_L;
+                input[0].cstick[1] = -1.0;
+            },
+            action: Action::EscapeN,
+            state: 235,
+            animation: 41,
+            edit: |frames| frames.ports[0].leader.pre.cstick.y.set(1, Some(0.0)),
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 12];
+        for (row, input) in inputs.iter_mut().enumerate().take(2) {
+            (case.pre)(input, row);
+        }
+        let recording =
+            Recording::from_script(escape_support::profile(shield_drop_data()), 37, inputs);
+        assert_eq!(recording.states[0].fighters[0].action, Action::GuardOn);
+        let entered = &recording.states[1].fighters[0];
+        assert_eq!(entered.action, case.action, "{}", case.name);
+        assert_eq!(
+            observation::action_state(entered, Some(2)),
+            Some(case.state)
+        );
+        assert_eq!(
+            observation::animation_index(entered, Some(2)),
+            Some(case.animation)
+        );
+        assert_eq!(
+            observation::state_flags(entered)[2] & 0x80,
+            0,
+            "{}",
+            case.name
+        );
+        // Sample 2 of every invented motion is intangible through x1988, which
+        // Slippi reports ahead of the timed counters.
+        let intangible = &recording.states[3].fighters[0];
+        assert_eq!(intangible.action, case.action);
+        assert_eq!(intangible.intangibility, 0);
+        assert_eq!(observation::hurtbox_state(intangible), 2, "{}", case.name);
+        assert_ne!(observation::state_flags(intangible)[1] & 0x04, 0);
+        assert_eq!(
+            observation::hurtbox_state(&recording.states[1].fighters[0]),
+            0
+        );
+        assert_eq!(
+            recording.states[9].fighters[0].action,
+            Action::Wait,
+            "{}",
+            case.name
+        );
+        if case.action == Action::EscapeF {
+            assert_eq!(recording.states[9].fighters[0].position[0], 4.5);
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let changed = recording.bytes(support::Fixture::default(), case.edit);
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames: 1,
+                    ..
+                } if frame == FIRST + 1
+            ),
+            "{}",
+            case.name
+        );
+    }
 }
 
 #[test]

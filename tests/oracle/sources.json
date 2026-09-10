@@ -273,5 +273,10 @@
     "fixture": "tests/oracle/original/pass.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Pass.c",
     "sha256": "5a54a6cd1171bab28687ce55a96d0ed3a1eb36356b5c94a66b4af60ff6d1eaa1"
+  },
+  {
+    "fixture": "tests/oracle/original/escape.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Escape.c",
+    "sha256": "664f3a057fe21f775a382ba1afff6671185bde2e30418b66084499e1514c1c99"
   }
 ]

@@ -1,7 +1,8 @@
 # Native shields
 
 `game::shield` connects processed digital/analog shoulder input to GuardOn,
-Guard, GuardOff, GuardSetOff and GuardReflect. Shield contacts run the original matrix-aware
+Guard, GuardOff, GuardSetOff and GuardReflect. `game::escape` adds the ordinary
+grounded evasions EscapeF, EscapeB and EscapeN entered from those states. Shield contacts run the original matrix-aware
 `lbColl_80006E58` narrowphase before hurtbox checks. A shrinking shield can miss
 an attack that subsequently hits a hurtbox. The shield bone uses unit local
 scale in the supplied pose; its explicit initial radius replaces that scale.
@@ -9,8 +10,11 @@ Parents may carry nonuniform transforms. No display object supplies gameplay
 geometry or timing.
 
 Enable the profile with `rules.shield` and each participating fighter's `shield`
-attributes. The fixture `tests/fixtures/game/shield.json` shows all required
-fields with **invented test values**. It is not Melee common data or a character
+attributes. Optional `rules.escape` plus each fighter's `escape` motions enable
+rolls and spot dodges; `tests/fixtures/game/escape.json` shows that schema with
+**invented test values** and requires the locomotion parameters that supply the
+shared stick ages. The fixture `tests/fixtures/game/shield.json` shows all
+required shield fields with **invented test values**. It is not Melee common data or a character
 preset. Animation durations, the shield bone, radius and break-launch velocity
 must come from native resources for a real character. These additions remain
 optional for older experimental profiles.
@@ -57,6 +61,30 @@ The implementation preserves these examined source branches:
   `ftCo_800DF910`'s inclusive upward C-stick threshold. Main-stick tap jump and
   fresh X/Y retain priority. C-stick input does not require a fresh excursion,
   and its release during JumpSquat selects the native short-hop branch.
+- `ftCo_Escape.c` supplies the grounded evasions. Every guard IASA chain checks
+  `ftCo_8009980C` (spot dodge) before `ftCo_8009917C` (roll), and both precede
+  the jump and platform-drop dispatchers; GuardOff offers only the spot dodge
+  and the jump. A roll needs a fresh main-stick magnitude at or beyond `x31C`
+  inside the `x320` age window, or otherwise a held horizontal C-stick through
+  `ftCo_800DF8B0`; the selected axis value times facing chooses EscapeF (zero
+  products included) or EscapeB. A spot dodge needs a fresh downward main
+  stick at or below `x314` inside `x318`, or a held downward C-stick through
+  `ftCo_800DF8E8`. Entry uses an ordinary `Fighter_ChangeMotionState`, so the
+  active-shield state ends and health regenerates from the entry frame's
+  `Fighter_ProcessHit` onward; the transition also clears the `x2218` reflect
+  bit and `x221C_b3` entry latch while the `x221C_b2` immunity window stays
+  frozen, and `x221D_b5` disables overlap nudges against the evading fighter. `ftCo_Escape_Phys` runs `ft_80085030`, converting each
+  sample's TransN delta into the exact ground velocity before ordinary friction
+  would apply, while `ftCo_EscapeN_Phys` keeps ordinary friction. Both
+  collision callbacks use the ordinary ground path, so leaving the floor enters
+  Fall. The animation callbacks return to Wait after the last supplied sample;
+  the roll also clears ground velocity. The unread `x324` copy, the item-throw
+  IASA, and the Samus/Yoshi entry branches are not modeled.
+- Escape samples carry the scripted fighter-wide `Fighter::x1988` collision
+  state (`body_state`). Intangible or invincible samples reject hits and grabs
+  for that frame only; ordinary transitions reset the state, and Slippi's
+  hurtbox byte reports it ahead of the timed counters. The invincible branch's
+  no-damage contact registration is not reproduced.
 - `ftCo_ShieldBreak{Fly,Fall,Down,Stand}.c` launches a broken fighter, suppresses
   air control, preserves the break hurt-status branch, and transitions on landing
   and supplied animation endings. `ftCo_Furafura.c` resets shield health, computes
@@ -64,18 +92,20 @@ The implementation preserves these examined source branches:
   reductions. Neutral stick input retains its previous mash-direction bucket.
 
 Shield health, analog strength, hold/release state, powershield flags and timers,
-stun animation progress, recoil vectors, dizzy timer and mash directions survive native checkpoints.
+stun animation progress, recoil vectors, dizzy timer, mash directions and the
+scripted body state survive native checkpoints.
 Nonfinite results fail a step atomically. Tests exercise the complete ordinary
 cycle, shield pokes, zero boundaries, staling interaction, hitlag displacement
 and deterministic replay. Selected complete C functions independently check
 radius, drain, strength, powershield-window ticking, ordinary/powershield
-stun-rate/push, displacement, shield-drop input, damage conversion and mash arithmetic. C adapters omit presentation/statistics callbacks whose results do
+stun-rate/push, displacement, shield-drop input, damage conversion and mash arithmetic. The complete roll and spot-dodge dispatchers and both escape
+C-stick predicates are compared with pinned C over arbitrary bit patterns. C adapters omit presentation/statistics callbacks whose results do
 not feed those calculations.
 
 This is still an experimental scheduler rather than complete Melee equivalence.
 Reflected-projectile motion is not yet simulated even though the fighter's
 reflector-active window is represented. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
-branches, shield tilting and native shield/body animation tracks, rolls, grabs,
+branches, shield tilting and native shield/body animation tracks, shield grabs,
 full callback ordering and material friction are not provided by this batch.
 Break down/up pose selection is grouped
 into one lifecycle with supplied durations. Real Slippi parity also requires

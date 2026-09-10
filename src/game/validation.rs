@@ -259,6 +259,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 "shield attributes require common shield rules",
             )?;
         }
+        match (&rules.escape, &fighter.escape) {
+            (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "escape rules require motions for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("escape motions require common rules".into()));
+            }
+            (None, None) => {}
+        }
         if let Some(parameters) = &fighter.locomotion {
             locomotion::validate(parameters)?;
             require(

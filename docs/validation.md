@@ -1,5 +1,25 @@
 # Local validation provenance
 
+The 2026-09-10 grounded shield-evasion coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-shield-escape-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage enters EscapeF, EscapeB and EscapeN from
+GuardOn, Guard, GuardReflect and (spot dodge only) GuardOff through fresh
+main-stick and held C-stick input, checks main-stick priority and
+facing-relative direction, applies exact sampled root motion and bone poses,
+clears the shield, blocks hits and grabs only on scripted intangible samples,
+exempts the evading fighter from overlap nudges, falls off a floor edge,
+returns to Wait, restores checkpoints inside every escape action and rejects
+invalid motions before a match exists. The complete `ftCo_8009917C` and
+`ftCo_8009980C` dispatchers plus `ftCo_800DF8B0` and `ftCo_800DF8E8` are
+compared with pinned C over arbitrary bit patterns and boundaries. Peppi-written
+replays match each escape suffix, report Slippi states 233..235, animation
+indices 42/43/41 and the scripted hurtbox byte, and detect a changed roll
+stick, C-stick X or C-stick Y sample at its first affected frame.
+
 The 2026-09-10 C-stick shield-jump coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-cstick-shield-jump-20260910-verified`

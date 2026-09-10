@@ -133,9 +133,11 @@ remain unsupported. Raw stick and physical analog samples remain preserved by
 the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit resources, aerial selection and direct
 main-stick shield drops through one-way platforms. C-stick shield jumps use the
-processed C-stick channel and preserve release-based short hops. File-backed
-regressions require changed down-stick and up-C-stick samples to diverge at
-their first affected frames.
+processed C-stick channel and preserve release-based short hops. Grounded rolls
+and spot dodges accept fresh main-stick or held C-stick samples and map to
+Slippi states 233..235 with animation indices 42, 43 and 41. File-backed
+regressions require changed down-stick, up-C-stick, roll-stick and
+horizontal/downward C-stick samples to diverge at their first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each
@@ -162,7 +164,7 @@ mapped actor:
 | `instance_id` (Slippi 3.16+) | Fighter's current motion-family instance ID | Exact `u16` |
 | selected `state_flags` | Reflector, protection, fast-fall, hitlag, active shield, hitstun, inert shield-touch, powershield, dead and sleep/inactive bits | Exact bits |
 | `misc_as` while in hitstun | Remaining hitstun | Exact `f32` bits |
-| `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
+| `hurtbox_state` (Slippi 2.1+) | Scripted `x1988` body state, else the timed vulnerable, invulnerable or intangible state | Exact integer |
 | `velocities.*` (Slippi 3.5+) | Air X/Y, knockback X/Y and ground X velocity | Exact `f32` bits |
 | `hitlag` (Slippi 3.8+) | Remaining hitlag | Exact `f32` bits |
 | `animation_index` (Slippi 3.11+) | Common motion table's current `anim_id`, including `-1` as `0xffffffff` | Exact `u32` |

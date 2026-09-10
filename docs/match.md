@@ -328,8 +328,8 @@ a jab, all five ordinary aerials with landing/autocancel/L-cancel, ordinary
 damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
 Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
-break, dizzy recovery, direct shield drops through one-way platforms and
-C-stick shield jumps. The optional [grab profile](grabs.md) adds ordinary
+break, dizzy recovery, direct shield drops through one-way platforms,
+C-stick shield jumps and resource-driven grounded rolls and spot dodges. The optional [grab profile](grabs.md) adds ordinary
 standing, dash and pivot catches, paired holds, pummels with captured reaction
 poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
@@ -368,7 +368,7 @@ and throw launch orientation plus the prone-facing override.
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, reflected-projectile motion and character-specific shield responses,
 capture-specific interference and other special launch-angle behaviors. Outside supplied attack, catch,
-throw, landing and ordinary damage poses,
+throw, landing, escape and ordinary damage poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
 other action collision requires those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

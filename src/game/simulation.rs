@@ -108,6 +108,7 @@ fn spawn(
         wall_jump: wall_jump::State::default(),
         invincibility,
         intangibility: 0,
+        body_state: BodyState::default(),
         l_cancel_status: 0,
         short_hop: false,
         fast_fall: false,
@@ -141,6 +142,8 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.action_frame = 0;
     // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
     fighter.skip_floor = None;
+    // Ordinary transitions (Ft_MF_None) reset the scripted collision state.
+    fighter.body_state = BodyState::default();
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
@@ -387,7 +390,7 @@ pub(crate) fn advance(
             just_turned[player],
             clank_owns[player],
             shield_owns[player],
-        );
+        )?;
         if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
             &data.fighters[player],
@@ -574,6 +577,7 @@ pub(crate) fn advance(
                 .is_none()
             || target.invincibility > 0
             || target.intangibility > 0
+            || !target.body_state.accepts_contact()
             || target.grab.captor.is_some()
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
@@ -1000,7 +1004,8 @@ fn update_nudge(
             holds_victim: fighter.grab.victim.is_some(),
             nudge_disabled: attributes.nudge_disabled,
             hitlag: fighter.hitlag > 0.0,
-            overlap_disabled: attributes.overlap_disabled,
+            // ftCo_80099314 and ftCo_800998EC set x221D_b5 for the escape.
+            overlap_disabled: attributes.overlap_disabled || escape::owns_action(fighter.action),
         }
     });
     state.fighters[subject].nudge =
@@ -1122,6 +1127,7 @@ fn update_animation(
         _ => {}
     }
     damage::update_animation(f, data, &rules.damage, input);
+    escape::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1143,39 +1149,43 @@ fn update_actions(
     just_turned: bool,
     clank_owns: bool,
     shield_owns: bool,
-) {
+) -> Result<(), Error> {
     if rebirth::update_actions(
         f,
         rules.rebirth.as_ref(),
         input,
         rules.respawn_invincibility_frames,
     ) {
-        return;
+        return Ok(());
     }
     if damage::update_actions(f, &rules.damage, input) {
-        return;
+        return Ok(());
     }
     if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
-        return;
+        return Ok(());
+    }
+    // ftCo_Escape_IASA only serves item throws; ftCo_EscapeN_IASA is empty.
+    if escape::owns_action(f.action) {
+        return Ok(());
     }
     if clank_owns {
-        return;
+        return Ok(());
     }
     if special::update_actions(f, data.special.as_ref(), input) {
-        return;
+        return Ok(());
     }
     if grab::update_actions(f, data, rules.grab.as_ref(), input) {
-        return;
+        return Ok(());
     }
-    if shield::update_actions(f, data, rules.shield.as_ref(), input, shield_owns) {
-        return;
+    if shield::update_actions(f, data, rules, input, shield_owns)? {
+        return Ok(());
     }
     if aerial::update(f, data, input) {
-        return;
+        return Ok(());
     }
     if data.locomotion.is_some() {
         locomotion::update_actions(f, data, input, just_turned);
-        return;
+        return Ok(());
     }
     let pressed = input.buttons & !f.previous_input.buttons;
     if matches!(f.action, Action::Wait | Action::Walk) {
@@ -1197,6 +1207,7 @@ fn update_actions(
     if f.action == Action::JumpSquat && input.buttons & (BUTTON_X | BUTTON_Y) == 0 {
         f.short_hop = true;
     }
+    Ok(())
 }
 
 fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
@@ -1215,9 +1226,12 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
             // Rebound's first physics callback retains projected self velocity.
-        } else if let Some(target) = damage::ground_recovery_velocity(f, data) {
+        } else if let Some(target) = damage::ground_recovery_velocity(f, data)
+            .or_else(|| escape::ground_target_velocity(f, data))
+        {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.
+            // Escape rolls share it; the spot dodge uses ordinary friction.
             movement.ground_acceleration = target - movement.ground_velocity;
             movement.project_ground();
         } else if locomotion::ground_motion(f, data, &mut movement, input) {
@@ -1351,6 +1365,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else if let Some(pose) = damage::ground_recovery_pose(fighter, data) {
         pose
     } else if let Some(pose) = damage::damage_pose(fighter, data) {
+        pose
+    } else if let Some(pose) = escape::pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

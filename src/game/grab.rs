@@ -886,6 +886,7 @@ pub(crate) fn scan(
             || target.grab != State::default()
             || target.invincibility > 0
             || target.intangibility > 0
+            || !target.body_state.accepts_contact()
             || matches!(
                 target.action,
                 Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
