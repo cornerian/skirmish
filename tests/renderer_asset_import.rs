@@ -1,6 +1,5 @@
 use extraction::Source;
 use menus::{Menu, MenuState, Unlocks, input::pad};
-use skirmish::assets::Source;
 use skirmish::renderer::{
     asset_menu::{AssetImportMenu, ImportAction},
     menu::{MenuEvent, MenuSession},

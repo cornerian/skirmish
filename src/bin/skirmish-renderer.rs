@@ -11,6 +11,7 @@ use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
 };
+use skirmish::controller::host::ControllerHub;
 use skirmish::renderer::{
     asset_menu::{AssetImportMenu, ImportAction},
     audio::AudioOutput,
@@ -20,7 +21,6 @@ use skirmish::renderer::{
     menu::{FixedMenuClock, MenuEvent, MenuSession},
     scene::Scene,
 };
-use skirmish::controller::host::ControllerHub;
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
