@@ -624,6 +624,7 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.ground_knockback,
                 f.hitlag,
                 f.facing,
+                f.grab.escape_timer,
             ])
             .chain([
                 f.locomotion.turn_frames,

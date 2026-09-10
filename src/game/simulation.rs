@@ -313,7 +313,7 @@ pub(crate) fn advance(
         )?;
     }
 
-    let pair_frozen = grab::update_pairs(data, state)?;
+    let pair_frozen = grab::update_pairs(data, state, inputs, active)?;
     for player in 0..2 {
         if pair_frozen[player] {
             active[player] = false;

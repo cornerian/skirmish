@@ -1,5 +1,58 @@
 //! Throw-direction input predicates retained from `ftCo_Throw.c`.
 
+use serde::{Deserialize, Serialize};
+
+const MASH_BUTTONS: u32 = 0x8000_0F00;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MashState {
+    pub axes: [i8; 2],
+    pub shake_enabled: bool,
+    pub shaking: bool,
+    pub shake_frame: u8,
+    pub shake_frames: u8,
+}
+
+/// Complete `ftCommon_GrabMash` timer, axis-latch, and shake-state mutation.
+pub fn mash(
+    timer: &mut f32,
+    state: &mut MashState,
+    pressed_buttons: u32,
+    stick: [f32; 2],
+    penalty: f32,
+    threshold: f32,
+) -> bool {
+    let mut result = false;
+    if pressed_buttons & MASH_BUTTONS != 0 {
+        *timer -= penalty;
+        result = true;
+    }
+    let previous = state.axes;
+    for (value, axis) in stick.into_iter().zip(&mut state.axes) {
+        if value < -threshold {
+            *axis = -1;
+        }
+        if value > threshold {
+            *axis = 1;
+        }
+    }
+    if state.axes != previous {
+        *timer -= penalty;
+        result = true;
+    }
+    if result && state.shake_enabled {
+        state.shaking = true;
+        state.shake_frame = state.shake_frame.wrapping_add(1);
+        if state.shake_frame >= state.shake_frames {
+            state.shake_frame = 0;
+        }
+    } else {
+        state.shaking = false;
+    }
+    result
+}
+
 /// `fn_800DA4C0`: a freshly pressed A button requests CatchAttack.
 pub const fn pummel_pressed(pressed_buttons: u16) -> bool {
     pressed_buttons & 0x100 != 0
@@ -83,6 +136,30 @@ mod tests {
         assert!(!pummel_pressed(0x200));
         assert!(pummel_pressed(0x100));
         assert!(pummel_pressed(0x110));
+    }
+
+    #[test]
+    fn grab_mash_preserves_strict_latches_double_penalty_and_shake_wrap() {
+        let mut timer = 10.0;
+        let mut state = MashState {
+            shake_enabled: true,
+            shake_frame: 1,
+            shake_frames: 3,
+            ..Default::default()
+        };
+        assert!(!mash(&mut timer, &mut state, 0, [0.5, -0.5], 2.0, 0.5));
+        assert_eq!(timer, 10.0);
+        assert!(mash(&mut timer, &mut state, 0x100, [0.6, 0.0], 2.0, 0.5));
+        assert_eq!(timer, 6.0);
+        assert_eq!(state.axes, [1, 0]);
+        assert_eq!(state.shake_frame, 2);
+        assert!(!mash(&mut timer, &mut state, 0, [0.0; 2], 2.0, 0.5));
+        assert_eq!(state.axes, [1, 0]);
+        assert!(!state.shaking);
+        assert!(mash(&mut timer, &mut state, 1 << 31, [-0.6, 0.6], 2.0, 0.5));
+        assert_eq!(timer, 2.0);
+        assert_eq!(state.axes, [-1, 1]);
+        assert_eq!(state.shake_frame, 0);
     }
 
     #[test]

@@ -212,10 +212,14 @@ throw selection, applies one shared-hitlag percent event, starts the victim's
 sampled CaptureDamage pose sequence, and returns both sides independently to
 hold without breaking the pair. The shared input history applies the original throw
 direction priority, and each supplied release event enters the ordinary damage
-pipeline. Pair ownership and pummel-hit history are checkpointed and cleared
-transactionally on release or stock loss. Mash escape, dash/tether variants,
-throw/pummel staling, separate high/low victim reactions and capture-contact
-interference remain unported.
+pipeline. Pair ownership, pummel-hit history, the hold timer and mash latches are
+checkpointed and cleared transactionally on release or stock loss. Captured
+fighters also run an explicit percent-scaled hold timer and the complete
+button/stick `ftCommon_GrabMash`
+transition. Expiry enters resource-driven CatchCut/CaptureCut release actions.
+Dash/tether variants, analog-trigger mash synthesis, throw/pummel staling,
+separate high/low victim reactions and capture-contact interference remain
+unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
 endpoint discovery, bone-attached catch/hang poses, climb, jump, attack, escape,
@@ -278,8 +282,8 @@ damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
 Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
-standing catches, paired holds, pummels with captured reaction poses and
-four-direction throws. The optional [ledge
+standing catches, paired holds, pummels with captured reaction poses, mash
+escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
@@ -315,7 +319,7 @@ and throw launch orientation plus the prone-facing override.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,
-grab escapes and other special launch-angle behaviors. Outside supplied attack, catch,
+capture-specific interference and other special launch-angle behaviors. Outside supplied attack, catch,
 throw, landing and ordinary damage poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
 other action collision requires those animation resources. The schema exposes ordinary

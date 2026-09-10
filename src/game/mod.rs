@@ -96,6 +96,7 @@ pub enum Action {
     CatchPull,
     CatchWait,
     CatchAttack,
+    CatchCut,
     ThrowF,
     ThrowB,
     ThrowHi,
@@ -103,6 +104,7 @@ pub enum Action {
     CapturePulled,
     CaptureWait,
     CaptureDamage,
+    CaptureCut,
     ThrownF,
     ThrownB,
     ThrownHi,
@@ -273,6 +275,10 @@ pub enum Event {
         suppressed: [bool; 2],
     },
     Grabbed {
+        holder: usize,
+        victim: usize,
+    },
+    GrabEscaped {
         holder: usize,
         victim: usize,
     },

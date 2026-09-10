@@ -1,6 +1,9 @@
 use skirmish::game::{
     data::{Capsule, MatchData},
-    grab::{Attachment, Catch, CatchFrame, Parameters, Pummel, Rules, Throw, ThrowHit, Throws},
+    grab::{
+        Attachment, Catch, CatchFrame, Escape, EscapeRules, Parameters, Pummel, Rules, Throw,
+        ThrowHit, Throws,
+    },
 };
 
 pub fn profile(mut data: MatchData) -> MatchData {
@@ -8,6 +11,14 @@ pub fn profile(mut data: MatchData) -> MatchData {
         horizontal_threshold: 0.7,
         up_threshold: 0.6,
         down_threshold: -0.6,
+        escape: EscapeRules {
+            timer_base: 100.0,
+            timer_percent_scale: 0.5,
+            timer_decrement: 1.0,
+            mash_penalty: 10.0,
+            stick_threshold: 0.7,
+            release_speed: 0.4,
+        },
     });
     for fighter in &mut data.fighters {
         let bones = fighter.bones.clone();
@@ -55,6 +66,10 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 damage: 3,
             },
             capture_damage_poses: vec![bones.clone(); 3],
+            escape: Escape {
+                catch_cut_poses: vec![bones.clone(); 3],
+                capture_cut_poses: vec![bones.clone(); 3],
+            },
             throws: Throws {
                 forward: throw(30.0),
                 backward: throw(150.0),

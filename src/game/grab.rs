@@ -25,6 +25,18 @@ pub struct Rules {
     pub up_threshold: f32,
     /// Signed negative common-data threshold.
     pub down_threshold: f32,
+    pub escape: EscapeRules,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EscapeRules {
+    pub timer_base: f32,
+    pub timer_percent_scale: f32,
+    pub timer_decrement: f32,
+    pub mash_penalty: f32,
+    pub stick_threshold: f32,
+    pub release_speed: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -35,6 +47,7 @@ pub struct Parameters {
     pub pummel: Pummel,
     /// Complete victim physics poses for the ordinary pummel reaction.
     pub capture_damage_poses: Vec<Vec<Bone>>,
+    pub escape: Escape,
     pub throws: Throws,
 }
 
@@ -76,6 +89,15 @@ pub struct Pummel {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Escape {
+    /// This fighter's holder-side CatchCut physics poses.
+    pub catch_cut_poses: Vec<Vec<Bone>>,
+    /// This fighter's victim-side CaptureCut physics poses.
+    pub capture_cut_poses: Vec<Vec<Bone>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Throw {
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
@@ -103,11 +125,13 @@ pub struct ThrowHit {
     pub base: u32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct State {
     pub victim: Option<usize>,
     pub captor: Option<usize>,
     pub pummel_hit: bool,
+    pub escape_timer: f32,
+    pub mash: input::MashState,
 }
 
 pub(crate) fn validate(
@@ -119,6 +143,12 @@ pub(crate) fn validate(
         rules.horizontal_threshold,
         rules.up_threshold,
         rules.down_threshold,
+        rules.escape.timer_base,
+        rules.escape.timer_percent_scale,
+        rules.escape.timer_decrement,
+        rules.escape.mash_penalty,
+        rules.escape.stick_threshold,
+        rules.escape.release_speed,
     ]
     .into_iter()
     .all(f32::is_finite)
@@ -127,6 +157,14 @@ pub(crate) fn validate(
         || !(0.0..=1.0).contains(&rules.up_threshold)
         || rules.up_threshold == 0.0
         || !(-1.0..0.0).contains(&rules.down_threshold)
+        || !(0.0..1_000_000.0).contains(&rules.escape.timer_base)
+        || !(0.0..1_000.0).contains(&rules.escape.timer_percent_scale)
+        || !(0.0..1_000_000.0).contains(&rules.escape.timer_decrement)
+        || !(0.0..1_000_000.0).contains(&rules.escape.mash_penalty)
+        || !(0.0..=1.0).contains(&rules.escape.stick_threshold)
+        || rules.escape.stick_threshold == 0.0
+        || !(0.0..=1_000_000.0).contains(&rules.escape.release_speed)
+        || rules.escape.timer_base + 999.0 * rules.escape.timer_percent_scale >= 1_000_000.0
         || parameters.catch.frames.is_empty()
         || parameters.catch.frames.len() > 4096
         || parameters.catch.pull_frames == 0
@@ -190,6 +228,17 @@ pub(crate) fn validate(
     for pose in &parameters.capture_damage_poses {
         super::validation::validate_animation_pose(pose, fighter)?;
     }
+    for poses in [
+        &parameters.escape.catch_cut_poses,
+        &parameters.escape.capture_cut_poses,
+    ] {
+        if poses.is_empty() || poses.len() > 4096 {
+            return Err(Error::Data("invalid explicit grab-escape animation".into()));
+        }
+        for pose in poses {
+            super::validation::validate_animation_pose(pose, fighter)?;
+        }
+    }
     for throw in [
         &parameters.throws.forward,
         &parameters.throws.backward,
@@ -220,15 +269,24 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
     let other = 1 - player;
     let fighter = &fighters[player];
     let partner = &fighters[other];
-    if fighter.grab.pummel_hit
-        && (fighter.grab.victim.is_none() || fighter.action != Action::CatchAttack)
+    if !fighter.grab.escape_timer.is_finite()
+        || fighter
+            .grab
+            .mash
+            .axes
+            .into_iter()
+            .any(|axis| !(-1..=1).contains(&axis))
+        || fighter.grab.pummel_hit
+            && (fighter.grab.victim.is_none() || fighter.action != Action::CatchAttack)
     {
         return false;
     }
     match (fighter.grab.victim, fighter.grab.captor) {
-        (None, None) => true,
+        (None, None) => fighter.grab == State::default(),
         (Some(victim), None) => {
             victim == other
+                && fighter.grab.escape_timer == 0.0
+                && fighter.grab.mash == input::MashState::default()
                 && partner.grab.victim.is_none()
                 && partner.grab.captor == Some(player)
                 && !partner.grab.pummel_hit
@@ -266,6 +324,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
             | Action::CatchPull
             | Action::CatchWait
             | Action::CatchAttack
+            | Action::CatchCut
             | Action::ThrowF
             | Action::ThrowB
             | Action::ThrowHi
@@ -273,6 +332,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
             | Action::CapturePulled
             | Action::CaptureWait
             | Action::CaptureDamage
+            | Action::CaptureCut
             | Action::ThrownF
             | Action::ThrownB
             | Action::ThrownHi
@@ -308,6 +368,26 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
         && fighter.action_frame as usize >= parameters.capture_damage_poses.len()
     {
         simulation::enter(fighter, Action::CaptureWait);
+        return true;
+    }
+    let cut_complete = match fighter.action {
+        Action::CatchCut => {
+            fighter.action_frame as usize >= parameters.escape.catch_cut_poses.len()
+        }
+        Action::CaptureCut => {
+            fighter.action_frame as usize >= parameters.escape.capture_cut_poses.len()
+        }
+        _ => false,
+    };
+    if cut_complete {
+        simulation::enter(
+            fighter,
+            if fighter.grounded {
+                Action::Wait
+            } else {
+                Action::Fall
+            },
+        );
         return true;
     }
     let complete = match fighter.action {
@@ -385,7 +465,12 @@ pub(crate) fn update_actions(
 }
 
 /// Paired priority-1 transitions and the scripted release event.
-pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[bool; 2], Error> {
+pub(crate) fn update_pairs(
+    data: &MatchData,
+    state: &mut MatchState,
+    controllers: [Controller; 2],
+    active: [bool; 2],
+) -> Result<[bool; 2], Error> {
     let mut frozen = [false; 2];
     for holder in 0..2 {
         let Some(victim) = state.fighters[holder].grab.victim else {
@@ -398,6 +483,23 @@ pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[
             .grab
             .as_ref()
             .ok_or_else(|| Error::Data("capture state requires grab resources".into()))?;
+        if active[victim]
+            && matches!(
+                state.fighters[victim].action,
+                Action::CaptureWait | Action::CaptureDamage
+            )
+        {
+            update_escape(data, state, victim, controllers[victim]);
+            if state.fighters[victim].action == Action::CaptureWait
+                && state.fighters[victim].grab.escape_timer <= 0.0
+            {
+                escape_pair(data, state, holder, victim);
+                continue;
+            }
+        }
+        if !active[holder] {
+            continue;
+        }
         let holder_action = state.fighters[holder].action;
         match holder_action {
             Action::CatchPull
@@ -606,8 +708,12 @@ pub(crate) fn scan(
             }
         }
         if collided {
+            let escape = &data.rules.grab.as_ref().unwrap().escape;
             state.fighters[holder].grab.victim = Some(victim);
             state.fighters[victim].grab.captor = Some(holder);
+            state.fighters[victim].grab.escape_timer =
+                escape.timer_base + state.fighters[victim].percent * escape.timer_percent_scale;
+            state.fighters[victim].grab.mash = input::MashState::default();
             state.fighters[victim].facing = state.fighters[holder].facing;
             state.fighters[victim].velocity = [0.0; 2];
             state.fighters[victim].knockback = [0.0; 2];
@@ -637,6 +743,16 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .map(Vec::as_slice),
         Action::CaptureDamage => parameters
             .capture_damage_poses
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice),
+        Action::CatchCut => parameters
+            .escape
+            .catch_cut_poses
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice),
+        Action::CaptureCut => parameters
+            .escape
+            .capture_cut_poses
             .get(fighter.action_frame as usize)
             .map(Vec::as_slice),
         action if throw_for_action(&parameters.throws, action).is_some() => {
@@ -682,9 +798,48 @@ fn attach(
 }
 
 fn detach(state: &mut MatchState, holder: usize, victim: usize) {
-    state.fighters[holder].grab.victim = None;
-    state.fighters[holder].grab.pummel_hit = false;
-    state.fighters[victim].grab.captor = None;
+    state.fighters[holder].grab = State::default();
+    state.fighters[victim].grab = State::default();
+}
+
+fn update_escape(data: &MatchData, state: &mut MatchState, victim: usize, controller: Controller) {
+    let rules = &data.rules.grab.as_ref().unwrap().escape;
+    let target = &mut state.fighters[victim];
+    target.grab.escape_timer -= rules.timer_decrement;
+    let pressed = controller.buttons & !target.previous_input.buttons;
+    let logical_pressed = u32::from(pressed)
+        | if pressed & (super::BUTTON_L | super::BUTTON_R) != 0 {
+            1 << 31
+        } else {
+            0
+        };
+    input::mash(
+        &mut target.grab.escape_timer,
+        &mut target.grab.mash,
+        logical_pressed,
+        controller.stick,
+        rules.mash_penalty,
+        rules.stick_threshold,
+    );
+}
+
+fn escape_pair(data: &MatchData, state: &mut MatchState, holder: usize, victim: usize) {
+    let speed = data.rules.grab.as_ref().unwrap().escape.release_speed;
+    let facing = state.fighters[holder].facing;
+    detach(state, holder, victim);
+    simulation::enter(&mut state.fighters[holder], Action::CatchCut);
+    simulation::enter(&mut state.fighters[victim], Action::CaptureCut);
+    release_velocity(&mut state.fighters[holder], -facing * speed);
+    release_velocity(&mut state.fighters[victim], facing * speed);
+    state.events.push(Event::GrabEscaped { holder, victim });
+}
+
+fn release_velocity(fighter: &mut Fighter, velocity: f32) {
+    if fighter.grounded {
+        fighter.ground_velocity = velocity;
+    } else {
+        fighter.velocity[0] = velocity;
+    }
 }
 
 fn apply_pummel(

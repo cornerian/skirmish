@@ -143,6 +143,12 @@ selector composes those exact predicates with C-stick freshness and facing;
 native match tests own catch contact, direction priority, bone attachment,
 scripted release and the following damage lifecycle.
 
+`grab_mash` reuses the pinned `ftcommon.c` snapshot and selects complete
+`ftCommon_GrabMash`. Its adapter supplies arbitrary timer, button, main-stick,
+axis-latch and shake state plus the two common-data coefficients. Differential
+tests compare every mutated field and the result; match tests own passive timer
+decay, physical-shoulder mapping, hitlag freeze and paired cut-action release.
+
 `hit_direction` retains the exact fighter-position assignment from
 `ftColl_8007A06C` and captured-victim assignment from `ftCo_800DDDE4`. Its tests
 prove both statements appear verbatim in the pinned `ftcoll.c` and

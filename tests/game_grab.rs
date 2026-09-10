@@ -3,8 +3,13 @@
 #[path = "support/grab.rs"]
 mod grab_resources;
 
-use skirmish::game::{
-    Action, BUTTON_A, BUTTON_X, BUTTON_Z, Controller, Event, Match, State, data::MatchData, grab,
+use skirmish::{
+    collision::ecb,
+    game::{
+        Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, Match, State,
+        data::{CollisionBox, MatchData},
+        grab,
+    },
 };
 
 const IDLE: [Controller; 2] = [Controller {
@@ -247,7 +252,10 @@ fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
     assert!(hit.fighters[1].position[0] < waiting_position[0] - 0.5);
 
     let checkpoint = game.checkpoint();
+    let frozen_timer = hit.fighters[1].grab.escape_timer;
     let expected = (0..4).map(|_| step(&mut game, IDLE)).collect::<Vec<_>>();
+    assert_eq!(expected[0].fighters[1].grab.escape_timer, frozen_timer);
+    assert_eq!(expected[1].fighters[1].grab.escape_timer, frozen_timer);
     game.restore_checkpoint(&checkpoint).unwrap();
     for expected in expected {
         assert_eq!(step(&mut game, IDLE), expected);
@@ -292,6 +300,170 @@ fn held_a_during_catch_pull_does_not_turn_into_a_pummel() {
         step(&mut game, held_a).fighters[0].action,
         Action::CatchAttack
     );
+}
+
+#[test]
+fn passive_timer_buttons_and_latched_stick_mash_release_into_cut_actions() {
+    let mut resource = data();
+    let escape = &mut resource.rules.grab.as_mut().unwrap().escape;
+    escape.timer_base = 15.0;
+    escape.timer_percent_scale = 0.0;
+    escape.timer_decrement = 1.0;
+    escape.mash_penalty = 3.0;
+    let victim = &mut resource.fighters[1];
+    victim.collision_box = CollisionBox::Bones {
+        indices: [0, 1, 0, 1, 0, 1],
+        parameters: ecb::JointParameters {
+            side_y_offset: 0.0,
+            height_threshold: 4.0,
+            width_threshold: 4.0,
+        },
+        flags: 5,
+    };
+    for pose in &mut victim.grab.as_mut().unwrap().escape.capture_cut_poses {
+        pose[1].translation[0] = 6.0;
+    }
+    let mut game = held(resource);
+    let held_distance = game.state().fighters[1].position[0] - game.state().fighters[0].position[0];
+
+    assert_eq!(game.state().fighters[1].grab.escape_timer, 15.0);
+    step(&mut game, IDLE);
+    assert_eq!(game.state().fighters[1].grab.escape_timer, 14.0);
+    let checkpoint = game.checkpoint();
+    let suffix = [
+        input(1, BUTTON_L, [0.0; 2], [0.0; 2]),
+        input(1, BUTTON_L, [0.0; 2], [0.0; 2]),
+        IDLE,
+        input(1, 0, [0.8, 0.0], [0.0; 2]),
+        input(1, 0, [0.8, 0.0], [0.0; 2]),
+        input(1, 0, [-0.8, 0.0], [0.0; 2]),
+    ];
+    let expected = suffix.map(|controllers| step(&mut game, controllers));
+    assert_eq!(expected[0].fighters[1].grab.escape_timer, 10.0);
+    assert_eq!(expected[1].fighters[1].grab.escape_timer, 9.0);
+    assert_eq!(expected[3].fighters[1].grab.escape_timer, 4.0);
+    assert_eq!(expected[4].fighters[1].grab.escape_timer, 3.0);
+    let escaped = &expected[5];
+    assert_eq!(escaped.fighters[0].action, Action::CatchCut);
+    assert_eq!(escaped.fighters[1].action, Action::CaptureCut);
+    assert!(
+        escaped
+            .fighters
+            .iter()
+            .all(|fighter| fighter.grab == grab::State::default())
+    );
+    assert!(escaped.events.contains(&Event::GrabEscaped {
+        holder: 0,
+        victim: 1,
+    }));
+    assert!(escaped.fighters[0].ground_velocity < 0.0);
+    assert!(escaped.fighters[1].ground_velocity > 0.0);
+    assert_eq!(escaped.fighters[1].ecb.desired.right[0], 6.0);
+    assert_eq!(escaped.fighters[1].ecb.current.right[0], 6.0);
+    assert!(escaped.fighters[1].position[0] - escaped.fighters[0].position[0] > held_distance);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for (controllers, expected) in suffix.into_iter().zip(expected) {
+        assert_eq!(step(&mut game, controllers), expected);
+    }
+    let recovered = until(&mut game, |state| {
+        state
+            .fighters
+            .iter()
+            .all(|fighter| fighter.action == Action::Wait)
+    });
+    assert!(
+        recovered
+            .fighters
+            .iter()
+            .all(|fighter| fighter.grab == grab::State::default())
+    );
+}
+
+#[test]
+fn passive_capture_timer_releases_without_mash_input() {
+    let mut resource = data();
+    let escape = &mut resource.rules.grab.as_mut().unwrap().escape;
+    escape.timer_base = 2.0;
+    escape.timer_percent_scale = 0.0;
+    escape.timer_decrement = 1.0;
+    let mut game = held(resource);
+
+    let retained = step(&mut game, IDLE);
+    assert_eq!(retained.fighters[1].grab.escape_timer, 1.0);
+    assert_eq!(retained.fighters[1].action, Action::CaptureWait);
+    let escaped = step(&mut game, IDLE);
+    assert_eq!(escaped.fighters[0].action, Action::CatchCut);
+    assert_eq!(escaped.fighters[1].action, Action::CaptureCut);
+    assert!(escaped.events.contains(&Event::GrabEscaped {
+        holder: 0,
+        victim: 1,
+    }));
+}
+
+#[test]
+fn capture_timer_scales_with_existing_percent_on_contact() {
+    let mut resource = data();
+    let escape = &mut resource.rules.grab.as_mut().unwrap().escape;
+    escape.timer_base = 7.5;
+    escape.timer_percent_scale = 1.25;
+    resource.rules.knockback_speed = 0.0;
+    let mut game = Match::new(resource, 11).unwrap();
+
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let damaged = until(&mut game, |state| state.fighters[1].percent > 0.0);
+    assert!(damaged.fighters[1].percent > 0.0);
+    let recovered = until(&mut game, |state| {
+        state
+            .fighters
+            .iter()
+            .all(|fighter| fighter.action == Action::Wait)
+    });
+    let expected = 7.5 + recovered.fighters[1].percent * 1.25;
+    let caught = step(&mut game, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
+    assert!(caught.events.contains(&Event::Grabbed {
+        holder: 0,
+        victim: 1,
+    }));
+    assert_eq!(
+        caught.fighters[1].grab.escape_timer.to_bits(),
+        expected.to_bits()
+    );
+}
+
+#[test]
+fn expired_timer_waits_for_capture_damage_to_finish() {
+    let mut resource = data();
+    resource.rules.grab.as_mut().unwrap().escape.timer_base = 3.0;
+    resource
+        .rules
+        .grab
+        .as_mut()
+        .unwrap()
+        .escape
+        .timer_percent_scale = 0.0;
+    resource.fighters[1]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage_poses = vec![resource.fighters[1].bones.clone(); 5];
+    let mut game = held(resource);
+
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    step(&mut game, IDLE);
+    let expired = until(&mut game, |state| {
+        state.fighters[1].grab.escape_timer <= 0.0
+    });
+    assert_eq!(expired.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(expired.fighters[0].grab.victim, Some(1));
+    let escaped = until(&mut game, |state| {
+        state.events.contains(&Event::GrabEscaped {
+            holder: 0,
+            victim: 1,
+        })
+    });
+    assert_eq!(escaped.fighters[0].action, Action::CatchCut);
+    assert_eq!(escaped.fighters[1].action, Action::CaptureCut);
 }
 
 #[test]
@@ -407,6 +579,18 @@ fn malformed_grab_resources_are_rejected() {
         .as_mut()
         .unwrap()
         .capture_damage_poses
+        .clear();
+    cases.push(bad);
+    let mut bad = data();
+    bad.rules.grab.as_mut().unwrap().escape.stick_threshold = 0.0;
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .escape
+        .catch_cut_poses
         .clear();
     cases.push(bad);
     for resource in cases {

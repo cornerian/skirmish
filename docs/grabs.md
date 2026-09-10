@@ -1,10 +1,12 @@
 # Grab and throw profile
 
 `rules.grab` enables physical Z-button catch dispatch and supplies the signed
-stick thresholds used by ordinary throw selection. Each `fighters[].grab`
+stick thresholds used by ordinary throw selection, plus explicit hold-timer,
+mash and release-speed coefficients. Each `fighters[].grab`
 resource supplies complete catch poses and bone-attached grab capsules, an
 explicit pull duration, two bone-local attachment anchors, complete holder poses
-for pummel and four throws, and the fighter's own CaptureDamage reaction poses.
+for pummel and four throws, and the fighter's own CaptureDamage, CatchCut and
+CaptureCut poses.
 Pummel supplies one captured-damage frame and damage value; each throw supplies
 a release event and hit coefficients. Every fighter needs parameters when the
 common profile is enabled.
@@ -17,6 +19,16 @@ selected bone point is aligned to the holder's selected bone point throughout
 pull, wait, and throw; controller input cannot move or dispatch actions for the
 captured fighter. The relationship, input history, action clocks, positions, and
 bone-driven depth are included in observations and checkpoints.
+
+The victim's timer starts at `base + percent * scale` on contact. CaptureWait
+and CaptureDamage subtract the passive decrement once per active frame. The
+complete `ftCommon_GrabMash` transition subtracts one additional penalty for a
+fresh A/B/X/Y/shoulder press and one for any main-stick axis whose latched sign
+changes beyond the strict threshold. Neutral stick does not reset a latch, and
+button plus stick input can subtract twice. Hitlag freezes all of this state.
+Expiry in CaptureDamage waits for that reaction to return to CaptureWait; expiry
+there detaches the pair, applies opposite release velocities, and enters sampled
+CatchCut/CaptureCut actions before ordinary recovery.
 
 CatchPull advances to CatchWait after its configured duration. Following
 `fn_800DA4C0`, a fresh A press selects CatchAttack before throw input. Its single
@@ -33,17 +45,20 @@ stock loss.
 
 `game_grab` covers animated bone contact versus a miss, pummel priority,
 single-hit timing, repeated pummels, shared hitlag, sampled holder and victim
-reaction poses, independent reaction completion, all throw directions,
-fresh-edge history, input suppression for held victims, checkpoint replay,
-stable simultaneous-catch order, airborne rejection, hurtbox pair cleanup on KO,
-and malformed resources. `game_hurtbox_eligibility` adds the per-capsule
+reaction poses, independent reaction completion, passive and mashed escape,
+button freshness, stick latches, hitlag timer freeze, cut actions and release
+motion, all throw directions, input suppression, checkpoint replay, stable
+simultaneous-catch order, airborne rejection, hurtbox pair cleanup on KO, and
+malformed resources. `game_hurtbox_eligibility` adds the per-capsule
 state/grabbable filters and directional bone scale. Three grab/throw conformance
 scenarios now run normally. `fighter::grab` unit tests cover the exact fresh-A
-predicate; `grab_differential` compares the three retained stick-crossing
-predicates with complete functions selected from the pinned original C file.
+predicate and mash mutation. `grab_differential` compares the three retained
+throw stick-crossing predicates; `grab_mash_differential` compares the complete
+mash function over arbitrary timer, input and latch state. Both select complete
+functions from pinned original C.
 
-This profile does not yet implement dash/pivot/tether catches, mash and grab
-escape, cargo carries, separate high/low capture reactions, throw or pummel
-staling, weight-scaled animation rate, character overrides, or multiplayer
+This profile does not yet implement dash/pivot/tether catches, analog-trigger
+mash synthesis, cargo carries, separate high/low capture reactions, throw or
+pummel staling, weight-scaled animation rate, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.
