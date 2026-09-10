@@ -143,6 +143,7 @@ World-baked draws retain it as `BakedWorldGeometry` and draw-less joints as
 `UnmappedJointWorld`. Billboards, quaternion rotation, constraints, and
 skinning are not modeled; the manifest reports the one billboard joint in the
 panel hierarchy as `UnmodeledJointFlags`.
+
 The resource project's current MnMaAll export carries none of that metadata
 and bakes every part into world space, so the interactive host still advances
 a plain `AnimationPlayback` and cannot construct exact bindings. Joint posing,
