@@ -125,7 +125,6 @@ pub struct JointState {
     parent: Option<SourceJointId>,
     local: JointLocal,
     visible: bool,
-    effective_visible: bool,
 }
 
 impl JointState {
@@ -141,14 +140,13 @@ impl JointState {
         self.local
     }
 
-    /// Source-local hidden flag, before ancestor visibility is applied.
+    /// Whether this JObj's own draw objects are visible.
+    ///
+    /// HSD traverses ordinary children even when their parent has
+    /// `JOBJ_HIDDEN`. Branch animation performs recursion by writing the flag
+    /// to every descendant, rather than by inheriting an ancestor's state.
     pub const fn visible(&self) -> bool {
         self.visible
-    }
-
-    /// Visibility after every ancestor's local hidden flag is applied.
-    pub const fn effective_visible(&self) -> bool {
-        self.effective_visible
     }
 }
 
@@ -243,7 +241,6 @@ pub struct SceneInstance {
     material_indices: HashMap<SourceMaterialId, usize>,
     texture_indices: HashMap<SourceTextureId, usize>,
     children: Vec<Vec<usize>>,
-    topological: Vec<usize>,
 }
 
 impl SceneInstance {
@@ -275,12 +272,12 @@ impl SceneInstance {
                 roots.push_back(index);
             }
         }
-        let mut topological = Vec::with_capacity(descriptor.joints.len());
+        let mut visited = 0;
         while let Some(index) = roots.pop_front() {
-            topological.push(index);
+            visited += 1;
             roots.extend(children[index].iter().copied());
         }
-        if topological.len() != descriptor.joints.len() {
+        if visited != descriptor.joints.len() {
             return Err(InstanceError::JointHierarchyCycle);
         }
 
@@ -345,7 +342,6 @@ impl SceneInstance {
                 parent: joint.parent,
                 local: joint.local,
                 visible: joint.visible,
-                effective_visible: false,
             })
             .collect();
         let materials = descriptor
@@ -370,7 +366,7 @@ impl SceneInstance {
                 tev0_alpha: texture.tev0_alpha,
             })
             .collect();
-        let mut instance = Self {
+        let instance = Self {
             id,
             joints,
             materials,
@@ -379,9 +375,7 @@ impl SceneInstance {
             material_indices,
             texture_indices,
             children,
-            topological,
         };
-        instance.recompute_effective_visibility();
         Ok(instance)
     }
 
@@ -403,7 +397,6 @@ impl SceneInstance {
             material_indices: self.material_indices.clone(),
             texture_indices: self.texture_indices.clone(),
             children: self.children.clone(),
-            topological: self.topological.clone(),
         })
     }
 
@@ -477,7 +470,6 @@ impl SceneInstance {
                         _ => unreachable!("channel family validated before mutation"),
                     }
                 }
-                self.recompute_effective_visibility();
             }
             SourceTarget::Material(id) => {
                 let material = &mut self.materials[self.material_indices[id]];
@@ -604,17 +596,6 @@ impl SceneInstance {
         while let Some(index) = stack.pop() {
             self.joints[index].visible = visible;
             stack.extend(self.children[index].iter().copied());
-        }
-    }
-
-    fn recompute_effective_visibility(&mut self) {
-        for &index in &self.topological {
-            let ancestor_visible = self.joints[index]
-                .parent
-                .as_ref()
-                .map(|parent| self.joints[self.joint_indices[parent]].effective_visible)
-                .unwrap_or(true);
-            self.joints[index].effective_visible = ancestor_visible && self.joints[index].visible;
         }
     }
 }
@@ -1096,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn branch_visibility_updates_descendants_and_effective_visibility() {
+    fn later_child_branch_update_overrides_an_earlier_parent_branch_update() {
         let descriptor = InstanceDescriptor {
             joints: vec![
                 joint("root", None, true),
@@ -1108,7 +1089,7 @@ mod tests {
         };
         let mut instance = SceneInstance::new(InstanceId::new(1), descriptor).unwrap();
 
-        assert!(!instance.joint(&"leaf".into()).unwrap().effective_visible());
+        assert!(!instance.joint(&"leaf".into()).unwrap().visible());
         instance
             .apply_channel(
                 &SourceTarget::Joint("branch".into()),
@@ -1117,12 +1098,7 @@ mod tests {
             .unwrap();
         assert!(!instance.joint(&"branch".into()).unwrap().visible());
         assert!(!instance.joint(&"leaf".into()).unwrap().visible());
-        assert!(
-            instance
-                .joint(&"unrelated".into())
-                .unwrap()
-                .effective_visible()
-        );
+        assert!(instance.joint(&"unrelated".into()).unwrap().visible());
 
         instance
             .apply_channel(
@@ -1131,7 +1107,7 @@ mod tests {
             )
             .unwrap();
         assert!(instance.joint(&"leaf".into()).unwrap().visible());
-        assert!(!instance.joint(&"leaf".into()).unwrap().effective_visible());
+        assert!(!instance.joint(&"branch".into()).unwrap().visible());
 
         instance
             .apply_channel(
@@ -1139,13 +1115,8 @@ mod tests {
                 sample(Channel::JointBranchVisibility, 0.500_1),
             )
             .unwrap();
-        assert!(
-            instance
-                .joint(&"branch".into())
-                .unwrap()
-                .effective_visible()
-        );
-        assert!(instance.joint(&"leaf".into()).unwrap().effective_visible());
+        assert!(instance.joint(&"branch".into()).unwrap().visible());
+        assert!(instance.joint(&"leaf".into()).unwrap().visible());
     }
 
     #[test]
@@ -1329,12 +1300,7 @@ mod tests {
                 sample(Channel::JointBranchVisibility, 0.0),
             )
             .unwrap();
-        assert!(
-            !instance
-                .joint(&"matrix".into())
-                .unwrap()
-                .effective_visible()
-        );
+        assert!(!instance.joint(&"matrix".into()).unwrap().visible());
     }
 
     #[test]
