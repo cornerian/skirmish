@@ -466,6 +466,14 @@ pub(crate) fn advance(
         }
     }
     clank::scan(data, state, &swept)?;
+    #[derive(Clone, Copy)]
+    enum HitContact {
+        Shield,
+        Fighter {
+            height: damage_math::HurtHeight,
+            geometry: damage::FighterContact,
+        },
+    }
     let mut hits = Vec::with_capacity(2);
     for attacker in 0..2 {
         let victim = 1 - attacker;
@@ -506,12 +514,11 @@ pub(crate) fn advance(
                     .map_err(physics)?
                     .is_some()
                 {
-                    hits.push((attacker, hit, staled, true, None));
+                    hits.push((attacker, hit, staled, HitContact::Shield));
                     break;
                 }
             }
-            let mut collided = false;
-            let mut height = None;
+            let mut body_contact = None;
             for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
                 let hurt = hurtbox
                     .physics()
@@ -530,23 +537,30 @@ pub(crate) fn advance(
                     body_collision::capsule_matrix(attack, &capsule, matrix, 3.0, &mut contact)
                         .map_err(physics)?;
                 if overlaps {
-                    collided = true;
-                    height = data.fighters[victim]
+                    let height = data.fighters[victim]
                         .damage_poses
                         .as_ref()
-                        .map(|poses| poses.hurtbox_heights[index]);
+                        .map_or_default(|poses| poses.hurtbox_heights[index]);
+                    body_contact = Some(HitContact::Fighter {
+                        height,
+                        geometry: damage::FighterContact {
+                            hurt_start: hurt.start,
+                            hurt_end: hurt.end,
+                            position: contact.position,
+                        },
+                    });
                     break;
                 }
             }
-            if collided {
-                hits.push((attacker, hit, staled, false, height));
+            if let Some(contact) = body_contact {
+                hits.push((attacker, hit, staled, contact));
                 break;
             }
         }
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.
-    for &(attacker, hit, _, _, _) in &hits {
+    for &(attacker, hit, _, _) in &hits {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
         if data.rules.clank.is_some() {
             clank::record(&mut state.fighters[attacker], hit.group, 1 - attacker)?;
@@ -554,23 +568,24 @@ pub(crate) fn advance(
     }
     let mut newly_hit = [false; 2];
     let mut shield_contact = [false; 2];
-    for (attacker, hit, staled, blocked, height) in hits {
+    for (attacker, hit, staled, contact) in hits {
         newly_hit[1 - attacker] = true;
-        if blocked {
-            shield_contact[1 - attacker] = true;
-            shield::apply_contact(data, state, attacker, hit, staled)?;
-        } else {
-            damage::apply_hit(
+        match contact {
+            HitContact::Shield => {
+                shield_contact[1 - attacker] = true;
+                shield::apply_contact(data, state, attacker, hit, staled)?;
+            }
+            HitContact::Fighter { height, geometry } => damage::apply_hit(
                 data,
                 state,
                 attacker,
                 hit,
                 staled,
-                height.unwrap_or_default(),
-                damage::HitDirection::FighterContact,
-            )?;
+                height,
+                damage::HitDirection::FighterContact(geometry),
+            )?,
         }
-        if !blocked && data.rules.staling.is_some() {
+        if matches!(contact, HitContact::Fighter { .. }) && data.rules.staling.is_some() {
             state.fighters[attacker]
                 .staling
                 .queue

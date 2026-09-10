@@ -274,6 +274,16 @@ fn malformed_grab_resources_are_rejected() {
     let mut bad = data();
     bad.fighters[1].grab = None;
     cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .throws
+        .forward
+        .hit
+        .angle_degrees = 362.0;
+    cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());
     }

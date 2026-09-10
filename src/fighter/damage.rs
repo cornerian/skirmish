@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 const DEGREES_TO_RADIANS: f32 = f32::from_bits(0x3c8e_fa35);
+const RADIANS_TO_DEGREES: f32 = f32::from_bits(0x4265_2ee1);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LaunchAngleRules {
@@ -280,6 +281,36 @@ pub fn damage_motion(
 /// attacker; equal X, signed zero and unordered comparisons select +1.
 pub fn fighter_hit_direction(victim_x: f32, attacker_x: f32) -> f32 {
     if victim_x > attacker_x { -1.0 } else { 1.0 }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PositionalLaunch {
+    pub direction: f32,
+    pub angle_degrees: i32,
+}
+
+/// Special hitbox angle 362 in `ftColl_8007A06C`. The hurt-capsule midpoint
+/// points away from the narrow-phase surface contact. The source truncates the
+/// signed degree result toward zero and treats horizontal separations below
+/// 1e-5 as angle zero. Inputs are finite evaluated collision geometry.
+pub fn positional_launch(
+    hurt_start: [f32; 3],
+    hurt_end: [f32; 3],
+    contact: [f32; 3],
+) -> PositionalLaunch {
+    let dx = 0.5 * (hurt_start[0] + hurt_end[0]) - contact[0];
+    let dy = 0.5 * (hurt_start[1] + hurt_end[1]) - contact[1];
+    let direction = if dx < 0.0 { 1.0 } else { -1.0 };
+    let abs_dx = if dx < 0.0 { -dx } else { dx };
+    let angle_degrees = if abs_dx < 1e-5 {
+        0
+    } else {
+        (libm::atanf(dy / abs_dx) * RADIANS_TO_DEGREES) as i32
+    };
+    PositionalLaunch {
+        direction,
+        angle_degrees,
+    }
 }
 
 /// Captured-victim direction assigned by `ftCo_800DDDE4` before throw damage.
@@ -802,6 +833,43 @@ mod tests {
         assert_eq!(throw_hit_direction(1.0), -1.0);
         assert_eq!(throw_hit_direction(-1.0), 1.0);
         assert_eq!(throw_hit_direction(0.0).to_bits(), (-0.0_f32).to_bits());
+    }
+
+    #[test]
+    fn positional_launch_preserves_quadrants_truncation_and_vertical_threshold() {
+        let point = |x, y| [x, y, 0.0];
+        assert_eq!(
+            positional_launch(point(0.0, 0.0), point(0.0, 0.0), point(-1.0, -1.0)),
+            PositionalLaunch {
+                direction: -1.0,
+                angle_degrees: 45,
+            }
+        );
+        assert_eq!(
+            positional_launch(point(0.0, 0.0), point(0.0, 0.0), point(1.0, 0.5)),
+            PositionalLaunch {
+                direction: 1.0,
+                angle_degrees: -26,
+            }
+        );
+        for dx in [0.0, -0.0, 0.000009] {
+            assert_eq!(
+                positional_launch(point(0.0, 1.0), point(0.0, 1.0), point(-dx, 0.0)),
+                PositionalLaunch {
+                    direction: -1.0,
+                    angle_degrees: 0,
+                }
+            );
+        }
+        assert_eq!(
+            positional_launch(
+                point(0.0, 0.00001),
+                point(0.0, 0.00001),
+                point(-0.00001, 0.0),
+            )
+            .angle_degrees,
+            45
+        );
     }
 
     #[test]

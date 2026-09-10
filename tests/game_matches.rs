@@ -434,7 +434,7 @@ fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
         |data| data.stage.floor.right = data.stage.blast[1],
         |data| data.fighters[0].bones[0].parent = Some(1),
         |data| data.fighters[0].jab.frames.clear(),
-        |data| data.fighters[0].jab.frames[1].hitboxes[0].angle_degrees = 362.0,
+        |data| data.fighters[0].jab.frames[1].hitboxes[0].angle_degrees = 363.0,
         |data| data.fighters[0].jab.frames[1].bones[1].classical_scale = true,
         |data| data.fighters[0].bones[0].scale = [1_000_000.0; 3],
     ];

@@ -469,7 +469,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                             && hit.growth <= 1000
                             && hit.fixed <= 1000
                             && hit.base <= 1000
-                            && (0.0..=361.0).contains(&hit.angle_degrees)
+                            && (0.0..=362.0).contains(&hit.angle_degrees)
                             && hit.angle_degrees.fract() == 0.0,
                         "invalid or unsupported hitbox",
                     )?;

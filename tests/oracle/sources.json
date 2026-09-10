@@ -65,6 +65,11 @@
     "sha256": "594e946b2686708a44f50683acb142c7f7e138eac520905e11f089e333414caa"
   },
   {
+    "fixture": "tests/oracle/original/sdk_mtx.h",
+    "upstream": "extern/dolphin/include/dolphin/mtx.h",
+    "sha256": "6c99b820e91b48446835df8b6bf77fd92c66fb353e023db5ec20511003f36be9"
+  },
+  {
     "fixture": "tests/oracle/original/sdk_mtxvec.c",
     "upstream": "extern/dolphin/src/dolphin/mtx/mtxvec.c",
     "sha256": "41335e9824650e3ac56f620774028bba01d539ed8384b2c89d9e5bb3ed597184"

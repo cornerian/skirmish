@@ -153,6 +153,11 @@ composition and checkpoint replay. `game_damage_floor` verifies that DownDamage
 launches away while preserving its prior-facing override, and `game_grab`
 checks throw-facing assignment. `hit_direction_differential` compares fighter
 and throw assignments over 512 arbitrary binary32 inputs with verbatim pinned C.
+`game_positional_angle` drives angle 362 through matrix contact for three
+quadrants, the vertical tie and checkpoint replay. Its exact helper has focused
+unit coverage, while `positional_angle_differential` compares 512 arbitrary
+finite geometries against the verbatim source branch and pinned SDK degree
+conversion.
 
 [Matrix-aware hurtbox contact](hurtbox-contact.md) adds
 `game_hurtbox_geometry`, where a scaled bone extends collision along one axis
@@ -246,6 +251,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `ground_launch` | Flat/sloped floor retention and tangent projection, departure and fly bounce boundaries, hitlag freeze, scalar friction, prone DownDamage override, invalid profiles and checkpoint replay |
 | `hit_direction` | Both fighter positions and player slots, equal-X tie, victim facing, grounded projection, throw assignment, prone override and checkpoint replay |
 | `hurtbox_geometry` | Matrix-aware body contact, directional bone scale, long-axis hit and short-axis miss |
+| `positional_angle` | Angle-362 matrix contact, three launch quadrants, vertical tie, validation and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order

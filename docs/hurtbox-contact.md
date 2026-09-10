@@ -12,6 +12,8 @@ nonuniform scale and shear therefore affect collision directionally instead of
 being guessed as one isotropic radius. The match uses the source hurtbox
 broadphase multiplier of 3, retains inclusive touching, and keeps the original
 closest-endpoint tie behavior. All of this remains headless bone physics.
+The retained hurt endpoints and surface position also drive the special
+[contact-relative angle 362](hit-direction.md).
 
 `shield_collision_differential` already compares the shared complete C routine
 over arbitrary matrices and capsule geometry. `shield_geometry` covers its

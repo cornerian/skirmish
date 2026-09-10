@@ -670,8 +670,15 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
 /// caller resolves simultaneous contacts before invoking this helper.
 #[derive(Clone, Copy)]
 pub(crate) enum HitDirection {
-    FighterContact,
+    FighterContact(FighterContact),
     Throw,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct FighterContact {
+    pub hurt_start: [f32; 3],
+    pub hurt_end: [f32; 3],
+    pub position: [f32; 3],
 }
 
 pub(crate) fn apply_hit(
@@ -688,11 +695,20 @@ pub(crate) fn apply_hit(
     let target = &state.fighters[victim];
     let was_grounded = target.grounded;
     let previous_facing = target.facing;
-    let damage_facing = match direction {
-        HitDirection::FighterContact => {
-            damage::fighter_hit_direction(target.position[0], state.fighters[attacker].position[0])
+    let (damage_facing, angle_degrees) = match direction {
+        HitDirection::FighterContact(contact) if hit.angle_degrees == 362.0 => {
+            let launch =
+                damage::positional_launch(contact.hurt_start, contact.hurt_end, contact.position);
+            (launch.direction, launch.angle_degrees)
         }
-        HitDirection::Throw => damage::throw_hit_direction(state.fighters[attacker].facing),
+        HitDirection::FighterContact(_) => (
+            damage::fighter_hit_direction(target.position[0], state.fighters[attacker].position[0]),
+            hit.angle_degrees as i32,
+        ),
+        HitDirection::Throw => (
+            damage::throw_hit_direction(state.fighters[attacker].facing),
+            hit.angle_degrees as i32,
+        ),
     };
     let down_damage_face_up = rules
         .damage
@@ -778,7 +794,7 @@ pub(crate) fn apply_hit(
         ));
     }
     let angle = damage::launch_angle(
-        hit.angle_degrees as i32,
+        angle_degrees,
         knockback,
         !target.grounded,
         &rules.damage.angle_rules(),

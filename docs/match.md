@@ -146,7 +146,9 @@ Ordinary fighter hits select [damage direction](hit-direction.md) from the
 attacker and victim X positions, including the source equal-X tie, then face the
 victim toward the attacker and launch away. Throws instead negate the thrower's
 facing before entering the shared transition. Prone DownDamage retains its
-explicit old-facing override after calculating launch.
+explicit old-facing override after calculating launch. Hitbox angle 362 instead
+uses the contacted hurt capsule's midpoint and the matrix narrow phase's surface
+position to choose signed angle and facing.
 
 Optional [`rules.damage.damage_motion`](damage-motion.md) supplies the three
 ordinary knockback-level thresholds, while every fighter supplies complete
@@ -262,8 +264,8 @@ eligibility callback runs earlier in fighter update.
 
 The match supports the supplied movement profiles, airborne drift/fast fall,
 a jab, all five ordinary aerials with landing/autocancel/L-cancel, ordinary
-damage/armor, integral fixed-angle launch and angle 361. Aerial resources and
-callback limits are described in [aerials.md](aerials.md). The optional
+damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
+Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
 standing catches, paired holds and four-direction throws. The optional [ledge

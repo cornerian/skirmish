@@ -340,7 +340,8 @@ pub struct Hitbox {
     /// Additional integer shield damage (HitCapsule::x34), before clamping.
     #[serde(default)]
     pub shield_damage: i32,
-    /// Integral ordinary launch angles or 361, whose coefficients are explicit.
+    /// Integral ordinary launch angles, 361 with explicit coefficients, or the
+    /// contact-relative 362 angle used by fighter hitboxes.
     pub angle_degrees: f32,
     pub growth: u32,
     pub fixed: u32,

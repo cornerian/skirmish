@@ -44,6 +44,11 @@ closest axes, directional matrix radius, surface contact, overlap and
 broadphase behavior; native match tests own the evaluated hurt-bone matrix and
 scheduler routing.
 
+`positional_angle` preserves the complete angle-362 branch from `ftcoll.c` and
+uses the exact `MTXRadToDeg` macro from the separately pinned Dolphin SDK matrix
+header. Its host adapter supplies only finite hurt endpoints and contact points;
+match tests own the matrix narrow phase and damage-transition composition.
+
 `fly_reflect` selects complete `ftCo_800C18A8` and compiles it with complete
 `lbVector_Add_xy` and `lbVector_Mirror` from the separately pinned `lbvector.c`.
 The adapter stubs effects, camera, action entry, skeleton placement, collision
