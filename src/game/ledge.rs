@@ -24,8 +24,17 @@ pub struct Rules {
     pub option_stick_threshold: f32,
     pub option_angle_radians: f32,
     pub wait_frames: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slow: Option<SlowRules>,
     pub regrab_cooldown: u32,
     pub invincibility_frames: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlowRules {
+    pub percent_threshold: f32,
+    pub wait_frames: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -34,6 +43,17 @@ pub struct Parameters {
     pub attachment: Attachment,
     pub catch: Motion,
     pub wait: Frame,
+    pub climb: Motion,
+    pub jump: Jump,
+    pub attack: AttackMotion,
+    pub escape: Motion,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slow: Option<Options>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Options {
     pub climb: Motion,
     pub jump: Jump,
     pub attack: AttackMotion,
@@ -99,6 +119,65 @@ pub struct State {
     pub side: Option<Side>,
     pub input_ready: bool,
     pub cooldown: u32,
+    pub slow: bool,
+}
+
+/// The shared x488 branch used by all four ledge options and CliffWait's timer.
+/// Writing it as the inverse source comparison retains its NaN behavior.
+pub fn slow_variant(percent: f32, threshold: f32) -> bool {
+    percent.partial_cmp(&threshold) != Some(core::cmp::Ordering::Less)
+}
+
+fn selected_slow(fighter: &Fighter, rules: &Rules) -> bool {
+    rules
+        .slow
+        .is_some_and(|slow| slow_variant(fighter.percent, slow.percent_threshold))
+}
+
+fn wait_frames(fighter: &Fighter, rules: &Rules) -> u32 {
+    if fighter.ledge.slow {
+        rules
+            .slow
+            .map_or(rules.wait_frames, |slow| slow.wait_frames)
+    } else {
+        rules.wait_frames
+    }
+}
+
+fn climb(parameters: &Parameters, slow: bool) -> &Motion {
+    parameters
+        .slow
+        .as_ref()
+        .filter(|_| slow)
+        .map_or(&parameters.climb, |options| &options.climb)
+}
+
+fn jump(parameters: &Parameters, slow: bool) -> &Jump {
+    parameters
+        .slow
+        .as_ref()
+        .filter(|_| slow)
+        .map_or(&parameters.jump, |options| &options.jump)
+}
+
+pub(crate) fn attack(parameters: &Parameters, slow: bool) -> &Attack {
+    &attack_motion(parameters, slow).attack
+}
+
+fn attack_motion(parameters: &Parameters, slow: bool) -> &AttackMotion {
+    parameters
+        .slow
+        .as_ref()
+        .filter(|_| slow)
+        .map_or(&parameters.attack, |options| &options.attack)
+}
+
+fn escape(parameters: &Parameters, slow: bool) -> &Motion {
+    parameters
+        .slow
+        .as_ref()
+        .filter(|_| slow)
+        .map_or(&parameters.escape, |options| &options.escape)
 }
 
 pub(crate) fn validate(
@@ -120,6 +199,13 @@ pub(crate) fn validate(
         || !(0.0..=core::f32::consts::FRAC_PI_2).contains(&rules.option_angle_radians)
         || rules.wait_frames == 0
         || rules.wait_frames >= 1_000_000
+        || rules.slow.is_some_and(|slow| {
+            !slow.percent_threshold.is_finite()
+                || !(0.0..=1_000_000.0).contains(&slow.percent_threshold)
+                || slow.wait_frames == 0
+                || slow.wait_frames >= 1_000_000
+        })
+        || rules.slow.is_some() != parameters.slow.is_some()
         || rules.regrab_cooldown >= 1_000_000
         || rules.invincibility_frames >= 1_000_000
         || parameters.attachment.bone >= fighter.bones.len()
@@ -128,38 +214,56 @@ pub(crate) fn validate(
             .point
             .into_iter()
             .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
-        || parameters.jump.release_frame == 0
-        || parameters.jump.release_frame as usize >= parameters.jump.motion.frames.len()
-        || parameters
-            .jump
-            .launch_velocity
-            .into_iter()
-            .any(|value| !value.is_finite() || !(0.0..=1_000_000.0).contains(&value))
-        || parameters.attack.anchor_offsets.len() != parameters.attack.attack.frames.len()
     {
         return Err(Error::Data("invalid explicit ledge parameters".into()));
     }
-    for motion in [
-        &parameters.catch,
-        &parameters.climb,
-        &parameters.jump.motion,
-        &parameters.escape,
-    ] {
+    for motion in [&parameters.catch, &parameters.climb, &parameters.escape] {
         validate_motion(motion, fighter)?;
     }
+    validate_jump(&parameters.jump, fighter)?;
     validate_frame(&parameters.wait, fighter)?;
-    if parameters.attack.attack.frames.is_empty()
-        || parameters.attack.attack.frames.len() > 4096
-        || parameters
-            .attack
+    validate_attack(&parameters.attack, fighter)?;
+    if let Some(slow) = &parameters.slow {
+        validate_options(slow, fighter)?;
+    }
+    Ok(())
+}
+
+fn validate_options(options: &Options, fighter: &FighterData) -> Result<(), Error> {
+    for motion in [&options.climb, &options.escape] {
+        validate_motion(motion, fighter)?;
+    }
+    validate_jump(&options.jump, fighter)?;
+    validate_attack(&options.attack, fighter)
+}
+
+fn validate_jump(jump: &Jump, fighter: &FighterData) -> Result<(), Error> {
+    validate_motion(&jump.motion, fighter)?;
+    if jump.release_frame == 0
+        || jump.release_frame as usize >= jump.motion.frames.len()
+        || jump
+            .launch_velocity
+            .into_iter()
+            .any(|value| !value.is_finite() || !(0.0..=1_000_000.0).contains(&value))
+    {
+        return Err(Error::Data("invalid ledge jump".into()));
+    }
+    Ok(())
+}
+
+fn validate_attack(attack: &AttackMotion, fighter: &FighterData) -> Result<(), Error> {
+    if attack.anchor_offsets.len() != attack.attack.frames.len()
+        || attack.attack.frames.is_empty()
+        || attack.attack.frames.len() > 4096
+        || attack
             .anchor_offsets
             .iter()
             .flatten()
             .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
     {
-        return Err(Error::Data("invalid explicit ledge attack motion".into()));
+        return Err(Error::Data("invalid ledge attack motion".into()));
     }
-    for frame in &parameters.attack.attack.frames {
+    for frame in &attack.attack.frames {
         super::validation::validate_animation_pose(&frame.bones, fighter)?;
     }
     Ok(())
@@ -235,32 +339,42 @@ pub(crate) fn update_animation(
         Action::CliffCatch if fighter.action_frame as usize >= parameters.catch.frames.len() => {
             simulation::enter(fighter, Action::CliffWait);
             fighter.ledge.input_ready = false;
+            fighter.ledge.slow = selected_slow(fighter, rules);
         }
-        Action::CliffWait if fighter.action_frame >= rules.wait_frames => drop(fighter, rules),
-        Action::CliffClimb if fighter.action_frame as usize >= parameters.climb.frames.len() => {
-            finish_on_floor(fighter, geometry)?;
+        Action::CliffWait if fighter.action_frame >= wait_frames(fighter, rules) => {
+            drop(fighter, rules)
         }
-        Action::CliffAttack
-            if fighter.action_frame as usize >= parameters.attack.attack.frames.len() =>
+        Action::CliffClimb
+            if fighter.action_frame as usize
+                >= climb(parameters, fighter.ledge.slow).frames.len() =>
         {
             finish_on_floor(fighter, geometry)?;
         }
-        Action::CliffEscape if fighter.action_frame as usize >= parameters.escape.frames.len() => {
+        Action::CliffAttack
+            if fighter.action_frame as usize
+                >= attack(parameters, fighter.ledge.slow).frames.len() =>
+        {
+            finish_on_floor(fighter, geometry)?;
+        }
+        Action::CliffEscape
+            if fighter.action_frame as usize
+                >= escape(parameters, fighter.ledge.slow).frames.len() =>
+        {
             finish_on_floor(fighter, geometry)?;
         }
         Action::CliffJump => {
-            if fighter.action_frame == parameters.jump.release_frame && fighter.ledge.line.is_some()
-            {
+            let jump = jump(parameters, fighter.ledge.slow);
+            if fighter.action_frame == jump.release_frame && fighter.ledge.line.is_some() {
                 fighter.ledge.line = None;
                 fighter.ledge.side = None;
                 fighter.ledge.cooldown = rules.regrab_cooldown;
                 fighter.velocity = [
-                    fighter.facing * parameters.jump.launch_velocity[0],
-                    parameters.jump.launch_velocity[1],
+                    fighter.facing * jump.launch_velocity[0],
+                    jump.launch_velocity[1],
                 ];
                 fighter.locomotion.jumps_used = 1;
             }
-            if fighter.action_frame as usize >= parameters.jump.motion.frames.len() {
+            if fighter.action_frame as usize >= jump.motion.frames.len() {
                 simulation::enter(fighter, Action::Fall);
             }
         }
@@ -335,10 +449,9 @@ pub(crate) fn update_actions(
 pub(crate) fn skip_jump_physics(fighter: &Fighter, data: &FighterData) -> bool {
     fighter.action == Action::CliffJump
         && fighter.ledge.line.is_none()
-        && data
-            .ledge
-            .as_ref()
-            .is_some_and(|parameters| fighter.action_frame == parameters.jump.release_frame)
+        && data.ledge.as_ref().is_some_and(|parameters| {
+            fighter.action_frame == jump(parameters, fighter.ledge.slow).release_frame
+        })
 }
 
 pub(crate) fn release_on_damage(fighter: &mut Fighter, rules: Option<&Rules>) {
@@ -426,6 +539,7 @@ pub(crate) fn scan(
         fighter.ledge.line = Some(line);
         fighter.ledge.side = Some(side);
         fighter.ledge.input_ready = false;
+        fighter.ledge.slow = selected_slow(fighter, rules);
         fighter.invincibility = fighter.invincibility.max(rules.invincibility_frames);
         simulation::enter(fighter, Action::CliffCatch);
         attach(fighter, &data.fighters[player], geometry)?;
@@ -484,25 +598,21 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
         Action::CliffWait => Some(&parameters.wait.bones),
-        Action::CliffClimb => parameters
-            .climb
+        Action::CliffClimb => climb(parameters, fighter.ledge.slow)
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
-        Action::CliffJump => parameters
-            .jump
+        Action::CliffJump => jump(parameters, fighter.ledge.slow)
             .motion
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
-        Action::CliffAttack => parameters
-            .attack
+        Action::CliffAttack => attack_motion(parameters, fighter.ledge.slow)
             .attack
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
-        Action::CliffEscape => parameters
-            .escape
+        Action::CliffEscape => escape(parameters, fighter.ledge.slow)
             .frames
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
@@ -519,20 +629,20 @@ fn anchor_offset(fighter: &Fighter, parameters: &Parameters) -> Result<[f32; 3],
             .get(frame)
             .map(|frame| frame.anchor_offset),
         Action::CliffWait => Some(parameters.wait.anchor_offset),
-        Action::CliffClimb => parameters
-            .climb
+        Action::CliffClimb => climb(parameters, fighter.ledge.slow)
             .frames
             .get(frame)
             .map(|frame| frame.anchor_offset),
-        Action::CliffJump => parameters
-            .jump
+        Action::CliffJump => jump(parameters, fighter.ledge.slow)
             .motion
             .frames
             .get(frame)
             .map(|frame| frame.anchor_offset),
-        Action::CliffAttack => parameters.attack.anchor_offsets.get(frame).copied(),
-        Action::CliffEscape => parameters
-            .escape
+        Action::CliffAttack => attack_motion(parameters, fighter.ledge.slow)
+            .anchor_offsets
+            .get(frame)
+            .copied(),
+        Action::CliffEscape => escape(parameters, fighter.ledge.slow)
             .frames
             .get(frame)
             .map(|frame| frame.anchor_offset),
@@ -609,4 +719,17 @@ fn endpoint(line: &stage::Line, side: Side) -> [f32; 2] {
 
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slow_variant;
+
+    #[test]
+    fn slow_variant_is_the_inverse_of_the_source_strict_quick_branch() {
+        assert!(!slow_variant(99.999, 100.0));
+        assert!(slow_variant(100.0, 100.0));
+        assert!(slow_variant(100.001, 100.0));
+        assert!(slow_variant(f32::NAN, 100.0));
+    }
 }

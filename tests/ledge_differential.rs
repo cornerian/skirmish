@@ -3,6 +3,7 @@
 
 use proptest::prelude::*;
 use skirmish::fighter::ledge::{StickOption, stick_option};
+use skirmish::game::ledge::slow_variant;
 
 unsafe extern "C" {
     fn oracle_ledge_option(
@@ -15,6 +16,7 @@ unsafe extern "C" {
         initial_cooldown: i32,
         drop_cooldown: i32,
     ) -> u64;
+    fn oracle_ledge_slow_variant(percent: f32, threshold: f32) -> i32;
 }
 
 proptest! {
@@ -64,6 +66,15 @@ proptest! {
         prop_assert_eq!(rust_action, original_action);
         prop_assert_eq!(rust_cooldown, original_cooldown);
     }
+
+    #[test]
+    fn quick_slow_percent_selection_matches_the_original_callback(
+        percent in any::<f32>(),
+        threshold in any::<f32>(),
+    ) {
+        let original = unsafe { oracle_ledge_slow_variant(percent, threshold) != 0 };
+        prop_assert_eq!(slow_variant(percent, threshold), original);
+    }
 }
 
 #[test]
@@ -72,6 +83,7 @@ fn adapter_uses_the_complete_pinned_definition() {
     assert!(original.contains(
         "bool ftCo_8009AAFC(Fighter_GObj* gobj, bool arg1, float stick_x, float angle)\n{"
     ));
+    assert!(original.contains("void ftCo_8009AB9C(Fighter_GObj* gobj)\n{"));
     let adapter = include_str!("oracle/ledge_option.c");
     assert!(adapter.contains("#include \"ledge_option_original.inc\""));
 }

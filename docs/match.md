@@ -229,9 +229,11 @@ Tether variants and capture-contact interference remain unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
 endpoint discovery, bone-attached catch/hang poses, climb, jump, attack, escape,
-drop and regrab cooldown. Ledge attack uses the same swept-contact and damage
-pipeline as other attacks. Endpoint ownership, stick arming and cooldown are
-checkpointed; damage and stock loss clear ownership. The [ledge profile](ledges.md)
+drop and regrab cooldown. Optional paired quick/slow resources use the source
+percent threshold for hang duration and all four ledge options. Ledge attack uses
+the same swept-contact and damage pipeline as other attacks. Endpoint ownership,
+selected variant, stick arming and cooldown are checkpointed; damage and stock loss
+clear ownership. The [ledge profile](ledges.md)
 documents its explicit resource schema and remaining dynamic-stage and
 character-specific limits.
 
@@ -319,7 +321,7 @@ adds clear-to-penetrating moving-surface contacts and ordinary opposing-surface
 squeezes. Dynamic surface-kind changes and the complete connected-corner graph
 remain unported.
 Ledge actions currently require static marked endpoints and supplied generic
-poses; percent-dependent variants and ledge trumping remain unported. The optional [nudge profile](nudge.md) adds source-backed
+poses; ledge trumping remains unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the
 ledge-specific backward-push map branch remain unported. The optional
 [rebirth profile](rebirth.md) supplies the ordinary leader's static airborne

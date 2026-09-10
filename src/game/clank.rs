@@ -178,7 +178,7 @@ pub(crate) fn scan(
         let player = 1 - side;
         let f = &state.fighters[player];
         let frame = data.fighters[player]
-            .attack(f.action, f.prone)
+            .attack(f.action, f.prone, f.ledge.slow)
             .and_then(|a| a.frames.get(f.action_frame as usize));
         math::Fighter {
             id: player as u32 + 1,
@@ -286,7 +286,7 @@ pub(crate) fn finish(
                     .as_ref()
                     .ok_or_else(|| Error::Data("missing rebound animation".into()))?;
                 let frozen_pose = fd
-                    .attack(f.action, f.prone)
+                    .attack(f.action, f.prone, f.ledge.slow)
                     .and_then(|a| a.frames.get(f.action_frame as usize))
                     .map_or(&fd.bones, |frame| &frame.bones)
                     .clone();

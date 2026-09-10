@@ -7,7 +7,7 @@ use skirmish::collision::stage::{self, Joint, Line};
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State,
     data::{AttackFrame, Hitbox, MatchData, StageGeometry},
-    ledge::{self, Side},
+    ledge::{self, Options, Side, SlowRules},
 };
 
 const IDLE: [Controller; 2] = [Controller {
@@ -27,6 +27,39 @@ fn data() -> MatchData {
     data.stage.spawns = [[-1.9, 1.0], [0.0, 0.0]];
     data.stage.blast = [-20.0, 20.0, -30.0, 30.0];
     ledge_resources::profile(data)
+}
+
+fn variant_data(threshold: f32) -> MatchData {
+    let mut data = data();
+    let rules = data.rules.ledge.as_mut().unwrap();
+    rules.wait_frames = 3;
+    rules.slow = Some(SlowRules {
+        percent_threshold: threshold,
+        wait_frames: 7,
+    });
+    for fighter in &mut data.fighters {
+        let parameters = fighter.ledge.as_mut().unwrap();
+        let mut slow = Options {
+            climb: parameters.climb.clone(),
+            jump: parameters.jump.clone(),
+            attack: parameters.attack.clone(),
+            escape: parameters.escape.clone(),
+        };
+        slow.climb
+            .frames
+            .push(slow.climb.frames.last().unwrap().clone());
+        slow.jump.release_frame = 3;
+        slow.jump.launch_velocity = [1.2, 2.5];
+        slow.attack
+            .attack
+            .frames
+            .iter_mut()
+            .flat_map(|frame| &mut frame.hitboxes)
+            .for_each(|hitbox| hitbox.damage = 13);
+        slow.escape.frames.last_mut().unwrap().anchor_offset[0] = 2.5;
+        parameters.slow = Some(slow);
+    }
+    data
 }
 
 fn input(player: usize, buttons: u16, stick: [f32; 2], cstick: [f32; 2]) -> [Controller; 2] {
@@ -382,6 +415,67 @@ fn wait_timeout_drops_and_blast_exit_clears_ledge_ownership() {
 }
 
 #[test]
+fn percent_boundary_selects_and_checkpoints_the_slow_wait_timer() {
+    let mut quick = hanging(variant_data(1.0));
+    assert!(!quick.state().fighters[0].ledge.slow);
+    let mut quick_steps = 0;
+    while quick.state().fighters[0].action == Action::CliffWait {
+        step(&mut quick, IDLE);
+        quick_steps += 1;
+    }
+
+    let mut slow = hanging(variant_data(0.0));
+    assert!(slow.state().fighters[0].ledge.slow);
+    let checkpoint = slow.checkpoint();
+    let mut expected = Vec::new();
+    while slow.state().fighters[0].action == Action::CliffWait {
+        expected.push(step(&mut slow, IDLE));
+    }
+    assert_eq!(expected.len() - quick_steps, 4);
+    assert_eq!(expected.last().unwrap().fighters[0].action, Action::Fall);
+    assert!(!expected.last().unwrap().fighters[0].ledge.slow);
+
+    slow.restore_checkpoint(&checkpoint).unwrap();
+    for expected in expected {
+        assert_eq!(step(&mut slow, IDLE), expected);
+    }
+}
+
+#[test]
+fn slow_climb_jump_attack_and_escape_use_the_selected_physics_resources() {
+    let mut climb = hanging(variant_data(0.0));
+    let entered = step(&mut climb, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(entered.fighters[0].action, Action::CliffClimb);
+    assert!(entered.fighters[0].ledge.slow);
+    let finished = until(&mut climb, |state| state.fighters[0].action == Action::Wait);
+    assert!(finished.fighters[0].grounded);
+    assert!(!finished.fighters[0].ledge.slow);
+
+    let mut jump = hanging(variant_data(0.0));
+    step(&mut jump, input(0, BUTTON_X, [0.0; 2], [0.0; 2]));
+    let released = until(&mut jump, |state| state.fighters[0].ledge.line.is_none());
+    assert_eq!(released.fighters[0].action, Action::CliffJump);
+    assert_eq!(released.fighters[0].velocity, [1.2, 2.5]);
+    assert!(released.fighters[0].ledge.slow);
+    let falling = until(&mut jump, |state| state.fighters[0].action == Action::Fall);
+    assert!(!falling.fighters[0].ledge.slow);
+
+    let mut attack_data = variant_data(0.0);
+    attack_data.stage.spawns[1] = [-0.4, 0.0];
+    let mut attack = hanging(attack_data);
+    step(&mut attack, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let hit = until(&mut attack, |state| state.fighters[1].percent > 0.0);
+    assert_eq!(hit.fighters[1].percent, 13.0);
+
+    let mut escape = hanging(variant_data(0.0));
+    step(&mut escape, input(0, BUTTON_L, [0.0; 2], [0.0; 2]));
+    let escaped = until(&mut escape, |state| {
+        state.fighters[0].action == Action::Wait
+    });
+    assert!(escaped.fighters[0].position[0] > 0.4);
+}
+
+#[test]
 fn malformed_or_unpaired_ledge_resources_are_rejected() {
     let mut cases = Vec::new();
     let mut bad = data();
@@ -407,6 +501,29 @@ fn malformed_or_unpaired_ledge_resources_are_rejected() {
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0].ledge.as_mut().unwrap().attachment.bone = usize::MAX;
+    cases.push(bad);
+    let mut bad = variant_data(0.0);
+    bad.fighters[0].ledge.as_mut().unwrap().slow = None;
+    cases.push(bad);
+    let mut bad = variant_data(0.0);
+    bad.rules
+        .ledge
+        .as_mut()
+        .unwrap()
+        .slow
+        .as_mut()
+        .unwrap()
+        .percent_threshold = f32::NAN;
+    cases.push(bad);
+    let mut bad = variant_data(0.0);
+    let slow = bad.fighters[0]
+        .ledge
+        .as_mut()
+        .unwrap()
+        .slow
+        .as_mut()
+        .unwrap();
+    slow.jump.release_frame = slow.jump.motion.frames.len() as u32;
     cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());

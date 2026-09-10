@@ -197,12 +197,13 @@ impl FighterData {
         &self,
         action: super::Action,
         prone: Option<super::damage::ProneOrientation>,
+        slow_ledge: bool,
     ) -> Option<&Attack> {
         if action == super::Action::Jab {
             return Some(&self.jab);
         }
         if action == super::Action::CliffAttack {
-            return Some(&self.ledge.as_ref()?.attack.attack);
+            return Some(super::ledge::attack(self.ledge.as_ref()?, slow_ledge));
         }
         if action == super::Action::DownAttack {
             return Some(&self.knockdown.as_ref()?.variant(prone)?.attack);

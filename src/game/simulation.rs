@@ -103,6 +103,9 @@ fn spawn(
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
+    if !ledge::owns_action(action) {
+        fighter.ledge.slow = false;
+    }
     staling::transition(fighter, action);
     fighter.action = action;
     fighter.action_frame = 0;
@@ -479,7 +482,7 @@ pub(crate) fn advance(
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
         let frame = if data.fighters[player]
-            .attack(fighter.action, fighter.prone)
+            .attack(fighter.action, fighter.prone, fighter.ledge.slow)
             .is_some()
         {
             Some(attack_frame(fighter, &data.fighters[player])?)
@@ -507,7 +510,7 @@ pub(crate) fn advance(
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
         if frozen[attacker]
             || data.fighters[attacker]
-                .attack(source.action, source.prone)
+                .attack(source.action, source.prone, source.ledge.slow)
                 .is_none()
             || target.invincibility > 0
             || target.grab.captor.is_some()
@@ -1244,7 +1247,10 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
-    } else if data.attack(fighter.action, fighter.prone).is_some() {
+    } else if data
+        .attack(fighter.action, fighter.prone, fighter.ledge.slow)
+        .is_some()
+    {
         &attack_frame(fighter, data)?.bones
     } else if aerial::landing_index(fighter.action).is_some() {
         aerial::landing_pose(fighter, data)
@@ -1287,7 +1293,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
-    data.attack(fighter.action, fighter.prone)
+    data.attack(fighter.action, fighter.prone, fighter.ledge.slow)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames
         .get(fighter.action_frame as usize)
@@ -1304,7 +1310,7 @@ pub(crate) fn hurtbox_state(
         .get(index)
         .ok_or_else(|| Error::Physics("hurtbox index is outside supplied resources".into()))?
         .state;
-    let Some(_) = data.attack(fighter.action, fighter.prone) else {
+    let Some(_) = data.attack(fighter.action, fighter.prone, fighter.ledge.slow) else {
         return Ok(base);
     };
     let frame = attack_frame(fighter, data)?;

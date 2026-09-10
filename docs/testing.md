@@ -208,10 +208,12 @@ binary32 inputs.
 The [ledge profile](ledges.md) promotes all six ledge conformance scenarios.
 `game_ledge` covers endpoint flags/connectivity, both sides, eligibility,
 stable occupancy, bone attachment, action priority and completion, jump launch,
-ordinary attack contact, incoming-damage release, timeout, cooldown/regrab,
+ordinary attack contact, incoming-damage release, strict quick/slow percent
+selection, distinct wait/motion/jump/attack resources, timeout, cooldown/regrab,
 checkpoint replay, KO cleanup and invalid resources. `ledge_differential`
 compares the complete retained `ftCo_8009AAFC` callback, including its strict
-float branches and drop-cooldown side effect, against pinned C.
+float branches and drop-cooldown side effect, against pinned C. It also compares
+the original `ftCo_8009AB9C` quick/slow selector over arbitrary binary32 values.
 
 The [rebirth profile](rebirth.md) promotes the stock-loss platform conformance
 scenario. `game_rebirth` covers both slots, reset/event state, each travel frame,

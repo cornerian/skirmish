@@ -12,6 +12,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         option_stick_threshold: 0.3,
         option_angle_radians: 0.7,
         wait_frames: 30,
+        slow: None,
         regrab_cooldown: 6,
         invincibility_frames: 12,
     });
@@ -93,6 +94,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 [0.8, 0.0, 0.0],
                 [1.6, 0.0, 0.0],
             ]),
+            slow: None,
         });
     }
     data
