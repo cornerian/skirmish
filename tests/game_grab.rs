@@ -5,6 +5,7 @@ mod grab_resources;
 
 use skirmish::{
     collision::ecb,
+    fighter::stale::Rules as StaleRules,
     game::{
         Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, Match, State,
         data::{CollisionBox, MatchData},
@@ -32,6 +33,17 @@ fn with_locomotion(mut data: MatchData) -> MatchData {
     let locomotion = serde_json::from_str(include_str!("fixtures/game/locomotion.json")).unwrap();
     for fighter in &mut data.fighters {
         fighter.locomotion = Some(locomotion);
+    }
+    data
+}
+
+fn with_staling(mut data: MatchData) -> MatchData {
+    data.rules.staling = Some(StaleRules {
+        penalties: [0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02],
+        debug_bypass: false,
+    });
+    for fighter in &mut data.fighters {
+        fighter.jab.move_id = Some(10);
     }
     data
 }
@@ -224,18 +236,23 @@ fn crouch_startup_accepts_the_source_standing_catch_transition() {
 #[test]
 fn all_four_throw_directions_release_into_the_shared_damage_pipeline() {
     let cases = [
-        ([1.0, 0.0], Action::ThrowF, Action::ThrownF, [1, 0]),
-        ([-1.0, 0.0], Action::ThrowB, Action::ThrownB, [-1, 0]),
-        ([0.0, 1.0], Action::ThrowHi, Action::ThrownHi, [0, 1]),
-        ([0.0, -1.0], Action::ThrowLw, Action::ThrownLw, [0, -1]),
+        ([1.0, 0.0], Action::ThrowF, Action::ThrownF, [1, 0], 41),
+        ([-1.0, 0.0], Action::ThrowB, Action::ThrownB, [-1, 0], 42),
+        ([0.0, 1.0], Action::ThrowHi, Action::ThrownHi, [0, 1], 43),
+        ([0.0, -1.0], Action::ThrowLw, Action::ThrownLw, [0, -1], 44),
     ];
-    for (stick, holder_action, victim_action, direction) in cases {
-        let mut game = held(data());
+    for (stick, holder_action, victim_action, direction, move_id) in cases {
+        let mut game = held(with_staling(data()));
         let entered = step(&mut game, input(0, 0, stick, [0.0; 2]));
         assert_eq!(entered.fighters[0].action, holder_action);
         assert_eq!(entered.fighters[1].action, victim_action);
         let released = until(&mut game, |state| state.fighters[1].percent > 0.0);
         assert_eq!(released.fighters[1].percent, 8.0);
+        assert_eq!(released.fighters[0].staling.queue.next(), 1);
+        assert_eq!(
+            released.fighters[0].staling.queue.entries()[0].move_id,
+            move_id
+        );
         assert_eq!(released.fighters[1].facing, -1.0);
         assert!(
             released
@@ -349,6 +366,134 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
     let second = until(&mut game, |state| state.fighters[1].percent == 6.0);
     assert_eq!(second.fighters[0].action, Action::CatchAttack);
     assert_eq!(second.fighters[0].grab.victim, Some(1));
+}
+
+#[test]
+fn repeated_pummels_stale_once_per_instance_and_replay_from_a_checkpoint() {
+    let mut game = held(with_staling(data()));
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let first = until(&mut game, |state| state.fighters[1].percent > 0.0);
+    assert_eq!(first.fighters[1].percent, 3.0);
+    assert_eq!(first.fighters[0].staling.queue.next(), 1);
+    assert_eq!(first.fighters[0].staling.queue.entries()[0].move_id, 40);
+
+    until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+            && state.fighters[1].action == Action::CaptureWait
+    });
+    let checkpoint = game.checkpoint();
+    let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let expected = until(&mut game, |state| state.fighters[1].percent > 3.0);
+    assert_eq!(expected.fighters[1].percent, 5.7);
+    assert_eq!(expected.fighters[0].staling.queue.next(), 2);
+    assert_eq!(expected.fighters[0].staling.queue.entries()[1].move_id, 40);
+    assert_ne!(
+        expected.fighters[0].staling.queue.entries()[0].attack_instance,
+        expected.fighters[0].staling.queue.entries()[1].attack_instance
+    );
+    assert!(expected.events.iter().any(|event| matches!(
+        event,
+        Event::Hit {
+            attacker: 0,
+            victim: 1,
+            damage,
+            knockback: 0.0,
+        } if damage.to_bits() == (3.0_f32 * 0.9).to_bits()
+    )));
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2])),
+        entered
+    );
+    assert_eq!(
+        until(&mut game, |state| state.fighters[1].percent > 3.0),
+        expected
+    );
+}
+
+#[test]
+fn pummel_and_throw_identities_stale_independently_and_holder_death_clears_them() {
+    let mut resource = with_staling(data());
+    resource.rules.knockback_speed = 0.0;
+    resource.stage.floor.left = -20.0;
+    resource.stage.floor.right = 20.0;
+    resource.stage.blast = [-25.0, 25.0, -10.0, 30.0];
+    let mut game = held(resource);
+
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    until(&mut game, |state| state.fighters[1].percent == 3.0);
+    until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+            && state.fighters[1].action == Action::CaptureWait
+    });
+    step(&mut game, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    let first_throw = until(&mut game, |state| state.fighters[1].percent > 3.0);
+    assert_eq!(first_throw.fighters[1].percent, 11.0);
+    assert_eq!(first_throw.fighters[0].staling.queue.next(), 2);
+    assert_eq!(
+        first_throw.fighters[0].staling.queue.entries()[0].move_id,
+        40
+    );
+    assert_eq!(
+        first_throw.fighters[0].staling.queue.entries()[1].move_id,
+        41
+    );
+
+    until(&mut game, |state| {
+        state
+            .fighters
+            .iter()
+            .all(|fighter| fighter.action == Action::Wait && fighter.hitlag == 0.0)
+    });
+    step(&mut game, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
+    until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    step(&mut game, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    let second_throw = until(&mut game, |state| state.fighters[1].percent > 11.0);
+    assert_eq!(second_throw.fighters[1].percent, 18.2);
+    assert_eq!(second_throw.fighters[0].staling.queue.next(), 3);
+    assert_eq!(
+        second_throw.fighters[0].staling.queue.entries()[2].move_id,
+        41
+    );
+    assert_ne!(
+        second_throw.fighters[0].staling.queue.entries()[1].attack_instance,
+        second_throw.fighters[0].staling.queue.entries()[2].attack_instance
+    );
+    assert!(second_throw.events.iter().any(|event| matches!(
+        event,
+        Event::Hit {
+            attacker: 0,
+            victim: 1,
+            damage,
+            ..
+        } if damage.to_bits() == 7.2_f32.to_bits()
+    )));
+
+    until(&mut game, |state| {
+        state
+            .fighters
+            .iter()
+            .all(|fighter| fighter.action == Action::Wait && fighter.hitlag == 0.0)
+    });
+    for _ in 0..100 {
+        if game.state().fighters[0].action == Action::Respawn {
+            break;
+        }
+        step(&mut game, input(0, 0, [-1.0, 0.0], [0.0; 2]));
+    }
+    assert_eq!(game.state().fighters[0].action, Action::Respawn);
+    assert_eq!(game.state().fighters[0].staling.queue.next(), 0);
+    assert!(
+        game.state().fighters[0]
+            .staling
+            .queue
+            .entries()
+            .iter()
+            .all(|entry| entry.move_id == 0)
+    );
 }
 
 #[test]
@@ -743,6 +888,18 @@ fn malformed_grab_resources_are_rejected() {
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0].grab.as_mut().unwrap().pummel.damage = 1_000;
+    cases.push(bad);
+    let mut bad = with_staling(data());
+    bad.fighters[0].grab.as_mut().unwrap().pummel.move_id = None;
+    cases.push(bad);
+    let mut bad = with_staling(data());
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .throws
+        .forward
+        .move_id = Some(0);
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0]

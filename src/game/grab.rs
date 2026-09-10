@@ -80,6 +80,9 @@ pub struct Attachment {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pummel {
+    /// Native move-table identity. Sentinel 1 is exempt from stale damage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_id: Option<u16>,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
     /// The single captured-victim damage callback. Zero is not observable in
@@ -100,6 +103,9 @@ pub struct Escape {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Throw {
+    /// Native move-table identity. Sentinel 1 is exempt from stale damage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_id: Option<u16>,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
     /// Scripted release event. Zero is excluded so entry is observable.
@@ -139,6 +145,7 @@ pub(crate) fn validate(
     rules: &Rules,
     parameters: &Parameters,
     fighter: &FighterData,
+    staling: bool,
 ) -> Result<(), Error> {
     if ![
         rules.horizontal_threshold,
@@ -186,6 +193,7 @@ pub(crate) fn validate(
         || pummel.hit_frame == 0
         || pummel.hit_frame as usize >= pummel.poses.len()
         || pummel.damage > 999
+        || (staling && pummel.move_id.is_none_or(|id| id == 0))
     {
         return Err(Error::Data("invalid explicit pummel parameters".into()));
     }
@@ -227,6 +235,7 @@ pub(crate) fn validate(
             || throw.hit.base > 1000
             || !(0.0..=361.0).contains(&throw.hit.angle_degrees)
             || throw.hit.angle_degrees.fract() != 0.0
+            || (staling && throw.move_id.is_none_or(|id| id == 0))
         {
             return Err(Error::Data("invalid explicit throw parameters".into()));
         }
@@ -554,7 +563,13 @@ pub(crate) fn update_pairs(
                     state.fighters[holder].action_frame == throw.release_frame
                 }) =>
             {
-                let hit = throw_for_action(&parameters.throws, action).unwrap().hit;
+                let throw = throw_for_action(&parameters.throws, action).unwrap();
+                let hit = throw.hit;
+                let staled = super::staling::hit(
+                    &state.fighters[holder].staling,
+                    hit.damage,
+                    data.rules.staling.as_ref(),
+                )?;
                 detach(state, holder, victim);
                 super::damage::apply_hit(
                     data,
@@ -574,15 +589,16 @@ pub(crate) fn update_pairs(
                         fixed: hit.fixed,
                         base: hit.base,
                     },
-                    super::staling::Hit {
-                        identity: state.fighters[holder].staling.identity,
-                        group: 0,
-                        base_damage: hit.damage,
-                        damage: hit.damage as f32,
-                    },
+                    staled,
                     crate::fighter::damage::HurtHeight::Middle,
                     super::damage::HitDirection::Throw,
                 )?;
+                if data.rules.staling.is_some() {
+                    state.fighters[holder]
+                        .staling
+                        .queue
+                        .record(staled.identity, false);
+                }
                 frozen[holder] = true;
                 frozen[victim] = true;
             }
@@ -895,24 +911,58 @@ fn apply_pummel(
     victim: usize,
     damage: u32,
 ) -> Result<(), Error> {
-    let hitlag =
-        combat::hitlag(damage as i32, false, 1.0, &data.rules.hitlag.physics()).map_err(physics)?;
+    let staled = super::staling::hit(
+        &state.fighters[holder].staling,
+        damage,
+        data.rules.staling.as_ref(),
+    )?;
+    let hitlag = combat::hitlag(
+        staled.damage as i32,
+        false,
+        1.0,
+        &data.rules.hitlag.physics(),
+    )
+    .map_err(physics)?;
     if !hitlag.is_finite() || hitlag < 0.0 {
         return Err(Error::Physics("pummel produced invalid hitlag".into()));
     }
     state.fighters[holder].hitlag = state.fighters[holder].hitlag.max(hitlag);
     let target = &mut state.fighters[victim];
-    target.percent = (target.percent + damage as f32).min(999.0);
+    target.percent = (target.percent + staled.damage).min(999.0);
     target.hitlag = target.hitlag.max(hitlag);
     target.di_pending = false;
     simulation::enter(target, Action::CaptureDamage);
     state.events.push(Event::Hit {
         attacker: holder,
         victim,
-        damage: damage as f32,
+        damage: staled.damage,
         knockback: 0.0,
     });
+    if data.rules.staling.is_some() {
+        state.fighters[holder]
+            .staling
+            .queue
+            .record(staled.identity, false);
+    }
     Ok(())
+}
+
+pub(crate) fn move_id(
+    parameters: Option<&Parameters>,
+    action: Action,
+) -> Result<Option<u16>, Error> {
+    let move_id = match action {
+        Action::CatchAttack => parameters.map(|parameters| parameters.pummel.move_id),
+        Action::ThrowF => parameters.map(|parameters| parameters.throws.forward.move_id),
+        Action::ThrowB => parameters.map(|parameters| parameters.throws.backward.move_id),
+        Action::ThrowHi => parameters.map(|parameters| parameters.throws.up.move_id),
+        Action::ThrowLw => parameters.map(|parameters| parameters.throws.down.move_id),
+        _ => return Ok(None),
+    };
+    move_id
+        .flatten()
+        .map(Some)
+        .ok_or_else(|| Error::Data("staling requires an explicit grab move_id".into()))
 }
 
 fn throw_for_action(throws: &Throws, action: Action) -> Option<&Throw> {

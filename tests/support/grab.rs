@@ -42,6 +42,12 @@ pub fn profile(mut data: MatchData) -> MatchData {
             grounded_targets_only: true,
         };
         let throw = |angle_degrees| Throw {
+            move_id: Some(match angle_degrees as i32 {
+                30 => 41,
+                150 => 42,
+                90 => 43,
+                _ => 44,
+            }),
             poses: vec![bones.clone(); 6],
             release_frame: 2,
             hit: ThrowHit {
@@ -62,6 +68,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 victim_point: [0.0; 3],
             },
             pummel: Pummel {
+                move_id: Some(40),
                 poses: vec![bones.clone(); 4],
                 hit_frame: 1,
                 damage: 3,

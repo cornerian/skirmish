@@ -7,9 +7,10 @@ resource supplies separate complete standing and dash-catch poses with
 bone-attached grab capsules, their explicit pull durations, two bone-local
 attachment anchors, complete holder poses for pummel and four throws, and the
 fighter's own CaptureDamage, CatchCut and CaptureCut poses.
-Pummel supplies one captured-damage frame and damage value; each throw supplies
-a release event and hit coefficients. Every fighter needs parameters when the
-common profile is enabled.
+Pummel supplies one captured-damage frame, damage value, and native move-table
+identity; each throw supplies its own identity, release event, and hit
+coefficients. The identities are required when stale-move rules are enabled.
+Every fighter needs parameters when the common profile is enabled.
 
 A catch tests its current sampled grab capsules against enabled, grabbable target
 hurt capsules with the matrix-aware source solver. Bone scale and shear retain
@@ -44,19 +45,24 @@ CatchPull advances to CatchWait after its configured duration. Following
 `fn_800DA4C0`, a fresh A press selects CatchAttack before throw input. Its single
 scripted hit adds percent, starts the victim's sampled CaptureDamage reaction,
 freezes both fighters with the shared exact hitlag calculation, and retains the
-pair until the animations return independently to CatchWait and CaptureWait. A
-later pummel restarts the victim reaction. A fresh main or C-stick crossing
+pair until the animations return independently to CatchWait and CaptureWait.
+Pummel damage uses the holder's stale queue and records its CatchAttack instance
+once at contact. A later pummel restarts the victim reaction. A fresh main or C-stick crossing
 otherwise selects a throw using
 `ftCo_800DD1E4` priority: horizontal main, horizontal C-stick, up, then down. At
 the supplied release frame, the paired state clears before the victim enters the
 ordinary damage, hitlag, hitstun, DI, knockback, floor, and blast-zone pipeline.
-A blast-zone exit also clears both sides of the relationship before publishing
+Each throw direction has a distinct stale identity; release applies staled
+percent while preserving the unstaled base-damage term for knockback, then
+records the holder's throw instance. Holder stock loss resets the queue. A
+blast-zone exit also clears both sides of the relationship before publishing
 stock loss.
 
 `game_grab` covers separate standing/dash bone contact versus a miss, Dash/Run
 entry, retained dash momentum, pending and completed Turn facing, Squat entry,
 pummel priority,
-single-hit timing, repeated pummels, shared hitlag, sampled holder and victim
+single-hit timing, repeated and staled pummels, independent throw identities,
+queue insertion and death reset, shared hitlag, sampled holder and victim
 reaction poses, independent reaction completion, passive and mashed escape,
 button and analog-shoulder freshness, stick latches, hitlag timer freeze, cut
 actions and release motion, all throw directions, input suppression, checkpoint replay, stable
@@ -70,7 +76,6 @@ mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C.
 
 This profile does not yet implement tether catches, cargo carries, separate
-high/low capture reactions, throw or
-pummel staling, weight-scaled animation rate, character overrides, or multiplayer
+high/low capture reactions, weight-scaled animation rate, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.

@@ -179,7 +179,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         }
         match (&rules.grab, &fighter.grab) {
             (Some(grab_rules), Some(parameters)) => {
-                grab::validate(grab_rules, parameters, fighter)?;
+                grab::validate(grab_rules, parameters, fighter, rules.staling.is_some())?;
                 require(
                     parameters.pummel.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base
                         < 1_000_000.0,

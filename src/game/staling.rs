@@ -74,12 +74,30 @@ pub(crate) fn flush(
                 Some(attack) => attack.move_id.ok_or_else(|| {
                     Error::Data("staling requires an explicit attack move_id".into())
                 })?,
-                None => 1,
+                None => super::grab::move_id(data.grab.as_ref(), action)?.unwrap_or(1),
             };
             fighter.staling.identity.change_move(move_id, counter);
         }
     }
     Ok(())
+}
+
+/// Build the source hit payload for direct damage such as pummels and throws.
+pub(crate) fn hit(state: &State, base_damage: u32, rules: Option<&Rules>) -> Result<Hit, Error> {
+    let damage = rules.map_or(base_damage as f32, |rules| {
+        state
+            .queue
+            .damage(i32::from(state.identity.move_id), base_damage as f32, rules)
+    });
+    if !damage.is_finite() || damage < 0.0 {
+        return Err(Error::NonFinite);
+    }
+    Ok(Hit {
+        identity: state.identity,
+        group: 0,
+        base_damage,
+        damage,
+    })
 }
 
 pub(crate) fn sample(
