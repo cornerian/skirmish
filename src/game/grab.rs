@@ -10,7 +10,7 @@ use super::{
     simulation,
 };
 use crate::{
-    collision::{bones::BoneCapsule, sweep},
+    collision::{bones::BoneCapsule, shield as body_collision},
     fighter::{combat::Capsule as WorldCapsule, grab as input},
 };
 use serde::{Deserialize, Serialize};
@@ -505,6 +505,9 @@ pub(crate) fn scan(
                 radius: grab.radius,
             };
             for hurtbox in &data.fighters[victim].hurtboxes {
+                if !hurtbox.grabbable || !hurtbox.state.accepts_contact() {
+                    continue;
+                }
                 let hurt = hurtbox
                     .physics()
                     .transform(&target_pose, 1.0)
@@ -514,8 +517,11 @@ pub(crate) fn scan(
                     end: hurt.end,
                     radius: hurt.radius,
                 };
-                let mut closest = sweep::ClosestPair::default();
-                if sweep::capsule_capsule(&grab, &hurt, &mut closest) {
+                let matrix = target_pose.world_matrix(hurtbox.bone).map_err(physics)?;
+                let mut contact = body_collision::Contact::default();
+                if body_collision::capsule_matrix(&grab, &hurt, matrix, 3.0, &mut contact)
+                    .map_err(physics)?
+                {
                     collided = true;
                     break;
                 }

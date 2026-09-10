@@ -186,7 +186,7 @@ pub struct FighterData {
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
-    pub hurtboxes: Vec<Capsule>,
+    pub hurtboxes: Vec<Hurtbox>,
     pub jab: Attack,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aerials: Option<super::aerial::Parameters>,
@@ -304,6 +304,51 @@ impl Capsule {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HurtboxState {
+    #[default]
+    Enabled,
+    Disabled,
+    Intangible,
+}
+
+impl HurtboxState {
+    /// `lbColl_80007ECC` accepts only `HurtCapsule_Enabled` for ordinary hits
+    /// and grabboxes.
+    pub const fn accepts_contact(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hurtbox {
+    pub bone: usize,
+    pub start: [f32; 3],
+    pub end: [f32; 3],
+    pub radius: f32,
+    #[serde(default)]
+    pub state: HurtboxState,
+    #[serde(default = "default_true")]
+    pub grabbable: bool,
+}
+
+impl Hurtbox {
+    pub(crate) fn physics(&self) -> bones::BoneCapsule {
+        bones::BoneCapsule {
+            bone: self.bone,
+            start: self.start,
+            end: self.end,
+            radius: self.radius,
+        }
+    }
+}
+
+const fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Attack {
@@ -346,4 +391,16 @@ pub struct Hitbox {
     pub growth: u32,
     pub fixed: u32,
     pub base: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HurtboxState;
+
+    #[test]
+    fn ordinary_contact_accepts_only_the_source_enabled_state() {
+        assert!(HurtboxState::Enabled.accepts_contact());
+        assert!(!HurtboxState::Disabled.accepts_contact());
+        assert!(!HurtboxState::Intangible.accepts_contact());
+    }
 }

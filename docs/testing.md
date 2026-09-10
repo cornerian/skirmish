@@ -166,6 +166,9 @@ and contracts it along another. Existing `game_swept_hitboxes` and
 bones enter that path. The shared primitive is already covered by
 `shield_geometry` integration and `shield_collision_differential` against the
 complete retained C routine.
+`game_hurtbox_eligibility` covers enabled, disabled and intangible capsules,
+the independent grabbable property, scanning past an ineligible first entry,
+legacy resource defaults and directional matrix scale in the grab scheduler.
 
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
@@ -251,6 +254,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `ground_launch` | Flat/sloped floor retention and tangent projection, departure and fly bounce boundaries, hitlag freeze, scalar friction, prone DownDamage override, invalid profiles and checkpoint replay |
 | `hit_direction` | Both fighter positions and player slots, equal-X tie, victim facing, grounded projection, throw assignment, prone override and checkpoint replay |
 | `hurtbox_geometry` | Matrix-aware body contact, directional bone scale, long-axis hit and short-axis miss |
+| `hurtbox_eligibility` | Damage/grab state filtering, grabbable flag, later-entry scan, legacy defaults and matrix-aware grabs |
 | `positional_angle` | Angle-362 matrix contact, three launch quadrants, vertical tie, validation and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them

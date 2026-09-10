@@ -7,14 +7,14 @@ explicit pull duration, two bone-local attachment anchors, and complete holder
 poses plus a release event and hit coefficients for forward, back, up, and down
 throws. Every fighter needs parameters when the common profile is enabled.
 
-A catch tests its current sampled grab capsules against the target's posed
-hurt capsules with the existing source-derived capsule solver. Successful
-contact enters CatchPull/CapturePulled and records the bidirectional relationship
-in deterministic match state. The victim's selected bone point is aligned to
-the holder's selected bone point throughout pull, wait, and throw; controller
-input cannot move or dispatch actions for the captured fighter. The relationship,
-input history, action clocks, positions, and bone-driven depth are included in
-observations and checkpoints.
+A catch tests its current sampled grab capsules against enabled, grabbable target
+hurt capsules with the matrix-aware source solver. Bone scale and shear retain
+directional radius. Successful contact enters CatchPull/CapturePulled and records
+the bidirectional relationship in deterministic match state. The victim's
+selected bone point is aligned to the holder's selected bone point throughout
+pull, wait, and throw; controller input cannot move or dispatch actions for the
+captured fighter. The relationship, input history, action clocks, positions, and
+bone-driven depth are included in observations and checkpoints.
 
 CatchPull advances to CatchWait after its configured duration. A fresh main or
 C-stick crossing selects a throw using `ftCo_800DD1E4` priority: horizontal main,
@@ -25,13 +25,15 @@ sides of the relationship before publishing stock loss.
 
 `game_grab` covers animated bone contact versus a miss, all throw directions,
 main/C-stick priority and freshness, input suppression for held victims,
-checkpoint replay, stable simultaneous-catch order, airborne rejection, pair
-cleanup on KO, and malformed resources. Three grab/throw conformance scenarios
-now run normally. `grab_differential` compares the three retained stick-crossing
-predicates with complete functions selected from the pinned original C file.
+checkpoint replay, stable simultaneous-catch order, airborne rejection, hurtbox
+pair cleanup on KO, and malformed resources. `game_hurtbox_eligibility` adds the
+per-capsule state/grabbable filters and directional bone scale. Three grab/throw
+conformance scenarios now run normally. `grab_differential` compares the three
+retained stick-crossing predicates with complete functions selected from the
+pinned original C file.
 
 This profile does not yet implement dash/pivot/tether catches, pummels, mash and
-grab escape, cargo carries, capture damage, target-vulnerability flags, throw
-staling, weight-scaled animation rate, character overrides, or multiplayer
+grab escape, cargo carries, capture damage, action-scripted hurt-state changes,
+throw staling, weight-scaled animation rate, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.

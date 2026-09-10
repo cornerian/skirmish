@@ -46,7 +46,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | --- | --- |
 | `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
 | `fighter` | Movement, locomotion, neutral-special input, blast-death selection, fixed/contact-relative knockback, DI, hitlag, prone damage, damage reflection and floor/wall-tech selection |
-| `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze, swept capsules and matrix-aware [hurtbox contact](docs/hurtbox-contact.md) |
+| `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze, swept capsules and matrix-aware [hurtbox contact](docs/hurtbox-contact.md) with eligibility flags |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |

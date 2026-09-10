@@ -123,6 +123,8 @@ It accepts caller-prepared world endpoints and matrices; bone caching and forced
 hits remain outside that helper. See the [shield profile](shield.md). Its C oracle
 uses the SDK scalar matrix-vector routine in place of paired-single assembly,
 so passing comparisons establish native scalar agreement only.
+Ordinary damage and grabs accept only enabled hurtboxes; grabs also require each
+capsule's explicit grabbable property. Legacy resources default to both.
 
 Damage rules explicitly supply DI limits, angle-361 coefficients and the
 knockback replacement window. Optional `rules.damage.displacement` supplies

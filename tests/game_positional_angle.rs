@@ -1,7 +1,7 @@
 //! Match-level special angle-362 contact direction and launch composition.
 use skirmish::game::{
     BUTTON_A, Controller, Event, Match, State,
-    data::{Capsule, MatchData},
+    data::{Hurtbox, HurtboxState, MatchData},
 };
 
 const IDLE: [Controller; 2] = [Controller {
@@ -18,11 +18,13 @@ fn data(center: [f32; 3]) -> MatchData {
     data.rules.time_limit_frames = 9_999;
     data.stage.spawns = [[0.0, 0.0]; 2];
     data.stage.blast = [-200.0, 200.0, -200.0, 200.0];
-    data.fighters[1].hurtboxes = vec![Capsule {
+    data.fighters[1].hurtboxes = vec![Hurtbox {
         bone: 0,
         start: [0.0; 3],
         end: [0.0; 3],
         radius: 1.0,
+        state: HurtboxState::Enabled,
+        grabbable: true,
     }];
     for hit in data.fighters[0]
         .jab

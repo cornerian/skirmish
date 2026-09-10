@@ -14,14 +14,20 @@ broadphase multiplier of 3, retains inclusive touching, and keeps the original
 closest-endpoint tie behavior. All of this remains headless bone physics.
 The retained hurt endpoints and surface position also drive the special
 [contact-relative angle 362](hit-direction.md).
+Ordinary attacks and grabboxes follow `lbColl_80007ECC` by accepting only the
+enabled state. Disabled and intangible capsules are skipped; grabs additionally
+require the source `is_grabbable` property. Missing fields in older resources
+default to enabled and grabbable.
 
 `shield_collision_differential` already compares the shared complete C routine
 over arbitrary matrices and capsule geometry. `shield_geometry` covers its
 standalone nonuniform-scale, shear, sweep, broadphase and failure contracts.
-`game_hurtbox_geometry` adds scheduler integration: one nonuniformly scaled
-hurtbox is reachable along its long axis and unreachable at the same kind of
-distance along its short axis. Existing swept-hitbox and damage-pose tests
-verify that motion history and action-selected bones still feed this path.
+`game_hurtbox_geometry` adds attack-scheduler integration: one nonuniformly
+scaled hurtbox is reachable along its long axis and unreachable at the same kind
+of distance along its short axis. `game_hurtbox_eligibility` covers every state,
+the grabbable flag, later eligible entries, legacy defaults and matrix-aware grab
+contact. Existing swept-hitbox and damage-pose tests verify that motion history
+and action-selected bones still feed this path.
 
-Hurtbox state flags, invulnerability per capsule, character/model radius
-multipliers and the source forced-contact branch remain separate work.
+Action-scripted state transitions, character/model radius multipliers and the
+source forced-contact branch remain separate work.

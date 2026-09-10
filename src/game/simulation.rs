@@ -520,6 +520,9 @@ pub(crate) fn advance(
             }
             let mut body_contact = None;
             for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
+                if !hurtbox.state.accepts_contact() {
+                    continue;
+                }
                 let hurt = hurtbox
                     .physics()
                     .transform(&poses[victim], 1.0)
