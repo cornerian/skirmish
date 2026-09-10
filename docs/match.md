@@ -330,8 +330,8 @@ Aerial resources and callback limits are described in [aerials.md](aerials.md). 
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break, dizzy recovery, direct shield drops through one-way platforms,
 C-stick shield jumps and resource-driven grounded rolls and spot dodges. The optional [grab profile](grabs.md) adds ordinary
-standing, dash and pivot catches, paired holds, pummels with captured reaction
-poses, mash escape and four-direction throws. The optional [ledge
+standing, dash, pivot and shield catches with the dash-grab buffer, paired holds,
+pummels with captured reaction poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter

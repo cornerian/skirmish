@@ -189,13 +189,10 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
 
 fn start(fighter: &mut Fighter, data: &FighterData, action: Action) -> Result<(), Error> {
     super::simulation::enter(fighter, action);
-    // Fighter_ChangeMotionState clears the Slippi-visible x2218 reflect bit and
-    // the x221C_b3 powershield entry latch; the x221C_b2 immunity window and
-    // its frozen timer persist because only guard callbacks tick them.
-    fighter.shield.reflecting = false;
-    fighter.shield.powershield_just_started = false;
-    // It also resets x1988, and ftAnim_8006EBA4 immediately runs the first
-    // script frame, so sample 0's state protects the entry frame.
+    super::shield::leave_guard(fighter);
+    // Fighter_ChangeMotionState also resets x1988, and ftAnim_8006EBA4
+    // immediately runs the first script frame, so sample 0's state protects
+    // the entry frame.
     fighter.body_state = sampled_body_state(fighter, data)?;
     Ok(())
 }

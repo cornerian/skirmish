@@ -1,5 +1,25 @@
 # Local validation provenance
 
+The 2026-09-10 shield-grab coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-shield-grab-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage grabs from GuardOn, Guard and GuardReflect
+with A plus a held shoulder or with physical Z, rejects A without a shoulder,
+orders the grab after the spot dodge and roll and before the jump dispatchers,
+arms the dash-grab buffer from Run and late Dash shields (including a
+powershield), counts it down only on GuardOn/GuardReflect callbacks, expires
+it, excludes Guard, GuardOff and shield stun, clears it on a fresh shield,
+restores checkpoint branches, requires explicit rules and rejects invalid ones.
+The complete `ftCo_Catch_CheckInput` and `ftCo_800D8B9C` bodies are compared
+with pinned C over arbitrary button words and binary32 buffers. Peppi-written
+replays match the A, Z and buffered late-dash suffixes and detect a removed
+grab button at its first affected frame. Every ordinary exit from a guard
+state (escape, grab or jump) now clears the Slippi-visible reflect bit and the
+powershield entry latch as `Fighter_ChangeMotionState` does.
+
 The 2026-09-10 grounded shield-evasion coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-shield-escape-20260910-verified`

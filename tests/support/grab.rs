@@ -13,6 +13,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         down_threshold: -0.6,
         throw_weight_scale: 0.01,
         capture_lift_threshold: 1.5,
+        shield_grab: None,
         escape: EscapeRules {
             timer_base: 100.0,
             timer_percent_scale: 0.5,

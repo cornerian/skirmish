@@ -30,6 +30,21 @@ pub struct Rules {
     /// Common x3C4 rise threshold, scaled by the victim's root bone Y scale.
     pub capture_lift_threshold: f32,
     pub escape: EscapeRules,
+    /// Grabs dispatched from a raised shield; absent means unsupported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shield_grab: Option<ShieldGrabRules>,
+}
+
+/// Common data for `ftCo_Catch_CheckInput` and `ftCo_800D8B9C` from guard
+/// states.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShieldGrabRules {
+    /// `x68`: guard `x24` frames armed by `ftCo_80091B9C` when Run, or Dash
+    /// past `dash_buffer_frame_limit`, raises the shield.
+    pub dash_buffer_frames: f32,
+    /// `x4C`: Dash animation frame that must be exceeded to arm the buffer.
+    pub dash_buffer_frame_limit: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -164,6 +179,15 @@ pub(crate) fn validate(
     fighter: &FighterData,
     staling: bool,
 ) -> Result<(), Error> {
+    if let Some(shield_grab) = &rules.shield_grab
+        && (!shield_grab.dash_buffer_frames.is_finite()
+            || shield_grab.dash_buffer_frames <= 0.0
+            || shield_grab.dash_buffer_frames > 1_000_000.0
+            || !shield_grab.dash_buffer_frame_limit.is_finite()
+            || !(0.0..=1_000_000.0).contains(&shield_grab.dash_buffer_frame_limit))
+    {
+        return Err(Error::Data("invalid shield-grab rules".into()));
+    }
     if ![
         rules.horizontal_threshold,
         rules.up_threshold,
@@ -632,6 +656,59 @@ pub(crate) fn update_actions(
         }
     }
     false
+}
+
+/// `ftCo_80091B9C` arms the guard `x24` buffer when Run, or Dash after the
+/// `x4C` frame, raises a shield; `ftCo_800923B4` clears it for other entries.
+/// Any stale union residue on a powershield raised elsewhere is not modeled.
+pub(crate) fn shield_entry_buffer(fighter: &Fighter, rules: Option<&Rules>) -> f32 {
+    let Some(shield_grab) = rules.and_then(|rules| rules.shield_grab.as_ref()) else {
+        return 0.0;
+    };
+    match fighter.action {
+        Action::Run => shield_grab.dash_buffer_frames,
+        Action::Dash if fighter.action_frame as f32 > shield_grab.dash_buffer_frame_limit => {
+            shield_grab.dash_buffer_frames
+        }
+        _ => 0.0,
+    }
+}
+
+fn logical_a(buttons: u16) -> bool {
+    buttons & (super::BUTTON_A | super::BUTTON_Z) != 0
+}
+
+/// `ftCo_800D8B9C` (GuardOn/GuardReflect only) followed by
+/// `ftCo_Catch_CheckInput`, at their guard IASA positions after the escapes.
+pub(crate) fn update_shield_actions(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: Option<&Rules>,
+    controller: Controller,
+) -> bool {
+    if data.grab.is_none() || rules.is_none_or(|rules| rules.shield_grab.is_none()) {
+        return false;
+    }
+    // Fighter_procInput folds physical Z into logical A plus a held shoulder.
+    let a_pressed = logical_a(controller.buttons) && !logical_a(fighter.previous_input.buttons);
+    let shoulder_held = controller.shield_held() || controller.buttons & super::BUTTON_Z != 0;
+    if matches!(fighter.action, Action::GuardOn | Action::GuardReflect)
+        && input::dash_shield_grab(a_pressed, &mut fighter.shield.dash_grab_buffer)
+    {
+        start_shield_catch(fighter, Action::CatchDash);
+        return true;
+    }
+    if input::shield_grab(shoulder_held, a_pressed) {
+        start_shield_catch(fighter, Action::Catch);
+        return true;
+    }
+    false
+}
+
+/// `ftCo_800D8C54` through an ordinary Fighter_ChangeMotionState.
+fn start_shield_catch(fighter: &mut Fighter, action: Action) {
+    super::shield::leave_guard(fighter);
+    simulation::enter(fighter, action);
 }
 
 /// Paired priority-1 transitions and the scripted release event.

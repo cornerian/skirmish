@@ -63,8 +63,8 @@ The implementation preserves these examined source branches:
   and its release during JumpSquat selects the native short-hop branch.
 - `ftCo_Escape.c` supplies the grounded evasions. Every guard IASA chain checks
   `ftCo_8009980C` (spot dodge) before `ftCo_8009917C` (roll), and both precede
-  the jump and platform-drop dispatchers; GuardOff offers only the spot dodge
-  and the jump. A roll needs a fresh main-stick magnitude at or beyond `x31C`
+  the [shield grab](grabs.md#shield-grabs), jump and platform-drop dispatchers;
+  GuardOff offers only the spot dodge and the jump. A roll needs a fresh main-stick magnitude at or beyond `x31C`
   inside the `x320` age window, or otherwise a held horizontal C-stick through
   `ftCo_800DF8B0`; the selected axis value times facing chooses EscapeF (zero
   products included) or EscapeB. A spot dodge needs a fresh downward main
@@ -92,8 +92,8 @@ The implementation preserves these examined source branches:
   reductions. Neutral stick input retains its previous mash-direction bucket.
 
 Shield health, analog strength, hold/release state, powershield flags and timers,
-stun animation progress, recoil vectors, dizzy timer, mash directions and the
-scripted body state survive native checkpoints.
+stun animation progress, recoil vectors, dizzy timer, mash directions, the
+dash-grab buffer and the scripted body state survive native checkpoints.
 Nonfinite results fail a step atomically. Tests exercise the complete ordinary
 cycle, shield pokes, zero boundaries, staling interaction, hitlag displacement
 and deterministic replay. Selected complete C functions independently check
@@ -105,7 +105,7 @@ not feed those calculations.
 This is still an experimental scheduler rather than complete Melee equivalence.
 Reflected-projectile motion is not yet simulated even though the fighter's
 reflector-active window is represented. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
-branches, shield tilting and native shield/body animation tracks, shield grabs,
+branches, shield tilting and native shield/body animation tracks,
 full callback ordering and material friction are not provided by this batch.
 Break down/up pose selection is grouped
 into one lifecycle with supplied durations. Real Slippi parity also requires

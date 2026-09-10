@@ -278,5 +278,10 @@
     "fixture": "tests/oracle/original/escape.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Escape.c",
     "sha256": "664f3a057fe21f775a382ba1afff6671185bde2e30418b66084499e1514c1c99"
+  },
+  {
+    "fixture": "tests/oracle/original/catch.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Catch.c",
+    "sha256": "98b524105702a42ef2bf1b4c3993870543e62d54353d31e81e7abd84d40beb55"
   }
 ]

@@ -666,6 +666,138 @@ fn file_backed_shield_escapes_match_and_detect_their_first_changed_input_frame()
 }
 
 #[test]
+fn file_backed_shield_grabs_match_and_detect_their_first_changed_button_frame() {
+    fn shield_grab_data() -> MatchData {
+        let mut data = grab_support::profile(shield_drop_data());
+        data.stage.spawns = [[-1.0, 0.0], [1.0, 0.0]];
+        data.rules.grab.as_mut().unwrap().shield_grab =
+            Some(skirmish::game::grab::ShieldGrabRules {
+                dash_buffer_frames: 3.0,
+                dash_buffer_frame_limit: 4.0,
+            });
+        for fighter in &mut data.fighters {
+            fighter.shield.as_mut().unwrap().raise_frames = 10.0;
+        }
+        data
+    }
+    struct Case {
+        name: &'static str,
+        pre: fn(&mut [Controller; 2], usize),
+        frame: usize,
+        action: Action,
+        state: u16,
+        grabbed: bool,
+    }
+    let cases = [
+        Case {
+            name: "A while holding the trigger",
+            pre: |input, row| {
+                input[0].buttons = BUTTON_L;
+                if row == 1 {
+                    input[0].buttons |= BUTTON_A;
+                }
+            },
+            frame: 1,
+            action: Action::CatchPull,
+            state: 213,
+            grabbed: true,
+        },
+        Case {
+            name: "Z after releasing the trigger inside the minimum hold",
+            pre: |input, row| {
+                input[0].buttons = match row {
+                    0 => BUTTON_L,
+                    2 => BUTTON_Z,
+                    _ => 0,
+                };
+            },
+            frame: 2,
+            action: Action::CatchPull,
+            state: 213,
+            grabbed: true,
+        },
+        Case {
+            name: "A inside the late-dash shield buffer",
+            pre: |input, row| {
+                if row < 7 {
+                    input[0].stick[0] = 1.0;
+                }
+                if row >= 6 {
+                    input[0].buttons = BUTTON_L;
+                }
+                if row == 7 {
+                    input[0].buttons |= BUTTON_A;
+                }
+            },
+            frame: 7,
+            action: Action::CatchDash,
+            state: 214,
+            grabbed: false,
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 14];
+        for (row, input) in inputs.iter_mut().enumerate() {
+            (case.pre)(input, row);
+        }
+        let recording = Recording::from_script(shield_grab_data(), 41, inputs);
+        let entered = &recording.states[case.frame].fighters[0];
+        assert_eq!(entered.action, case.action, "{}", case.name);
+        assert_eq!(
+            observation::action_state(entered, Some(2)),
+            Some(case.state)
+        );
+        assert_eq!(
+            observation::state_flags(entered)[2] & 0x80,
+            0,
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            recording.states[case.frame]
+                .events
+                .contains(&Event::Grabbed {
+                    holder: 0,
+                    victim: 1,
+                }),
+            case.grabbed,
+            "{}",
+            case.name
+        );
+        if case.action == Action::CatchDash {
+            let shielded = &recording.states[case.frame - 1].fighters[0];
+            assert_eq!(shielded.action, Action::GuardOn);
+            assert_eq!(shielded.shield.dash_grab_buffer, 3.0);
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let row = case.frame;
+        let kept = u32::from(recording.inputs[row][0].buttons & !(BUTTON_A | BUTTON_Z));
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            frames.ports[0].leader.pre.buttons.set(row, Some(kept));
+            frames.ports[0]
+                .leader
+                .pre
+                .buttons_physical
+                .set(row, Some(kept as u16));
+        });
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames,
+                    ..
+                } if frame == FIRST + row as i32 && checked_frames == row as u64
+            ),
+            "{}",
+            case.name
+        );
+    }
+}
+
+#[test]
 fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [
         (0, Action::DeadUp, false),

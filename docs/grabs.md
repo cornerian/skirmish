@@ -2,7 +2,10 @@
 
 `rules.grab` enables physical Z-button catch dispatch and supplies the signed
 stick thresholds used by ordinary throw selection, plus explicit hold-timer,
-mash, release-speed, throw-weight and capture-lift coefficients. Each `fighters[].grab`
+mash, release-speed, throw-weight and capture-lift coefficients. Its optional
+`shield_grab` block (`x68` dash-grab buffer frames and the `x4C` dash frame
+limit) enables grabs dispatched from a raised shield; without it, A or Z while
+shielding does nothing rather than guessing those common values. Each `fighters[].grab`
 resource supplies separate complete standing and dash-catch poses with
 bone-attached grab capsules, their explicit pull durations, two bone-local
 attachment anchors, complete holder poses for pummel and four throws, separate
@@ -94,6 +97,27 @@ mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C. `capture_alignment_differential` compares the
 complete `fn_800DAD18` position mutation and scaled-height result over arbitrary
 binary32 positions, anchors, thresholds, and scales.
+
+## Shield grabs
+
+`ftCo_Catch_CheckInput` runs in the GuardOn, Guard and GuardReflect input
+chains after the spot dodge and roll and before the jump dispatchers; GuardOff
+and shield stun never grab. It requires a fresh logical A press while the
+logical shoulder is held; `Fighter_procInput` folds physical Z into both bits,
+so Z grabs even after the trigger was released inside the minimum hold, while
+A alone does not. `ftCo_800D8B9C` precedes it in GuardOn and GuardReflect only:
+when Run, or Dash past the `x4C` animation frame, raises a shield,
+`ftCo_80091B9C` arms the guard `x24` buffer with `x68` frames, and a fresh A
+inside that buffer starts CatchDash instead of Catch. The buffer counts down
+only on callbacks that reach the predicate, so Guard neither drains nor consults
+it, and an ordinary GuardOn entry (`ftCo_800923B4`) clears it. Both catch
+entries use an ordinary motion change, which clears the Slippi-visible reflect
+bit and powershield entry latch while the immunity window persists. The union
+residue a powershield raised from Wait would inherit in `x24`, the item pickup
+branch, the Link/Samus tether gates and the early-dash `x44`/`x48` shield
+branches are not modeled. The buffer value survives checkpoints.
+`shield_grab_differential` compares the complete `ftCo_Catch_CheckInput` and
+`ftCo_800D8B9C` bodies with pinned C over arbitrary button words and buffers.
 
 This profile does not yet implement tether catches, cargo carries, character
 overrides, or multiplayer capture interference. Catch-versus-hit and

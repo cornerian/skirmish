@@ -85,6 +85,8 @@ pub struct ShieldState {
     pub powershield_timer: f32,
     /// Per-frame x221C_b5 inert-hitbox overlap signal.
     pub touched: bool,
+    /// Guard `x24` dash-grab buffer armed by `ftCo_80091B9C`.
+    pub dash_grab_buffer: f32,
 }
 
 pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
@@ -198,6 +200,15 @@ fn breaking(action: Action) -> bool {
 
 fn enter(f: &mut Fighter, action: Action) {
     super::simulation::enter(f, action);
+}
+
+/// Fighter_ChangeMotionState clears the Slippi-visible x2218 reflect bit and
+/// the x221C_b3 powershield entry latch on every ordinary transition out of a
+/// guard state; the x221C_b2 immunity window and its timer persist because
+/// only guard callbacks tick them.
+pub(crate) fn leave_guard(f: &mut Fighter) {
+    f.shield.reflecting = false;
+    f.shield.powershield_just_started = false;
 }
 
 fn start_break(f: &mut Fighter, a: &Attributes) {
@@ -366,6 +377,13 @@ pub(crate) fn update_actions(
             {
                 return Ok(true);
             }
+            // ftCo_800D8B9C and ftCo_Catch_CheckInput precede the jump chain
+            // in GuardOn, Guard and GuardReflect; GuardOff skips both.
+            if f.action != Action::GuardOff
+                && super::grab::update_shield_actions(f, data, rules.grab.as_ref(), input)
+            {
+                return Ok(true);
+            }
             if let Some(source) = data
                 .locomotion
                 .as_ref()
@@ -373,6 +391,7 @@ pub(crate) fn update_actions(
             {
                 f.short_hop = false;
                 f.locomotion.jump_input = source;
+                leave_guard(f);
                 enter(f, Action::JumpSquat);
             }
         }
@@ -392,10 +411,13 @@ pub(crate) fn update_actions(
         && input.buttons & !f.previous_input.buttons & super::BUTTON_A == 0
     {
         let pressed = input.buttons & !f.previous_input.buttons;
+        // Run_IASA and Dash_IASA call ftCo_80091B9C after either shield entry.
+        let dash_grab_buffer = super::grab::shield_entry_buffer(f, rules.grab.as_ref());
         if pressed & (super::BUTTON_L | super::BUTTON_R) != 0
             && f.locomotion.trigger_age < r.powershield_input_window
         {
             start_powershield(f, r, true, input);
+            f.shield.dash_grab_buffer = dash_grab_buffer;
             return Ok(true);
         }
         if !input.shield_held() || f.shield.health == 0.0 {
@@ -407,6 +429,7 @@ pub(crate) fn update_actions(
         f.shield.raise_progress = 0.0;
         clear_powershield(f);
         enter(f, Action::GuardOn);
+        f.shield.dash_grab_buffer = dash_grab_buffer;
         return Ok(true);
     }
     Ok(false)

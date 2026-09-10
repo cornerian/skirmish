@@ -135,9 +135,11 @@ C-stick ASDI and, with explicit resources, aerial selection and direct
 main-stick shield drops through one-way platforms. C-stick shield jumps use the
 processed C-stick channel and preserve release-based short hops. Grounded rolls
 and spot dodges accept fresh main-stick or held C-stick samples and map to
-Slippi states 233..235 with animation indices 42, 43 and 41. File-backed
-regressions require changed down-stick, up-C-stick, roll-stick and
-horizontal/downward C-stick samples to diverge at their first affected frames.
+Slippi states 233..235 with animation indices 42, 43 and 41. Shield grabs accept
+physical A with a held shoulder or physical Z, and the late-dash buffer yields
+CatchDash. File-backed regressions require changed down-stick, up-C-stick,
+roll-stick, horizontal/downward C-stick and shield-grab button samples to
+diverge at their first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each

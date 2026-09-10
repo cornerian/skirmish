@@ -106,6 +106,25 @@ pub fn fresh_down(current: f32, previous: f32, threshold: f32) -> bool {
     previous > threshold && current <= threshold
 }
 
+/// Complete `ftCo_Catch_CheckInput` input branch after its item and tether
+/// gates: a fresh logical A press while the logical shoulder is held.
+/// `Fighter_procInput` folds physical Z into both of those logical bits.
+pub fn shield_grab(shoulder_held: bool, a_pressed: bool) -> bool {
+    shoulder_held && a_pressed
+}
+
+/// Complete `ftCo_800D8B9C`: a fresh logical A press inside the guard `x24`
+/// dash-grab buffer starts CatchDash; otherwise the buffer counts down.
+pub fn dash_shield_grab(a_pressed: bool, buffer: &mut f32) -> bool {
+    if a_pressed && *buffer != 0.0 {
+        return true;
+    }
+    if *buffer != 0.0 {
+        *buffer -= 1.0;
+    }
+    false
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThrowDirection {
     Forward,
@@ -150,6 +169,30 @@ pub fn direction(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shield_grab_needs_both_logical_inputs() {
+        assert!(shield_grab(true, true));
+        assert!(!shield_grab(false, true));
+        assert!(!shield_grab(true, false));
+    }
+
+    #[test]
+    fn dash_shield_grab_counts_down_only_while_armed() {
+        let mut buffer = 2.0;
+        assert!(!dash_shield_grab(false, &mut buffer));
+        assert_eq!(buffer, 1.0);
+        assert!(dash_shield_grab(true, &mut buffer));
+        assert_eq!(buffer, 1.0);
+        assert!(!dash_shield_grab(false, &mut buffer));
+        assert_eq!(buffer, 0.0);
+        assert!(!dash_shield_grab(true, &mut buffer));
+        assert_eq!(buffer, 0.0);
+        let mut negative = -0.5;
+        assert!(dash_shield_grab(true, &mut negative));
+        assert!(!dash_shield_grab(false, &mut negative));
+        assert_eq!(negative, -1.5);
+    }
 
     #[test]
     fn threshold_crossings_retain_source_strictness() {

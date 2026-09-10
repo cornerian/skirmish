@@ -53,7 +53,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
 | `skirmish-replay` | Concrete Slippi input conversion, observation policy, and native match validation |
 | `skirmish-equivalence` | Semantic traces, process comparison, native match trace adapter, and differential probes |
-| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout and checkpoints |
+| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot/shield catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout and checkpoints |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
@@ -89,7 +89,8 @@ KO timelines, exact selector RNG and delayed stock loss to headless consumers.
 The [shield profile](docs/shield.md) includes direct digital and analog
 shield-to-Pass drops through one-way platforms, C-stick shield jumps and
 resource-driven grounded rolls and spot dodges with sampled root motion, bones
-and scripted hurtbox state, all with pinned input predicates.
+and scripted hurtbox state, and A/Z shield grabs with the dash-grab buffer, all
+with pinned input predicates.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.
