@@ -168,6 +168,14 @@ the complete original `mpRemap2d` body across generated binary32 endpoints and
 points, including clamping and degenerate-line behavior. Its independent
 moving-platform trace remains blocked until a separate producer exists.
 
+The [ECB response profile](ecb-response.md) adds `game_ecb_response` coverage
+for four-sided moving compression, horizontal and grounded vertical squeeze,
+next-frame shape restoration, stable contact IDs, deterministic checkpoint
+replay, stationary-airborne landing, one-way direction filtering and tangential
+motion rejection. The squeeze helpers already run against their complete pinned
+original C bodies in `ecb_differential`. Independent scheduler traces remain
+blocked until a separate producer exists.
+
 The movement/combat milestone activates the source-backed dash, standing turn,
 crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
 platform-drop and ordinary top-KO scenarios. Focused match integration targets
@@ -182,6 +190,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |
+| `ecb_response` | Four-sided moving compression, ECB restoration, moving-floor landing, one-way direction and tangential-motion rejection, checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -202,7 +211,7 @@ explicitly disable unrelated state/environment branches.
 | Throws, SDI, ASDI, techs, knockdown | `conformance_combat`: victim release and implemented hitlag/floor responses |
 | Platform drop and fighter pushing | `conformance_stage`: downward platform input and exact bounded X/Z push before movement |
 | Moving platforms/remapping | `game_stage_motion` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
-| ECB corner and moving-surface squeeze response | `conformance_stage`: independent reference cases |
+| ECB corner and moving-surface squeeze response | `game_ecb_response` (implemented opposing-surface profile); `conformance_stage` remains blocked on an independent reference |
 | Conditional top KOs and rebirth platform | `conformance_stage`: ordinary upper-boundary jump and stock-loss lifecycle |
 | Star/screen deaths | `game_death` (implemented native profile); `conformance_stage` remains blocked on an independent reference |
 | Authentic skeletons/bind parents, animation tracks, hurtbox/ECB attachments | `conformance_resources`: independent native-resource scenarios |

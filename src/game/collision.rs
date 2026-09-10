@@ -1,7 +1,7 @@
 //! Experimental composition of source ECB arithmetic and sampled stage queries.
-//! This response policy covers ordinary floor/ceiling/side contacts; Melee's
-//! complete corner, squeeze and damage callback graph is not implied by the
-//! translated primitives used here.
+//! This response policy covers ordinary floor/ceiling/side contacts and opposing
+//! surface squeezes; Melee's complete adjacency and damage callback graph is not
+//! implied by the translated primitives used here.
 use super::{Action, Error, Event, Fighter, data::*, simulation};
 use crate::{
     collision::{
@@ -138,12 +138,13 @@ pub(crate) fn initialize(
 pub(crate) fn resolve(
     f: &mut Fighter,
     previous_position: [f32; 2],
-    stage: &stage::Stage<'_>,
+    environment: (&stage::Stage<'_>, &StageGeometry, &StageGeometry),
     player: usize,
     events: &mut Vec<Event>,
     data: &FighterData,
     rules: &Rules,
 ) -> Result<(), Error> {
+    let (stage, geometry, previous_geometry) = environment;
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
         [f.position[0], f.position[1], 0.0],
@@ -166,6 +167,8 @@ pub(crate) fn resolve(
             .map_err(physics)?;
         let previous = f.position;
         f.position = add(previous, [plan.velocity[0], plan.velocity[1]]);
+        let mut wall_positions = [None; 2];
+        let mut ceiling_position = None;
         for (surface, slot, old, point) in [
             (
                 Surface::LeftWall,
@@ -181,7 +184,8 @@ pub(crate) fn resolve(
             ),
             (Surface::Ceiling, 1, f.ecb.previous.top, f.ecb.current.top),
         ] {
-            if let Some(contact) = stage
+            let world_point = add(f.position, point);
+            let contact = stage
                 .sweep(
                     surface,
                     Query {
@@ -190,20 +194,40 @@ pub(crate) fn resolve(
                         ..Default::default()
                     },
                 )
-                .map_err(physics)?
-            {
-                let axis = if surface == Surface::Ceiling { 1 } else { 0 };
+                .map_err(physics)?;
+            let axis = usize::from(surface == Surface::Ceiling);
+            let correction = if let Some(contact) = contact {
                 // A sloped contact must project the final tangent coordinate;
                 // using the impact coordinate alone can leave the ECB inside.
-                if let Some(projection) = stage
-                    .project(surface, contact.line_id, add(f.position, point))
+                stage
+                    .project(surface, contact.line_id, world_point)
                     .map_err(physics)?
-                {
-                    f.position[axis] += projection.delta;
-                    f.contacts[slot] = Some(projection.line_id);
+                    .map(|projection| (projection.line_id, projection.delta))
+                    .or(Some((
+                        contact.line_id,
+                        contact.position[axis] - world_point[axis],
+                    )))
+            } else {
+                moved_projection(
+                    stage,
+                    geometry,
+                    previous_geometry,
+                    surface,
+                    world_point,
+                    None,
+                    true,
+                )?
+                .map(|projection| (projection.line_id, projection.delta))
+            };
+            if let Some((line_id, delta)) = correction {
+                f.position[axis] += delta;
+                f.contacts[slot] = Some(line_id);
+                if surface == Surface::LeftWall {
+                    wall_positions[0] = Some(f.position[0]);
+                } else if surface == Surface::RightWall {
+                    wall_positions[1] = Some(f.position[0]);
                 } else {
-                    f.position[axis] = contact.position[axis] - point[axis];
-                    f.contacts[slot] = Some(contact.line_id);
+                    ceiling_position = Some(f.position[1]);
                 }
                 // This slice stops motion into a surface. Damage wall/ceiling
                 // bounces, techs and velocity projection remain separate work.
@@ -223,6 +247,10 @@ pub(crate) fn resolve(
                 }
             }
         }
+        if let [Some(after_left), Some(after_right)] = wall_positions {
+            f.ecb
+                .squeeze_horizontal(&mut f.position, after_right, after_left);
+        }
         if f.grounded {
             if let Some(line) = f.ground_line
                 && let Some(projection) = stage
@@ -233,6 +261,11 @@ pub(crate) fn resolve(
                 f.ground_line = Some(projection.line_id);
                 f.floor_normal = projection.normal;
                 f.contacts[0] = Some(projection.line_id);
+                if let Some(after_ceiling) = ceiling_position {
+                    let after_floor = f.position[1];
+                    f.ecb
+                        .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
+                }
                 continue;
             }
             f.grounded = false;
@@ -248,18 +281,27 @@ pub(crate) fn resolve(
                 simulation::enter(f, Action::Fall);
             }
         }
-        if let Some(contact) = stage
-            .sweep(
+        let floor_query = Query {
+            from: add(previous, f.ecb.previous.bottom),
+            to: add(f.position, f.ecb.current.bottom),
+            skip_line: f.skip_floor,
+            ..Default::default()
+        };
+        let contact = stage.sweep(Surface::Floor, floor_query).map_err(physics)?;
+        let moved_floor = if contact.is_none() {
+            moved_projection(
+                stage,
+                geometry,
+                previous_geometry,
                 Surface::Floor,
-                Query {
-                    from: add(previous, f.ecb.previous.bottom),
-                    to: add(f.position, f.ecb.current.bottom),
-                    skip_line: f.skip_floor,
-                    ..Default::default()
-                },
-            )
-            .map_err(physics)?
-        {
+                add(f.position, f.ecb.current.bottom),
+                f.skip_floor,
+                f.velocity[1] <= 0.0,
+            )?
+        } else {
+            None
+        };
+        if let Some(contact) = contact {
             let bottom = add(f.position, f.ecb.current.bottom);
             if let Some(projection) = stage
                 .project_floor(contact.line_id, bottom)
@@ -276,29 +318,122 @@ pub(crate) fn resolve(
                 f.ground_line = Some(contact.line_id);
                 f.floor_normal = contact.normal;
             }
-            f.contacts[0] = f.ground_line;
-            f.velocity[1] = 0.0;
-            f.knockback = [0.0; 2];
-            f.ground_velocity = f.velocity[0];
-            f.grounded = true;
-            f.fast_fall = false;
-            super::locomotion::landed(f);
-            f.ecb_lock = 0;
-            f.ecb.bottom_locked = false;
-            f.skip_floor = None;
-            if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
-                simulation::enter(f, Action::ShieldBreakDown);
-            } else if matches!(f.action, Action::Damage | Action::DamageFall) {
-                super::damage::land(f, &rules.damage);
-            } else if !super::special::transfer_ground_air(f, true)
-                && !super::aerial::land(f, data)?
-            {
-                simulation::enter(f, Action::Landing);
-            }
-            events.push(Event::Landed { player });
+            land(f, rules, data, events, player)?;
+        } else if let Some(projection) = moved_floor {
+            f.position[1] += projection.delta;
+            f.ground_line = Some(projection.line_id);
+            f.floor_normal = projection.normal;
+            land(f, rules, data, events, player)?;
+        }
+        if f.grounded
+            && let Some(after_ceiling) = ceiling_position
+        {
+            let after_floor = f.position[1];
+            f.ecb
+                .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
         }
     }
     Ok(())
+}
+
+fn land(
+    f: &mut Fighter,
+    rules: &Rules,
+    data: &FighterData,
+    events: &mut Vec<Event>,
+    player: usize,
+) -> Result<(), Error> {
+    f.contacts[0] = f.ground_line;
+    f.velocity[1] = 0.0;
+    f.knockback = [0.0; 2];
+    f.ground_velocity = f.velocity[0];
+    f.grounded = true;
+    f.fast_fall = false;
+    super::locomotion::landed(f);
+    f.ecb_lock = 0;
+    f.ecb.bottom_locked = false;
+    f.skip_floor = None;
+    if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
+        simulation::enter(f, Action::ShieldBreakDown);
+    } else if matches!(f.action, Action::Damage | Action::DamageFall) {
+        super::damage::land(f, &rules.damage);
+    } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
+        simulation::enter(f, Action::Landing);
+    }
+    events.push(Event::Landed { player });
+    Ok(())
+}
+
+fn moved_projection(
+    stage: &stage::Stage<'_>,
+    geometry: &StageGeometry,
+    previous: &StageGeometry,
+    surface: Surface,
+    point: [f32; 2],
+    skip_line: Option<usize>,
+    platform_allowed: bool,
+) -> Result<Option<stage::SurfaceProjection>, Error> {
+    for (id, (line, old)) in geometry.lines.iter().zip(&previous.lines).enumerate() {
+        if line.start == old.start && line.end == old.end
+            || skip_line == Some(id)
+            || line.flags & (surface.flag() | stage::ENABLED) != surface.flag() | stage::ENABLED
+            || line.flags & (stage::EMPTY | stage::HIDDEN) != 0
+            || surface == Surface::Floor
+                && u32::from(line.material_flags) & stage::PLATFORM != 0
+                && !platform_allowed
+            || !active_line(geometry, surface, id)
+        {
+            continue;
+        }
+        let Some(projection) = stage.project(surface, id, point).map_err(physics)? else {
+            continue;
+        };
+        // Surface motion only owns a crossing when the same point was clear of
+        // the previous supporting plane. This rejects a floor sliding sideways
+        // above an already-behind fighter while retaining inward translations.
+        let old_delta = line_delta(surface, old, point)?;
+        if penetrates(surface, projection.delta) && !penetrates(surface, old_delta) {
+            return Ok(Some(projection));
+        }
+    }
+    Ok(None)
+}
+
+fn penetrates(surface: Surface, delta: f32) -> bool {
+    match surface {
+        Surface::Floor | Surface::RightWall => delta > 0.0,
+        Surface::Ceiling | Surface::LeftWall => delta < 0.0,
+    }
+}
+
+fn line_delta(surface: Surface, line: &stage::Line, point: [f32; 2]) -> Result<f32, Error> {
+    let [x0, y0] = line.start;
+    let [x1, y1] = line.end;
+    let delta = if matches!(surface, Surface::LeftWall | Surface::RightWall) {
+        x0 + (x1 - x0) * (point[1] - y0) / (y1 - y0) - point[0]
+    } else {
+        y0 + (y1 - y0) * (point[0] - x0) / (x1 - x0) - point[1]
+    };
+    if delta.is_finite() {
+        Ok(delta)
+    } else {
+        Err(Error::Physics("nonfinite moving-surface projection".into()))
+    }
+}
+
+fn active_line(geometry: &StageGeometry, surface: Surface, id: usize) -> bool {
+    geometry.joints.iter().any(|joint| {
+        joint.flags & stage::ENABLED != 0
+            && joint.flags & stage::HIDDEN == 0
+            && (match surface {
+                Surface::Floor => &joint.floor,
+                Surface::Ceiling => &joint.ceiling,
+                Surface::LeftWall => &joint.left_wall,
+                Surface::RightWall => &joint.right_wall,
+            }
+            .contains(&id)
+                || joint.dynamic.contains(&id))
+    })
 }
 
 fn add(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {

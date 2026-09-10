@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-09 ECB-response batch is recorded at:
+
+`/mnt/archive/runs/skirmish-ecb-response-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage runs four-sided moving compression,
+horizontal and vertical squeeze, next-frame ECB restoration, moving-floor
+landing, one-way direction filtering, tangential-motion rejection and exact
+checkpoint replay. The reusable squeeze functions continue to compare against
+their complete pinned original C bodies. Independent corner/squeeze scheduler
+traces remain blocked pending a separate producer.
+
 The 2026-09-09 stage-motion batch is recorded at:
 
 `/mnt/archive/runs/skirmish-stage-motion-20260909`

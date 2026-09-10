@@ -129,6 +129,7 @@ pub(crate) fn advance(
         return Ok(());
     }
 
+    let previous_stage_frame = state.stage.frame;
     stage_motion::advance(&data.stage, &mut state.stage)?;
 
     // The source runs priority-1 animation callbacks and push sampling in stable
@@ -136,7 +137,9 @@ pub(crate) fn advance(
     // Positions do not advance until every subject's nudge has been sampled.
     let mut frozen = [false; 2];
     let mut active = [false; 2];
+    let previous_geometry = stage_motion::geometry(&data.stage, previous_stage_frame);
     let geometry = stage_motion::geometry(&data.stage, state.stage.frame);
+    let stage_moved = geometry.lines != previous_geometry.lines;
     let stage = stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
     let nudge_neighbors = if data.rules.nudge.is_some() {
         Some(
@@ -221,11 +224,14 @@ pub(crate) fn advance(
                 &data.fighters[player],
                 &pose(fighter, &data.fighters[player])?,
             )?;
-            if fighter.position != previous_position || fighter.ecb.current != fighter.ecb.desired {
+            if stage_moved
+                || fighter.position != previous_position
+                || fighter.ecb.current != fighter.ecb.desired
+            {
                 collision::resolve(
                     fighter,
                     previous_position,
-                    &stage,
+                    (&stage, &geometry, &previous_geometry),
                     player,
                     &mut state.events,
                     &data.fighters[player],
@@ -371,7 +377,7 @@ pub(crate) fn advance(
         collision::resolve(
             fighter,
             previous_position,
-            &stage,
+            (&stage, &geometry, &previous_geometry),
             player,
             &mut state.events,
             &data.fighters[player],

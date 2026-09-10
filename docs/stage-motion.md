@@ -17,10 +17,17 @@ and degenerate-line branch. `stage_differential` compares arbitrary binary32
 inputs with the pinned original C body. Airborne fighters stop inheriting the
 line motion and can land against the current transformed mesh.
 
+Collision response also compares the previous and current sampled planes. An
+inward-moving wall or ceiling can constrain the ECB, and a rising solid floor
+can land an otherwise stationary airborne fighter. Opposing walls invoke
+horizontal squeeze; simultaneous ceiling/floor response invokes grounded
+vertical squeeze. A one-way floor cannot catch an upward fighter, and motion
+along a plane does not capture a fighter already behind it. See the
+[ECB response profile](ecb-response.md).
+
 Transforms must keep every line finite, bounded and directed according to its
 declared surface kind. Tracks cannot overlap. The native fixture uses invented
 samples; authentic stage tracks must arrive with resource provenance. This
 profile does not yet reclassify dynamic lines after rotation, run stage-object
-callbacks, sweep a surface through an otherwise stationary airborne fighter, or
-resolve moving-surface corner/squeeze cases. Those behaviors need more source
-translation plus independent stage traces.
+callbacks or reproduce the complete connected-corner adjacency walk. Those
+behaviors need more source translation plus independent stage traces.

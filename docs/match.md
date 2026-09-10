@@ -105,8 +105,9 @@ descending landings and intentional drops with the explicit locomotion profile.
 Pass remembers and skips only its supporting line during every movement substep;
 other platforms remain collidable. The next action transition clears that skip.
 The drop also applies the source ten-map-callback ECB bottom lock. Full corner
-resolution and squeeze response are unported,
-although reusable squeeze arithmetic is available in `collision::ecb`.
+adjacency remains unported. Ordinary opposing-wall and ceiling/floor squeezes,
+including inward-moving surface contacts, are composed from the exact reusable
+arithmetic as described in the [ECB response profile](ecb-response.md).
 
 An active hitbox carries its previous and current world centers. New activation,
 a disabled slot or a changed group resets its sweep. Hitlag still updates these
@@ -246,8 +247,10 @@ resource-driven star/screen phases. It does not implement the camera, effects,
 audio, stat/bonus callbacks or authentic common-data values.
 
 The [stage-motion profile](stage-motion.md) adds transformed collision samples
-and exact grounded-line carry/remapping. Sweeps caused only by surface motion,
-dynamic surface-kind changes and full ECB corner/squeeze response remain unported.
+and exact grounded-line carry/remapping. The [ECB response profile](ecb-response.md)
+adds clear-to-penetrating moving-surface contacts and ordinary opposing-surface
+squeezes. Dynamic surface-kind changes and the complete connected-corner graph
+remain unported.
 Ledge actions currently require static marked endpoints and supplied generic
 poses; percent-dependent variants and ledge trumping remain unported. The optional [nudge profile](nudge.md) adds source-backed
 two-leader X/Z push sampling and gameplay depth. Follower entities and the

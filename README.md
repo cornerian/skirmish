@@ -46,7 +46,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | --- | --- |
 | `random`, `ctype`, `mbstring`, `bytecode`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks algorithms without a generic runtime wrapper |
 | `fighter` | Movement, locomotion, neutral-special input, blast-death selection, knockback, DI and hitlag mechanics |
-| `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping and swept capsules |
+| `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze and swept capsules |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
@@ -86,6 +86,8 @@ Optional [blast-death resources](docs/deaths.md) expose normal, star and screen
 KO timelines, exact selector RNG and delayed stock loss to headless consumers.
 Resource-driven [stage motion](docs/stage-motion.md) exposes current collision
 geometry and carries supported fighters with the original line-remap arithmetic.
+The [ECB response profile](docs/ecb-response.md) adds moving-surface penetration,
+ordinary four-sided squeeze and deterministic shape restoration.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds
