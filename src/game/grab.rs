@@ -33,6 +33,8 @@ pub struct Parameters {
     pub catch: Catch,
     pub attachment: Attachment,
     pub pummel: Pummel,
+    /// Complete victim physics poses for the ordinary pummel reaction.
+    pub capture_damage_poses: Vec<Vec<Bone>>,
     pub throws: Throws,
 }
 
@@ -180,6 +182,14 @@ pub(crate) fn validate(
     for pose in &pummel.poses {
         super::validation::validate_animation_pose(pose, fighter)?;
     }
+    if parameters.capture_damage_poses.is_empty() || parameters.capture_damage_poses.len() > 4096 {
+        return Err(Error::Data(
+            "invalid explicit capture-damage animation".into(),
+        ));
+    }
+    for pose in &parameters.capture_damage_poses {
+        super::validation::validate_animation_pose(pose, fighter)?;
+    }
     for throw in [
         &parameters.throws.forward,
         &parameters.throws.backward,
@@ -240,6 +250,8 @@ fn pair_actions(holder: Action, victim: Action) -> bool {
         (Action::CatchPull, Action::CapturePulled)
             | (Action::CatchWait, Action::CaptureWait)
             | (Action::CatchAttack, Action::CaptureWait)
+            | (Action::CatchWait, Action::CaptureDamage)
+            | (Action::CatchAttack, Action::CaptureDamage)
             | (Action::ThrowF, Action::ThrownF)
             | (Action::ThrowB, Action::ThrownB)
             | (Action::ThrowHi, Action::ThrownHi)
@@ -260,6 +272,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
             | Action::ThrowLw
             | Action::CapturePulled
             | Action::CaptureWait
+            | Action::CaptureDamage
             | Action::ThrownF
             | Action::ThrownB
             | Action::ThrownHi
@@ -289,6 +302,12 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
     {
         fighter.grab.pummel_hit = false;
         simulation::enter(fighter, Action::CatchWait);
+        return true;
+    }
+    if fighter.action == Action::CaptureDamage
+        && fighter.action_frame as usize >= parameters.capture_damage_poses.len()
+    {
+        simulation::enter(fighter, Action::CaptureWait);
         return true;
     }
     let complete = match fighter.action {
@@ -470,6 +489,7 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
                 state.fighters[victim].action,
                 Action::CapturePulled
                     | Action::CaptureWait
+                    | Action::CaptureDamage
                     | Action::ThrownF
                     | Action::ThrownB
                     | Action::ThrownHi
@@ -615,6 +635,10 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .poses
             .get(fighter.action_frame as usize)
             .map(Vec::as_slice),
+        Action::CaptureDamage => parameters
+            .capture_damage_poses
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice),
         action if throw_for_action(&parameters.throws, action).is_some() => {
             throw_for_action(&parameters.throws, action)?
                 .poses
@@ -680,6 +704,7 @@ fn apply_pummel(
     target.percent = (target.percent + damage as f32).min(999.0);
     target.hitlag = target.hitlag.max(hitlag);
     target.di_pending = false;
+    simulation::enter(target, Action::CaptureDamage);
     state.events.push(Event::Hit {
         attacker: holder,
         victim,

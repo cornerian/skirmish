@@ -201,6 +201,7 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
 
     let hit = step(&mut game, IDLE);
     assert_eq!(hit.fighters[1].percent, 3.0);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamage);
     assert!(hit.fighters[0].grab.pummel_hit);
     assert!(hit.fighters.iter().all(|fighter| fighter.hitlag == 2.0));
     assert!(hit.fighters[1].position[0] > held_position[0] + 1.0);
@@ -224,6 +225,50 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
     let second = until(&mut game, |state| state.fighters[1].percent == 6.0);
     assert_eq!(second.fighters[0].action, Action::CatchAttack);
     assert_eq!(second.fighters[0].grab.victim, Some(1));
+}
+
+#[test]
+fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
+    let mut resource = data();
+    let reaction = &mut resource.fighters[1]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage_poses;
+    *reaction = vec![resource.fighters[1].bones.clone(); 8];
+    reaction[0][1].translation[0] += 1.0;
+    let mut game = held(resource);
+    let waiting_position = game.state().fighters[1].position;
+
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(hit.fighters[1].action_frame, 0);
+    assert!(hit.fighters[1].position[0] < waiting_position[0] - 0.5);
+
+    let checkpoint = game.checkpoint();
+    let expected = (0..4).map(|_| step(&mut game, IDLE)).collect::<Vec<_>>();
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in expected {
+        assert_eq!(step(&mut game, IDLE), expected);
+    }
+    assert_eq!(game.state().fighters[1].action_frame, 2);
+
+    let holder_wait = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    assert_eq!(holder_wait.fighters[1].action, Action::CaptureDamage);
+    step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    let restarted = until(&mut game, |state| state.fighters[1].percent == 6.0);
+    assert_eq!(restarted.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(restarted.fighters[1].action_frame, 0);
+    let pair_wait = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+            && state.fighters[1].action == Action::CaptureWait
+    });
+    assert_eq!(pair_wait.fighters[0].action, Action::CatchWait);
+    assert_eq!(pair_wait.fighters[0].grab.victim, Some(1));
+    assert_eq!(pair_wait.fighters[1].grab.captor, Some(0));
 }
 
 #[test]
@@ -355,6 +400,14 @@ fn malformed_grab_resources_are_rejected() {
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0].grab.as_mut().unwrap().pummel.damage = 1_000;
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage_poses
+        .clear();
     cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());

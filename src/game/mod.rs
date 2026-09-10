@@ -102,6 +102,7 @@ pub enum Action {
     ThrowLw,
     CapturePulled,
     CaptureWait,
+    CaptureDamage,
     ThrownF,
     ThrownB,
     ThrownHi,

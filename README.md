@@ -51,7 +51,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
-| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks/catches, paired capture/pummels/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
+| `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks/catches, paired capture/pummel reactions/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with

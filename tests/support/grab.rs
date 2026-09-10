@@ -54,6 +54,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 hit_frame: 1,
                 damage: 3,
             },
+            capture_damage_poses: vec![bones.clone(); 3],
             throws: Throws {
                 forward: throw(30.0),
                 backward: throw(150.0),

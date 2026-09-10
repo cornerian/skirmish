@@ -208,12 +208,13 @@ Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 catch entry, sampled bone-attached grab capsules, paired pull/hold states and
 fresh-A pummels plus forward/back/up/down throws. Captured fighters remain
 attached through explicit holder/victim bone anchors. A pummel has priority over
-throw selection, applies one shared-hitlag percent event, and returns to hold
-without breaking the pair. The shared input history applies the original throw
+throw selection, applies one shared-hitlag percent event, starts the victim's
+sampled CaptureDamage pose sequence, and returns both sides independently to
+hold without breaking the pair. The shared input history applies the original throw
 direction priority, and each supplied release event enters the ordinary damage
 pipeline. Pair ownership and pummel-hit history are checkpointed and cleared
 transactionally on release or stock loss. Mash escape, dash/tether variants,
-throw/pummel staling, the victim reaction animation and capture-contact
+throw/pummel staling, separate high/low victim reactions and capture-contact
 interference remain unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
@@ -277,7 +278,8 @@ damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
 Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
 break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
-standing catches, paired holds, pummels and four-direction throws. The optional [ledge
+standing catches, paired holds, pummels with captured reaction poses and
+four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
