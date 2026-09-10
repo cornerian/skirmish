@@ -1,9 +1,9 @@
 //! Native menu bindings; simulation controller calibration remains separate.
 use std::collections::HashSet;
 
+use crate::controller::host::{Button, ControllerId, ControllerInfo, ControllerState};
 use menus::input::pad;
 use sdl3::keyboard::Scancode;
-use skirmish::controller::host::{Button, ControllerId, ControllerInfo, ControllerState};
 
 /// Retains a short key tap until the next menu tick and ignores OS key repeat.
 #[derive(Default)]
@@ -145,7 +145,7 @@ fn axis(value: i16, previous: u32, negative: u32, positive: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu::{MenuEvent, MenuSession};
+    use crate::renderer::menu::{MenuEvent, MenuSession};
     use menus::{Action, Menu, MenuState, Unlocks};
 
     #[test]

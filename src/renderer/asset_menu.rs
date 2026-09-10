@@ -1,7 +1,7 @@
 //! Responsive, controller-accessible asset import screen. All disc IO happens
 //! on a cancellable worker. SDL dialogs only communicate via a channel.
 
-use crate::menu::{MenuRow, MenuStatus, MenuView};
+use super::menu::{MenuRow, MenuStatus, MenuView};
 use extraction::{self, Progress, Source};
 use menus::{MenuState, Unlocks, controller::Controllers, input};
 use std::{

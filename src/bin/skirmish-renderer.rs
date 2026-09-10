@@ -7,17 +7,18 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use extraction::{self, Source};
 use menus::Unlocks;
-use renderer::{
-    asset_menu::{AssetImportMenu, ImportAction},
-    audio::AudioOutput,
-    controls::{ControllerPorts, KeyboardInput},
-    menu::{FixedMenuClock, MenuEvent, MenuSession},
-    renderer::{WindowRenderer, render_headless, render_menu_headless},
-    scene::Scene,
-};
 use sdl3::{
     event::{Event, WindowEvent},
     keyboard::Scancode,
+};
+use skirmish::renderer::{
+    asset_menu::{AssetImportMenu, ImportAction},
+    audio::AudioOutput,
+    controls::{ControllerPorts, KeyboardInput},
+    gpu::{WindowRenderer, render_headless, render_menu_headless},
+    melee,
+    menu::{FixedMenuClock, MenuEvent, MenuSession},
+    scene::Scene,
 };
 use skirmish::controller::host::ControllerHub;
 
@@ -33,6 +34,10 @@ struct Cli {
     /// Load a native scene export instead of the built-in demonstration.
     #[arg(long, value_name = "PATH")]
     scene: Option<PathBuf>,
+    /// Load the four MnMaAll roots selected by the original main-menu source.
+    /// This development view is a static default pose until JObj animation is connected.
+    #[arg(long, value_name = "SCENE.json", conflicts_with = "scene")]
+    melee_menu_assets: Option<PathBuf>,
     /// Start in the interactive menu. F1 toggles menus and scene preview.
     #[arg(long)]
     menus: bool,
@@ -371,11 +376,14 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let scene = match &cli.scene {
-        Some(path) => {
+    let scene = match (&cli.scene, &cli.melee_menu_assets) {
+        (Some(path), None) => {
             Scene::load(path).with_context(|| format!("loading scene from {}", path.display()))?
         }
-        None => Scene::demo(),
+        (None, Some(path)) => melee::load_main_menu_default_pose(path)
+            .with_context(|| format!("loading Melee menu assets from {}", path.display()))?,
+        (None, None) => Scene::demo(),
+        (Some(_), Some(_)) => unreachable!("clap rejects conflicting scene arguments"),
     };
     for warning in &scene.warnings {
         eprintln!("warning: {warning}");
@@ -425,7 +433,8 @@ fn main() -> Result<()> {
         "SDL3 host: F1 toggles menus/scene. Menus: arrows/D-pad, Enter/A selects, Esc/B backs. Q quits."
     );
     println!("Scene: arrows orbit, +/- zoom, R resets, Space plays a cue.");
-    let menu_active = cli.menus || cli.import_assets || cli.scene.is_none();
+    let menu_active =
+        cli.menus || cli.import_assets || (cli.scene.is_none() && cli.melee_menu_assets.is_none());
     let asset_destination = cli.asset_dir.map(Ok).unwrap_or_else(|| {
         sdl3::filesystem::get_pref_path("Skirmish", "Skirmish")
             .map(|path| path.join("assets").join(extraction::BUNDLE_NAME))

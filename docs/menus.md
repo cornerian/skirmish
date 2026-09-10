@@ -9,12 +9,12 @@ The [crate README](../crates/menus/README.md) records function coverage and limi
 
 ## Graphical menu preview
 
-The `renderer` crate presents all ten branches in an SDL3 window through wgpu
+The feature-gated root `renderer` module presents all ten branches in an SDL3 window through wgpu
 and WESL. From the repository root in `xonsh --no-rc`:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
-cargo run --locked -p renderer --bin skirmish-renderer -- --menus
+cargo run --locked --features renderer --bin skirmish-renderer -- --menus
 ```
 
 Use arrows to navigate, Enter/Space/`Z` to confirm, and Escape/Backspace/`X` to
@@ -41,8 +41,9 @@ available to the application. Menu repeats and cooldowns advance at a fixed
 at most eight catch-up ticks, discards excess whole ticks, and keeps fractional
 time. Hidden or minimized windows pause the clock.
 
-Selecting an unimplemented leaf shows a "Screen unavailable" panel naming the
-selection and explaining how to return. Back resumes the originating branch
+Selecting an unconnected leaf shows an "Original scene pending" panel naming the
+selection and explaining how to return. The scene is not intrinsically
+unavailable: the host has not connected that original scene request yet. Back resumes the originating branch
 and selection with its translated cooldown. Holding Confirm or Back does not
 produce another press on return. This preview does not start a match, implement
 destination screens, or reproduce original menu artwork and animations. It does
@@ -51,13 +52,13 @@ not delete files for an erase-data request.
 Capture the UI without initializing SDL or audio:
 
 ```xonsh
-cargo run --locked -p renderer --bin skirmish-renderer -- --menus --headless /mnt/shared/tmp/skirmish-menu-preview.png
+cargo run --locked --features renderer --bin skirmish-renderer -- --menus --headless /mnt/shared/tmp/skirmish-menu-preview.png
 ```
 
 The destination directory must exist. A graphics adapter is still required.
 Window presentation supports Vulkan, Metal, and DX12; headless rendering also
 supports GLES. The build uses installed SDL3 and, on Linux, ALSA development
-files and `pkg-config`. See the [renderer README](../crates/renderer/README.md)
+files and `pkg-config`. See the [renderer guide](renderer.md)
 for setup, graphics smoke checks, and the private surface ownership boundary.
 
 ## Terminal preview
@@ -147,8 +148,8 @@ With a graphics adapter available, run the explicitly ignored menu capture
 checks for visible input-to-image changes and capture without SDL video:
 
 ```xonsh
-cargo test --locked -p renderer --test menu_capture -- --ignored --nocapture
+cargo test --locked --features renderer --test renderer_menu_capture -- --ignored --nocapture
 ```
 
-The [renderer verification commands](../crates/renderer/README.md#verification)
+The [renderer verification commands](renderer.md#verification)
 also include the scene capture and SDL window smoke checks.

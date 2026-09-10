@@ -3,7 +3,7 @@
 //! Built-in bitmap glyphs make this preview independent of extracted game artwork
 //! or system fonts. Both menu geometry and glyphs use the same WESL pipeline.
 
-use crate::menu::MenuView;
+use super::menu::MenuView;
 use bytemuck::{Pod, Zeroable};
 use font8x8::UnicodeFonts;
 use wgpu::util::DeviceExt;
@@ -42,16 +42,16 @@ impl UiFrame {
         if view.pending.is_some() {
             canvas.rect([48.0, 230.0, 864.0, 328.0], PANEL);
             canvas.rect([48.0, 230.0, 6.0, 328.0], ACCENT);
-            canvas.text("SCREEN UNAVAILABLE", [80.0, 264.0], 2.0, ACCENT);
+            canvas.text("ORIGINAL SCENE PENDING", [80.0, 264.0], 2.0, ACCENT);
             canvas.text(view.selected_label, [80.0, 316.0], 3.0, TEXT);
             canvas.text(
-                "This screen is not available yet.",
+                "The menu requested its original scene.",
                 [80.0, 386.0],
                 2.0,
                 TEXT,
             );
             canvas.text(
-                "Press Back to return to the menu.",
+                "Press Back while its native handoff is connected.",
                 [80.0, 426.0],
                 2.0,
                 MUTED,

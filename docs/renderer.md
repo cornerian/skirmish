@@ -1,7 +1,7 @@
 # Skirmish renderer
 
-Native rendering and audio presentation inside the Skirmish Cargo workspace.
-The `renderer` library and `skirmish-renderer` executable provide a static scene
+Native rendering and audio presentation in Skirmish's feature-gated root module.
+The `skirmish::renderer` module and `skirmish-renderer` executable provide a static scene
 preview and interactive navigation for all ten translated menu branches. They
 do not yet reproduce game rendering, original menu artwork, or animation.
 The built-in procedural scene runs without external game resources, an ISO,
@@ -12,8 +12,8 @@ The graphics path uses [wgpu 30.0.1](https://docs.rs/wgpu/30.0.1/wgpu/), with
 time. [SDL3 0.20](https://docs.rs/sdl3/0.20.0/sdl3/) owns the window, events, and
 controller input; [CPAL 0.18.2](https://docs.rs/cpal/0.18.2/cpal/) owns native
 audio output. Menus and the scene preview share one wgpu surface.
-The workspace lockfile records the resolved dependencies; this crate shares
-the workspace's version control and build output.
+The workspace lockfile records the resolved dependencies. Headless users can
+leave the `renderer` feature disabled to avoid the graphics and audio stack.
 
 ## Run
 
@@ -25,14 +25,14 @@ driver. Headless rendering additionally permits GLES. In `xonsh --no-rc`:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
-cargo run --locked -p renderer --bin skirmish-renderer
+cargo run --locked --features renderer --bin skirmish-renderer
 ```
 
 Use `/tmp/skirmish-target` when the shared temporary directory is unavailable.
 The default window opens the main menu, including **Import Game Assets**.
 This native screen provides automatic ISO search, an OS file picker, drag-and-drop,
 progress, cancellation, and persistent original-file storage. See the
-[import guide](../../docs/asset-import.md) for coverage and storage details.
+[import guide](asset-import.md) for coverage and storage details.
 An explicit `--scene` starts in the static scene unless `--menus` is also supplied.
 The scene supports arrows to orbit, `+`/`-`
 to zoom, `R` to reset the camera, Space to play a quiet synthetic cue, and Escape
@@ -44,7 +44,7 @@ visual preview usable.
 Start directly in the menu:
 
 ```xonsh
-cargo run --locked -p renderer --bin skirmish-renderer -- --menus
+cargo run --locked --features renderer --bin skirmish-renderer -- --menus
 ```
 
 Use arrows to navigate, Enter/Space/`Z` to confirm, and Escape/Backspace/`X` to
@@ -57,25 +57,35 @@ Add `--all-star` and `--sound-test` to expose those unlocked entries. These flag
 do not read or write saved games.
 
 The menu presents Main, 1-P Mode, VS. Mode, Trophies, Options, Data, Regular
-Match, Stadium, Special Melee, and Records. Leaf destinations show an explanatory
-"Screen unavailable" panel; Back returns to the originating selection. Matches,
+Match, Stadium, Special Melee, and Records. Unconnected leaf destinations show
+an explanatory "Original scene pending" panel; Back returns to the originating selection. Matches,
 settings panels, trophies, and other destination screens remain unimplemented.
-No erase-data request deletes files. See [menu behavior](../../docs/menus.md).
+No erase-data request deletes files. See [menu behavior](menus.md).
 
 Load a `skirmish-visual-v1` JSON export. PNG paths may be absolute or relative to
 the scene file, including sibling directories. Replace `/path/to/scene.json`
 with the export's actual location:
 
 ```xonsh
-cargo run --locked -p renderer --bin skirmish-renderer -- --scene /path/to/scene.json
+cargo run --locked --features renderer --bin skirmish-renderer -- --scene /path/to/scene.json
 ```
 
 Capture one frame without initializing SDL or audio:
 
 ```xonsh
-cargo run --locked -p renderer --bin skirmish-renderer -- --headless /mnt/shared/tmp/skirmish-renderer-preview.png --width 257 --height 193
-cargo run --locked -p renderer --bin skirmish-renderer -- --menus --headless /mnt/shared/tmp/skirmish-menu-preview.png
+cargo run --locked --features renderer --bin skirmish-renderer -- --headless /mnt/shared/tmp/skirmish-renderer-preview.png --width 257 --height 193
+cargo run --locked --features renderer --bin skirmish-renderer -- --menus --headless /mnt/shared/tmp/skirmish-menu-preview.png
 ```
+
+For the direct Melee UI development path, load a converted `MnMaAll.dat` scene
+through its four original source-selected roots and authored camera:
+
+```xonsh
+cargo run --locked --features melee-ui-source --bin skirmish-renderer -- --melee-menu-assets /path/to/MnMaAll-scene.json --headless /mnt/shared/tmp/melee-main-default-pose.png --width 640 --height 480
+```
+
+This is a serialized default-pose milestone, not a claim that the original JObj
+animations and scheduler are complete. See the [direct UI status](melee-ui.md).
 
 The second command captures the menu UI through the same WESL draw path used
 in the window. Add `--scene /path/to/scene.json` to capture an export. Headless
@@ -88,8 +98,8 @@ durable captures. `/tmp` is the sandbox fallback for temporary previews.
 Run a short window smoke check that exits after three presented frames:
 
 ```xonsh
-cargo run --locked -p renderer --bin skirmish-renderer -- --frames 3 --no-audio
-cargo run --locked -p renderer --bin skirmish-renderer -- --menus --frames 3 --no-audio
+cargo run --locked --features renderer --bin skirmish-renderer -- --frames 3 --no-audio
+cargo run --locked --features renderer --bin skirmish-renderer -- --menus --frames 3 --no-audio
 ```
 
 `--frames` is for window mode and cannot be combined with `--headless`.
@@ -120,7 +130,8 @@ cargo run --locked -p renderer --bin skirmish-renderer -- --menus --frames 3 --n
   travel. These thresholds are a host menu policy, without claiming original
   analog-controller processing or gameplay calibration.
 - `ui` builds menu and text geometry for the same surface or headless target.
-  `build.rs` links `shaders/mesh.wesl`, `shaders/lighting.wesl`, and `shaders/ui.wesl`
+  the root `build.rs` links `src/renderer/shaders/mesh.wesl`,
+  `src/renderer/shaders/lighting.wesl`, and `src/renderer/shaders/ui.wesl`
   into WGSL in Cargo's `OUT_DIR`; the executable embeds the output. Shader
   compilation needs no separate WESL CLI step.
 - `audio` retains the CPAL stream and passes commands through a preallocated,
@@ -154,6 +165,7 @@ as above:
 cargo fmt --all --check
 cargo test --locked --workspace
 cargo test --locked --workspace --features c-oracle
+cargo test --locked --workspace --features renderer
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 ```
 
@@ -166,9 +178,9 @@ The graphics checks are explicitly ignored in ordinary test runs because they
 need graphics services. Run them separately when those services are available:
 
 ```xonsh
-cargo test --locked -p renderer --lib gpu_capture_draws_geometry_and_unpads_rows -- --ignored --nocapture
-cargo test --locked -p renderer --test menu_capture -- --ignored --nocapture
-cargo test --locked -p renderer --test cli window_smoke_exits_after_presenting_the_requested_frames -- --ignored --nocapture
+cargo test --locked --features renderer --lib renderer::gpu::tests::gpu_capture_draws_geometry_and_unpads_rows -- --ignored --nocapture
+cargo test --locked --features renderer --test renderer_menu_capture -- --ignored --nocapture
+cargo test --locked --features renderer --test renderer_cli window_smoke_exits_after_presenting_the_requested_frames -- --ignored --nocapture
 ```
 
 The capture checks need a graphics adapter; menu capture verifies visible

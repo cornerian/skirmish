@@ -1,6 +1,6 @@
 use menus::input::pad;
 use menus::{Menu, MenuState, Unlocks};
-use renderer::{menu::MenuSession, renderer::render_menu_headless, scene::Scene};
+use skirmish::renderer::{gpu::render_menu_headless, menu::MenuSession, scene::Scene};
 use std::{
     fs::File,
     io::BufReader,

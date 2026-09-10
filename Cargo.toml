@@ -13,25 +13,83 @@ resolver = "3"
 default = []
 c-oracle = ["dep:cc"]
 controller-input = ["dep:sdl3"]
+melee-ui-source = ["renderer", "dep:melee-ui-sys"]
+renderer = [
+    "controller-input",
+    "dep:bytemuck",
+    "dep:cpal",
+    "dep:extraction",
+    "dep:font8x8",
+    "dep:png",
+    "dep:pollster",
+    "dep:rtrb",
+    "dep:wesl",
+    "dep:wgpu",
+]
+
+[[bin]]
+name = "skirmish-renderer"
+path = "src/bin/skirmish-renderer.rs"
+required-features = ["renderer"]
+
+[[example]]
+name = "controllers"
+path = "examples/controllers.rs"
+required-features = ["controller-input"]
+
+[[test]]
+name = "renderer_asset_import"
+path = "tests/renderer_asset_import.rs"
+required-features = ["renderer"]
+
+[[test]]
+name = "renderer_cli"
+path = "tests/renderer_cli.rs"
+required-features = ["renderer"]
+
+[[test]]
+name = "renderer_menu"
+path = "tests/renderer_menu.rs"
+required-features = ["renderer"]
+
+[[test]]
+name = "renderer_menu_capture"
+path = "tests/renderer_menu_capture.rs"
+required-features = ["renderer"]
+
+[[test]]
+name = "renderer_scene"
+path = "tests/renderer_scene.rs"
+required-features = ["renderer"]
 
 [dependencies]
 anyhow = "1"
+bytemuck = { version = "1", features = ["derive"], optional = true }
 clap = { version = "4", features = ["derive"] }
+cpal = { version = "0.18.2", optional = true }
+extraction = { path = "crates/extraction", optional = true }
+font8x8 = { version = "0.3", optional = true }
 glam = { version = "0.33", default-features = false, features = ["scalar-math", "libm"] }
 libm = "0.2"
+melee-ui-sys = { path = "crates/melee-ui-sys", features = ["source"], optional = true }
 menus = { path = "crates/menus" }
 replay = { path = "crates/replay" }
 peppi-adapter = { path = "crates/peppi-adapter" }
+png = { version = "0.18.1", optional = true }
+pollster = { version = "0.4", optional = true }
+rtrb = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-sdl3 = { version = "0.20", optional = true }
+sdl3 = { version = "0.20", features = ["raw-window-handle"], optional = true }
 thiserror = "2"
 tempfile = "3"
+wgpu = { version = "30.0.1", optional = true }
 
 [build-dependencies]
 cc = { version = "1", optional = true }
 serde_json = "1"
+wesl = { version = "0.4.4", default-features = false, optional = true }
 
 [dev-dependencies]
 peppi = "=2.1.2"

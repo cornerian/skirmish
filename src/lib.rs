@@ -15,6 +15,8 @@ pub mod mbstring;
 pub mod menu_cli;
 pub mod quaternion;
 pub mod random;
+#[cfg(feature = "renderer")]
+pub mod renderer;
 pub mod replay_match;
 pub mod replay_observation;
 pub mod runner;

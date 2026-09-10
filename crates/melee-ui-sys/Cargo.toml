@@ -1,0 +1,19 @@
+[package]
+name = "melee-ui-sys"
+version = "0.1.0"
+edition = "2024"
+description = "Narrow native ABI for executing pinned doldecomp Melee UI source"
+publish = false
+
+[features]
+default = []
+source = ["dep:cc"]
+
+[build-dependencies]
+cc = { version = "1", optional = true }
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"

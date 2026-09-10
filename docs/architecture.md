@@ -22,8 +22,10 @@ movement, walking/jump launch, and damage arithmetic; `collision` contains bone
 hierarchy transforms, environmental collision boxes, sampled stage queries,
 moving-line remapping and swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
 headless. `game` composes the experimental match slice and owns gameplay state
-and frame scheduling. Separate workspace crates remain only where a real
-dependency boundary exists, such as replay parsing or presentation.
+and frame scheduling. Feature-gated presentation lives under `src/renderer` so
+the native application can share game and resource types without a circular
+workspace dependency. Separate crates remain where a real dependency boundary
+exists, such as replay parsing.
 
 `crates/peppi-adapter` uses Peppi for parsing and columnar replay storage,
 reusing its port, version, pre/post-frame and vector types. This keeps replay

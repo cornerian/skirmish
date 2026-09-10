@@ -35,13 +35,19 @@ jobs:
           system_names = {name for package, name in system_targets}
           assert integration_names.isdisjoint(system_names), "Ambiguous test target name across suites"
           assert integration_names, "No integration targets discovered"
-          # Keep workspace feature unification (renderer enables controller-input).
+          # The renderer now lives behind an explicit root feature. Exercise it
+          # here so controller and presentation integration targets stay live.
           command = ["cargo", "test", "--locked", "--workspace"]
           for target in sorted(integration_names):
               command.extend(["--test", target])
-          for flags in ([], ["--features", "c-oracle"],
-                        ["--release", "--features", "c-oracle"]):
+          for flags in (["--features", "renderer"],
+                        ["--features", "renderer,c-oracle"],
+                        ["--release", "--features", "renderer,c-oracle"]):
               subprocess.run(command + flags, check=True)
+      - name: Test Melee UI preview without an external source checkout
+        env:
+          SKIRMISH_MELEE_SOURCE: ${{ runner.temp }}/missing-melee-source
+        run: cargo test --locked --features melee-ui-source --test renderer_scene
       - name: Compare debug and release match traces
         run: |
           cargo run --locked --bin skirmish -- demo-match > "$RUNNER_TEMP/skirmish-debug.jsonl"

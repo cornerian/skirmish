@@ -14,13 +14,14 @@ Game-specific arithmetic is retained when a library would change its results.
 
 Use stable Rust and a C compiler (Peppi's compression dependencies and the
 optional differential tests use native C).
-The renderer workspace member needs SDL3, plus ALSA development files and
-`pkg-config` on Linux; see its [setup notes](crates/renderer/README.md). In xonsh:
+The optional root `renderer` feature needs SDL3, plus ALSA development files and
+`pkg-config` on Linux; see its [setup notes](docs/renderer.md). In xonsh:
 
 ```xonsh
 $CARGO_TARGET_DIR = '/mnt/shared/tmp/skirmish-target'
 cargo test --locked --workspace
 cargo test --locked --workspace --features c-oracle
+cargo test --locked --workspace --features renderer
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 ```
@@ -52,10 +53,10 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `replay` | Streaming checkpoint/step/observation validation machinery |
 | `peppi-adapter` | Peppi 2.1.2 parsing, retained replay primitives/columns, rollback and finalized-frame selection, native-validator transitions |
 | `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, animated attacks and standing/dash/pivot catches, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, timeout, checkpoints and replay-stepper integration |
-| `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
+| `renderer` feature and module | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
 
 Start the native graphics preview with
-`cargo run --locked -p renderer --bin skirmish-renderer`. It includes a procedural
+`cargo run --locked --features renderer --bin skirmish-renderer`. It includes a procedural
 demo; `--scene /path/to/scene.json` loads a `skirmish-visual-v1` asset export.
 Without `--scene`, the window starts on the interactive menu. Choose
 **Import Game Assets** to discover or select a local USA 1.02 ISO and install
@@ -65,8 +66,10 @@ storage, validation, and the remaining visual/gameplay conversion work.
 The [canonical asset tree](docs/asset-tree.md) defines resource categories and
 consumers; its [complete source inventory](docs/asset-source-tree.md) lists all
 1,209 supported disc files.
+The [direct Melee UI runtime](docs/melee-ui.md) records the native `mnmain.c`
+source boundary, the first exact-root render, and the remaining HSD integration.
 F1 switches menus and scene on
-the same graphics surface. The [renderer crate](crates/renderer/README.md) documents controls,
+the same graphics surface. The [renderer module](docs/renderer.md) documents controls,
 offscreen capture, requirements, and material approximation limits. It does not
 yet present live matches or implement original game rendering.
 

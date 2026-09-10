@@ -2,8 +2,10 @@
 pub mod asset_menu;
 pub mod audio;
 pub mod controls;
+#[path = "renderer.rs"]
+pub mod gpu;
+pub mod melee;
 pub mod menu;
 mod platform;
-pub mod renderer;
 pub mod scene;
 pub mod ui;

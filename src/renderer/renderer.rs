@@ -6,18 +6,11 @@ use glam::Vec3;
 use sdl3::video::Window;
 use wgpu::util::DeviceExt;
 
-use crate::scene::{CullMode, Scene, Texture, Vertex};
-use crate::{menu::MenuView, platform::SdlSurface, ui::UiRenderer};
+use super::scene::{Camera, CullMode, Scene, Texture, Vertex};
+use super::{menu::MenuView, platform::SdlSurface, ui::UiRenderer};
 
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const CLEAR: wgpu::Color = wgpu::Color {
-    r: 0.018,
-    g: 0.025,
-    b: 0.045,
-    a: 1.0,
-};
-
 struct Draw {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -39,6 +32,8 @@ struct GpuScene {
     draws: Vec<Draw>,
     center: Vec3,
     radius: f32,
+    source_camera: Option<Camera>,
+    clear_color: wgpu::Color,
 }
 
 impl GpuScene {
@@ -328,6 +323,16 @@ impl GpuScene {
             center.is_finite() && radius.is_finite(),
             "scene bounds exceed finite camera range"
         );
+        if let Some(camera) = scene.camera {
+            validate_camera(camera)?;
+        }
+        ensure!(
+            scene
+                .clear_color
+                .iter()
+                .all(|value| value.is_finite() && (0.0..=1.0).contains(value)),
+            "scene clear color must contain finite normalized components"
+        );
         Ok(Self {
             device,
             queue,
@@ -339,6 +344,13 @@ impl GpuScene {
             draws,
             center,
             radius,
+            source_camera: scene.camera,
+            clear_color: wgpu::Color {
+                r: f64::from(scene.clear_color[0]),
+                g: f64::from(scene.clear_color[1]),
+                b: f64::from(scene.clear_color[2]),
+                a: f64::from(scene.clear_color[3]),
+            },
         })
     }
 
@@ -350,26 +362,44 @@ impl GpuScene {
         dimensions: [u32; 2],
         orbit: [f32; 3],
     ) {
-        let [yaw, pitch, zoom] = orbit;
-        let yaw = 0.55 + yaw;
-        let pitch = (0.25 + pitch).clamp(-1.45, 1.45);
-        let aspect = dimensions[0] as f32 / dimensions[1] as f32;
-        let half_fov = 22.5_f32.to_radians();
-        let limiting_fov = half_fov.min((half_fov.tan() * aspect).atan());
-        let distance = self.radius / limiting_fov.sin() * 1.15 * zoom.clamp(0.2, 5.0);
-        let direction = Vec3::new(
-            yaw.sin() * pitch.cos(),
-            pitch.sin(),
-            yaw.cos() * pitch.cos(),
-        );
-        let eye = self.center + direction * distance;
-        let view = glam::camera::rh::view::look_at_mat4(eye, self.center, Vec3::Y);
-        let projection = glam::camera::rh::proj::directx::perspective(
-            half_fov * 2.0,
-            aspect,
-            self.radius * 0.001,
-            distance + self.radius * 3.0,
-        );
+        let (view, projection) = if let Some(camera) = self.source_camera {
+            (
+                glam::camera::rh::view::look_at_mat4(
+                    Vec3::from(camera.eye),
+                    Vec3::from(camera.interest),
+                    Vec3::from(camera.up),
+                ),
+                glam::camera::rh::proj::directx::perspective(
+                    camera.vertical_fov_radians,
+                    camera.aspect,
+                    camera.near,
+                    camera.far,
+                ),
+            )
+        } else {
+            let [yaw, pitch, zoom] = orbit;
+            let yaw = 0.55 + yaw;
+            let pitch = (0.25 + pitch).clamp(-1.45, 1.45);
+            let aspect = dimensions[0] as f32 / dimensions[1] as f32;
+            let half_fov = 22.5_f32.to_radians();
+            let limiting_fov = half_fov.min((half_fov.tan() * aspect).atan());
+            let distance = self.radius / limiting_fov.sin() * 1.15 * zoom.clamp(0.2, 5.0);
+            let direction = Vec3::new(
+                yaw.sin() * pitch.cos(),
+                pitch.sin(),
+                yaw.cos() * pitch.cos(),
+            );
+            let eye = self.center + direction * distance;
+            (
+                glam::camera::rh::view::look_at_mat4(eye, self.center, Vec3::Y),
+                glam::camera::rh::proj::directx::perspective(
+                    half_fov * 2.0,
+                    aspect,
+                    self.radius * 0.001,
+                    distance + self.radius * 3.0,
+                ),
+            )
+        };
         self.queue.write_buffer(
             &self.camera,
             0,
@@ -394,7 +424,7 @@ impl GpuScene {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(CLEAR),
+                    load: wgpu::LoadOp::Clear(self.clear_color),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -408,6 +438,10 @@ impl GpuScene {
             }),
             ..Default::default()
         });
+        if let Some(camera) = self.source_camera {
+            let [x, y, width, height] = authored_viewport(dimensions, camera.aspect);
+            pass.set_viewport(x, y, width, height, 0.0, 1.0);
+        }
         pass.set_bind_group(0, &self.camera_binding, &[]);
         for draw in order {
             pass.set_pipeline(&self.pipelines[draw.pipeline]);
@@ -416,6 +450,59 @@ impl GpuScene {
             pass.set_index_buffer(draw.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..draw.count, 0, 0..1);
         }
+    }
+}
+
+fn validate_camera(camera: Camera) -> Result<()> {
+    let projection = [
+        camera.vertical_fov_radians,
+        camera.aspect,
+        camera.near,
+        camera.far,
+    ];
+    let scalars = [
+        camera.eye.as_slice(),
+        camera.interest.as_slice(),
+        camera.up.as_slice(),
+        projection.as_slice(),
+    ];
+    ensure!(
+        scalars.into_iter().flatten().all(|value| value.is_finite()),
+        "source camera contains nonfinite values"
+    );
+    ensure!(
+        camera.vertical_fov_radians > 0.0 && camera.vertical_fov_radians < std::f32::consts::PI,
+        "source camera field of view must be between zero and pi"
+    );
+    ensure!(
+        camera.aspect > 0.0 && camera.near > 0.0 && camera.far > camera.near,
+        "source camera has an invalid aspect or clip range"
+    );
+    let direction = Vec3::from(camera.interest) - Vec3::from(camera.eye);
+    let up = Vec3::from(camera.up);
+    ensure!(
+        direction.length_squared() > f32::EPSILON
+            && up.length_squared() > f32::EPSILON
+            && direction.cross(up).length_squared() > f32::EPSILON,
+        "source camera view direction and up vector must define a basis"
+    );
+    Ok(())
+}
+
+fn authored_viewport(dimensions: [u32; 2], aspect: f32) -> [f32; 4] {
+    let width = dimensions[0] as f32;
+    let height = dimensions[1] as f32;
+    if width / height > aspect {
+        let viewport_width = height * aspect;
+        [(width - viewport_width) * 0.5, 0.0, viewport_width, height]
+    } else {
+        let viewport_height = width / aspect;
+        [
+            0.0,
+            (height - viewport_height) * 0.5,
+            width,
+            viewport_height,
+        ]
     }
 }
 
@@ -783,6 +870,24 @@ mod tests {
         )
         .validate(&module)
         .expect("shader validates without optional GPU capabilities");
+    }
+
+    #[test]
+    fn authored_camera_viewport_preserves_aspect_ratio() {
+        for (dimensions, expected) in [
+            ([640, 480], [0.0, 0.0, 640.0, 480.0]),
+            ([1280, 720], [160.0, 0.0, 960.0, 720.0]),
+            ([640, 640], [0.0, 80.0, 640.0, 480.0]),
+        ] {
+            let actual = authored_viewport(dimensions, 4.0 / 3.0);
+            assert!(
+                actual
+                    .into_iter()
+                    .zip(expected)
+                    .all(|(actual, expected)| (actual - expected).abs() < 0.001),
+                "{actual:?} != {expected:?}"
+            );
+        }
     }
 
     #[test]

@@ -34,9 +34,9 @@ runtime/
     └── integration-match.json # bundled synthetic data used by demo-match
 ```
 
-Implementations: [scene assets](../crates/renderer/src/scene.rs),
-[UI geometry/glyphs](../crates/renderer/src/ui.rs),
-[audio cue](../crates/renderer/src/audio.rs), [shaders](../crates/renderer/shaders),
+Implementations: [scene assets](../src/renderer/scene.rs),
+[UI geometry/glyphs](../src/renderer/ui.rs),
+[audio cue](../src/renderer/audio.rs), [shaders](../src/renderer/shaders),
 and [demo match data](../tests/fixtures/game/integration-match.json).
 Build-time linked WGSL is derived from the listed WESL sources, not an additional
 authored asset. Menus have no original artwork or background music wired in yet.

@@ -1,7 +1,7 @@
 use menus::input::pad;
 use menus::{Action, Destination, Menu, MenuState, Scene, Unlocks};
-use renderer::menu::{FixedMenuClock, MenuEvent, MenuSession};
-use renderer::ui::{UI_SHADER, UiFrame};
+use skirmish::renderer::menu::{FixedMenuClock, MenuEvent, MenuSession};
+use skirmish::renderer::ui::{UI_SHADER, UiFrame};
 use std::time::Duration;
 
 fn ready(menu: Menu, selection: u16) -> MenuSession {

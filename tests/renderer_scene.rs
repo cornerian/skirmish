@@ -1,5 +1,6 @@
-use renderer::scene::{CullMode, Scene};
 use serde_json::{Value, json};
+use skirmish::renderer::melee::{MAIN_MENU_ROOTS, load_main_menu_default_pose};
+use skirmish::renderer::scene::{CullMode, Scene};
 use std::{fs, path::Path};
 
 fn triangle() -> Value {
@@ -16,6 +17,95 @@ fn load(root: &Path, document: &Value) -> anyhow::Result<Scene> {
     let path = root.join("scene.json");
     fs::write(&path, serde_json::to_vec(document)?)?;
     Scene::load(&path)
+}
+
+fn load_roots(root: &Path, document: &Value, roots: &[u32]) -> anyhow::Result<Scene> {
+    let path = root.join("scene.json");
+    fs::write(&path, serde_json::to_vec(document)?)?;
+    Scene::load_joint_roots(&path, roots)
+}
+
+#[test]
+fn source_joint_roots_select_only_the_original_scene_subtrees() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut document = triangle();
+    document["source"] = json!("MnMaAll");
+    document["joints"] = json!([
+        {"name":"main_root","offset":100,"parent":null},
+        {"name":"main_child","offset":101,"parent":100},
+        {"name":"other_root","offset":200,"parent":null}
+    ]);
+    document["meshes"][0]["joint"] = json!(101);
+    let mut other = document["meshes"][0].clone();
+    other["name"] = json!("other");
+    other["joint"] = json!(200);
+    document["meshes"].as_array_mut().unwrap().push(other);
+
+    let scene = load_roots(directory.path(), &document, &[100]).unwrap();
+    assert_eq!(scene.source.as_deref(), Some("MnMaAll"));
+    assert_eq!(
+        scene
+            .joints
+            .iter()
+            .map(|joint| joint.offset)
+            .collect::<Vec<_>>(),
+        [100, 101]
+    );
+    assert_eq!(scene.meshes.len(), 1);
+    assert_eq!(scene.meshes[0].name, "triangle");
+    assert_eq!(scene.meshes[0].joint, Some(101));
+
+    assert!(load_roots(directory.path(), &document, &[999]).is_err());
+    document["joints"][0]["parent"] = json!(101);
+    assert!(load(directory.path(), &document).is_err());
+}
+
+#[test]
+fn melee_main_menu_loader_uses_source_roots_camera_and_fog_color() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut document = triangle();
+    document["source"] = json!("MnMaAll.dat");
+    document["joints"] = Value::Array(
+        MAIN_MENU_ROOTS
+            .iter()
+            .map(|root| json!({"name":root.name,"offset":root.offset,"parent":null}))
+            .collect(),
+    );
+    document["meshes"][0]["joint"] = json!(MAIN_MENU_ROOTS[0].offset);
+    let path = directory.path().join("scene.json");
+    fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+    let scene = load_main_menu_default_pose(&path).unwrap();
+    assert_eq!(scene.meshes.len(), 1);
+    assert_eq!(scene.joints.len(), MAIN_MENU_ROOTS.len());
+    let camera = scene.camera.unwrap();
+    assert_eq!(camera.eye, [0.0, 0.0, 51.0]);
+    assert_eq!(camera.interest, [0.0, 0.0, 0.0]);
+    assert_eq!(camera.aspect, 4.0 / 3.0);
+    assert_eq!(scene.clear_color[..2], [0.0, 0.0]);
+    assert!((scene.clear_color[2] - 0.009_721_217).abs() < 1.0e-8);
+    assert_eq!(scene.clear_color[3], 1.0);
+    assert!(scene.warnings.iter().any(|warning| {
+        warning.contains("serialized default pose") && warning.contains("not evaluated yet")
+    }));
+    #[cfg(feature = "melee-ui-source")]
+    {
+        let expected = if melee_ui_sys::available() {
+            "executed natively"
+        } else {
+            "was not found at build time"
+        };
+        assert!(
+            scene
+                .warnings
+                .iter()
+                .any(|warning| warning.contains(expected))
+        );
+    }
+
+    document["source"] = json!("AnotherArchive.dat");
+    fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+    assert!(load_main_menu_default_pose(&path).is_err());
 }
 
 #[test]

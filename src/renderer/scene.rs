@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{BufReader, Read},
     path::Path,
@@ -36,11 +36,22 @@ pub struct Material {
 #[derive(Clone, Debug)]
 pub struct Mesh {
     pub name: String,
+    /// Source JObj descriptor offset that owns this draw part.
+    pub joint: Option<u32>,
+    /// Stable exporter identity for repeated instances of the same source part.
+    pub instance_id: Option<String>,
     pub vertices: Vec<Vertex>,
     /// Counterclockwise front faces, converted from the source's winding at load time.
     pub indices: Vec<u32>,
     pub material: Material,
     pub hidden: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Joint {
+    pub name: String,
+    pub offset: u32,
+    pub parent: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,19 +63,40 @@ pub struct Texture {
     pub rgba: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Camera {
+    pub eye: [f32; 3],
+    pub interest: [f32; 3],
+    pub up: [f32; 3],
+    pub vertical_fov_radians: f32,
+    pub aspect: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Scene {
+    pub source: Option<String>,
+    pub joints: Vec<Joint>,
     pub meshes: Vec<Mesh>,
     pub textures: Vec<Texture>,
     pub warnings: Vec<String>,
+    /// Authored scene camera when one is available; otherwise the renderer frames bounds.
+    pub camera: Option<Camera>,
+    /// Linear RGBA clear color used before scene draws.
+    pub clear_color: [f32; 4],
 }
 
 #[derive(Deserialize)]
 struct Document {
     schema: String,
     #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
     source_winding: Option<String>,
     meshes: Vec<RawMesh>,
+    #[serde(default)]
+    joints: Vec<RawJoint>,
     #[serde(default)]
     textures: Vec<RawTexture>,
     #[serde(default)]
@@ -74,6 +106,10 @@ struct Document {
 #[derive(Deserialize)]
 struct RawMesh {
     name: String,
+    #[serde(default)]
+    joint: Option<u32>,
+    #[serde(default)]
+    instance_id: Option<String>,
     positions: Vec<[f32; 3]>,
     #[serde(default)]
     normals: Option<Vec<[f32; 3]>>,
@@ -97,6 +133,14 @@ struct RawMesh {
 }
 
 #[derive(Deserialize)]
+struct RawJoint {
+    name: String,
+    offset: u32,
+    #[serde(default)]
+    parent: Option<u32>,
+}
+
+#[derive(Deserialize)]
 struct RawTexture {
     id: String,
     path: String,
@@ -109,6 +153,24 @@ impl Scene {
     /// Relative PNG paths resolve against the scene directory; absolute paths are
     /// used as written, matching the asset viewer's composed scene exports.
     pub fn load(path: &Path) -> Result<Self> {
+        Self::load_with_joint_roots(path, None)
+    }
+
+    /// Read only draw parts descended from the requested source JObj roots.
+    ///
+    /// Melee archives contain many independently instantiated public roots. The
+    /// original scene code chooses roots by symbol; rendering every archive root
+    /// at once is not equivalent. Offsets are the stable source identities carried
+    /// by `skirmish-visual-v1` until symbol names are exported alongside them.
+    pub fn load_joint_roots(path: &Path, roots: &[u32]) -> Result<Self> {
+        ensure!(
+            !roots.is_empty(),
+            "at least one source joint root is required"
+        );
+        Self::load_with_joint_roots(path, Some(roots))
+    }
+
+    fn load_with_joint_roots(path: &Path, roots: Option<&[u32]>) -> Result<Self> {
         const MAX_JSON_BYTES: u64 = 128 * 1024 * 1024;
         let mut text = String::new();
         File::open(path)
@@ -119,7 +181,8 @@ impl Scene {
             text.len() as u64 <= MAX_JSON_BYTES,
             "scene JSON exceeds 128 MiB"
         );
-        let document: Document = serde_json::from_str(&text).context("decode visual scene JSON")?;
+        let mut document: Document =
+            serde_json::from_str(&text).context("decode visual scene JSON")?;
         ensure!(
             document.schema == "skirmish-visual-v1",
             "unsupported scene schema: {}",
@@ -130,6 +193,41 @@ impl Scene {
             Some("ccw") => false,
             Some(other) => bail!("unsupported source_winding: {other}"),
         };
+        let mut joints: Vec<_> = document
+            .joints
+            .drain(..)
+            .map(|joint| Joint {
+                name: joint.name,
+                offset: joint.offset,
+                parent: joint.parent,
+            })
+            .collect();
+        let parents = validate_joint_tree(&joints)?;
+        for mesh in &document.meshes {
+            ensure!(
+                mesh.joint.is_none_or(|joint| parents.contains_key(&joint)),
+                "{} references missing source joint {:?}",
+                mesh.name,
+                mesh.joint
+            );
+        }
+        if let Some(roots) = roots {
+            for &root in roots {
+                ensure!(
+                    parents.contains_key(&root),
+                    "missing source joint root {root}"
+                );
+            }
+            let selected: HashSet<_> = parents
+                .keys()
+                .copied()
+                .filter(|&joint| descends_from(joint, roots, &parents))
+                .collect();
+            joints.retain(|joint| selected.contains(&joint.offset));
+            document
+                .meshes
+                .retain(|mesh| mesh.joint.is_some_and(|joint| selected.contains(&joint)));
+        }
         let folder = path.parent().unwrap_or(Path::new("."));
         let mut table = HashMap::new();
         for texture in document.textures {
@@ -142,9 +240,13 @@ impl Scene {
         }
         let mut loaded = HashMap::new();
         let mut scene = Self {
+            source: document.source,
+            joints,
             meshes: Vec::new(),
             textures: Vec::new(),
             warnings: document.limitations,
+            camera: None,
+            clear_color: [0.018, 0.025, 0.045, 1.0],
         };
         scene.warnings.push("Textured Lambert preview: GX TEV operations, alpha tests, custom blending/depth state, source lighting, animation and skinning are not reproduced.".into());
         for mut raw in document.meshes {
@@ -347,6 +449,8 @@ impl Scene {
                 .collect();
             scene.meshes.push(Mesh {
                 name: raw.name,
+                joint: raw.joint,
+                instance_id: raw.instance_id,
                 vertices,
                 indices: raw.indices,
                 material: Material {
@@ -384,6 +488,8 @@ impl Scene {
     pub fn demo() -> Self {
         let mut cube = Mesh {
             name: "checker cube".into(),
+            joint: None,
+            instance_id: None,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
@@ -430,6 +536,8 @@ impl Scene {
         }
         let mut floor = Mesh {
             name: "floor".into(),
+            joint: None,
+            instance_id: None,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
@@ -459,6 +567,8 @@ impl Scene {
             }
         }
         Self {
+            source: None,
+            joints: Vec::new(),
             meshes: vec![cube, floor],
             textures: vec![Texture {
                 name: "procedural checker".into(),
@@ -467,8 +577,48 @@ impl Scene {
                 rgba,
             }],
             warnings: Vec::new(),
+            camera: None,
+            clear_color: [0.018, 0.025, 0.045, 1.0],
         }
     }
+}
+
+fn validate_joint_tree(joints: &[Joint]) -> Result<HashMap<u32, Option<u32>>> {
+    let mut parents = HashMap::with_capacity(joints.len());
+    for joint in joints {
+        ensure!(
+            parents.insert(joint.offset, joint.parent).is_none(),
+            "duplicate source joint offset {}",
+            joint.offset
+        );
+    }
+    for joint in joints {
+        if let Some(parent) = joint.parent {
+            ensure!(
+                parents.contains_key(&parent),
+                "{} references missing parent joint {parent}",
+                joint.name
+            );
+        }
+        let mut seen = HashSet::new();
+        let mut current = Some(joint.offset);
+        while let Some(offset) = current {
+            ensure!(seen.insert(offset), "cycle at source joint {offset}");
+            current = parents[&offset];
+        }
+    }
+    Ok(parents)
+}
+
+fn descends_from(joint: u32, roots: &[u32], parents: &HashMap<u32, Option<u32>>) -> bool {
+    let mut current = Some(joint);
+    while let Some(offset) = current {
+        if roots.contains(&offset) {
+            return true;
+        }
+        current = parents[&offset];
+    }
+    false
 }
 
 fn validate_attribute<const N: usize>(
