@@ -80,10 +80,11 @@ fn fixture_archive(with_texture: bool) -> (Vec<u8>, PresentationManifest) {
     put_f32(&mut data, MATERIAL + 0x0c, 0.75);
 
     put_u32(&mut data, TOBJ + 8, 7);
+    put_f32(&mut data, TOBJ + 0x1c, 2.0);
+    put_f32(&mut data, TOBJ + 0x20, 0.5);
     put_u32(&mut data, TOBJ + 0x4c, IMAGE_0);
     put_u32(&mut data, TOBJ + 0x58, TEV);
-    data[TEV as usize + 19] = 61;
-    data[TEV as usize + 23] = 83;
+    data[TEV as usize + 16..TEV as usize + 24].copy_from_slice(&[11, 23, 47, 61, 67, 71, 79, 83]);
     put_u32(&mut data, TEX_ANIM + 4, 7);
     put_u32(&mut data, TEX_ANIM + 8, TEXTURE_AOBJ);
     put_u32(&mut data, TEX_ANIM + 0x0c, IMAGE_TABLE);
@@ -165,8 +166,9 @@ fn structurally_derives_exact_targets_and_preserves_null_image_slots() {
         hierarchy.joints()[0].local,
         AuthoredJointLocal::Srt(local) if local.scale == [1.0, 1.0, 1.0]
     ));
-    assert_eq!(hierarchy.textures()[0].konst_alpha, Some(61));
-    assert_eq!(hierarchy.textures()[0].tev0_alpha, Some(83));
+    assert_eq!(hierarchy.textures()[0].scale, [2.0, 0.5]);
+    assert_eq!(hierarchy.textures()[0].konst, Some([11, 23, 47, 61]));
+    assert_eq!(hierarchy.textures()[0].tev0, Some([67, 71, 79, 83]));
     assert_eq!(
         hierarchy.textures()[0]
             .current_image
@@ -499,6 +501,33 @@ fn empty_texture_image_table_is_valid_without_timg_and_rejected_with_it() {
 }
 
 #[test]
+fn texture_color_track_requires_a_tev_descriptor() {
+    let (mut archive, mut manifest) = fixture_archive(true);
+    let first_fobj = get_u32(&archive, 32 + TEXTURE_AOBJ + 8);
+    put_u32(&mut archive, 32 + first_fobj, 0);
+    archive[(32 + first_fobj + 12) as usize] = 2;
+    put_u32(&mut archive, 32 + TOBJ + 0x58, 0);
+    manifest.resource.sha256 = format!("{:x}", Sha256::digest(&archive));
+
+    let bound = manifest.bind_hsd_dat(&archive).unwrap();
+    let texture = &bound.hierarchy("fixture").unwrap().textures()[0];
+    assert_eq!(texture.konst, None);
+    assert_eq!(texture.tev0, None);
+
+    archive[(32 + first_fobj + 12) as usize] = 12;
+    manifest.resource.sha256 = format!("{:x}", Sha256::digest(&archive));
+
+    assert!(matches!(
+        manifest.bind_hsd_dat(&archive),
+        Err(BindError::TextureColorTrackWithoutTev {
+            tobj_offset: TOBJ,
+            aobj_offset: TEXTURE_AOBJ,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn malformed_shape_animation_root_is_rejected_before_diagnostic() {
     let (archive, mut manifest) = fixture_archive(false);
     manifest.hierarchies[0].shape_animation_root = Some(manifest.resource.data_section_size - 4);
@@ -579,7 +608,7 @@ fn audit_pinned_mnmaall_bindings_and_color_domains() {
         ("back", (102, 0, 15, 55)),
         ("panel", (106, 1, 3, 78)),
         ("contop", (42, 13, 6, 41)),
-        ("cursor", (14, 1, 4, 10)),
+        ("cursor", (14, 1, 4, 11)),
     ] {
         let hierarchy = bound.hierarchy(id).unwrap();
         assert_eq!(
@@ -600,7 +629,7 @@ fn audit_pinned_mnmaall_bindings_and_color_domains() {
         );
     }
     eprintln!("diagnostics={:?}", bound.diagnostics());
-    assert_eq!(bound.diagnostics().len(), 17);
+    assert_eq!(bound.diagnostics().len(), 4);
 
     let mut extrema: BTreeMap<String, (f32, f32)> = BTreeMap::new();
     for hierarchy in ["back", "panel", "contop", "cursor"]
@@ -620,7 +649,13 @@ fn audit_pinned_mnmaall_bindings_and_color_domains() {
                             | Channel::MaterialDiffuseG
                             | Channel::MaterialDiffuseB
                             | Channel::MaterialAlpha
+                            | Channel::TextureKonstR
+                            | Channel::TextureKonstG
+                            | Channel::TextureKonstB
                             | Channel::TextureKonstAlpha
+                            | Channel::TextureTev0R
+                            | Channel::TextureTev0G
+                            | Channel::TextureTev0B
                             | Channel::TextureTev0Alpha
                     ) {
                         let key = format!("{:?}", value.channel);

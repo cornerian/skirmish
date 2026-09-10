@@ -214,8 +214,16 @@ fn raw_channel(value: Channel) -> u8 {
         Channel::TextureImage => 1,
         Channel::TextureTranslationU => 2,
         Channel::TextureTranslationV => 3,
+        Channel::TextureScaleU => 4,
+        Channel::TextureScaleV => 5,
         Channel::TextureBlend => 9,
+        Channel::TextureKonstR => 12,
+        Channel::TextureKonstG => 13,
+        Channel::TextureKonstB => 14,
         Channel::TextureKonstAlpha => 15,
+        Channel::TextureTev0R => 16,
+        Channel::TextureTev0G => 17,
+        Channel::TextureTev0B => 18,
         Channel::TextureTev0Alpha => 19,
     }
 }

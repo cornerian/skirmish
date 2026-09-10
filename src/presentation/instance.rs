@@ -112,9 +112,10 @@ pub struct TextureDescriptor {
     /// table because an authored initial image may be replaced only later.
     pub current_image: Option<SourceImageId>,
     pub translation: [f32; 2],
+    pub scale: [f32; 2],
     pub blend: f32,
-    pub konst_alpha: u8,
-    pub tev0_alpha: u8,
+    pub konst: Option<[u8; 4]>,
+    pub tev0: Option<[u8; 4]>,
 }
 
 /// Immutable source description used to construct one mutable instance.
@@ -188,9 +189,10 @@ pub struct TextureState {
     image_slots: Vec<Option<SourceImageId>>,
     current_image: Option<SourceImageId>,
     translation: [f32; 2],
+    scale: [f32; 2],
     blend: f32,
-    konst_alpha: u8,
-    tev0_alpha: u8,
+    konst: Option<[u8; 4]>,
+    tev0: Option<[u8; 4]>,
 }
 
 impl TextureState {
@@ -210,16 +212,20 @@ impl TextureState {
         self.translation
     }
 
+    pub const fn scale(&self) -> [f32; 2] {
+        self.scale
+    }
+
     pub const fn blend(&self) -> f32 {
         self.blend
     }
 
-    pub const fn konst_alpha(&self) -> u8 {
-        self.konst_alpha
+    pub const fn konst(&self) -> Option<[u8; 4]> {
+        self.konst
     }
 
-    pub const fn tev0_alpha(&self) -> u8 {
-        self.tev0_alpha
+    pub const fn tev0(&self) -> Option<[u8; 4]> {
+        self.tev0
     }
 }
 
@@ -324,14 +330,20 @@ impl SceneInstance {
             if !texture
                 .translation
                 .into_iter()
+                .chain(texture.scale)
                 .chain([texture.blend])
                 .all(f32::is_finite)
             {
                 return Err(InstanceError::NonFiniteInitialValue {
                     kind: SourceKind::Texture,
                     source_id: texture.source_id.to_string(),
-                    field: "translation or blend",
+                    field: "translation, scale, or blend",
                 });
+            }
+            if texture.konst.is_some() != texture.tev0.is_some() {
+                return Err(InstanceError::IncompleteTextureTev(
+                    texture.source_id.clone(),
+                ));
             }
             if texture_indices
                 .insert(texture.source_id.clone(), index)
@@ -369,9 +381,10 @@ impl SceneInstance {
                 image_slots: texture.image_slots,
                 current_image: texture.current_image,
                 translation: texture.translation,
+                scale: texture.scale,
                 blend: texture.blend,
-                konst_alpha: texture.konst_alpha,
-                tev0_alpha: texture.tev0_alpha,
+                konst: texture.konst,
+                tev0: texture.tev0,
             })
             .collect();
         let instance = Self {
@@ -506,9 +519,41 @@ impl SceneInstance {
                         }
                         Channel::TextureTranslationU => texture.translation[0] = value.value,
                         Channel::TextureTranslationV => texture.translation[1] = value.value,
+                        Channel::TextureScaleU => texture.scale[0] = value.value,
+                        Channel::TextureScaleV => texture.scale[1] = value.value,
                         Channel::TextureBlend => texture.blend = value.value,
-                        Channel::TextureKonstAlpha => texture.konst_alpha = quantize(value.value),
-                        Channel::TextureTev0Alpha => texture.tev0_alpha = quantize(value.value),
+                        Channel::TextureKonstR => {
+                            texture.konst.as_mut().expect("TEV state validated")[0] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureKonstG => {
+                            texture.konst.as_mut().expect("TEV state validated")[1] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureKonstB => {
+                            texture.konst.as_mut().expect("TEV state validated")[2] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureKonstAlpha => {
+                            texture.konst.as_mut().expect("TEV state validated")[3] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureTev0R => {
+                            texture.tev0.as_mut().expect("TEV state validated")[0] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureTev0G => {
+                            texture.tev0.as_mut().expect("TEV state validated")[1] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureTev0B => {
+                            texture.tev0.as_mut().expect("TEV state validated")[2] =
+                                quantize(value.value);
+                        }
+                        Channel::TextureTev0Alpha => {
+                            texture.tev0.as_mut().expect("TEV state validated")[3] =
+                                quantize(value.value);
+                        }
                         _ => unreachable!("channel family validated before mutation"),
                     }
                 }
@@ -585,8 +630,32 @@ impl SceneInstance {
                                     reason,
                                 })?;
                         }
-                        Channel::TextureKonstAlpha | Channel::TextureTev0Alpha => {
+                        Channel::TextureKonstR
+                        | Channel::TextureKonstG
+                        | Channel::TextureKonstB
+                        | Channel::TextureKonstAlpha
+                        | Channel::TextureTev0R
+                        | Channel::TextureTev0G
+                        | Channel::TextureTev0B
+                        | Channel::TextureTev0Alpha => {
                             validate_normalized(*value)?;
+                            let present = if matches!(
+                                value.channel,
+                                Channel::TextureKonstR
+                                    | Channel::TextureKonstG
+                                    | Channel::TextureKonstB
+                                    | Channel::TextureKonstAlpha
+                            ) {
+                                self.textures[index].konst.is_some()
+                            } else {
+                                self.textures[index].tev0.is_some()
+                            };
+                            if !present {
+                                return Err(ApplyError::TextureColorWithoutTev {
+                                    texture: id.clone(),
+                                    channel: value.channel,
+                                });
+                            }
                         }
                         _ => {}
                     }
@@ -648,7 +717,9 @@ fn source_scale(value: f32) -> f32 {
 }
 
 fn quantize(value: f32) -> u8 {
-    (255.0 * value) as u8
+    // HSD spells this as `255.0 * val->fv`: the unsuffixed constant promotes
+    // the sampled f32 to double before the truncating byte conversion.
+    (255.0_f64 * f64::from(value)) as u8
 }
 
 fn validate_normalized(value: ChannelValue) -> Result<(), ApplyError> {
@@ -705,8 +776,16 @@ fn channel_kind(channel: Channel) -> SourceKind {
         Channel::TextureImage
         | Channel::TextureTranslationU
         | Channel::TextureTranslationV
+        | Channel::TextureScaleU
+        | Channel::TextureScaleV
         | Channel::TextureBlend
+        | Channel::TextureKonstR
+        | Channel::TextureKonstG
+        | Channel::TextureKonstB
         | Channel::TextureKonstAlpha
+        | Channel::TextureTev0R
+        | Channel::TextureTev0G
+        | Channel::TextureTev0B
         | Channel::TextureTev0Alpha => SourceKind::Texture,
     }
 }
@@ -755,6 +834,8 @@ pub enum InstanceError {
     DuplicateMaterial(SourceMaterialId),
     #[error("duplicate source texture {0}")]
     DuplicateTexture(SourceTextureId),
+    #[error("source texture {0} must provide both konst and TEV0 colors or neither")]
+    IncompleteTextureTev(SourceTextureId),
     #[error("joint {joint} references missing parent {parent}")]
     MissingParent {
         joint: SourceJointId,
@@ -790,6 +871,11 @@ pub enum ApplyError {
     MissingTexture(SourceTextureId),
     #[error("matrix-backed joint {0} cannot consume SRT animation channels")]
     MatrixJointCannotApplySrt(SourceJointId),
+    #[error("texture {texture} has no TEV descriptor for {channel:?}")]
+    TextureColorWithoutTev {
+        texture: SourceTextureId,
+        channel: Channel,
+    },
     #[error("{channel:?} sample bits 0x{value_bits:08x} are outside 0..=1")]
     ColorSampleOutOfRange { channel: Channel, value_bits: u32 },
     #[error(
@@ -845,9 +931,10 @@ mod tests {
             ],
             current_image: Some("initial-image".into()),
             translation: [0.0, 0.0],
+            scale: [1.0, 1.0],
             blend: 1.0,
-            konst_alpha: 255,
-            tev0_alpha: 255,
+            konst: Some([255; 4]),
+            tev0: Some([255; 4]),
         }
     }
 
@@ -1010,9 +1097,14 @@ mod tests {
             })
         ));
 
-        for (translation, blend) in [([f32::NAN, 0.0], 1.0), ([0.0, 0.0], f32::INFINITY)] {
+        for (translation, scale, blend) in [
+            ([f32::NAN, 0.0], [1.0, 1.0], 1.0),
+            ([0.0, 0.0], [f32::INFINITY, 1.0], 1.0),
+            ([0.0, 0.0], [1.0, 1.0], f32::INFINITY),
+        ] {
             let mut bad_texture = texture("texture");
             bad_texture.translation = translation;
+            bad_texture.scale = scale;
             bad_texture.blend = blend;
             let descriptor = InstanceDescriptor {
                 textures: vec![bad_texture],
@@ -1048,6 +1140,20 @@ mod tests {
             SceneInstance::new(InstanceId::new(1), descriptor).unwrap_err(),
             InstanceError::EmptySourceId(SourceKind::Image)
         );
+
+        for (konst, tev0) in [(Some([1; 4]), None), (None, Some([2; 4]))] {
+            let mut incomplete_tev = texture("incomplete-tev");
+            incomplete_tev.konst = konst;
+            incomplete_tev.tev0 = tev0;
+            let descriptor = InstanceDescriptor {
+                textures: vec![incomplete_tev],
+                ..InstanceDescriptor::default()
+            };
+            assert_eq!(
+                SceneInstance::new(InstanceId::new(1), descriptor).unwrap_err(),
+                InstanceError::IncompleteTextureTev("incomplete-tev".into())
+            );
+        }
     }
 
     #[test]
@@ -1184,8 +1290,16 @@ mod tests {
                     sample(Channel::TextureImage, 2.9),
                     sample(Channel::TextureTranslationU, -0.5),
                     sample(Channel::TextureTranslationV, 1.5),
+                    sample(Channel::TextureScaleU, 2.0),
+                    sample(Channel::TextureScaleV, 0.5),
                     sample(Channel::TextureBlend, 0.25),
+                    sample(Channel::TextureKonstR, 0.0),
+                    sample(Channel::TextureKonstG, 0.5),
+                    sample(Channel::TextureKonstB, 0.75),
                     sample(Channel::TextureKonstAlpha, 0.5),
+                    sample(Channel::TextureTev0R, 1.0),
+                    sample(Channel::TextureTev0G, 0.75),
+                    sample(Channel::TextureTev0B, 0.5),
                     sample(Channel::TextureTev0Alpha, 0.75),
                 ],
             )
@@ -1194,9 +1308,10 @@ mod tests {
         let state = instance.texture(&"texture".into()).unwrap();
         assert_eq!(state.current_image(), Some(&SourceImageId::from("image-2")));
         assert_eq!(state.translation(), [-0.5, 1.5]);
+        assert_eq!(state.scale(), [2.0, 0.5]);
         assert_eq!(state.blend(), 0.25);
-        assert_eq!(state.konst_alpha(), 127);
-        assert_eq!(state.tev0_alpha(), 191);
+        assert_eq!(state.konst(), Some([0, 127, 191, 127]));
+        assert_eq!(state.tev0(), Some([255, 191, 127, 191]));
     }
 
     #[test]
@@ -1332,6 +1447,41 @@ mod tests {
             ),
             Err(ApplyError::InvalidTextureImage {
                 reason: ImageIndexError::OutOfRange,
+                ..
+            })
+        ));
+        assert_eq!(instance.texture(&"texture".into()).unwrap(), &before);
+
+        let mut no_tev_descriptor = descriptor();
+        no_tev_descriptor.textures[0].konst = None;
+        no_tev_descriptor.textures[0].tev0 = None;
+        let mut no_tev = SceneInstance::new(InstanceId::new(10), no_tev_descriptor).unwrap();
+        let no_tev_before = no_tev.texture(&"texture".into()).unwrap().clone();
+        assert!(matches!(
+            no_tev.apply_channels(
+                &SourceTarget::Texture("texture".into()),
+                &[
+                    sample(Channel::TextureScaleU, 3.0),
+                    sample(Channel::TextureTev0R, 0.5),
+                ],
+            ),
+            Err(ApplyError::TextureColorWithoutTev {
+                channel: Channel::TextureTev0R,
+                ..
+            })
+        ));
+        assert_eq!(no_tev.texture(&"texture".into()).unwrap(), &no_tev_before);
+
+        assert!(matches!(
+            instance.apply_channels(
+                &SourceTarget::Texture("texture".into()),
+                &[
+                    sample(Channel::TextureScaleU, 3.0),
+                    sample(Channel::TextureTev0G, 1.01),
+                ],
+            ),
+            Err(ApplyError::ColorSampleOutOfRange {
+                channel: Channel::TextureTev0G,
                 ..
             })
         ));

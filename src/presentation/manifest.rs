@@ -377,9 +377,11 @@ pub struct BoundTextureSource {
     /// Ordered table from TexAnim. Null slots intentionally remain present.
     pub image_slots: Vec<TextureImageSlot>,
     pub translation: [f32; 2],
+    pub scale: [f32; 2],
     pub blend: f32,
-    pub konst_alpha: Option<u8>,
-    pub tev0_alpha: Option<u8>,
+    /// Initial TEV register colors, absent when the TObj has no TEV descriptor.
+    pub konst: Option<[u8; 4]>,
+    pub tev0: Option<[u8; 4]>,
 }
 
 /// One decoded AObj attached to an exact source occurrence.
@@ -500,6 +502,14 @@ pub enum BindError {
         "texture AObj {aobj_offset:#x} in hierarchy {hierarchy:?} animates TObj {tobj_offset:#x} images without a non-empty image table"
     )]
     TextureImageTrackWithoutTable {
+        hierarchy: String,
+        tobj_offset: u32,
+        aobj_offset: u32,
+    },
+    #[error(
+        "texture AObj {aobj_offset:#x} in hierarchy {hierarchy:?} animates TObj {tobj_offset:#x} TEV colors without a TEV descriptor"
+    )]
+    TextureColorTrackWithoutTev {
         hierarchy: String,
         tobj_offset: u32,
         aobj_offset: u32,
@@ -818,9 +828,10 @@ pub enum PresentationUpdate {
         source_id: SourceTextureId,
         current_image: Option<SourceImageId>,
         translation: [f32; 2],
+        scale: [f32; 2],
         blend: f32,
-        konst_alpha: u8,
-        tev0_alpha: u8,
+        konst: Option<[u8; 4]>,
+        tev0: Option<[u8; 4]>,
     },
 }
 
@@ -840,9 +851,10 @@ struct TextureSnapshot {
     source_id: SourceTextureId,
     current_image: Option<SourceImageId>,
     translation: [f32; 2],
+    scale: [f32; 2],
     blend: f32,
-    konst_alpha: u8,
-    tev0_alpha: u8,
+    konst: Option<[u8; 4]>,
+    tev0: Option<[u8; 4]>,
 }
 
 impl InstanceSnapshot {
@@ -871,9 +883,10 @@ impl InstanceSnapshot {
                     source_id: texture.source_id().clone(),
                     current_image: texture.current_image().cloned(),
                     translation: texture.translation(),
+                    scale: texture.scale(),
                     blend: texture.blend(),
-                    konst_alpha: texture.konst_alpha(),
-                    tev0_alpha: texture.tev0_alpha(),
+                    konst: texture.konst(),
+                    tev0: texture.tev0(),
                 })
                 .collect(),
         }
@@ -913,18 +926,20 @@ impl InstanceSnapshot {
         for (before, after) in self.textures.into_iter().zip(instance.textures()) {
             if before.current_image.as_ref() != after.current_image()
                 || before.translation != after.translation()
+                || before.scale != after.scale()
                 || before.blend != after.blend()
-                || before.konst_alpha != after.konst_alpha()
-                || before.tev0_alpha != after.tev0_alpha()
+                || before.konst != after.konst()
+                || before.tev0 != after.tev0()
             {
                 updates.push(PresentationUpdate::Texture {
                     instance_id,
                     source_id: before.source_id,
                     current_image: after.current_image().cloned(),
                     translation: after.translation(),
+                    scale: after.scale(),
                     blend: after.blend(),
-                    konst_alpha: after.konst_alpha(),
-                    tev0_alpha: after.tev0_alpha(),
+                    konst: after.konst(),
+                    tev0: after.tev0(),
                 });
             }
         }

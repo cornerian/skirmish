@@ -536,6 +536,7 @@ fn bind_texture_animations(
                 };
                 let texture = texture_source(resource_id, view, identity, texanim)?;
                 let has_image_table = !texture.image_slots.is_empty();
+                let has_tev = texture.konst.is_some();
                 if seen_textures.insert(identity) {
                     output.textures.push(texture);
                 }
@@ -551,6 +552,13 @@ fn bind_texture_animations(
                 )?;
                 if tracks.texture_image && !has_image_table {
                     return Err(BindError::TextureImageTrackWithoutTable {
+                        hierarchy: spec.id.clone(),
+                        tobj_offset: tobj,
+                        aobj_offset: aobj,
+                    });
+                }
+                if tracks.texture_color && !has_tev {
+                    return Err(BindError::TextureColorTrackWithoutTev {
                         hierarchy: spec.id.clone(),
                         tobj_offset: tobj,
                         aobj_offset: aobj,
@@ -659,6 +667,19 @@ fn push_binding(
             .tracks
             .iter()
             .any(|track| track.channel == Channel::TextureImage),
+        texture_color: report.animation.tracks.iter().any(|track| {
+            matches!(
+                track.channel,
+                Channel::TextureKonstR
+                    | Channel::TextureKonstG
+                    | Channel::TextureKonstB
+                    | Channel::TextureKonstAlpha
+                    | Channel::TextureTev0R
+                    | Channel::TextureTev0G
+                    | Channel::TextureTev0B
+                    | Channel::TextureTev0Alpha
+            )
+        }),
     };
     if !report.animation.tracks.is_empty() {
         output.bindings.push(BoundAnimation {
@@ -675,6 +696,7 @@ fn push_binding(
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct BoundTrackSet {
     texture_image: bool,
+    texture_color: bool,
 }
 
 fn material_source(
@@ -734,11 +756,14 @@ fn texture_source(
         }
     }
     let tev = view.u32(tobj, 0x58, "TObj")?;
-    let (konst_alpha, tev0_alpha) = if tev == 0 {
+    let (konst, tev0) = if tev == 0 {
         (None, None)
     } else {
         let bytes = view.bytes_at(tev, TOBJ_TEV_DESC_SIZE, "TObj TEV descriptor")?;
-        (Some(bytes[19]), Some(bytes[23]))
+        (
+            Some(bytes[16..20].try_into().expect("validated TEV descriptor")),
+            Some(bytes[20..24].try_into().expect("validated TEV descriptor")),
+        )
     };
     Ok(BoundTextureSource {
         identity,
@@ -751,8 +776,12 @@ fn texture_source(
             view.f32(tobj, 0x28, "texture translation")?,
             view.f32(tobj, 0x2c, "texture translation")?,
         ],
+        scale: [
+            view.f32(tobj, 0x1c, "texture scale")?,
+            view.f32(tobj, 0x20, "texture scale")?,
+        ],
         blend: view.f32(tobj, 0x44, "texture blend")?,
-        konst_alpha,
-        tev0_alpha,
+        konst,
+        tev0,
     })
 }

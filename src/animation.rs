@@ -64,11 +64,6 @@ pub enum ChannelTarget {
 }
 
 /// A channel present in the currently modeled `MnMaAll.dat` animation slices.
-///
-/// This includes every scalar channel needed by the background and panel roots,
-/// plus the Main-selection `ConTop` subtree. Cursor texture scale and its other
-/// color-register channels remain explicit decoding errors until their consumer
-/// state is modeled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Channel {
     JointRotationX,
@@ -88,8 +83,16 @@ pub enum Channel {
     TextureImage,
     TextureTranslationU,
     TextureTranslationV,
+    TextureScaleU,
+    TextureScaleV,
     TextureBlend,
+    TextureKonstR,
+    TextureKonstG,
+    TextureKonstB,
     TextureKonstAlpha,
+    TextureTev0R,
+    TextureTev0G,
+    TextureTev0B,
     TextureTev0Alpha,
 }
 
@@ -113,8 +116,16 @@ impl Channel {
             (ChannelTarget::Texture, 1) => Some(Self::TextureImage),
             (ChannelTarget::Texture, 2) => Some(Self::TextureTranslationU),
             (ChannelTarget::Texture, 3) => Some(Self::TextureTranslationV),
+            (ChannelTarget::Texture, 4) => Some(Self::TextureScaleU),
+            (ChannelTarget::Texture, 5) => Some(Self::TextureScaleV),
             (ChannelTarget::Texture, 9) => Some(Self::TextureBlend),
+            (ChannelTarget::Texture, 12) => Some(Self::TextureKonstR),
+            (ChannelTarget::Texture, 13) => Some(Self::TextureKonstG),
+            (ChannelTarget::Texture, 14) => Some(Self::TextureKonstB),
             (ChannelTarget::Texture, 15) => Some(Self::TextureKonstAlpha),
+            (ChannelTarget::Texture, 16) => Some(Self::TextureTev0R),
+            (ChannelTarget::Texture, 17) => Some(Self::TextureTev0G),
+            (ChannelTarget::Texture, 18) => Some(Self::TextureTev0B),
             (ChannelTarget::Texture, 19) => Some(Self::TextureTev0Alpha),
             _ => None,
         }
@@ -130,18 +141,6 @@ pub enum Interpolation {
     SplineZero,
     /// Cubic Hermite interpolation with an encoded tangent.
     Spline,
-}
-
-impl Interpolation {
-    fn decode(raw: u8) -> Option<Self> {
-        match raw {
-            1 => Some(Self::Constant),
-            2 => Some(Self::Linear),
-            3 => Some(Self::SplineZero),
-            4 => Some(Self::Spline),
-            _ => None,
-        }
-    }
 }
 
 /// The scalar packing selected by an HSD FObj descriptor.
@@ -204,7 +203,10 @@ fn denominator(fractional_bits: u8) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keyframe {
     pub value: f32,
-    pub slope: f32,
+    /// Tangent used when the preceding segment arrives at this key.
+    pub incoming_slope: f32,
+    /// Tangent used when this key's segment departs toward the next key.
+    pub outgoing_slope: f32,
     pub interpolation: Interpolation,
     pub wait: u16,
 }
@@ -615,7 +617,7 @@ fn decode_program(
     max_keys_per_track: usize,
     remaining_total_keys: usize,
 ) -> Result<Vec<Keyframe>, DecodeError> {
-    let mut cursor = StreamCursor::new(program, stream_offset);
+    let mut parser = InstructionParser::new(program, stream_offset, value_encoding, slope_encoding);
     let mut keys = Vec::new();
     let key_capacity = program
         .len()
@@ -626,58 +628,36 @@ fn decode_program(
         .map_err(|_| DecodeError::AllocationFailed {
             resource: "FObj keyframes",
         })?;
-    let mut packed_remaining = 0_u16;
-    let mut interpolation = Interpolation::Constant;
-
-    while !cursor.is_empty() {
-        if keys.len() >= max_keys_per_track {
+    let mut state = NormalizationState::default();
+    loop {
+        // Preserve the original fail-closed ordering: once the key ceiling is
+        // reached, no further stream byte (including an SLP instruction) is
+        // parsed or validated. An exhausted partial pack still enters `next`
+        // so it can report IncompletePack instead.
+        if parser.has_unread_input() && keys.len() >= max_keys_per_track {
             return Err(DecodeError::LimitExceeded {
                 resource: "keyframes per FObj track",
                 limit: max_keys_per_track,
             });
         }
-        if keys.len() >= remaining_total_keys {
+        if parser.has_unread_input() && keys.len() >= remaining_total_keys {
             return Err(DecodeError::LimitExceeded {
                 resource: "keyframes per AObj",
                 limit: remaining_total_keys,
             });
         }
-        if packed_remaining == 0 {
-            let header = cursor.byte()?;
-            interpolation =
-                Interpolation::decode(header & 0x0f).ok_or(DecodeError::UnsupportedOpcode {
-                    opcode: header & 0x0f,
-                    stream_offset: cursor.absolute_position().saturating_sub(1),
-                })?;
-            packed_remaining = parse_pack_info(&mut cursor, header)?;
-        }
-
-        let value = value_encoding.read(&mut cursor)?;
-        let slope = if interpolation == Interpolation::Spline {
-            slope_encoding.read(&mut cursor)?
-        } else {
-            0.0
+        let Some(instruction) = parser.next()? else {
+            break;
         };
-        packed_remaining -= 1;
-
-        if cursor.is_empty() {
-            return Err(DecodeError::MissingWait {
-                stream_offset: stream_offset.get(),
-            });
-        }
-        let wait = parse_wait(&mut cursor)?;
-        keys.push(Keyframe {
-            value,
-            slope,
-            interpolation,
-            wait,
-        });
+        state.apply(instruction, &mut keys);
     }
 
-    if packed_remaining != 0 {
-        return Err(DecodeError::IncompletePack {
+    // This is intentional strict normalized-format validation. The source C
+    // interpreter can reach EOF after SLP with transient register state, but
+    // that state cannot be represented as a complete finite key segment.
+    if state.previous_opcode == Some(FObjOpcode::Slope) {
+        return Err(DecodeError::DanglingSlope {
             stream_offset: stream_offset.get(),
-            missing_values: packed_remaining,
         });
     }
     if keys.len() < 2 {
@@ -694,6 +674,202 @@ fn decode_program(
     }
 
     Ok(keys)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FObjOpcode {
+    Constant,
+    Linear,
+    SplineZero,
+    Spline,
+    Slope,
+}
+
+impl FObjOpcode {
+    const fn decode(raw: u8) -> Option<Self> {
+        match raw {
+            1 => Some(Self::Constant),
+            2 => Some(Self::Linear),
+            3 => Some(Self::SplineZero),
+            4 => Some(Self::Spline),
+            5 => Some(Self::Slope),
+            _ => None,
+        }
+    }
+
+    const fn interpolation(self) -> Interpolation {
+        match self {
+            Self::Constant => Interpolation::Constant,
+            Self::Linear => Interpolation::Linear,
+            Self::SplineZero => Interpolation::SplineZero,
+            Self::Spline | Self::Slope => Interpolation::Spline,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FObjInstruction {
+    Value {
+        opcode: FObjOpcode,
+        value: f32,
+        slope: f32,
+        wait: u16,
+    },
+    /// `HSD_A_OP_SLP` changes the two tangent registers without consuming a
+    /// value or wait. Its opcode becomes the interpolation mode for the next
+    /// completed segment.
+    Slope { slope: f32 },
+}
+
+struct InstructionParser<'a> {
+    cursor: StreamCursor<'a>,
+    value_encoding: ScalarEncoding,
+    slope_encoding: ScalarEncoding,
+    packed_opcode: Option<FObjOpcode>,
+    packed_remaining: u16,
+}
+
+impl<'a> InstructionParser<'a> {
+    fn new(
+        program: &'a [u8],
+        stream_offset: DataOffset,
+        value_encoding: ScalarEncoding,
+        slope_encoding: ScalarEncoding,
+    ) -> Self {
+        Self {
+            cursor: StreamCursor::new(program, stream_offset),
+            value_encoding,
+            slope_encoding,
+            packed_opcode: None,
+            packed_remaining: 0,
+        }
+    }
+
+    fn has_unread_input(&self) -> bool {
+        !self.cursor.is_empty()
+    }
+
+    fn next(&mut self) -> Result<Option<FObjInstruction>, DecodeError> {
+        if self.cursor.is_empty() {
+            if self.packed_remaining != 0 {
+                return Err(DecodeError::IncompletePack {
+                    stream_offset: self.cursor.stream_offset.get(),
+                    missing_values: self.packed_remaining,
+                });
+            }
+            return Ok(None);
+        }
+
+        if self.packed_remaining == 0 {
+            let header = self.cursor.byte()?;
+            let opcode =
+                FObjOpcode::decode(header & 0x0f).ok_or(DecodeError::UnsupportedOpcode {
+                    opcode: header & 0x0f,
+                    stream_offset: self.cursor.absolute_position().saturating_sub(1),
+                })?;
+            self.packed_opcode = Some(opcode);
+            self.packed_remaining = parse_pack_info(&mut self.cursor, header)?;
+        }
+
+        let opcode = self
+            .packed_opcode
+            .expect("a nonempty packed group has an opcode");
+        let instruction = if opcode == FObjOpcode::Slope {
+            FObjInstruction::Slope {
+                slope: self.slope_encoding.read(&mut self.cursor)?,
+            }
+        } else {
+            let value = self.value_encoding.read(&mut self.cursor)?;
+            let slope = if opcode == FObjOpcode::Spline {
+                self.slope_encoding.read(&mut self.cursor)?
+            } else {
+                0.0
+            };
+            if self.cursor.is_empty() {
+                return Err(DecodeError::MissingWait {
+                    stream_offset: self.cursor.stream_offset.get(),
+                });
+            }
+            FObjInstruction::Value {
+                opcode,
+                value,
+                slope,
+                wait: parse_wait(&mut self.cursor)?,
+            }
+        };
+        self.packed_remaining -= 1;
+        Ok(Some(instruction))
+    }
+}
+
+#[derive(Default)]
+struct NormalizationState {
+    previous_opcode: Option<FObjOpcode>,
+    p0: f32,
+    p1: f32,
+    d0: f32,
+    d1: f32,
+}
+
+impl NormalizationState {
+    /// Mirror the source interpreter's four value/tangent registers, then
+    /// attach the resulting independent endpoint tangents to a key segment.
+    fn apply(&mut self, instruction: FObjInstruction, keys: &mut Vec<Keyframe>) {
+        let interpolation_opcode = self.previous_opcode;
+        match instruction {
+            FObjInstruction::Slope { slope } => {
+                self.d0 = self.d1;
+                self.d1 = slope;
+                self.previous_opcode = Some(FObjOpcode::Slope);
+            }
+            FObjInstruction::Value {
+                opcode,
+                value,
+                slope,
+                wait,
+            } => {
+                match opcode {
+                    FObjOpcode::Constant | FObjOpcode::Linear => {
+                        self.p0 = self.p1;
+                        self.p1 = value;
+                        if interpolation_opcode != Some(FObjOpcode::Slope) {
+                            self.d0 = self.d1;
+                            self.d1 = 0.0;
+                        }
+                    }
+                    FObjOpcode::SplineZero => {
+                        self.p0 = self.p1;
+                        self.d0 = self.d1;
+                        self.p1 = value;
+                        self.d1 = 0.0;
+                    }
+                    FObjOpcode::Spline => {
+                        self.p0 = self.p1;
+                        self.p1 = value;
+                        self.d0 = self.d1;
+                        self.d1 = slope;
+                    }
+                    FObjOpcode::Slope => unreachable!("slope is a distinct instruction"),
+                }
+
+                if let Some(previous) = keys.last_mut() {
+                    debug_assert_eq!(previous.value.to_bits(), self.p0.to_bits());
+                    previous.interpolation = interpolation_opcode
+                        .expect("a preceding value implies a preceding opcode")
+                        .interpolation();
+                    previous.outgoing_slope = self.d0;
+                }
+                keys.push(Keyframe {
+                    value: self.p1,
+                    incoming_slope: self.d1,
+                    outgoing_slope: self.d1,
+                    interpolation: opcode.interpolation(),
+                    wait,
+                });
+                self.previous_opcode = Some(opcode);
+            }
+        }
+    }
 }
 
 fn parse_pack_info(cursor: &mut StreamCursor<'_>, first: u8) -> Result<u16, DecodeError> {
@@ -784,8 +960,8 @@ fn evaluate_segment(from: Keyframe, to: Keyframe, time: f32, duration: u16) -> f
                     time,
                     from.value,
                     to.value,
-                    from.slope,
-                    to.slope,
+                    from.outgoing_slope,
+                    to.incoming_slope,
                 )
             }
         }
@@ -930,6 +1106,10 @@ pub enum DecodeError {
     #[error("FObj program at HSD data-section offset {stream_offset:#x} omits its final wait")]
     MissingWait { stream_offset: u32 },
     #[error(
+        "FObj program at HSD data-section offset {stream_offset:#x} ends with a slope instruction that has no following value"
+    )]
+    DanglingSlope { stream_offset: u32 },
+    #[error(
         "FObj program at HSD data-section offset {stream_offset:#x} has nonzero terminal wait {wait}"
     )]
     NonZeroTerminalWait { stream_offset: u32, wait: u16 },
@@ -970,7 +1150,15 @@ mod tests {
             (ChannelTarget::Material, 4, Channel::MaterialDiffuseR),
             (ChannelTarget::Material, 5, Channel::MaterialDiffuseG),
             (ChannelTarget::Material, 6, Channel::MaterialDiffuseB),
+            (ChannelTarget::Texture, 4, Channel::TextureScaleU),
+            (ChannelTarget::Texture, 5, Channel::TextureScaleV),
+            (ChannelTarget::Texture, 12, Channel::TextureKonstR),
+            (ChannelTarget::Texture, 13, Channel::TextureKonstG),
+            (ChannelTarget::Texture, 14, Channel::TextureKonstB),
             (ChannelTarget::Texture, 15, Channel::TextureKonstAlpha),
+            (ChannelTarget::Texture, 16, Channel::TextureTev0R),
+            (ChannelTarget::Texture, 17, Channel::TextureTev0G),
+            (ChannelTarget::Texture, 18, Channel::TextureTev0B),
             (ChannelTarget::Texture, 19, Channel::TextureTev0Alpha),
         ] {
             assert_eq!(Channel::decode(target, raw), Some(expected));
@@ -1021,6 +1209,31 @@ mod tests {
             .unwrap()
             .tracks
             .remove(0)
+    }
+
+    fn decode_track_for(
+        program: &[u8],
+        target: ChannelTarget,
+        channel: u8,
+        value_encoding: u8,
+        slope_encoding: u8,
+    ) -> FObjTrack {
+        let bytes = fixture(program, channel, value_encoding, slope_encoding);
+        HsdDataSection::new(&bytes)
+            .unwrap()
+            .decode_aobj(DataOffset::new(AOBJ as u32), target)
+            .unwrap()
+            .tracks
+            .remove(0)
+    }
+
+    fn hex_bytes(value: &str) -> Vec<u8> {
+        let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
+        assert!(remainder.is_empty());
+        pairs
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
     }
 
     fn f32_le(value: f32) -> [u8; 4] {
@@ -1112,6 +1325,126 @@ mod tests {
         spline.push(0);
         let spline = decode_track(&spline);
         assert_close(spline.sample(5.0).unwrap().unwrap(), 7.5);
+    }
+
+    #[test]
+    fn slp_matches_pinned_contop_source_c_samples_bit_for_bit() {
+        let program = hex_bytes(
+            "010000c0020387640e010fc9060300000f01876405048764b7f70f01000005030fc90f05fbfb218764550000c01b000000",
+        );
+        let track = decode_track_for(&program, ChannelTarget::Joint, 3, 0x4d, 0x2e);
+        assert_eq!(track.keys.len(), 11);
+        for (frame, expected_bits) in [
+            (379.0, 0x0000_0000),
+            (380.0, 0x40c9_0f00),
+            (387.0, 0x409f_5044),
+            (394.0, 0x404f_1e29),
+            (395.0, 0x4049_0e00),
+        ] {
+            assert_eq!(
+                track.sample(frame).unwrap().unwrap().to_bits(),
+                expected_bits,
+                "frame {frame}"
+            );
+        }
+    }
+
+    #[test]
+    fn slp_matches_pinned_cursor_source_c_samples_bit_for_bit() {
+        let program = hex_bytes("0399592805f9ff0100800a33ba1932537332ba193253733211ba19ee05ba1900");
+        let track = decode_track_for(&program, ChannelTarget::Material, 10, 0x4f, 0x2e);
+        assert_eq!(track.keys.len(), 8);
+        for (frame, expected_bits) in [
+            (0.0, 0x3f33_3200),
+            (20.0, 0x3f5a_2500),
+            (39.0, 0x3f7f_f65e),
+            (40.0, 0x3f80_0000),
+            (50.0, 0x3e4d_d000),
+        ] {
+            assert_eq!(
+                track.sample(frame).unwrap().unwrap().to_bits(),
+                expected_bits,
+                "frame {frame}"
+            );
+        }
+    }
+
+    #[test]
+    fn packed_repeated_slp_preserves_independent_endpoint_tangents() {
+        let mut program = vec![0x04];
+        program.extend(f32_le(0.0));
+        program.extend(f32_le(1.0));
+        program.push(10);
+        program.push(0x15);
+        program.extend(f32_le(2.0));
+        program.extend(f32_le(3.0));
+        program.push(0x01);
+        program.extend(f32_le(10.0));
+        program.push(0);
+
+        let track = decode_track(&program);
+        assert_eq!(track.keys[0].interpolation, Interpolation::Spline);
+        assert_eq!(track.keys[0].outgoing_slope, 2.0);
+        assert_eq!(track.keys[1].incoming_slope, 3.0);
+        assert_eq!(
+            track.sample(5.0).unwrap().unwrap().to_bits(),
+            spline::hermite(0.1, 5.0, 0.0, 10.0, 2.0, 3.0).to_bits()
+        );
+    }
+
+    #[test]
+    fn slp_followed_by_spline_zero_does_not_alias_endpoint_tangents() {
+        let mut program = vec![0x04];
+        program.extend(f32_le(0.0));
+        program.extend(f32_le(1.0));
+        program.push(10);
+        program.push(0x05);
+        program.extend(f32_le(2.0));
+        program.push(0x03);
+        program.extend(f32_le(10.0));
+        program.push(0);
+
+        let track = decode_track(&program);
+        assert_eq!(track.keys[0].outgoing_slope, 2.0);
+        assert_eq!(track.keys[1].incoming_slope, 0.0);
+    }
+
+    #[test]
+    fn strict_format_rejects_dangling_truncated_and_incomplete_slp_and_keeps_key_unsupported() {
+        let decode = |program: &[u8]| {
+            HsdDataSection::new(&fixture(program, 5, 0, 0))
+                .unwrap()
+                .decode_aobj(DataOffset::new(AOBJ as u32), ChannelTarget::Joint)
+        };
+
+        assert!(matches!(
+            decode(&[0x05]),
+            Err(DecodeError::TruncatedProgram { .. })
+        ));
+
+        let mut dangling = vec![0x05];
+        dangling.extend(f32_le(1.0));
+        // This is a normalized-format invariant, not a claim that the source
+        // interpreter rejects terminal SLP at runtime.
+        assert!(matches!(
+            decode(&dangling),
+            Err(DecodeError::DanglingSlope { .. })
+        ));
+
+        let mut incomplete = vec![0x15];
+        incomplete.extend(f32_le(1.0));
+        assert!(matches!(
+            decode(&incomplete),
+            Err(DecodeError::IncompletePack {
+                missing_values: 1,
+                ..
+            })
+        ));
+
+        assert!(matches!(
+            decode(&[0x06]),
+            Err(DecodeError::UnsupportedOpcode { opcode: 6, .. })
+        ));
     }
 
     #[test]
@@ -1229,6 +1562,60 @@ mod tests {
                 Err(DecodeError::LimitExceeded { .. })
             ));
         }
+    }
+
+    #[test]
+    fn reached_key_ceiling_precedes_validation_of_every_unread_instruction() {
+        let mut prefix = vec![0x01];
+        prefix.extend(f32_le(0.0));
+        prefix.push(1);
+        let malformed = [0x00].as_slice();
+        let truncated_slp = [0x05].as_slice();
+        let mut nonfinite_slp = vec![0x05];
+        nonfinite_slp.extend(f32::NAN.to_le_bytes());
+
+        for (max_track, max_total, expected_resource) in [
+            (1, 10, "keyframes per FObj track"),
+            (10, 1, "keyframes per AObj"),
+        ] {
+            for suffix in [malformed, truncated_slp, nonfinite_slp.as_slice()] {
+                let mut program = prefix.clone();
+                program.extend_from_slice(suffix);
+                assert!(matches!(
+                    decode_program(
+                        &program,
+                        DataOffset::new(PROGRAM as u32),
+                        ScalarEncoding::Float32,
+                        ScalarEncoding::Float32,
+                        max_track,
+                        max_total,
+                    ),
+                    Err(DecodeError::LimitExceeded { resource, limit: 1 })
+                        if resource == expected_resource
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_incomplete_pack_precedes_a_reached_key_ceiling() {
+        let mut program = vec![0x11];
+        program.extend(f32_le(0.0));
+        program.push(1);
+        assert!(matches!(
+            decode_program(
+                &program,
+                DataOffset::new(PROGRAM as u32),
+                ScalarEncoding::Float32,
+                ScalarEncoding::Float32,
+                1,
+                1,
+            ),
+            Err(DecodeError::IncompletePack {
+                missing_values: 1,
+                ..
+            })
+        ));
     }
 
     #[test]
