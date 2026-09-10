@@ -25,6 +25,10 @@ pub struct Rules {
     pub up_threshold: f32,
     /// Signed negative common-data threshold.
     pub down_threshold: f32,
+    /// Common x37C multiplier for victim-weight-dependent throw animation.
+    pub throw_weight_scale: f32,
+    /// Common x3C4 rise threshold, scaled by the victim's root bone Y scale.
+    pub capture_lift_threshold: f32,
     pub escape: EscapeRules,
 }
 
@@ -46,10 +50,17 @@ pub struct Parameters {
     pub catch_dash: Catch,
     pub attachment: Attachment,
     pub pummel: Pummel,
-    /// Complete victim physics poses for the ordinary pummel reaction.
-    pub capture_damage_poses: Vec<Vec<Bone>>,
+    /// Complete victim physics poses for the two ordinary pummel reactions.
+    pub capture_damage: CaptureDamage,
     pub escape: Escape,
     pub throws: Throws,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureDamage {
+    pub high: Vec<Vec<Bone>>,
+    pub low: Vec<Vec<Bone>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -106,6 +117,9 @@ pub struct Throw {
     /// Native move-table identity. Sentinel 1 is exempt from stale damage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_id: Option<u16>,
+    /// The fighter's per-direction weight-independent throw mask.
+    #[serde(default)]
+    pub weight_independent: bool,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
     /// Scripted release event. Zero is excluded so entry is observable.
@@ -139,6 +153,9 @@ pub struct State {
     pub pummel_hit: bool,
     pub escape_timer: f32,
     pub mash: input::MashState,
+    /// Paired HSD animation time and rate while a throw still owns its victim.
+    pub throw_elapsed: f32,
+    pub throw_rate: f32,
 }
 
 pub(crate) fn validate(
@@ -151,6 +168,8 @@ pub(crate) fn validate(
         rules.horizontal_threshold,
         rules.up_threshold,
         rules.down_threshold,
+        rules.throw_weight_scale,
+        rules.capture_lift_threshold,
         rules.escape.timer_base,
         rules.escape.timer_percent_scale,
         rules.escape.timer_decrement,
@@ -165,6 +184,9 @@ pub(crate) fn validate(
         || !(0.0..=1.0).contains(&rules.up_threshold)
         || rules.up_threshold == 0.0
         || !(-1.0..0.0).contains(&rules.down_threshold)
+        || !(0.0..1_000_000.0).contains(&rules.throw_weight_scale)
+        || !(0.0..1_000_000.0).contains(&rules.capture_lift_threshold)
+        || rules.capture_lift_threshold == 0.0
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_base)
         || !(0.0..1_000.0).contains(&rules.escape.timer_percent_scale)
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_decrement)
@@ -200,13 +222,18 @@ pub(crate) fn validate(
     for pose in &pummel.poses {
         super::validation::validate_animation_pose(pose, fighter)?;
     }
-    if parameters.capture_damage_poses.is_empty() || parameters.capture_damage_poses.len() > 4096 {
-        return Err(Error::Data(
-            "invalid explicit capture-damage animation".into(),
-        ));
-    }
-    for pose in &parameters.capture_damage_poses {
-        super::validation::validate_animation_pose(pose, fighter)?;
+    for poses in [
+        &parameters.capture_damage.high,
+        &parameters.capture_damage.low,
+    ] {
+        if poses.is_empty() || poses.len() > 4096 {
+            return Err(Error::Data(
+                "invalid explicit capture-damage animation".into(),
+            ));
+        }
+        for pose in poses {
+            super::validation::validate_animation_pose(pose, fighter)?;
+        }
     }
     for poses in [
         &parameters.escape.catch_cut_poses,
@@ -296,6 +323,10 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
             .axes
             .into_iter()
             .any(|axis| !(-1..=1).contains(&axis))
+        || !fighter.grab.throw_elapsed.is_finite()
+        || !fighter.grab.throw_rate.is_finite()
+        || fighter.grab.throw_elapsed < 0.0
+        || fighter.grab.throw_rate < 0.0
         || fighter.grab.pummel_hit
             && (fighter.grab.victim.is_none() || fighter.action != Action::CatchAttack)
     {
@@ -310,32 +341,133 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
                 && partner.grab.victim.is_none()
                 && partner.grab.captor == Some(player)
                 && !partner.grab.pummel_hit
+                && valid_throw_clock(fighter, partner)
                 && pair_actions(fighter.action, partner.action)
         }
         (None, Some(holder)) => {
             holder == other
                 && partner.grab.victim == Some(player)
                 && partner.grab.captor.is_none()
+                && valid_throw_clock(partner, fighter)
                 && pair_actions(partner.action, fighter.action)
         }
         (Some(_), Some(_)) => false,
     }
 }
 
+fn valid_throw_clock(holder: &Fighter, victim: &Fighter) -> bool {
+    if matches!(
+        holder.action,
+        Action::ThrowF | Action::ThrowB | Action::ThrowHi | Action::ThrowLw
+    ) {
+        holder.grab.throw_rate > 0.0
+            && holder.grab.throw_rate.to_bits() == victim.grab.throw_rate.to_bits()
+            && holder.grab.throw_elapsed.to_bits() == victim.grab.throw_elapsed.to_bits()
+    } else {
+        holder.grab.throw_rate == 0.0
+            && holder.grab.throw_elapsed == 0.0
+            && victim.grab.throw_rate == 0.0
+            && victim.grab.throw_elapsed == 0.0
+    }
+}
+
 fn pair_actions(holder: Action, victim: Action) -> bool {
     matches!(
         (holder, victim),
-        (Action::CatchPull, Action::CapturePulled)
-            | (Action::CatchDashPull, Action::CapturePulled)
-            | (Action::CatchWait, Action::CaptureWait)
-            | (Action::CatchAttack, Action::CaptureWait)
-            | (Action::CatchWait, Action::CaptureDamage)
-            | (Action::CatchAttack, Action::CaptureDamage)
-            | (Action::ThrowF, Action::ThrownF)
+        (
+            Action::CatchPull | Action::CatchDashPull,
+            Action::CapturePulledHi | Action::CapturePulledLw
+        ) | (
+            Action::CatchWait | Action::CatchAttack,
+            Action::CaptureWaitHi | Action::CaptureWaitLw
+        ) | (
+            Action::CatchWait | Action::CatchAttack,
+            Action::CaptureDamageHi | Action::CaptureDamageLw
+        ) | (Action::ThrowF, Action::ThrownF)
             | (Action::ThrowB, Action::ThrownB)
             | (Action::ThrowHi, Action::ThrownHi)
             | (Action::ThrowLw, Action::ThrownLw)
     )
+}
+
+fn capture_pulled_action(grounded: bool) -> Action {
+    if grounded {
+        Action::CapturePulledLw
+    } else {
+        Action::CapturePulledHi
+    }
+}
+
+fn capture_wait_action(action: Action) -> Option<Action> {
+    match action {
+        Action::CapturePulledHi | Action::CaptureWaitHi | Action::CaptureDamageHi => {
+            Some(Action::CaptureWaitHi)
+        }
+        Action::CapturePulledLw | Action::CaptureWaitLw | Action::CaptureDamageLw => {
+            Some(Action::CaptureWaitLw)
+        }
+        _ => None,
+    }
+}
+
+fn capture_damage_action(action: Action) -> Option<Action> {
+    match action {
+        Action::CapturePulledHi | Action::CaptureWaitHi | Action::CaptureDamageHi => {
+            Some(Action::CaptureDamageHi)
+        }
+        Action::CapturePulledLw | Action::CaptureWaitLw | Action::CaptureDamageLw => {
+            Some(Action::CaptureDamageLw)
+        }
+        _ => None,
+    }
+}
+
+fn capture_damage_poses(parameters: &Parameters, action: Action) -> Option<&[Vec<Bone>]> {
+    match action {
+        Action::CaptureDamageHi => Some(&parameters.capture_damage.high),
+        Action::CaptureDamageLw => Some(&parameters.capture_damage.low),
+        _ => None,
+    }
+}
+
+fn capture_waiting(action: Action) -> bool {
+    matches!(action, Action::CaptureWaitHi | Action::CaptureWaitLw)
+}
+
+fn captured(action: Action) -> bool {
+    matches!(
+        action,
+        Action::CapturePulledHi
+            | Action::CaptureWaitHi
+            | Action::CaptureDamageHi
+            | Action::CapturePulledLw
+            | Action::CaptureWaitLw
+            | Action::CaptureDamageLw
+    )
+}
+
+pub(crate) fn transfer_capture_family(fighter: &mut Fighter, airborne: bool) -> bool {
+    let action = match (fighter.action, airborne) {
+        (Action::CapturePulledLw, true) => Action::CapturePulledHi,
+        (Action::CaptureWaitLw, true) => Action::CaptureWaitHi,
+        (Action::CaptureDamageLw, true) => Action::CaptureDamageHi,
+        (Action::CapturePulledHi, false) => Action::CapturePulledLw,
+        (Action::CaptureWaitHi, false) => Action::CaptureWaitLw,
+        (Action::CaptureDamageHi, false) => Action::CaptureDamageLw,
+        _ => return false,
+    };
+    let frame = fighter.action_frame;
+    simulation::enter(fighter, action);
+    fighter.action_frame = frame;
+    if airborne {
+        fighter.grounded = false;
+        fighter.ground_line = None;
+        fighter.ground_knockback = 0.0;
+        fighter.ground_velocity = 0.0;
+        fighter.fast_fall = false;
+        fighter.locomotion.jumps_used = fighter.locomotion.jumps_used.max(1);
+    }
+    true
 }
 
 pub(crate) fn owns_action(action: Action) -> bool {
@@ -352,9 +484,12 @@ pub(crate) fn owns_action(action: Action) -> bool {
             | Action::ThrowB
             | Action::ThrowHi
             | Action::ThrowLw
-            | Action::CapturePulled
-            | Action::CaptureWait
-            | Action::CaptureDamage
+            | Action::CapturePulledHi
+            | Action::CaptureWaitHi
+            | Action::CaptureDamageHi
+            | Action::CapturePulledLw
+            | Action::CaptureWaitLw
+            | Action::CaptureDamageLw
             | Action::CaptureCut
             | Action::ThrownF
             | Action::ThrownB
@@ -388,10 +523,10 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
         simulation::enter(fighter, Action::CatchWait);
         return true;
     }
-    if fighter.action == Action::CaptureDamage
-        && fighter.action_frame as usize >= parameters.capture_damage_poses.len()
+    if let Some(poses) = capture_damage_poses(parameters, fighter.action)
+        && fighter.action_frame as usize >= poses.len()
     {
-        simulation::enter(fighter, Action::CaptureWait);
+        simulation::enter(fighter, capture_wait_action(fighter.action).unwrap());
         return true;
     }
     let cut_complete = match fighter.action {
@@ -521,11 +656,14 @@ pub(crate) fn update_pairs(
         if active[victim]
             && matches!(
                 state.fighters[victim].action,
-                Action::CaptureWait | Action::CaptureDamage
+                Action::CaptureWaitHi
+                    | Action::CaptureDamageHi
+                    | Action::CaptureWaitLw
+                    | Action::CaptureDamageLw
             )
         {
             update_escape(data, state, victim, controllers[victim]);
-            if state.fighters[victim].action == Action::CaptureWait
+            if capture_waiting(state.fighters[victim].action)
                 && state.fighters[victim].grab.escape_timer <= 0.0
             {
                 escape_pair(data, state, holder, victim);
@@ -541,13 +679,17 @@ pub(crate) fn update_pairs(
                 if state.fighters[holder].action_frame >= parameters.catch.pull_frames =>
             {
                 simulation::enter(&mut state.fighters[holder], Action::CatchWait);
-                simulation::enter(&mut state.fighters[victim], Action::CaptureWait);
+                let wait = capture_wait_action(state.fighters[victim].action)
+                    .ok_or_else(|| Error::Physics("invalid captured-victim action".into()))?;
+                simulation::enter(&mut state.fighters[victim], wait);
             }
             Action::CatchDashPull
                 if state.fighters[holder].action_frame >= parameters.catch_dash.pull_frames =>
             {
                 simulation::enter(&mut state.fighters[holder], Action::CatchWait);
-                simulation::enter(&mut state.fighters[victim], Action::CaptureWait);
+                let wait = capture_wait_action(state.fighters[victim].action)
+                    .ok_or_else(|| Error::Physics("invalid captured-victim action".into()))?;
+                simulation::enter(&mut state.fighters[victim], wait);
             }
             Action::CatchAttack
                 if state.fighters[holder].action_frame == parameters.pummel.hit_frame
@@ -608,24 +750,67 @@ pub(crate) fn update_pairs(
     Ok(frozen)
 }
 
-pub(crate) fn synchronize_actions(state: &mut MatchState) {
+pub(crate) fn synchronize_actions(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
     for holder in 0..2 {
         let Some(victim) = state.fighters[holder].grab.victim else {
             continue;
         };
-        let victim_action = match state.fighters[holder].action {
-            Action::ThrowF => Some(Action::ThrownF),
-            Action::ThrowB => Some(Action::ThrownB),
-            Action::ThrowHi => Some(Action::ThrownHi),
-            Action::ThrowLw => Some(Action::ThrownLw),
-            _ => None,
+        let holder_action = state.fighters[holder].action;
+        let victim_action = match holder_action {
+            Action::ThrowF => Action::ThrownF,
+            Action::ThrowB => Action::ThrownB,
+            Action::ThrowHi => Action::ThrownHi,
+            Action::ThrowLw => Action::ThrownLw,
+            _ => continue,
         };
-        if let Some(action) = victim_action
-            && state.fighters[victim].action != action
-        {
-            simulation::enter(&mut state.fighters[victim], action);
+        if state.fighters[holder].grab.throw_rate == 0.0 {
+            let throw = data.fighters[holder]
+                .grab
+                .as_ref()
+                .and_then(|parameters| throw_for_action(&parameters.throws, holder_action))
+                .ok_or_else(|| Error::Data("throw state requires grab resources".into()))?;
+            let rate = input::throw_animation_rate(
+                throw.weight_independent,
+                data.fighters[victim].weight,
+                data.rules.grab.as_ref().unwrap().throw_weight_scale,
+            );
+            if !rate.is_finite() || rate <= 0.0 {
+                return Err(Error::Data("invalid weight-dependent throw rate".into()));
+            }
+            state.fighters[holder].grab.throw_rate = rate;
+            state.fighters[victim].grab.throw_rate = rate;
+        }
+        if state.fighters[victim].action != victim_action {
+            simulation::enter(&mut state.fighters[victim], victim_action);
         }
     }
+    Ok(())
+}
+
+/// Advances paired HSD time. Before release, a fast rate stops at the scripted
+/// event frame; the release callback restores ordinary rate-one advancement.
+pub(crate) fn paired_throw_release(
+    data: &MatchData,
+    state: &MatchState,
+    player: usize,
+) -> Option<u32> {
+    let holder = state.fighters[player].grab.captor.unwrap_or(player);
+    state.fighters[holder].grab.victim?;
+    let parameters = data.fighters[holder].grab.as_ref()?;
+    throw_for_action(&parameters.throws, state.fighters[holder].action)
+        .map(|throw_| throw_.release_frame)
+}
+
+pub(crate) fn advance_action_frame(fighter: &mut Fighter, release_frame: Option<u32>) -> bool {
+    let Some(release_frame) = release_frame else {
+        return false;
+    };
+    if fighter.grab.throw_rate == 0.0 {
+        return false;
+    }
+    fighter.grab.throw_elapsed += fighter.grab.throw_rate;
+    fighter.action_frame = (fighter.grab.throw_elapsed as u32).min(release_frame);
+    true
 }
 
 pub(crate) fn release_broken_pairs(state: &mut MatchState) {
@@ -635,16 +820,12 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         };
         if !holder_action(state.fighters[holder].action) {
             detach(state, holder, victim);
-            if matches!(
-                state.fighters[victim].action,
-                Action::CapturePulled
-                    | Action::CaptureWait
-                    | Action::CaptureDamage
-                    | Action::ThrownF
-                    | Action::ThrownB
-                    | Action::ThrownHi
-                    | Action::ThrownLw
-            ) {
+            if captured(state.fighters[victim].action)
+                || matches!(
+                    state.fighters[victim].action,
+                    Action::ThrownF | Action::ThrownB | Action::ThrownHi | Action::ThrownLw
+                )
+            {
                 let grounded = state.fighters[victim].grounded;
                 simulation::enter(
                     &mut state.fighters[victim],
@@ -677,7 +858,7 @@ pub(crate) fn break_for_player(state: &mut MatchState, player: usize) {
 pub(crate) fn attach_all(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
     for holder in 0..2 {
         if let Some(victim) = state.fighters[holder].grab.victim {
-            attach(data, state, holder, victim)?;
+            attach(data, state, holder, victim, true)?;
         }
     }
     Ok(())
@@ -774,10 +955,11 @@ pub(crate) fn scan(
             } else {
                 Action::CatchPull
             };
+            let victim_action = capture_pulled_action(state.fighters[victim].grounded);
             simulation::enter(&mut state.fighters[holder], pull);
-            simulation::enter(&mut state.fighters[victim], Action::CapturePulled);
+            simulation::enter(&mut state.fighters[victim], victim_action);
             state.events.push(Event::Grabbed { holder, victim });
-            attach(data, state, holder, victim)?;
+            attach(data, state, holder, victim, true)?;
         }
     }
     Ok(())
@@ -795,8 +977,14 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .poses
             .get(fighter.action_frame as usize)
             .map(Vec::as_slice),
-        Action::CaptureDamage => parameters
-            .capture_damage_poses
+        Action::CaptureDamageHi => parameters
+            .capture_damage
+            .high
+            .get(fighter.action_frame as usize)
+            .map(Vec::as_slice),
+        Action::CaptureDamageLw => parameters
+            .capture_damage
+            .low
             .get(fighter.action_frame as usize)
             .map(Vec::as_slice),
         Action::CatchCut => parameters
@@ -832,6 +1020,7 @@ fn attach(
     state: &mut MatchState,
     holder: usize,
     victim: usize,
+    allow_lift: bool,
 ) -> Result<(), Error> {
     let attachment = data.fighters[holder]
         .grab
@@ -843,19 +1032,28 @@ fn attach(
         .transform(&holder_pose, 1.0)
         .map_err(physics)?
         .start;
-    let mut local_victim = state.fighters[victim].clone();
-    local_victim.position = [0.0; 2];
-    local_victim.depth = 0.0;
-    let victim_pose = simulation::pose(&local_victim, &data.fighters[victim])?;
+    let victim_pose = simulation::pose(&state.fighters[victim], &data.fighters[victim])?;
     let victim_anchor = BoneCapsule::sphere(attachment.victim_bone, attachment.victim_point, 0.0)
         .transform(&victim_pose, 1.0)
         .map_err(physics)?
         .start;
-    state.fighters[victim].position = [
-        holder_anchor[0] - victim_anchor[0],
-        holder_anchor[1] - victim_anchor[1],
+    let position = [
+        state.fighters[victim].position[0],
+        state.fighters[victim].position[1],
+        state.fighters[victim].depth,
     ];
-    state.fighters[victim].depth = holder_anchor[2] - victim_anchor[2];
+    let (position, lifted) = input::capture_alignment(
+        position,
+        holder_anchor,
+        victim_anchor,
+        data.rules.grab.as_ref().unwrap().capture_lift_threshold,
+        data.fighters[victim].bones[0].scale[1],
+    );
+    state.fighters[victim].position = [position[0], position[1]];
+    state.fighters[victim].depth = position[2];
+    if allow_lift && lifted && transfer_capture_family(&mut state.fighters[victim], true) {
+        attach(data, state, holder, victim, false)?;
+    }
     Ok(())
 }
 
@@ -928,10 +1126,12 @@ fn apply_pummel(
     }
     state.fighters[holder].hitlag = state.fighters[holder].hitlag.max(hitlag);
     let target = &mut state.fighters[victim];
+    let damage_action = capture_damage_action(target.action)
+        .ok_or_else(|| Error::Physics("invalid captured-victim action".into()))?;
     target.percent = (target.percent + staled.damage).min(999.0);
     target.hitlag = target.hitlag.max(hitlag);
     target.di_pending = false;
-    simulation::enter(target, Action::CaptureDamage);
+    simulation::enter(target, damage_action);
     state.events.push(Event::Hit {
         attacker: holder,
         victim,

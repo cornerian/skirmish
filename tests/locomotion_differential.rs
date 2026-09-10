@@ -7,7 +7,7 @@
 use proptest::prelude::*;
 use skirmish::fighter::{
     Attributes, Movement,
-    locomotion::{JumpAttributes, WalkParameters, jump_velocity, walk},
+    locomotion::{JumpAttributes, WalkParameters, jump_velocity, turn_run, walk},
 };
 
 #[link(name = "skirmish_oracle", kind = "static")]
@@ -21,6 +21,7 @@ unsafe extern "C" {
         out: *mut f32,
     );
     fn oracle_locomotion_walk(state: *mut f32, parameters: *const f32) -> f32;
+    fn oracle_turn_run(state: *mut f32, parameters: *const f32);
 }
 
 fn same(actual: f32, expected: f32) {
@@ -151,6 +152,46 @@ fn compare_walk(initial: [f32; 13], parameters: [f32; 8]) {
     assert_eq!(actual.shield_knockback, 9.0);
 }
 
+fn compare_turn_run(initial: [f32; 8], parameters: [f32; 5]) {
+    let mut actual = Movement {
+        ground_velocity: initial[0],
+        ground_acceleration: initial[1],
+        self_velocity: [initial[2], initial[3], 5.0],
+        animation_velocity: [initial[4], initial[5], 7.0],
+        floor_normal: [initial[6], initial[7], 0.0],
+        ..Movement::default()
+    };
+    turn_run(
+        &mut actual,
+        parameters[0],
+        parameters[1],
+        parameters[2],
+        parameters[3],
+        parameters[4],
+    );
+    let mut expected = initial;
+    // SAFETY: both arrays contain the stated live scalar elements and the C
+    // adapter isolates supplied callback values in thread-local storage.
+    unsafe { oracle_turn_run(expected.as_mut_ptr(), parameters.as_ptr()) };
+    for (actual, expected) in [
+        actual.ground_velocity,
+        actual.ground_acceleration,
+        actual.self_velocity[0],
+        actual.self_velocity[1],
+        actual.animation_velocity[0],
+        actual.animation_velocity[1],
+        actual.floor_normal[0],
+        actual.floor_normal[1],
+    ]
+    .into_iter()
+    .zip(expected)
+    {
+        same(actual, expected);
+    }
+    assert_eq!(actual.self_velocity[2], 0.0);
+    assert_eq!(actual.animation_velocity[2], 0.0);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 
@@ -171,6 +212,21 @@ proptest! {
     ) {
         compare_walk(initial, parameters);
     }
+
+    #[test]
+    fn running_turn_physics_matches_c_over_arbitrary_binary32_inputs(
+        initial in any::<[f32; 8]>(),
+        parameters in any::<[f32; 5]>(),
+    ) {
+        compare_turn_run(initial, parameters);
+    }
+}
+
+#[test]
+fn running_turn_adapter_uses_the_complete_pinned_callback() {
+    let original = include_str!("oracle/original/turn_run.c");
+    assert!(original.contains("void ftCo_TurnRun_Phys(Fighter_GObj* gobj)\n{"));
+    assert!(include_str!("oracle/turn_run.c").contains("#include \"turn_run_original.inc\""));
 }
 
 #[test]

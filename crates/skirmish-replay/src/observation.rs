@@ -1,8 +1,9 @@
 //! Explicit input and observation policies for the experimental native match.
 //! No recorded position, action state or random seed initializes the simulator.
 
-use crate::{game, slippi};
+use crate::slippi;
 use serde::Serialize;
+use skirmish::game;
 use slippi::Port;
 use std::fmt;
 
@@ -394,7 +395,7 @@ mod tests {
     #[test]
     fn native_observation_uses_only_the_declared_post_fields() {
         let data = serde_json::from_str(include_str!(
-            "../tests/fixtures/game/integration-match.json"
+            "../../../tests/fixtures/game/integration-match.json"
         ))
         .unwrap();
         let game = game::Match::new(data, 1).unwrap();

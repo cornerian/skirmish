@@ -53,8 +53,6 @@ cpal = { version = "0.18.2", optional = true }
 glam = { version = "0.33", default-features = false, features = ["scalar-math", "libm"] }
 libm = "0.2"
 melee-ui-sys = { path = "crates/melee-ui-sys", features = ["source"], optional = true }
-replay = { path = "crates/replay" }
-peppi-adapter = { path = "crates/peppi-adapter" }
 png = { version = "0.18.1", optional = true }
 pollster = { version = "0.4", optional = true }
 rtrb = { version = "0.4", optional = true }
@@ -72,8 +70,9 @@ serde_json = "1"
 wesl = { version = "0.4.4", default-features = false, optional = true }
 
 [dev-dependencies]
-peppi = "=2.1.2"
 proptest = "1"
+replay-validation = { path = "crates/replay-validation" }
+skirmish-equivalence = { path = "crates/equivalence" }
 tempfile = "3"
 
 [profile.release]

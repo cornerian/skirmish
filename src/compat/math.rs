@@ -1,4 +1,4 @@
-//! Small compatibility wrappers around library arithmetic.
+//! Source-compatible wrappers around library math operations.
 
 /// C's conditional minimum keeps the left operand on ties or unordered inputs.
 /// Delegate ordinary values to std; preserve signed zero and raw NaN payloads.

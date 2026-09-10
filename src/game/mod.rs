@@ -22,7 +22,7 @@ pub mod stage_motion;
 pub mod staling;
 mod validation;
 
-use crate::{collision::ecb, replay::FrameStepper};
+use crate::collision::ecb;
 use data::MatchData;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -72,6 +72,7 @@ pub enum Action {
     Walk,
     Dash,
     Run,
+    RunTurn,
     RunBrake,
     Turn,
     Squat,
@@ -103,9 +104,12 @@ pub enum Action {
     ThrowB,
     ThrowHi,
     ThrowLw,
-    CapturePulled,
-    CaptureWait,
-    CaptureDamage,
+    CapturePulledHi,
+    CaptureWaitHi,
+    CaptureDamageHi,
+    CapturePulledLw,
+    CaptureWaitLw,
+    CaptureDamageLw,
     CaptureCut,
     ThrownF,
     ThrownB,
@@ -430,20 +434,5 @@ impl Match {
         }
         self.state = checkpoint.state.clone();
         Ok(())
-    }
-}
-
-impl FrameStepper for Match {
-    type Checkpoint = Checkpoint;
-    type Input = [Controller; 2];
-    type Observation = State;
-    type Error = Error;
-
-    fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), Error> {
-        self.restore_checkpoint(checkpoint)
-    }
-
-    fn advance(&mut self, input: &Self::Input) -> Result<State, Error> {
-        self.step(*input).cloned()
     }
 }

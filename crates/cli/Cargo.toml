@@ -1,0 +1,31 @@
+[package]
+name = "skirmish-cli"
+version = "0.2.0"
+edition = "2024"
+description = "Command-line migration, replay, and equivalence tools for Skirmish"
+publish = false
+
+[[bin]]
+name = "skirmish"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+skirmish-replay = { path = "../skirmish-replay" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+skirmish = { path = "../.." }
+skirmish-equivalence = { path = "../equivalence" }
+
+[dev-dependencies]
+peppi = "=2.1.2"
+peppi-adapter = { path = "../peppi-adapter" }
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = "warn"

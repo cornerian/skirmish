@@ -1,11 +1,9 @@
-//! Native match adapter for the existing executable/trace comparison machinery.
-use crate::{
-    game::{self, Controller, Phase, State, data::MatchData},
-    trace::{Record, SCHEMA},
-};
+//! Native match adapter for the executable/trace comparison machinery.
+use crate::trace::{Record, SCHEMA};
 use anyhow::{Result, ensure};
 use serde::Serialize;
 use serde_json::{Value, json};
+use skirmish::game::{self, Controller, Phase, State, data::MatchData};
 use std::{collections::BTreeMap, io::Write};
 
 /// The match schema contains f32 fields only. Serialization promotes them to

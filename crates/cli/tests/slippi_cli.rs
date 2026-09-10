@@ -6,7 +6,7 @@ use std::{
     process::{Command, Output},
 };
 
-#[path = "../crates/peppi-adapter/tests/support/mod.rs"]
+#[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
 
 fn inspect(bytes: &[u8], finalized_only: bool) -> Output {

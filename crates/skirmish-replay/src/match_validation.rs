@@ -1,9 +1,10 @@
 //! File-backed comparison against the actual native match stepper. Replay
 //! observations are never used to correct the evolving simulator state.
-use crate::{game, replay, replay_observation as observation, slippi};
+use crate::{observation, slippi};
 use anyhow::{Result, ensure};
-use replay::{FrameStepper, Transition, ValidationError};
+use replay_validation::{Checkpoint, FrameStepper, Transition, ValidationError};
 use serde::{Deserialize, Serialize};
+use skirmish::game;
 use slippi::{Port, Replay, Timeline};
 
 /// Reproducible native initialization, supplied independently of replay state.
@@ -94,7 +95,7 @@ impl FrameStepper for Stepper<'_> {
 pub fn validate(
     replay: &Replay,
     game: &mut game::Match,
-    checkpoint: &replay::Checkpoint<game::Checkpoint>,
+    checkpoint: &Checkpoint<game::Checkpoint>,
     ports: [Port; 2],
     timeline: Timeline,
 ) -> Result<Report> {
@@ -159,8 +160,12 @@ pub fn validate(
         .map(|byte| format!("{byte:02x}"))
         .concat();
     let mut stepper = Stepper { game, ports };
-    let result =
-        replay::validate_fallible(&mut stepper, checkpoint, transitions, observation::compare);
+    let result = replay_validation::validate_fallible(
+        &mut stepper,
+        checkpoint,
+        transitions,
+        observation::compare,
+    );
     let outcome = match result {
         Ok(report) => Outcome::Matched {
             first_frame: report.first_frame,

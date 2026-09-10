@@ -1,5 +1,5 @@
 #![cfg(feature = "c-oracle")]
-use skirmish::runner::{Adapter, compare_binaries};
+use skirmish_equivalence::runner::{Adapter, compare_binaries};
 use std::{
     collections::BTreeMap,
     fs,
@@ -29,7 +29,7 @@ fn reference(directory: &Path, flag: &str) -> Adapter {
         ])
         .arg("-I")
         .arg(env!("OUT_DIR"))
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rng_probe.c"))
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/rng_probe.c"))
         .arg("-o")
         .arg(&program)
         .output()

@@ -2,7 +2,8 @@
 //! absent. Ignored status is not a passing implementation or fidelity claim.
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use skirmish::{game::Controller, match_trace};
+use skirmish::game::Controller;
+use skirmish_equivalence::{match_trace, trace};
 use std::fs;
 
 #[path = "support/reference_scenario.rs"]
@@ -110,7 +111,7 @@ fn synthetic_fixture() -> tempfile::TempDir {
     directory
 }
 
-fn verify(directory: &tempfile::TempDir) -> anyhow::Result<skirmish::trace::Comparison> {
+fn verify(directory: &tempfile::TempDir) -> anyhow::Result<trace::Comparison> {
     reference::verify_directory(
         directory.path(),
         CASE,

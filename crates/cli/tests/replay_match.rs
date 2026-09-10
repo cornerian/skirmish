@@ -2,17 +2,17 @@
 //! same native implementation, so success does not certify Melee fidelity.
 use peppi::frame::mutable;
 use serde_json::Value;
-use skirmish::{
-    game::{Action, BUTTON_A, BUTTON_X, Controller, Event, State},
-    replay::Checkpoint,
-    replay_match::{self, Initialization, Outcome, Report},
+use skirmish::game::{Action, BUTTON_A, BUTTON_X, Controller, Event, State};
+use skirmish_replay::{
+    Checkpoint,
+    match_validation::{self as replay_match, Initialization, Outcome, Report},
     slippi::{Port, Replay, Timeline},
 };
 use std::{fs, process::Command};
 
-#[path = "support/aerial.rs"]
+#[path = "../../../tests/support/aerial.rs"]
 mod aerial_support;
-#[path = "../crates/peppi-adapter/tests/support/mod.rs"]
+#[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
 
 const FIRST: i32 = -123;
@@ -32,8 +32,10 @@ struct Recording {
 
 impl Recording {
     fn new() -> Self {
-        let mut data: skirmish::game::data::MatchData =
-            serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap();
+        let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
         data.rules.countdown_frames = 0;
         data.stage.floor.left = -100.0;
         data.stage.floor.right = 100.0;

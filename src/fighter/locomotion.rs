@@ -1,4 +1,5 @@
-//! Scalar jump launch and walking from ftCo_Jump.c and ftwalkcommon.c.
+//! Scalar jump, walk, and running-turn physics from ftCo_Jump.c,
+//! ftwalkcommon.c, and ftCo_TurnRun.c.
 //!
 //! Callers own motion transitions, jump state/timers, and sound events. The jump
 //! helper translates the velocity result of ftCo_800CB110. The walk helper includes
@@ -84,6 +85,42 @@ pub fn walk(movement: &mut Movement, parameters: &WalkParameters) -> f32 {
     animation_target
 }
 
+/// Complete scalar and ground-projection behavior of `ftCo_TurnRun_Phys` after
+/// `getAccelAndTarget` supplies its two stick-derived values. The stored facing
+/// is the direction from TurnRun entry, even after the animation flips the
+/// fighter.
+pub fn turn_run(
+    movement: &mut Movement,
+    mut acceleration: f32,
+    target: f32,
+    entry_facing: f32,
+    ground_friction: f32,
+    friction_multiplier: f32,
+) {
+    let friction = ground_friction * friction_multiplier;
+    if target == 0.0 {
+        movement.friction_ground(friction);
+    } else if entry_facing * acceleration < 0.0 {
+        if acceleration > 0.0 {
+            if movement.ground_velocity + acceleration > target {
+                acceleration -= friction;
+                if movement.ground_velocity + acceleration < target {
+                    acceleration = target - movement.ground_velocity;
+                }
+            }
+        } else if movement.ground_velocity + acceleration < target {
+            acceleration += friction;
+            if movement.ground_velocity + acceleration > target {
+                acceleration = target - movement.ground_velocity;
+            }
+        }
+        movement.ground_acceleration = acceleration;
+    } else {
+        movement.friction_ground(friction);
+    }
+    movement.project_ground();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +167,22 @@ mod tests {
         assert_eq!(movement.ground_acceleration, 0.1);
         assert_eq!(movement.self_velocity, [1.6, 1.2, 0.0]);
         assert_eq!(movement.ground_velocity, 2.0);
+    }
+
+    #[test]
+    fn running_turn_uses_entry_facing_and_source_overshoot_correction() {
+        let mut movement = Movement {
+            ground_velocity: 2.0,
+            floor_normal: [0.0, 1.0, 0.0],
+            ..Movement::default()
+        };
+        turn_run(&mut movement, -0.5, -2.0, 1.0, 0.5, 0.5);
+        assert_eq!(movement.ground_acceleration, -0.5);
+        assert_eq!(movement.self_velocity, [2.0, -0.0, 0.0]);
+        assert_eq!(movement.animation_velocity, [-0.5, 0.0, 0.0]);
+
+        movement.ground_velocity = -1.9;
+        turn_run(&mut movement, -0.2, -2.0, 1.0, 0.5, 0.5);
+        assert_eq!(movement.ground_acceleration, -2.0_f32 - -1.9_f32);
     }
 }

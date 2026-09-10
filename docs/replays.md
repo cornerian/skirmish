@@ -57,7 +57,7 @@ inspection reports zero selected frames, while replay validation rejects an empt
 transition stream. Rewriting already-finalized history is an import error.
 
 Pre/post events with the **same frame ID** produce one
-`replay::Transition<Inputs, Frame>`: apply that frame's inputs, then
+`replay_validation::Transition<Inputs, Frame>`: apply that frame's inputs, then
 compare its post-frame observation. Actors are identified by `(port, follower)`.
 Peppi's field types and float values are retained, including available raw analog
 samples, processed sticks/triggers, logical buttons and physical buttons.
@@ -115,7 +115,7 @@ corresponding to the declared frame. Warmup uses `run-match`'s controller-pair
 format; it does not infer earlier actions or hidden state.
 
 Library callers can pass an existing complete in-memory checkpoint to
-`skirmish::replay_match::validate`, together with the `Match`, replay, port mapping
+`skirmish_replay::match_validation::validate`, together with the `Match`, replay, port mapping
 and timeline policy. Its `next_frame` labels the first post-step observation to
 compare. Persistent checkpoint encoding is not provided.
 

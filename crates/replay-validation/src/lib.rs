@@ -1,4 +1,4 @@
-//! Streaming validation of explicit input-to-next-observation transitions.
+//! Simulator-agnostic streaming validation of input-to-observation transitions.
 //!
 //! A caller supplies a complete native simulation checkpoint separately from replay
 //! observations. Observations cannot generally reconstruct hidden game state.

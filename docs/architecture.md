@@ -30,14 +30,16 @@ exists, such as replay parsing.
 `crates/peppi-adapter` uses Peppi for parsing and columnar replay storage,
 reusing its port, version, pre/post-frame and vector types. This keeps replay
 formats and Arrow dependencies outside the headless game and the generic
-`replay` validator. Native vectors retain their existing arithmetic; replay
+`replay-validation` engine. Native vectors retain their existing arithmetic; replay
 vectors carry recorded observations.
-The application-level `replay_match` coordinator connects these boundaries: it
+`crates/skirmish-replay` connects these boundaries: it
 restores an explicit native checkpoint, maps supported recorded inputs, calls
 `Match::step` and compares a named subset of post-frame fields. The `validate-replay`
 CLI reads a real `.slp` file plus a separately supplied deterministic initialization
-and reports provenance and the first difference. Peppi/Arrow stay outside the
-native match and physics dependencies.
+and reports provenance and the first difference. `crates/equivalence` owns
+semantic traces, process comparison, native match trace adapters and differential
+probes. `crates/cli` composes these tools while Peppi/Arrow and test tooling stay
+outside the native match and physics dependencies.
 
 The game simulation must own the complete mutable state of one match, including
 RNG state, action timers, object identities and event queues. It must advance one
@@ -67,7 +69,8 @@ alternatives. Report uncertainty and the time horizon with that estimate. A
 replay snapshot alone is not a complete restorable game state; importing it
 requires reconstructing or replaying hidden state and validating against the
 reference. An experimental two-player match now implements reset, frame steps,
-termination and checkpoint branching through the generic replay interface. It
+termination and checkpoint branching; `skirmish-replay` adapts it to the generic
+validation interface. It
 uses synthetic native resources and a limited ruleset; see
 [the match contract](match.md). The Peppi importer supplies recorded transitions,
 and [file-backed comparison](replays.md) now drives the real simulator from

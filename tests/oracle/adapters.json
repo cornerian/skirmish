@@ -16,5 +16,6 @@
   "clank_push": "ftcommon",
   "nudge": "ftcommon",
   "grab_mash": "ftcommon",
-  "ground_launch": "lbvector"
+  "ground_launch": "lbvector",
+  "capture_alignment": "capture_pulled"
 }

@@ -8,7 +8,7 @@ an exact original-C counterpart or arithmetic compatibility boundary. Existing
 `tests/*_differential.rs` use content-pinned source snapshots, with ABI adaptations
 documented in `tests/oracle`; they do not establish whole-game equivalence.
 
-`tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
+`crates/cli/tests/replay_match.rs` writes synthetic `.slp` files through Peppi, loads actual
 files, and advances `game::Match` using their controller inputs. It exercises
 movement, jumps, landing, a jab, damage, explicit checkpoint restoration, and
 the command-line executable. C-stick ASDI cases check inclusive selection,
@@ -28,7 +28,7 @@ Three independent workflows run on pushes, pull requests, and manual dispatch:
 | --- | --- |
 | [Unit tests](../.github/workflows/unit-tests.yml) | Workspace library/binary unit tests and doctests; formatting and Clippy |
 | [Integration tests](../.github/workflows/integration-tests.yml) | Workspace integration targets, including original-C differential tests, except the Slippi file targets below; debug/release match-trace comparison |
-| [System tests (Slippi file parity)](../.github/workflows/system-tests.yml) | `peppi-adapter`'s `replays`, plus `skirmish`'s `slippi_cli`, `slippi_corpus` and `replay_match` |
+| [System tests (Slippi file parity)](../.github/workflows/system-tests.yml) | `peppi-adapter`'s `replays`, plus `skirmish-cli`'s `slippi_cli`, `slippi_corpus` and `replay_match` |
 
 Every suite retains default debug, C-oracle debug, and C-oracle release runs.
 Integration targets are discovered from Cargo metadata, so new integration test
@@ -187,18 +187,23 @@ jump selection across timer boundaries and arbitrary binary32 values.
 The [grab profile](grabs.md) promotes all three paired grab/throw conformance
 scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
 Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
-directions, pummel priority and repeat lifecycle, one captured-damage
-event, shared hitlag, sampled holder/victim attachment motion, independent
+directions, pummel priority and repeat lifecycle, grounded-low/airborne-high
+capture families, split captured-damage poses, one captured-damage event, shared
+hitlag, sampled holder/victim attachment motion, threshold lifts, swept floor
+conversion with preserved action time, paired fractional
+throw timing for heavy/light victims and weight-independent directions, independent
 CaptureDamage completion, passive and button/stick/analog-shoulder-mashed
 escape, logical shoulder rearming, timer freeze,
 release motion and cut actions, main/C-stick priority and fresh-edge history,
 held-victim input suppression, checkpoint suffixes,
-simultaneous ordering, target policy, KO cleanup and invalid resources. A focused
+simultaneous ordering, target policy, KO cleanup and invalid resources. Focused
 unit tests cover the exact `fn_800DA4C0` A-bit predicate and complete
 `ftCommon_GrabMash` mutation. `grab_differential` compares the three exact
 `ftCo_800DD1E4` main-stick threshold predicates; `grab_mash_differential`
 compares arbitrary binary32 timers, coefficients and input/latch state against
-the complete pinned C function.
+the complete pinned C function. `capture_alignment_differential` compares the
+complete position and strict scaled-height result of `fn_800DAD18` over arbitrary
+binary32 inputs.
 
 The [ledge profile](ledges.md) promotes all six ledge conformance scenarios.
 `game_ledge` covers endpoint flags/connectivity, both sides, eligibility,
@@ -246,14 +251,14 @@ motion rejection. The squeeze helpers already run against their complete pinned
 original C bodies in `ecb_differential`. Independent scheduler traces remain
 blocked until a separate producer exists.
 
-The movement/combat milestone activates the source-backed dash, standing turn,
-crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
-platform-drop and ordinary top-KO scenarios. Focused match integration targets
+The movement/combat milestone activates the source-backed dash, running and
+standing turns, crouch, ordinary double jump, tap-jump/input-window, armor,
+main-stick SDI/ASDI, platform-drop and ordinary top-KO scenarios. Focused match integration targets
 in the root `tests/game_*.rs` suite extend these beyond the original single gap scenario:
 
 | Passing target | Additional contracts |
 | --- | --- |
-| `locomotion` | Input age, launch timing, turn/crouch lifecycle, jump exhaustion and restoration |
+| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, Run and RunBrake trigger priority, velocity-gated marker freeze, animation-time carry, checkpoint replay, jump exhaustion and restoration |
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |

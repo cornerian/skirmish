@@ -50,9 +50,10 @@ values, and restoration rejects different resource/rule identities. Persistent
 checkpoint encoding is a later versioned interface.
 
 Clones share only immutable native resources. Each branch owns its mutable state;
-stepping errors leave it unchanged. The crate implements `replay`'s
-`FrameStepper`, so streaming expected observations and counterfactual branches
-already use this match implementation. The `validate-replay` command applies
+stepping errors leave it unchanged. `skirmish-replay` implements the
+`replay-validation` adapter around this match, so streaming expected observations
+and counterfactual branches use this implementation without coupling replay to
+the core simulator. The `validate-replay` command applies
 Peppi-imported inputs to real `Match::step` calls from an explicitly initialized
 checkpoint. It compares position, facing, percent, stocks and airborne state;
 see the [file-backed comparison contract](replays.md) for the required embedded
@@ -65,7 +66,7 @@ coaching value estimation remain separate work.
 ## Physics and execution order
 
 Bone hierarchy evaluation, local/world transforms, parent-scale compensation,
-bone-attached capsules, swept capsule intersection, walking and jump launch
+bone-attached capsules, swept capsule intersection, walking, running-turn and jump launch
 arithmetic live in `physics`. The native match schema carries all pose
 samples for its jab, including startup/recovery frames. The same evaluated pose
 places both hurtboxes and hitboxes; rendering is not involved. Local native
@@ -207,19 +208,23 @@ over ceiling response at a corner. Surface-tech poses remain separate work.
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus
-forward/back/up/down throws. Captured fighters remain
+forward/back/up/down throws. Contact selects separate grounded-low and
+airborne-high captured-victim action families. Captured fighters remain
 attached through explicit holder/victim bone anchors. A pummel has priority over
 throw selection, applies one shared-hitlag percent event, starts the victim's
-sampled CaptureDamage pose sequence, and returns both sides independently to
+matching sampled high/low CaptureDamage pose sequence, and returns both sides independently to
 hold without breaking the pair. The shared input history applies the original throw
 direction priority, and each supplied release event enters the ordinary damage
-pipeline. Pair ownership, pummel-hit history, the hold timer and mash latches are
+pipeline. Victim weight and the per-direction independence flag drive a shared
+fractional throw clock. Pair ownership, pummel-hit history, throw time and rate,
+the hold timer and mash latches are
 checkpointed and cleared transactionally on release or stock loss. Captured
 fighters also run an explicit percent-scaled hold timer and the complete
 button/stick `ftCommon_GrabMash`
 transition. Expiry enters resource-driven CatchCut/CaptureCut release actions.
-Tether variants, separate high/low victim reactions and
-capture-contact interference remain unported.
+Attachment rises over the scaled source threshold and ordinary stage
+ground/air collision switch capture families without resetting action time.
+Tether variants and capture-contact interference remain unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
 endpoint discovery, bone-attached catch/hang poses, climb, jump, attack, escape,
@@ -249,9 +254,13 @@ and action-dispatch gaps.
 `fighters[].locomotion` supplies thresholds, stick-age windows, dash/run
 coefficients, animation/event durations, crouch/turn timing, ordinary aerial
 jump multipliers and platform-drop parameters. No authentic common-data values
-are implied. With that data, the scheduler supports Dash/Run/RunBrake, standing
-Turn, Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. Jump
-button history, tilt ages, consumed jumps and transition timers are checkpointed.
+are implied. With that data, the scheduler supports Dash/Run/TurnRun/RunBrake,
+standing Turn, Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass.
+TurnRun tests its reversed-stick boundary before braking, stores entry facing,
+decelerates with the source branch, and pauses at an explicit script marker until
+its scaled ground velocity reaches x0.01. RunBrake has its own explicit command
+marker and carries its current action time into a later TurnRun. Jump button
+history, tilt ages, consumed jumps and transition timers are checkpointed.
 `tests/fixtures/game/locomotion.json` contains invented values used by
 the conformance and movement integration tests. These actions still use the
 supplied static non-jab pose; action-specific animation resources are needed
@@ -287,8 +296,8 @@ poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [neutral-special profile](specials.md) adds paired ground
 and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
-history. Directional specials, character-specific special state, running turns
-and character multijumps remain unported. Some accepted stick/button
+history. Directional specials, character-specific special state and character
+multijumps remain unported. Some accepted stick/button
 combinations consequently have no action in this experimental profile.
 
 The optional [blast-death profile](deaths.md) adds normal directional deaths and

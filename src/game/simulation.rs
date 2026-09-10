@@ -345,7 +345,7 @@ pub(crate) fn advance(
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
         }
     }
-    grab::synchronize_actions(state);
+    grab::synchronize_actions(data, state)?;
 
     for player in 0..2 {
         if !active[player] {
@@ -429,8 +429,23 @@ pub(crate) fn advance(
         )?;
         fighter.previous_input = input;
     }
+    let capture_previous = state.fighters.each_ref().map(|fighter| fighter.position);
     grab::release_broken_pairs(state);
     grab::attach_all(data, state)?;
+    let captured_before_scan = state
+        .fighters
+        .each_ref()
+        .map(|fighter| fighter.grab.captor.is_some());
+    resolve_captured_collisions(
+        data,
+        state,
+        inputs,
+        &stage,
+        &geometry,
+        &previous_geometry,
+        capture_previous,
+        core::array::from_fn(|player| captured_before_scan[player] && !frozen[player]),
+    )?;
 
     // Contact decisions are collected from the same post-movement state. Apply
     // damage afterward so a lower port cannot suppress a simultaneous trade.
@@ -440,6 +455,18 @@ pub(crate) fn advance(
     ];
     ledge::scan(data, state, &stage, &geometry, inputs)?;
     grab::scan(data, state, frozen)?;
+    resolve_captured_collisions(
+        data,
+        state,
+        inputs,
+        &stage,
+        &geometry,
+        &previous_geometry,
+        capture_previous,
+        core::array::from_fn(|player| {
+            !captured_before_scan[player] && state.fighters[player].grab.captor.is_some()
+        }),
+    )?;
     for player in 0..2 {
         staling::flush(
             &mut state.fighters[player],
@@ -709,13 +736,18 @@ pub(crate) fn advance(
                 lose_stock(data, state, player, false)?;
                 continue;
             }
+            let throw_release = grab::paired_throw_release(data, state, player);
             let fighter = &mut state.fighters[player];
             if !frozen[player] {
                 // The last invincible frame still protects this frame's contacts.
                 fighter.invincibility = fighter.invincibility.saturating_sub(1);
             }
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
-                fighter.action_frame = fighter.action_frame.saturating_add(1);
+                if !grab::advance_action_frame(fighter, throw_release)
+                    && !locomotion::hold_action_frame(fighter)
+                {
+                    fighter.action_frame = fighter.action_frame.saturating_add(1);
+                }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);
             }
         }
@@ -740,6 +772,39 @@ pub(crate) fn advance(
             _ => None,
         };
         finish(state, winner, FinishReason::Time);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_captured_collisions(
+    data: &MatchData,
+    state: &mut State,
+    inputs: [Controller; 2],
+    stage: &stage::Stage<'_>,
+    geometry: &StageGeometry,
+    previous_geometry: &StageGeometry,
+    previous_positions: [[f32; 2]; 2],
+    players: [bool; 2],
+) -> Result<(), Error> {
+    for player in 0..2 {
+        if !players[player] || state.fighters[player].grab.captor.is_none() {
+            continue;
+        }
+        let fighter = &mut state.fighters[player];
+        collision::sample(
+            fighter,
+            &data.fighters[player],
+            &pose(fighter, &data.fighters[player])?,
+        )?;
+        collision::resolve(
+            fighter,
+            previous_positions[player],
+            (stage, geometry, previous_geometry),
+            player,
+            &mut state.events,
+            (&data.fighters[player], &data.rules, inputs[player]),
+        )?;
     }
     Ok(())
 }
