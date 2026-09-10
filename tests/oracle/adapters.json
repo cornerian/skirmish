@@ -20,5 +20,6 @@
   "ground_launch": "lbvector",
   "capture_alignment": "capture_pulled",
   "passive_wall_launch": "passive_wall",
-  "escape_cstick": "aerial_input"
+  "escape_cstick": "aerial_input",
+  "escape_air_angle": "ftcommon"
 }

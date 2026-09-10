@@ -333,8 +333,9 @@ C-stick shield jumps and resource-driven grounded rolls and spot dodges. The opt
 standing, dash, pivot and shield catches with the dash-grab buffer, paired holds,
 pummels with captured reaction poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
-and drop. The optional [neutral-special profile](specials.md) adds paired ground
-and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
+and drop. The optional [air-dodge profile](air-dodge.md) adds EscapeAir,
+FallSpecial and the LandingFallSpecial landing. The optional [neutral-special
+profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials and character-specific special state remain
 unported. Some accepted stick/button
 combinations consequently have no action in this experimental profile.
@@ -368,7 +369,7 @@ and throw launch orientation plus the prone-facing override.
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, reflected-projectile motion and character-specific shield responses,
 capture-specific interference and other special launch-angle behaviors. Outside supplied attack, catch,
-throw, landing, escape and ordinary damage poses,
+throw, landing, escape, air-dodge and ordinary damage poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
 other action collision requires those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.

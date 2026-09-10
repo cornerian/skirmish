@@ -11,6 +11,7 @@ pub mod damage;
 pub mod data;
 pub mod death;
 pub mod escape;
+pub mod escape_air;
 pub mod grab;
 pub mod hitboxes;
 pub mod ledge;
@@ -97,8 +98,11 @@ pub enum Action {
     EscapeF,
     EscapeB,
     EscapeN,
+    EscapeAir,
     Pass,
     Fall,
+    FallSpecial,
+    LandingFallSpecial,
     Jab,
     Catch,
     CatchDash,

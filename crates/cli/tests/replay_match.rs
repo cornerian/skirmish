@@ -19,6 +19,8 @@ use std::{fs, process::Command};
 mod aerial_support;
 #[path = "../../../tests/support/death.rs"]
 mod death_support;
+#[path = "../../../tests/support/escape_air.rs"]
+mod escape_air_support;
 #[path = "../../../tests/support/escape.rs"]
 mod escape_support;
 #[path = "../../../tests/support/grab.rs"]
@@ -781,6 +783,102 @@ fn file_backed_shield_grabs_match_and_detect_their_first_changed_button_frame() 
                 .pre
                 .buttons_physical
                 .set(row, Some(kept as u16));
+        });
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames,
+                    ..
+                } if frame == FIRST + row as i32 && checked_frames == row as u64
+            ),
+            "{}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn file_backed_air_dodges_match_and_detect_their_first_changed_trigger_frame() {
+    // Fighter 0 full hops from the platform floor at X=0 and air dodges.
+    let data = escape_air_support::profile(shield_drop_data());
+    struct Case {
+        name: &'static str,
+        dodge_row: usize,
+        stick: [f32; 2],
+        checks: &'static [(usize, Action, u16, u32)],
+        intangible_row: Option<usize>,
+    }
+    let cases = [
+        Case {
+            name: "downward dodge landing straight into the special landing",
+            dodge_row: 3,
+            stick: [1.0, -1.0],
+            checks: &[
+                (3, Action::EscapeAir, 236, 44),
+                (4, Action::LandingFallSpecial, 43, 36),
+            ],
+            intangible_row: None,
+        },
+        Case {
+            name: "neutral dodge through FallSpecial",
+            dodge_row: 4,
+            stick: [0.0, 0.0],
+            checks: &[
+                (4, Action::EscapeAir, 236, 44),
+                (12, Action::FallSpecial, 31, 22),
+            ],
+            intangible_row: Some(7),
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 30];
+        inputs[0][0].buttons = BUTTON_X;
+        inputs[1][0].buttons = BUTTON_X;
+        inputs[case.dodge_row][0].buttons = BUTTON_L;
+        inputs[case.dodge_row][0].stick = case.stick;
+        let recording = Recording::from_script(data.clone(), 43, inputs);
+        assert_eq!(recording.states[2].fighters[0].action, Action::Jump);
+        for &(row, action, state, animation) in case.checks {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "{} row {row}", case.name);
+            assert_eq!(observation::action_state(fighter, Some(2)), Some(state));
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation)
+            );
+        }
+        if let Some(row) = case.intangible_row {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, Action::EscapeAir);
+            assert_eq!(observation::hurtbox_state(fighter), 2, "{}", case.name);
+        }
+        assert!(
+            recording
+                .states
+                .iter()
+                .any(|state| state.fighters[0].action == Action::LandingFallSpecial),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            recording.states[29].fighters[0].action,
+            Action::Wait,
+            "{}",
+            case.name
+        );
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let row = case.dodge_row;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            frames.ports[0].leader.pre.buttons.set(row, Some(0));
+            frames.ports[0]
+                .leader
+                .pre
+                .buttons_physical
+                .set(row, Some(0));
         });
         assert!(
             matches!(

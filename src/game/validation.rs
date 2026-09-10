@@ -259,6 +259,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 "shield attributes require common shield rules",
             )?;
         }
+        match (&rules.escape_air, &fighter.escape_air) {
+            (Some(rules), Some(parameters)) => escape_air::validate(rules, parameters, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "air-dodge rules require motions for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("air-dodge motions require common rules".into()));
+            }
+            (None, None) => {}
+        }
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
             (Some(_), None) => {

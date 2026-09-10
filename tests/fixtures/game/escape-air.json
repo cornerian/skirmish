@@ -1,0 +1,651 @@
+{
+  "rules": {
+    "deadzone": [
+      0.3,
+      0.3
+    ],
+    "force": 6.0,
+    "decay": 0.5,
+    "landing_lag": 10.0,
+    "platform_stick_threshold": -0.5
+  },
+  "parameters": {
+    "frames": [
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "normal",
+        "skip_decay": false
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.1,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "normal",
+        "skip_decay": false
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.2,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "intangible",
+        "skip_decay": false
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.3,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "intangible",
+        "skip_decay": false
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.4,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "intangible",
+        "skip_decay": false
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.5,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "intangible",
+        "skip_decay": true
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.6,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "normal",
+        "skip_decay": true
+      },
+      {
+        "bones": [
+          {
+            "parent": null,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "parent": 0,
+            "classical_scale": false,
+            "translation": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.7,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ],
+        "body_state": "normal",
+        "skip_decay": true
+      }
+    ],
+    "landing_animation_end": 6.0,
+    "landing_poses": [
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.95,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.9,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.85,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.8,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.75,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      [
+        {
+          "parent": null,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "parent": 0,
+          "classical_scale": false,
+          "translation": [
+            0.0,
+            0.7,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    ]
+  }
+}

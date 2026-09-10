@@ -1,5 +1,26 @@
 # Local validation provenance
 
+The 2026-09-10 air-dodge coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-air-dodge-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage enters EscapeAir from Jump, Fall and
+JumpAerial on a fresh physical L or R press only, launches along the stick
+angle outside the strict deadzone, decays both axes without gravity until the
+scripted resume, re-arms fast fall afterwards, blocks hits on scripted
+intangible samples, continues into FallSpecial with every jump used and no
+aerial attack or jump, lands into the special landing at the source rate with
+input locked out, wavedashes straight from the dodge with ground friction,
+falls through one-way platforms only while holding down, orders the dodge
+before aerial attacks and double jumps, restores checkpoints in every phase and
+rejects invalid resources. The complete trigger, launch, decay and
+platform-landing bodies are compared with pinned C. Peppi-written replays
+match a landing dodge and a FallSpecial continuation, report Slippi states
+236/31/43 with animation indices 44/22/36 and the scripted hurtbox byte, and
+detect a removed trigger press at its first affected frame.
+
 The 2026-09-10 shield-grab coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-shield-grab-20260910-verified`

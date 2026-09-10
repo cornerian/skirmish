@@ -1128,6 +1128,7 @@ fn update_animation(
     }
     damage::update_animation(f, data, &rules.damage, input);
     escape::update_animation(f, data)?;
+    escape_air::update_animation(f, data, rules.escape_air.as_ref())?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1165,7 +1166,9 @@ fn update_actions(
         return Ok(());
     }
     // ftCo_Escape_IASA only serves item throws; ftCo_EscapeN_IASA is empty.
-    if escape::owns_action(f.action) {
+    // EscapeAir, FallSpecial and the uninterruptible special landing likewise
+    // offer nothing modeled here.
+    if escape::owns_action(f.action) || escape_air::owns_action(f.action) {
         return Ok(());
     }
     if clank_owns {
@@ -1178,6 +1181,10 @@ fn update_actions(
         return Ok(());
     }
     if shield::update_actions(f, data, rules, input, shield_owns)? {
+        return Ok(());
+    }
+    // Every airborne chain checks ftCo_80099A58 before aerial attacks and jumps.
+    if escape_air::try_air_dodge(f, data, rules.escape_air.as_ref(), input)? {
         return Ok(());
     }
     if aerial::update(f, data, input) {
@@ -1271,7 +1278,19 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if matches!(f.action, Action::PassiveWall | Action::PassiveWallJump)
+        if let Some(false) = escape_air::skip_decay(f, data) {
+            // ftCo_EscapeAir_Phys decays both axes without gravity or drift
+            // until the script raises its skip-decay flag.
+            let decayed = crate::fighter::escape_air::decay(
+                f.velocity,
+                rules
+                    .escape_air
+                    .as_ref()
+                    .expect("validated air-dodge samples require common rules")
+                    .decay,
+            );
+            movement.self_velocity = [decayed[0], decayed[1], 0.0];
+        } else if matches!(f.action, Action::PassiveWall | Action::PassiveWallJump)
             && (f.surface_tech.timer != 0 || f.wall_jump.startup_timer != 0)
         {
             // Wall techs remain fixed until the source timer releases them.
@@ -1367,6 +1386,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else if let Some(pose) = damage::damage_pose(fighter, data) {
         pose
     } else if let Some(pose) = escape::pose(fighter, data) {
+        pose
+    } else if let Some(pose) = escape_air::pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

@@ -110,6 +110,8 @@ pub struct Rules {
     pub wall_jump: Option<super::wall_jump::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape: Option<super::escape::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escape_air: Option<super::escape_air::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -193,6 +195,8 @@ pub struct FighterData {
     pub special: Option<super::special::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape: Option<super::escape::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escape_air: Option<super::escape_air::Parameters>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,

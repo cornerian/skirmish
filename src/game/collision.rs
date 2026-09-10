@@ -306,7 +306,18 @@ pub(crate) fn resolve(
             skip_line: f.skip_floor,
             ..Default::default()
         };
-        let contact = stage.sweep(Surface::Floor, floor_query).map_err(physics)?;
+        // ftCo_80096CC8: a FallSpecial fighter holding the stick down passes
+        // through one-way platforms; every other state lands on them.
+        let platforms_land = super::escape_air::platforms_land(f, rules.escape_air.as_ref(), input);
+        let contact = stage
+            .sweep_filtered(Surface::Floor, floor_query, |id| {
+                platforms_land
+                    || geometry
+                        .lines
+                        .get(id)
+                        .is_none_or(|line| u32::from(line.material_flags) & stage::PLATFORM == 0)
+            })
+            .map_err(physics)?;
         let moved_floor = if contact.is_none() {
             moved_projection(
                 stage,
@@ -315,7 +326,7 @@ pub(crate) fn resolve(
                 Surface::Floor,
                 add(f.position, f.ecb.current.bottom),
                 f.skip_floor,
-                f.velocity[1] <= 0.0,
+                f.velocity[1] <= 0.0 && platforms_land,
             )?
         } else {
             None
@@ -473,7 +484,10 @@ fn land(
         ) {
             let pose = simulation::pose(f, data)?;
             super::damage::land(f, data, &pose, &rules.damage, input)?;
-        } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
+        } else if !super::special::transfer_ground_air(f, true)
+            && !super::escape_air::land(f, data, rules.escape_air.as_ref())?
+            && !super::aerial::land(f, data)?
+        {
             simulation::enter(f, Action::Landing);
         }
     }
