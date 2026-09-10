@@ -11,6 +11,7 @@ pub mod fighter;
 pub mod game;
 pub mod id;
 pub mod inventory;
+pub mod menu;
 pub mod quaternion;
 pub mod random;
 #[cfg(feature = "renderer")]
