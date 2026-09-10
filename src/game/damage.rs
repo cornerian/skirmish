@@ -244,6 +244,7 @@ pub struct SurfaceTechAttributes {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SurfaceTechState {
     pub timer: u32,
+    pub jump_queued: bool,
     pub ceiling_velocity_applied: bool,
 }
 
@@ -1001,6 +1002,13 @@ pub(crate) fn update_animation(
                 if fighter.surface_tech.timer != 0 {
                     fighter.surface_tech.timer -= 1;
                     if fighter.surface_tech.timer == 0 {
+                        if fighter.action == Action::PassiveWall && fighter.surface_tech.jump_queued
+                        {
+                            let frame = fighter.action_frame;
+                            super::simulation::enter(fighter, Action::PassiveWallJump);
+                            fighter.action_frame = frame;
+                            fighter.surface_tech.jump_queued = false;
+                        }
                         if fighter.action == Action::PassiveWall {
                             fighter.velocity[0] = fighter.facing * attributes.passive_wall_velocity;
                         } else {
@@ -1108,6 +1116,32 @@ pub(crate) fn update_actions(
     rules: &CombatRules,
     input: super::Controller,
 ) -> bool {
+    if matches!(
+        fighter.action,
+        Action::PassiveWall | Action::PassiveWallJump
+    ) && !fighter.wall_jump.active
+        && fighter.surface_tech.timer != 0
+    {
+        if fighter.action == Action::PassiveWall
+            && damage::wall_tech_jumps(
+                fighter.locomotion.jump_press_age,
+                input.stick[1],
+                rules
+                    .floor_response
+                    .as_ref()
+                    .expect("validated surface-tech rules require floor response")
+                    .tech_window,
+                rules
+                    .surface_tech
+                    .as_ref()
+                    .expect("surface-tech action requires rules")
+                    .jump_stick_threshold,
+            )
+        {
+            fighter.surface_tech.jump_queued = true;
+        }
+        return true;
+    }
     if fighter.action != Action::DownWait {
         return false;
     }
@@ -1241,6 +1275,7 @@ pub(crate) fn surface_tech(
         } else {
             profile.wall_freeze_frames
         },
+        jump_queued: false,
         ceiling_velocity_applied: false,
     };
     jump

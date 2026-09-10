@@ -479,6 +479,70 @@ fn buffered_jump_and_upward_stick_select_wall_jump_tech() {
 }
 
 #[test]
+fn neutral_wall_tech_queues_a_jump_during_freeze_and_replays_from_checkpoint() {
+    let mut resource = tech_data(0.0);
+    use_bone_ecb(&mut resource);
+    let mut game = hit(resource);
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    let teched = until(&mut game, |state| {
+        state.events.contains(&Event::SurfaceTeched {
+            player: 1,
+            surface: stage::Surface::LeftWall,
+            line: 2,
+            jump: false,
+        })
+    });
+    assert_eq!(teched.fighters[1].action, Action::PassiveWall);
+
+    let mut jump = IDLE;
+    jump[1].buttons = BUTTON_X;
+    let queued = step_with(&mut game, jump);
+    assert_eq!(queued.fighters[1].action, Action::PassiveWall);
+    assert_eq!(queued.fighters[1].surface_tech.timer, 2);
+    assert!(queued.fighters[1].surface_tech.jump_queued);
+    let checkpoint = game.checkpoint();
+
+    let mut suffix = Vec::new();
+    while game.state().fighters[1].action == Action::PassiveWall {
+        suffix.push(step(&mut game));
+    }
+    let converted = &game.state().fighters[1];
+    assert_eq!(converted.action, Action::PassiveWallJump);
+    assert_eq!(converted.action_frame, 4);
+    assert_eq!(converted.velocity, [-2.9, 4.0]);
+    assert!(!converted.surface_tech.jump_queued);
+    assert!((converted.ecb.desired.left[0] + 6.75).abs() < 0.0001);
+    while game.state().fighters[1].action == Action::PassiveWallJump {
+        suffix.push(step(&mut game));
+    }
+    assert_eq!(game.state().fighters[1].action, Action::Fall);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in suffix {
+        assert_eq!(step(&mut game), expected);
+    }
+}
+
+#[test]
+fn jump_input_on_the_freeze_release_frame_does_not_convert_the_wall_tech() {
+    let mut game = hit(tech_data(0.0));
+    buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::PassiveWall
+    });
+    while game.state().fighters[1].surface_tech.timer > 1 {
+        step(&mut game);
+    }
+    let mut jump = IDLE;
+    jump[1].buttons = BUTTON_X;
+    let released = step_with(&mut game, jump);
+    assert_eq!(released.fighters[1].action, Action::PassiveWall);
+    assert_eq!(released.fighters[1].surface_tech.timer, 0);
+    assert!(!released.fighters[1].surface_tech.jump_queued);
+    assert_eq!(released.fighters[1].velocity, [-1.9, 0.0]);
+}
+
+#[test]
 fn ceiling_tech_applies_scripted_horizontal_input_and_recovers() {
     let mut game = hit(tech_data(90.0));
     buffer_tech(&mut game, BUTTON_L, [0.0; 2]);

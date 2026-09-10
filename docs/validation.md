@@ -1,5 +1,21 @@
 # Local validation provenance
 
+The 2026-09-10 damage-surface pose and delayed-jump batches are recorded at:
+
+`/mnt/archive/runs/skirmish-surface-tech-poses-20260910`
+
+`/mnt/archive/runs/skirmish-surface-tech-jump-queue-20260910`
+
+Each isolated batch runs formatting, strict all-target/all-feature Clippy,
+native workspace tests and original-C differential tests in debug and release
+modes. The pose batch supplies complete wall, wall-jump and ceiling physics
+skeletons, validates every sample and distinguishes ordinary wall-jump ownership
+through the headless bone ECB. The delayed-jump batch covers a neutral wall
+tech's queued jump transition, same-frame pose handoff, release-frame boundary
+and deterministic checkpoint suffix. Exact jump selection and launch arithmetic
+remain compared with their complete pinned C bodies over arbitrary binary32
+inputs.
+
 The 2026-09-09 grounded-launch coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ground-launch-20260909`

@@ -26,6 +26,10 @@ or `PassiveWallJump`. A fresh X/Y press inside the shared jump-input window, or
 an upward stick at the inclusive configured threshold, selects the jump. Both
 actions freeze for the configured opening frames, then launch away from the
 wall using fighter attributes and recover to `Fall` after their own durations.
+A neutral wall tech can queue a fresh jump or inclusive upward-stick input while
+the freeze timer remains nonzero. When the timer expires, it switches to the
+damage wall-jump pose track at the same action frame and uses wall-jump launch
+velocity. Input first supplied on the release frame is too late to convert it.
 A ceiling contact enters `PassiveCeiling`; its configured script frame samples
 horizontal input, applies the fighter's ceiling speed and then recovers to
 `Fall`. Their sampled skeletons drive hurtbox and bone-based ECB geometry in
@@ -51,8 +55,9 @@ lockout, launch scheduling and resource-driven speeds.
 neutral and jump wall techs, both wall orientations, ceiling input motion, exact
 configured action durations, floor and wall priority, shoulder repeat lockout,
 all three pose tracks through the bone-based ECB, ordinary wall-jump resource
-coexistence, profile omission, an unmet threshold, malformed resources and
-deterministic checkpoint suffixes.
+coexistence, delayed neutral-to-jump conversion and its release-frame boundary,
+profile omission, an unmet threshold, malformed resources and deterministic
+checkpoint suffixes.
 These fixtures use invented stage and fighter data.
 
 Missed-tech choices, invincibility, effect/audio commands, the complete collision
