@@ -288,7 +288,7 @@ explicitly disable unrelated state/environment branches.
 | Dash, standing turn, crouch and release | `conformance_actions`: forward flick, backward tilt, down-stick lifecycle |
 | Double jump, neutral and directional aerial attacks | `conformance_actions`: fresh airborne jump and aerial selection |
 | Grounded and airborne neutral specials | `conformance_actions` and `game_special` (implemented paired profile) |
-| Grab, pummel, escape and throw | `game_grab`, `conformance_actions` and `conformance_combat`: standing/dash/pivot capture, sampled captured-damage reaction, repeated pummel, exact mash timer, cut release and throw release (implemented profile) |
+| Grab, pummel, escape and throw | `game_grab`, `conformance_actions` and `conformance_combat`: standing/dash/pivot capture, bone-lift/floor-loss/floor-contact capture-family transfer, sampled captured-damage reaction, repeated pummel, exact mash timer, cut release and throw release (implemented profile) |
 | Ledge catch, hang, climb, jump, attack, roll, drop | `conformance_actions` and `game_ledge` (implemented static-endpoint profile) |
 | Tap jump and stick-age input windows | `conformance_actions`: upward flick and gradual tilt versus flick |
 | Clanks and remaining combat responses | `conformance_combat`: simultaneous attacks and remaining modifiers; `game_damage_surface` covers ordinary wall/ceiling reflection and techs |

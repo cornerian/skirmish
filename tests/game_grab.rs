@@ -248,6 +248,49 @@ fn floor_contact_converts_high_capture_to_low_without_resetting_its_clock() {
     assert_eq!(hit.fighters[1].action, Action::CaptureDamageLw);
 }
 
+// CapturePulledLw_Coll changes to the high family when map collision reports
+// ground loss. Keep the bone-lift gate unreachable so this exercises the
+// collision callback rather than CapturePulledLw_Phys's vertical conversion.
+#[test]
+fn losing_floor_support_converts_low_capture_to_high_and_replays() {
+    let mut resource = data();
+    resource.stage.floor.right = 1.0;
+    resource.rules.grab.as_mut().unwrap().capture_lift_threshold = 100.0;
+    for pose in &mut resource.fighters[0].grab.as_mut().unwrap().pummel.poses {
+        pose[1].translation[0] = 3.0;
+    }
+    resource.fighters[1]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage
+        .high[0][1]
+        .translation[0] += 2.0;
+    let mut game = held(resource);
+    let waiting = game.state().fighters[1].clone();
+    assert_eq!(waiting.action, Action::CaptureWaitLw);
+    assert!(waiting.grounded);
+    assert_eq!(waiting.ground_line, Some(0));
+
+    let checkpoint = game.checkpoint();
+    let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    assert_eq!(entered.fighters[1].action, Action::CaptureWaitHi);
+    assert!(!entered.fighters[1].grounded);
+    assert_eq!(entered.fighters[1].ground_line, None);
+    assert_eq!(entered.fighters[1].action_frame, waiting.action_frame + 1);
+    assert!(entered.fighters[1].position[0] > 1.0);
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageHi);
+    assert!(hit.fighters[1].position[0] < entered.fighters[1].position[0] - 1.0);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(
+        step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2])),
+        entered
+    );
+    assert_eq!(step(&mut game, IDLE), hit);
+}
+
 #[test]
 fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
     let mut resource = with_locomotion(data());

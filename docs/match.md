@@ -222,8 +222,9 @@ checkpointed and cleared transactionally on release or stock loss. Captured
 fighters also run an explicit percent-scaled hold timer and the complete
 button/stick `ftCommon_GrabMash`
 transition. Expiry enters resource-driven CatchCut/CaptureCut release actions.
-Attachment rises over the scaled source threshold and ordinary stage
-ground/air collision switch capture families without resetting action time.
+Attachment rises over the scaled source threshold, ground support loss switches
+low captures to high, and floor contact switches high captures to low without
+resetting action time.
 Tether variants and capture-contact interference remain unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static
