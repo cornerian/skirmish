@@ -375,6 +375,7 @@ pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<[
                         base_damage: hit.damage,
                         damage: hit.damage as f32,
                     },
+                    crate::fighter::damage::HurtHeight::Middle,
                 )?;
                 released[holder] = true;
                 released[victim] = true;

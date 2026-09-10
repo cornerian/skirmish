@@ -3,6 +3,7 @@
 //! These are isolated arithmetic routines, not the complete damage scheduler.
 //! Coefficients and game-state decisions are explicit inputs. libm replaces the
 //! target transcendental library; host C comparisons use numerical tolerances.
+use serde::{Deserialize, Serialize};
 
 const DEGREES_TO_RADIANS: f32 = f32::from_bits(0x3c8e_fa35);
 
@@ -217,6 +218,73 @@ pub fn subtract_armor(knockback: f32, armor: [f32; 2], minimum: f32) -> f32 {
     };
     let reduced = knockback - armor;
     if reduced < minimum { minimum } else { reduced }
+}
+
+/// HurtCapsule::height, retained as the source's low/middle/high selector.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HurtHeight {
+    Low,
+    #[default]
+    Middle,
+    High,
+}
+
+impl HurtHeight {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Low => 0,
+            Self::Middle => 1,
+            Self::High => 2,
+        }
+    }
+}
+
+/// The 15 distinct ordinary Damage motions in `ftCo_803C5520`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DamageMotion {
+    Ground { level: u8, height: HurtHeight },
+    Air { level: u8 },
+    Fly { height: HurtHeight },
+}
+
+/// `ftCo_8008DCE0`'s ordinary knockback-level and motion-table selection.
+/// Multiplication happens before the strict comparisons; NaN therefore falls
+/// through to the fly row exactly as in the source.
+pub fn damage_motion(
+    knockback: f32,
+    scale: f32,
+    thresholds: [f32; 3],
+    airborne: bool,
+    height: HurtHeight,
+) -> DamageMotion {
+    let scaled = knockback * scale;
+    let level = if scaled < thresholds[0] {
+        0
+    } else if scaled < thresholds[1] {
+        1
+    } else if scaled < thresholds[2] {
+        2
+    } else {
+        3
+    };
+    match (airborne, level) {
+        (_, 3) => DamageMotion::Fly { height },
+        (true, level) => DamageMotion::Air { level },
+        (false, level) => DamageMotion::Ground { level, height },
+    }
+}
+
+/// Source motion ID for differential testing and resource-extraction tooling.
+pub const fn damage_motion_id(motion: DamageMotion) -> u16 {
+    match motion {
+        DamageMotion::Ground { level, height } => {
+            [[81, 78, 75], [82, 79, 76], [83, 80, 77]][level as usize][height.index()]
+        }
+        DamageMotion::Air { level } => [84, 85, 86][level as usize],
+        DamageMotion::Fly { height } => [89, 88, 87][height.index()],
+    }
 }
 
 /// `ftCo_800986B0`: buffered physical-L/R tech eligibility. The current byte
@@ -590,5 +658,45 @@ mod tests {
             reflect_velocity([-0.0; 2], [0.0; 2], [0.0, -1.0], 1.0).facing,
             1.0
         );
+    }
+
+    #[test]
+    fn damage_motion_preserves_strict_levels_nan_fallthrough_and_source_table() {
+        let thresholds = [10.0, 20.0, 30.0];
+        for (knockback, level) in [(9.0, 0), (10.0, 1), (20.0, 2)] {
+            for height in [HurtHeight::Low, HurtHeight::Middle, HurtHeight::High] {
+                assert_eq!(
+                    damage_motion(knockback, 1.0, thresholds, false, height),
+                    DamageMotion::Ground { level, height }
+                );
+                assert_eq!(
+                    damage_motion(knockback, 1.0, thresholds, true, height),
+                    DamageMotion::Air { level }
+                );
+            }
+        }
+        for knockback in [30.0, f32::NAN] {
+            assert_eq!(
+                damage_motion(knockback, 1.0, thresholds, false, HurtHeight::High),
+                DamageMotion::Fly {
+                    height: HurtHeight::High
+                }
+            );
+        }
+        let expected = [
+            [[81, 78, 75], [82, 79, 76], [83, 80, 77], [89, 88, 87]],
+            [[84, 84, 84], [85, 85, 85], [86, 86, 86], [89, 88, 87]],
+        ];
+        for airborne in [false, true] {
+            for (level, knockback) in [5.0, 15.0, 25.0, 35.0].into_iter().enumerate() {
+                for height in [HurtHeight::Low, HurtHeight::Middle, HurtHeight::High] {
+                    let motion = damage_motion(knockback, 1.0, thresholds, airborne, height);
+                    assert_eq!(
+                        damage_motion_id(motion),
+                        expected[usize::from(airborne)][level][height.index()]
+                    );
+                }
+            }
+        }
     }
 }

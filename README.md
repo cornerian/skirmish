@@ -87,6 +87,9 @@ KO timelines, exact selector RNG and delayed stock loss to headless consumers.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.
+The [ordinary damage-motion profile](docs/damage-motion.md) selects all 15
+ground, air and fly reactions by post-armor knockback and contacted hurtbox
+height, with headless pose sampling through hitstun.
 Resource-driven [stage motion](docs/stage-motion.md) exposes current collision
 geometry and carries supported fighters with the original line-remap arithmetic.
 The [ECB response profile](docs/ecb-response.md) adds moving-surface penetration,

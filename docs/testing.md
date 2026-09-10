@@ -131,6 +131,14 @@ stubbed tech result over selector boundaries and arbitrary binary32 values.
 `down_damage_differential` compares complete `ftCo_8009F0F0`, including its
 strict threshold and face-down motion-selector quirk.
 
+The [ordinary damage-motion profile](damage-motion.md) adds
+`game_damage_motion` coverage for every grounded/airborne knockback level and
+hurtbox height, strict threshold equality, repeated-hit reselection, sampled
+hurtbox/ECB geometry, animation versus hitstun completion, final-pose holding,
+checkpoint replay and malformed resources. `damage_motion_differential` runs
+arbitrary binary32 values through Rust and the byte-for-byte source level
+selection and 2x4x3 motion table in its host C adapter.
+
 The [damage-surface profile](damage-surfaces.md) adds `game_damage_surface`
 coverage for wall and ceiling launch reflection, neutral/jump wall techs, both
 wall orientations, ceiling input motion, exact configured action durations,
@@ -211,6 +219,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `ecb_response` | Four-sided moving compression, ECB restoration, moving-floor landing, one-way direction and tangential-motion rejection, checkpoint replay |
 | `damage_floor` | Neutral/directional techs, full face-up/down knockdown and get-up suffix, DownBound attack buffering, prone DownDamage reactions, sampled root motion and bones, exact recovery protection, combat vulnerability, input history, invalid profiles and checkpoint replay |
 | `damage_surface` | Wall/ceiling reflection and techs, neutral/jump choice, both wall orientations, ceiling motion, action timing, collision priority, repeat lockout, disabled/invalid profiles and checkpoint replay |
+| `damage_motion` | All ordinary ground/air/fly selectors, sampled hurtbox/ECB poses, dual animation/hitstun completion, repeated-hit reselection, invalid profiles and checkpoint replay |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order

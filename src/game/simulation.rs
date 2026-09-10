@@ -80,6 +80,7 @@ fn spawn(
         tumbling: false,
         prone: None,
         down_timer: 0,
+        damage_motion: None,
         last_damage_surface: None,
         reflect_lockout: 0,
         surface_tech: damage::SurfaceTechState::default(),
@@ -135,6 +136,9 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     }
     if !matches!(action, Action::DownWait | Action::DownDamage) {
         fighter.down_timer = 0;
+    }
+    if action != Action::Damage {
+        fighter.damage_motion = None;
     }
     if !matches!(
         action,
@@ -501,12 +505,13 @@ pub(crate) fn advance(
                     .map_err(physics)?
                     .is_some()
                 {
-                    hits.push((attacker, hit, staled, true));
+                    hits.push((attacker, hit, staled, true, None));
                     break;
                 }
             }
             let mut collided = false;
-            for hurtbox in &data.fighters[victim].hurtboxes {
+            let mut height = None;
+            for (index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
                 let hurt = hurtbox
                     .physics()
                     .transform(&poses[victim], 1.0)
@@ -528,18 +533,22 @@ pub(crate) fn advance(
                 }
                 if overlaps {
                     collided = true;
+                    height = data.fighters[victim]
+                        .damage_poses
+                        .as_ref()
+                        .map(|poses| poses.hurtbox_heights[index]);
                     break;
                 }
             }
             if collided {
-                hits.push((attacker, hit, staled, false));
+                hits.push((attacker, hit, staled, false, height));
                 break;
             }
         }
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.
-    for &(attacker, hit, _, _) in &hits {
+    for &(attacker, hit, _, _, _) in &hits {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
         if data.rules.clank.is_some() {
             clank::record(&mut state.fighters[attacker], hit.group, 1 - attacker)?;
@@ -547,13 +556,20 @@ pub(crate) fn advance(
     }
     let mut newly_hit = [false; 2];
     let mut shield_contact = [false; 2];
-    for (attacker, hit, staled, blocked) in hits {
+    for (attacker, hit, staled, blocked, height) in hits {
         newly_hit[1 - attacker] = true;
         if blocked {
             shield_contact[1 - attacker] = true;
             shield::apply_contact(data, state, attacker, hit, staled)?;
         } else {
-            damage::apply_hit(data, state, attacker, hit, staled)?;
+            damage::apply_hit(
+                data,
+                state,
+                attacker,
+                hit,
+                staled,
+                height.unwrap_or_default(),
+            )?;
         }
         if !blocked && data.rules.staling.is_some() {
             state.fighters[attacker]
@@ -1123,6 +1139,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else if let Some(pose) = ledge::pose(fighter, data) {
         pose
     } else if let Some(pose) = damage::ground_recovery_pose(fighter, data) {
+        pose
+    } else if let Some(pose) = damage::damage_pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

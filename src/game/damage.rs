@@ -32,6 +32,41 @@ pub struct CombatRules {
     /// Optional wall/ceiling tech timing and input profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_tech: Option<SurfaceTechRules>,
+    /// Optional ordinary Damage motion thresholds (common x158/x15C/x160).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_motion: Option<DamageMotionRules>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamageMotionRules {
+    pub thresholds: [f32; 3],
+}
+
+/// Complete physics-pose samples for the source's 15 ordinary Damage motions.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamagePoseAttributes {
+    /// One source low/middle/high selector per fighter hurtbox.
+    pub hurtbox_heights: Vec<damage::HurtHeight>,
+    /// Levels 1..3, then hurt height low/middle/high.
+    pub ground: [[Vec<Vec<Bone>>; 3]; 3],
+    /// Air levels 1..3; hurt height is ignored by the source table.
+    pub air: [Vec<Vec<Bone>>; 3],
+    /// Fly hurt height low/middle/high.
+    pub fly: [Vec<Vec<Bone>>; 3],
+}
+
+impl DamagePoseAttributes {
+    fn motion(&self, motion: damage::DamageMotion) -> &Vec<Vec<Bone>> {
+        match motion {
+            damage::DamageMotion::Ground { level, height } => {
+                &self.ground[level as usize][height.index()]
+            }
+            damage::DamageMotion::Air { level } => &self.air[level as usize],
+            damage::DamageMotion::Fly { height } => &self.fly[height.index()],
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -237,6 +272,34 @@ pub(crate) fn validate_surface_tech_attributes(
     }
 }
 
+pub(crate) fn validate_damage_pose_attributes(
+    attributes: &DamagePoseAttributes,
+    fighter: &FighterData,
+) -> Result<(), Error> {
+    if attributes.hurtbox_heights.len() != fighter.hurtboxes.len() {
+        return Err(Error::Data(
+            "damage poses require one height per hurtbox".into(),
+        ));
+    }
+    for motion in attributes
+        .ground
+        .iter()
+        .flatten()
+        .chain(&attributes.air)
+        .chain(&attributes.fly)
+    {
+        if motion.is_empty() || motion.len() > 4096 {
+            return Err(Error::Data(
+                "damage motions require 1..4096 physics samples".into(),
+            ));
+        }
+        for pose in motion {
+            super::validation::validate_animation_pose(pose, fighter)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_floor_tech_attributes(
     attributes: &FloorTechAttributes,
     fighter: &FighterData,
@@ -418,6 +481,18 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
             "invalid explicit hitlag displacement rules".into(),
         ));
     }
+    if let Some(profile) = &rules.damage_motion
+        && (!profile
+            .thresholds
+            .into_iter()
+            .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value))
+            || !(profile.thresholds[0] < profile.thresholds[1]
+                && profile.thresholds[1] < profile.thresholds[2]))
+    {
+        return Err(Error::Data(
+            "invalid explicit damage-motion thresholds".into(),
+        ));
+    }
     if let Some(profile) = &rules.floor_response
         && (![profile.tumble_knockback_threshold, profile.tech_window]
             .into_iter()
@@ -562,6 +637,7 @@ pub(crate) fn apply_hit(
     attacker: usize,
     hit: &Hitbox,
     staled: super::staling::Hit,
+    hurt_height: damage::HurtHeight,
 ) -> Result<(), Error> {
     let victim = 1 - attacker;
     let rules = &data.rules;
@@ -622,6 +698,15 @@ pub(crate) fn apply_hit(
                 armor.minimum_knockback,
             )
         });
+    let damage_motion = rules.damage.damage_motion.as_ref().map(|profile| {
+        damage::damage_motion(
+            knockback,
+            rules.hitstun_scale,
+            profile.thresholds,
+            !target.grounded,
+            hurt_height,
+        )
+    });
     let attacker_hitlag = combat::hitlag(staled.damage as i32, false, 1.0, &rules.hitlag.physics())
         .map_err(physics)?;
     let hitlag = combat::hitlag(
@@ -687,6 +772,11 @@ pub(crate) fn apply_hit(
             Action::Damage
         },
     );
+    target.damage_motion = if down_damage_face_up.is_none() {
+        damage_motion
+    } else {
+        None
+    };
     if let Some(face_up) = down_damage_face_up {
         target.prone = Some(if face_up {
             ProneOrientation::FaceUp
@@ -850,8 +940,13 @@ pub(crate) fn update_animation(
         super::simulation::enter(fighter, action);
         return;
     }
+    let motion_ended = fighter.damage_motion.is_none_or(|motion| {
+        data.damage_poses
+            .as_ref()
+            .is_none_or(|poses| fighter.action_frame as usize >= poses.motion(motion).len())
+    });
     let Some(profile) = &rules.floor_response else {
-        if fighter.action == Action::Damage && fighter.hitstun == 0 {
+        if fighter.action == Action::Damage && fighter.hitstun == 0 && motion_ended {
             super::simulation::enter(
                 fighter,
                 if fighter.grounded {
@@ -864,7 +959,7 @@ pub(crate) fn update_animation(
         return;
     };
     let next = match fighter.action {
-        Action::Damage if fighter.hitstun == 0 => Some(if fighter.grounded {
+        Action::Damage if fighter.hitstun == 0 && motion_ended => Some(if fighter.grounded {
             Action::Wait
         } else if fighter.tumbling {
             Action::DamageFall
@@ -884,6 +979,16 @@ pub(crate) fn update_animation(
     if let Some(action) = next {
         enter_recovery(fighter, action, profile);
     }
+}
+
+/// Selected ordinary Damage physics pose. If hitstun outlasts its animation,
+/// the last supplied pose remains sampled until the action can exit.
+pub(crate) fn damage_pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a Vec<Bone>> {
+    let motion = fighter.damage_motion?;
+    let frames = data.damage_poses.as_ref()?.motion(motion);
+    frames
+        .get(fighter.action_frame as usize)
+        .or_else(|| frames.last())
 }
 
 /// DownWait's source priority: get-up attack, roll, then stand. This owns the

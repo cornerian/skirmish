@@ -295,6 +295,22 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.damage.damage_motion, &fighter.damage_poses) {
+            (Some(_), Some(attributes)) => {
+                damage::validate_damage_pose_attributes(attributes, fighter)?
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "damage-motion rules require poses for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "damage poses require explicit common rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         let m = &fighter.movement;
         require(
             nonnegative([

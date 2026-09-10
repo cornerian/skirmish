@@ -40,7 +40,7 @@ simulator state; it is not a player-information observation policy. `reset(seed)
 restarts the match. `checkpoint()` and `restore_checkpoint()` preserve inputs,
 positions, velocities, action clocks, stick-age/jump counters, platform skip ID,
 ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
-time, tumble eligibility, damage-surface history/lockout and tech timer, physical-L/R
+time, selected damage motion, tumble eligibility, damage-surface history/lockout and tech timer, physical-L/R
 tech ages, jump-press age, swept hitbox centers, ECB
 interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
 invincibility, match clock, reserved RNG seed and events. This slice has no
@@ -138,6 +138,13 @@ ordinary armor subtracts the larger channel without changing percent damage.
 Grounded launch projection and the complete damage callback
 sequence remain unported.
 
+Optional [`rules.damage.damage_motion`](damage-motion.md) supplies the three
+ordinary knockback-level thresholds, while every fighter supplies complete
+ground, air and fly physics poses plus a height for each hurtbox. Selection uses
+post-armor knockback, the shared hitstun scale, pre-hit ground state and the
+contacted hurtbox. Sampled bones drive hurtboxes and ECBs; Damage waits for both
+animation and hitstun, holding its final pose when hitstun lasts longer.
+
 Optional `rules.staling` supplies the nine original common-data penalties and
 the debug bypass flag; each supported `Attack` then requires an explicit
 `move_id`. The source multiplier starts at 1.0: this ordinary uncharged/unscaled
@@ -177,8 +184,7 @@ configured FlyReflectWall/FlyReflectCeiling durations. Optional
 `rules.damage.surface_tech` and fighter attributes add buffered neutral/jump wall
 techs, ceiling tech input motion and configured recovery. Floor landing wins
 when multiple responses are possible in one collision pass; wall response wins
-over ceiling response at a corner. Action-specific airborne damage and
-surface-tech poses remain separate work.
+over ceiling response at a corner. Surface-tech poses remain separate work.
 
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 catch entry, sampled bone-attached grab capsules, paired pull/hold states and
@@ -277,15 +283,15 @@ priority action graph remain unported. The optional [damage-floor profile](damag
 and directional floor techs plus resource-driven missed-tech rolls, standing and
 get-up attacks. The
 [damage-surface profile](damage-surfaces.md) supplies ordinary tumble
-reflections and wall/ceiling techs. Ordinary action-specific airborne damage
-poses remain unported.
+reflections and wall/ceiling techs. The [damage-motion
+profile](damage-motion.md) supplies ordinary grounded, airborne and fly poses.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,
 grab escapes/pummels and other special launch-angle behaviors. Outside supplied attack, catch,
-throw, and landing poses,
+throw, landing and ordinary damage poses,
 fighters currently use a static supplied pose; authentic walking, jumping and
-damage collision require those animation resources. The schema exposes ordinary
+other action collision requires those animation resources. The schema exposes ordinary
 Euler scale inheritance but not all HSD joint flags, IK or animation scripting.
 Character-specific radius/model scaling is not implemented. Tests exercise the
 explicit slice; they do not certify those missing rules.

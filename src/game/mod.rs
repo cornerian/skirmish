@@ -209,6 +209,9 @@ pub struct Fighter {
     pub prone: Option<damage::ProneOrientation>,
     /// Shared DownWait/DownDamage countdown from the original state union.
     pub down_timer: u32,
+    /// Selected ordinary Damage motion; its sampled bones are physics state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub damage_motion: Option<crate::fighter::damage::DamageMotion>,
     /// Last wall/ceiling reflected during the current damage lifecycle.
     pub last_damage_surface: Option<crate::collision::stage::Surface>,
     /// Frames before another configured damage-surface reflection is eligible.

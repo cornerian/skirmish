@@ -92,7 +92,7 @@ non-tumble separation, DamageFall persistence, resource rejection,
 serialization, checkpoint replay and reset.
 The two tech/knockdown conformance scenarios run normally.
 
-This profile does not yet provide action-specific ordinary airborne damage
-poses or input-lock states. Wall/ceiling reflection and techs are supplied separately by the
-[damage-surface profile](damage-surfaces.md). The remaining paths need their own
-native resources and scheduler integration.
+Ordinary grounded, airborne and fly reaction poses are supplied separately by
+the [damage-motion profile](damage-motion.md). This profile does not yet provide
+input-lock states. Wall/ceiling reflection and techs are supplied separately by
+the [damage-surface profile](damage-surfaces.md).

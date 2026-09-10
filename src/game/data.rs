@@ -172,6 +172,8 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_tech: Option<super::damage::SurfaceTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_poses: Option<super::damage::DamagePoseAttributes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shield: Option<super::shield::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nudge: Option<super::nudge::Attributes>,
