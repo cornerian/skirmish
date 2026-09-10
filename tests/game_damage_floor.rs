@@ -4,7 +4,7 @@ use skirmish::{
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
         damage::{
-            FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules,
+            DownDamageRules, FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules,
             KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules,
             ProneRecoveryAttributes, RecoveryInvincibilityRules,
         },
@@ -27,6 +27,7 @@ fn profile() -> skirmish::game::damage::FloorResponseRules {
         tech_roll: None,
         knockdown_options: None,
         recovery_invincibility: None,
+        down_damage: None,
         passive_frames: 3,
         down_bound_frames: 4,
         down_wait_frames: 5,
@@ -146,6 +147,7 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         let face_up = ProneRecoveryAttributes {
             bound_poses,
             wait_poses,
+            damage_poses: None,
             forward: roll_motion(&fighter.bones, &[0.0, 0.6, 0.9, 0.3], 6.0),
             backward: roll_motion(&fighter.bones, &[0.0, -0.4, -0.7, -0.2, -0.1], -6.0),
             stand_poses,
@@ -218,6 +220,46 @@ fn face_down_data() -> skirmish::game::data::MatchData {
         .unwrap()
         .orientation
         .invert = true;
+    resource
+}
+
+fn down_damage_data(face_down: bool) -> skirmish::game::data::MatchData {
+    let mut resource = if face_down {
+        face_down_data()
+    } else {
+        knockdown_data()
+    };
+    let floor = resource.rules.damage.floor_response.as_mut().unwrap();
+    floor.down_damage = Some(DownDamageRules {
+        pending_damage_threshold: 41,
+        frames: 3,
+    });
+    floor.down_bound_frames = 120;
+    floor.down_wait_frames = 30;
+    for fighter in &mut resource.fighters {
+        let bones = fighter.bones.clone();
+        let knockdown = fighter.knockdown.as_mut().unwrap();
+        for (variant, extension) in [
+            (&mut knockdown.face_up, 16.0),
+            (&mut knockdown.face_down, 17.0),
+        ] {
+            variant.bound_poses.resize(120, bones.clone());
+            variant.wait_poses.resize(30, bones.clone());
+            let mut poses = vec![bones.clone(); 3];
+            for pose in &mut poses {
+                pose[1].translation[0] = extension;
+            }
+            variant.damage_poses = Some(poses);
+        }
+    }
+    for hit in resource.fighters[0]
+        .jab
+        .frames
+        .iter_mut()
+        .flat_map(|frame| &mut frame.hitboxes)
+    {
+        hit.radius = 30.0;
+    }
     resource
 }
 
@@ -294,6 +336,12 @@ fn down_bound(data: skirmish::game::data::MatchData) -> Match {
         state.fighters[1].action == Action::DownBound
     });
     game
+}
+
+fn hit_prone(game: &mut Match) -> State {
+    let before = game.state().fighters[1].percent;
+    step(game, input(0, BUTTON_A));
+    until(game, |state| state.fighters[1].percent > before)
 }
 
 fn advance_to_bound_expiry(game: &mut Match) {
@@ -547,6 +595,86 @@ fn evaluated_hip_orientation_selects_and_preserves_each_prone_physics_family() {
             ..
         } if *damage == 6.0
     )));
+}
+
+#[test]
+fn prone_low_damage_uses_oriented_poses_and_preserves_checkpointed_recovery() {
+    for (face_down, orientation, ecb_left) in [
+        (false, ProneOrientation::FaceUp, -16.0),
+        (true, ProneOrientation::FaceDown, -17.0),
+    ] {
+        let mut game = down_wait(down_damage_data(face_down));
+        assert_eq!(game.state().fighters[0].action, Action::Wait);
+        let entered = hit_prone(&mut game);
+        assert_eq!(entered.fighters[1].action, Action::DownDamage);
+        assert_eq!(entered.fighters[1].action_frame, 0);
+        assert_eq!(entered.fighters[1].prone, Some(orientation));
+        assert_eq!(entered.fighters[1].down_timer, entered.fighters[1].hitstun);
+        assert!(!entered.fighters[1].grounded);
+
+        let checkpoint = game.checkpoint();
+        let expected = (0..120)
+            .map(|_| step(&mut game, IDLE))
+            .take_while(|state| state.fighters[1].action == Action::DownDamage)
+            .collect::<Vec<_>>();
+        assert!(!expected.is_empty());
+        assert!(
+            expected
+                .iter()
+                .any(|state| (state.fighters[1].ecb.current.left[0] - ecb_left).abs() < 1e-5)
+        );
+        assert_eq!(game.state().fighters[1].action, Action::DownWait);
+        assert!(game.state().fighters[1].down_timer > 0);
+
+        game.restore_checkpoint(&checkpoint).unwrap();
+        for state in expected {
+            assert_eq!(step(&mut game, IDLE), state);
+        }
+        assert_eq!(step(&mut game, IDLE).fighters[1].action, Action::DownWait);
+        until(&mut game, |state| {
+            state.fighters[1].action == Action::DownStand
+        });
+        assert_eq!(game.state().fighters[1].down_timer, 0);
+    }
+}
+
+#[test]
+fn downbound_hit_uses_the_original_face_down_selector_quirk() {
+    let mut game = down_bound(down_damage_data(false));
+    assert_eq!(
+        game.state().fighters[1].prone,
+        Some(ProneOrientation::FaceUp)
+    );
+    until(&mut game, |state| state.fighters[0].action == Action::Wait);
+    assert_eq!(game.state().fighters[1].action, Action::DownBound);
+    let entered = hit_prone(&mut game);
+    assert_eq!(entered.fighters[1].action, Action::DownDamage);
+    assert_eq!(entered.fighters[1].prone, Some(ProneOrientation::FaceDown));
+}
+
+#[test]
+fn threshold_equality_and_non_prone_recovery_use_ordinary_damage() {
+    let mut equal = down_damage_data(false);
+    equal
+        .rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_damage
+        .as_mut()
+        .unwrap()
+        .pending_damage_threshold = 40;
+    let state = hit_prone(&mut down_wait(equal));
+    assert_eq!(state.fighters[1].action, Action::Damage);
+    assert_eq!(state.fighters[1].prone, None);
+
+    let mut stand = down_wait(down_damage_data(false));
+    step(&mut stand, recovery_input(0, [0.0, 0.7], [0.0; 2]));
+    assert_eq!(stand.state().fighters[1].action, Action::DownStand);
+    let state = hit_prone(&mut stand);
+    assert_eq!(state.fighters[1].action, Action::Damage);
+    assert_eq!(state.fighters[1].prone, None);
 }
 
 #[test]
@@ -913,6 +1041,7 @@ fn checkpoint_and_reset_preserve_tech_history_and_floor_suffixes() {
     assert_eq!(reset.fighters[1].locomotion.attack_a_age, 255);
     assert_eq!(reset.fighters[1].locomotion.attack_b_age, 255);
     assert_eq!(reset.fighters[1].prone, None);
+    assert_eq!(reset.fighters[1].down_timer, 0);
     assert!(!reset.fighters[1].tumbling);
 }
 
@@ -943,6 +1072,26 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
             .iter()
             .all(|fighter| fighter.knockdown.is_some())
     );
+    let encoded = serde_json::to_string(&down_damage_data(false)).unwrap();
+    let decoded: skirmish::game::data::MatchData = serde_json::from_str(&encoded).unwrap();
+    assert!(
+        decoded
+            .rules
+            .damage
+            .floor_response
+            .unwrap()
+            .down_damage
+            .is_some()
+    );
+    assert!(decoded.fighters.iter().all(|fighter| {
+        fighter
+            .knockdown
+            .as_ref()
+            .unwrap()
+            .face_up
+            .damage_poses
+            .is_some()
+    }));
 
     let mut cases = Vec::new();
     let mut bad = data();
@@ -1114,6 +1263,55 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
         .as_mut()
         .unwrap()
         .knockdown_options = None;
+    cases.push(bad);
+    let mut bad = down_damage_data(false);
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_damage
+        .as_mut()
+        .unwrap()
+        .pending_damage_threshold = -1;
+    cases.push(bad);
+    let mut bad = down_damage_data(false);
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_damage
+        .as_mut()
+        .unwrap()
+        .frames = 0;
+    cases.push(bad);
+    let mut bad = down_damage_data(false);
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .face_down
+        .damage_poses = None;
+    cases.push(bad);
+    let mut bad = down_damage_data(false);
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .face_up
+        .damage_poses
+        .as_mut()
+        .unwrap()
+        .pop();
+    cases.push(bad);
+    let mut bad = down_damage_data(false);
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_damage = None;
     cases.push(bad);
     let mut bad = recovery_data();
     bad.rules

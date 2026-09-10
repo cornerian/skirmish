@@ -79,6 +79,7 @@ fn spawn(
         di_pending: false,
         tumbling: false,
         prone: None,
+        down_timer: 0,
         last_damage_surface: None,
         reflect_lockout: 0,
         surface_tech: damage::SurfaceTechState::default(),
@@ -110,7 +111,11 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.hitboxes = [hitboxes::Track::default(); 4];
     if !matches!(
         action,
-        Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+        Action::Damage
+            | Action::DamageFall
+            | Action::DownDamage
+            | Action::FlyReflectWall
+            | Action::FlyReflectCeiling
     ) {
         fighter.tumbling = false;
         fighter.last_damage_surface = None;
@@ -120,12 +125,16 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         action,
         Action::DownBound
             | Action::DownWait
+            | Action::DownDamage
             | Action::DownForward
             | Action::DownBack
             | Action::DownAttack
             | Action::DownStand
     ) {
         fighter.prone = None;
+    }
+    if !matches!(action, Action::DownWait | Action::DownDamage) {
+        fighter.down_timer = 0;
     }
     if !matches!(
         action,
@@ -1058,6 +1067,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         } else if !matches!(
             f.action,
             Action::Damage
+                | Action::DownDamage
                 | Action::FlyReflectWall
                 | Action::FlyReflectCeiling
                 | Action::PassiveWall

@@ -272,6 +272,7 @@ fn downward_hit() -> Match {
         tech_roll: None,
         knockdown_options: None,
         recovery_invincibility: None,
+        down_damage: None,
         passive_frames: 4,
         down_bound_frames: 4,
         down_wait_frames: 4,

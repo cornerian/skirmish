@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-09 prone DownDamage coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-down-damage-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage exercises both prone orientations,
+strict threshold equality, the source face-down selector quirk, launch and
+landing, shared countdown recovery, malformed resources and checkpoint replay.
+The complete retained eligibility/selector callback is compared with pinned C.
+
 The 2026-09-09 prone-orientation coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-prone-orientation-20260909`

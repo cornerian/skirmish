@@ -302,6 +302,20 @@ pub fn prone_face_up(hip_matrix: &[[f32; 4]; 3], use_z_axis: bool, invert: bool)
     face_up != invert
 }
 
+/// `ftCo_8009F0F0` and its DownDamageU/DownDamageD selector, expressed without
+/// fighter pointers. The source uses a strict pending-damage threshold and has
+/// a notable selector quirk: only DownWaitU chooses the face-up reaction;
+/// DownBoundU and a repeated DownDamageU choose DownDamageD.
+pub fn down_damage_face_up(
+    prone_action: bool,
+    face_up_wait: bool,
+    forced: bool,
+    pending_damage: f32,
+    threshold: i32,
+) -> Option<bool> {
+    (prone_action && (forced || pending_damage < threshold as f32)).then_some(face_up_wait)
+}
+
 /// Refactored DownWait IASA composition. The original callback gives get-up
 /// attack priority, then a fresh C-stick or held main-stick roll, then stand.
 pub fn knockdown_option(input: KnockdownInput, rules: &KnockdownRules) -> Option<KnockdownOption> {
@@ -549,6 +563,18 @@ mod tests {
         assert!(prone_face_up(&hip, true, false));
         hip[1][1] = f32::NAN;
         assert!(!prone_face_up(&hip, false, false));
+    }
+
+    #[test]
+    fn down_damage_retains_strict_threshold_and_face_up_wait_quirk() {
+        assert_eq!(down_damage_face_up(true, true, false, 4.0, 5), Some(true));
+        assert_eq!(down_damage_face_up(true, false, false, 4.0, 5), Some(false));
+        assert_eq!(down_damage_face_up(true, true, false, 5.0, 5), None);
+        assert_eq!(
+            down_damage_face_up(true, false, true, f32::NAN, 0),
+            Some(false)
+        );
+        assert_eq!(down_damage_face_up(false, true, true, 0.0, 1), None);
     }
 
     #[test]

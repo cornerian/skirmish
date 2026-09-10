@@ -46,10 +46,22 @@ pub struct FloorResponseRules {
     pub knockdown_options: Option<KnockdownRules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_invincibility: Option<RecoveryInvincibilityRules>,
+    /// Optional low-damage reaction while the fighter is prone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_damage: Option<DownDamageRules>,
     pub passive_frames: u32,
     pub down_bound_frames: u32,
     pub down_wait_frames: u32,
     pub down_stand_frames: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DownDamageRules {
+    /// Strict upper bound for the current hit's pending damage.
+    pub pending_damage_threshold: i32,
+    /// Number of supplied DownDamage animation/physics samples.
+    pub frames: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -101,6 +113,8 @@ pub struct ProneOrientationRules {
 pub struct ProneRecoveryAttributes {
     pub bound_poses: Vec<Vec<Bone>>,
     pub wait_poses: Vec<Vec<Bone>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_poses: Option<Vec<Vec<Bone>>>,
     pub forward: FloorTechMotion,
     pub backward: FloorTechMotion,
     pub stand_poses: Vec<Vec<Bone>>,
@@ -259,6 +273,20 @@ pub(crate) fn validate_knockdown_attributes(
             (&variant.stand_poses, profile.down_stand_frames),
         ] {
             validate_poses(poses, frames, fighter)?;
+        }
+        match (&profile.down_damage, &variant.damage_poses) {
+            (Some(rules), Some(poses)) => validate_poses(poses, rules.frames, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "down-damage rules require poses for both orientations".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "down-damage poses require explicit common rules".into(),
+                ));
+            }
+            (None, None) => {}
         }
         if let Some(invincibility) = &profile.recovery_invincibility
             && (invincibility.missed_roll_frames > variant.forward.frames.len() as u32
@@ -440,6 +468,16 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
             "invalid explicit knockdown-option rules".into(),
         ));
     }
+    if let Some(profile) = rules
+        .floor_response
+        .as_ref()
+        .and_then(|profile| profile.down_damage.as_ref())
+        && (!(0..=1_000_000).contains(&profile.pending_damage_threshold)
+            || profile.frames == 0
+            || profile.frames >= 1_000_000)
+    {
+        return Err(Error::Data("invalid explicit down-damage rules".into()));
+    }
     if let Some(invincibility) = rules
         .floor_response
         .as_ref()
@@ -528,6 +566,23 @@ pub(crate) fn apply_hit(
     let victim = 1 - attacker;
     let rules = &data.rules;
     let target = &state.fighters[victim];
+    let down_damage_face_up = rules
+        .damage
+        .floor_response
+        .as_ref()
+        .and_then(|floor| floor.down_damage.as_ref())
+        .and_then(|profile| {
+            damage::down_damage_face_up(
+                matches!(
+                    target.action,
+                    Action::DownBound | Action::DownWait | Action::DownDamage
+                ),
+                target.action == Action::DownWait && target.prone == Some(ProneOrientation::FaceUp),
+                false,
+                staled.damage,
+                profile.pending_damage_threshold,
+            )
+        });
     let knockback = combat::knockback(
         &rules.knockback.physics(),
         combat::KnockbackHit {
@@ -624,7 +679,23 @@ pub(crate) fn apply_hit(
     target.ground_line = None;
     target.fast_fall = false;
     super::ledge::release_on_damage(target, rules.ledge.as_ref());
-    super::simulation::enter(target, Action::Damage);
+    super::simulation::enter(
+        target,
+        if down_damage_face_up.is_some() {
+            Action::DownDamage
+        } else {
+            Action::Damage
+        },
+    );
+    if let Some(face_up) = down_damage_face_up {
+        target.prone = Some(if face_up {
+            ProneOrientation::FaceUp
+        } else {
+            ProneOrientation::FaceDown
+        });
+        // The source stores hitstun in the same union slot used by DownWait.
+        target.down_timer = hitstun as u32;
+    }
     target.damage_elapsed = 0;
     target.locomotion.tilt_x_age = 254;
     target.locomotion.tilt_y_age = 254;
@@ -661,6 +732,29 @@ pub(crate) fn update_animation(
     input: super::Controller,
 ) {
     fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
+    if fighter.action == Action::DownDamage
+        && let Some(profile) = rules
+            .floor_response
+            .as_ref()
+            .and_then(|floor| floor.down_damage.as_ref())
+    {
+        if fighter.action_frame < profile.frames {
+            fighter.down_timer = fighter.down_timer.saturating_sub(1);
+        }
+        if fighter.action_frame >= profile.frames {
+            if fighter.grounded {
+                let action = if fighter.down_timer == 0 {
+                    Action::DownStand
+                } else {
+                    Action::DownWait
+                };
+                enter_recovery(fighter, action, rules.floor_response.as_ref().unwrap());
+            } else {
+                super::simulation::enter(fighter, Action::Fall);
+            }
+            return;
+        }
+    }
     if let Some(motion) = ground_motion(fighter, data)
         && fighter.action_frame as usize >= motion.frames.len()
     {
@@ -696,6 +790,9 @@ pub(crate) fn update_animation(
             })
             .map(knockdown_action)
             .unwrap_or(Action::DownWait);
+        if action == Action::DownWait {
+            fighter.down_timer = floor.down_wait_frames;
+        }
         enter_recovery(fighter, action, floor);
         return;
     }
@@ -775,8 +872,9 @@ pub(crate) fn update_animation(
             Action::Fall
         }),
         Action::Passive if fighter.action_frame >= profile.passive_frames => Some(Action::Wait),
-        Action::DownWait if fighter.action_frame >= profile.down_wait_frames => {
-            Some(Action::DownStand)
+        Action::DownWait => {
+            fighter.down_timer = fighter.down_timer.saturating_sub(1);
+            (fighter.down_timer == 0).then_some(Action::DownStand)
         }
         Action::DownStand if fighter.action_frame >= profile.down_stand_frames => {
             Some(Action::Wait)
@@ -833,6 +931,7 @@ pub(crate) fn can_reflect(
             fighter.action,
             Action::Damage
                 | Action::DamageFall
+                | Action::DownDamage
                 | Action::FlyReflectWall
                 | Action::FlyReflectCeiling
         )
@@ -868,6 +967,7 @@ pub(crate) fn can_surface_tech(
             fighter.action,
             Action::Damage
                 | Action::DamageFall
+                | Action::DownDamage
                 | Action::FlyReflectWall
                 | Action::FlyReflectCeiling
         )
@@ -971,6 +1071,12 @@ pub(crate) fn land(
     rules: &CombatRules,
     input: super::Controller,
 ) -> Result<bool, Error> {
+    if fighter.action == Action::DownDamage {
+        // DownDamage's airborne collision callback converts to ground without
+        // entering the ordinary tech/missed-tech landing graph.
+        fighter.tumbling = false;
+        return Ok(true);
+    }
     let Some(profile) = &rules.floor_response else {
         return Ok(false);
     };
@@ -1036,6 +1142,7 @@ pub(crate) fn ground_recovery_pose<'a>(
         let poses = match fighter.action {
             Action::DownBound => Some(&variant.bound_poses),
             Action::DownWait => Some(&variant.wait_poses),
+            Action::DownDamage => variant.damage_poses.as_ref(),
             Action::DownStand => Some(&variant.stand_poses),
             _ => None,
         };

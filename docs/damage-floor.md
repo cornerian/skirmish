@@ -37,6 +37,20 @@ Each fighter then supplies one full bone pose for every Passive frame plus
 separate face-up and face-down DownBound, DownWait, DownStand, roll and get-up
 attack resources. These poses drive hurtboxes and ECBs in headless simulation.
 
+Optional `floor_response.down_damage` supplies the strict pending-damage upper
+bound and action duration for hits during DownBound, DownWait or DownDamage.
+Both prone variants supply complete DownDamage bone poses. Damage entry still
+applies launch, hitlag, DI and hitstun; if the airborne reaction contacts the
+floor, it remains DownDamage and then returns to DownWait while its hitstun
+countdown remains, or starts DownStand once that counter is exhausted.
+
+The reusable `fighter::damage::down_damage_face_up` kernel retains complete
+`ftCo_8009F0F0` eligibility and its original motion selector. The comparison is
+strict. Only DownWaitU selects DownDamageU, so a hit during DownBoundU or a
+repeated hit during DownDamageU selects DownDamageD. A pinned original-C
+property test covers that behavior over arbitrary binary32 damage and integer
+threshold values.
+
 At missed-tech contact, the configured HipN bone and axis select the prone
 family from the evaluated world matrix using the source's strict positive sign
 test. Per-fighter axis and inversion flags cover the original x2226 flags. The
@@ -72,12 +86,13 @@ fresh and held C-stick histories, inclusive thresholds, sampled root motion,
 bone-derived ECB changes for the full grounded recovery suffix, both evaluated
 prone families through rolls/stand/attack, get-up attack contact through the
 shared combat pipeline, exact recovery protection and its first vulnerable
-frame, state durations, repeat lockout, non-tumble separation, DamageFall
-persistence, resource rejection, serialization, checkpoint replay and reset.
+frame, prone low-damage hits, strict threshold equality, the face-down selector
+quirk, DownDamage landing/timer recovery, state durations, repeat lockout,
+non-tumble separation, DamageFall persistence, resource rejection,
+serialization, checkpoint replay and reset.
 The two tech/knockdown conformance scenarios run normally.
 
-This profile does not yet provide action-specific airborne damage poses,
-grounded DownDamage reactions or input-lock states. Wall/ceiling reflection and
-techs are supplied separately by the
+This profile does not yet provide action-specific ordinary airborne damage
+poses or input-lock states. Wall/ceiling reflection and techs are supplied separately by the
 [damage-surface profile](damage-surfaces.md). The remaining paths need their own
 native resources and scheduler integration.

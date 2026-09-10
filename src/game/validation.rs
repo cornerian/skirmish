@@ -259,11 +259,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             (None, None) => {}
         }
         match (
-            rules
-                .damage
-                .floor_response
-                .as_ref()
-                .and_then(|profile| profile.knockdown_options.as_ref()),
+            rules.damage.floor_response.as_ref().filter(|profile| {
+                profile.knockdown_options.is_some() || profile.down_damage.is_some()
+            }),
             &fighter.knockdown,
         ) {
             (Some(_), Some(attributes)) => damage::validate_knockdown_attributes(
@@ -273,12 +271,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             )?,
             (Some(_), None) => {
                 return Err(Error::Data(
-                    "knockdown-option rules require attributes for every fighter".into(),
+                    "prone-recovery rules require attributes for every fighter".into(),
                 ));
             }
             (None, Some(_)) => {
                 return Err(Error::Data(
-                    "knockdown attributes require common rules".into(),
+                    "prone-recovery attributes require common rules".into(),
                 ));
             }
             (None, None) => {}

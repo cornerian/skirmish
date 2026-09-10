@@ -228,5 +228,10 @@
     "fixture": "tests/oracle/original/passive_stand.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveStand.c",
     "sha256": "2a14e2143752cafe018e49a04a792d9063c1cd9e4f3953c758158afded208078"
+  },
+  {
+    "fixture": "tests/oracle/original/down_damage.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownDamage.c",
+    "sha256": "3a95e0bb90b4152649c00db02e374c7772aa47e0c4eacb19921245a430ffd9d2"
   }
 ]

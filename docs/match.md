@@ -169,7 +169,8 @@ ages reset when DownBound begins and provide its attack buffer. Damage at or
 above its inclusive threshold retains tumble eligibility through DamageFall
 until floor contact. The evaluated hip-bone matrix and per-fighter axis/inversion
 flags select checkpointed face-up or face-down resources for the entire
-missed-tech suffix. Optional
+missed-tech suffix. Optional low-damage rules add source-gated DownDamage poses,
+launch, landing and hitstun-countdown recovery without resetting DownWait. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
 configured FlyReflectWall/FlyReflectCeiling durations. Optional
@@ -276,7 +277,8 @@ priority action graph remain unported. The optional [damage-floor profile](damag
 and directional floor techs plus resource-driven missed-tech rolls, standing and
 get-up attacks. The
 [damage-surface profile](damage-surfaces.md) supplies ordinary tumble
-reflections and wall/ceiling techs. Grounded DownDamage reactions remain unported.
+reflections and wall/ceiling techs. Ordinary action-specific airborne damage
+poses remain unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

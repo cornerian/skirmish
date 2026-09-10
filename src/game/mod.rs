@@ -137,6 +137,7 @@ pub enum Action {
     PassiveStandB,
     DownBound,
     DownWait,
+    DownDamage,
     DownForward,
     DownBack,
     DownAttack,
@@ -206,6 +207,8 @@ pub struct Fighter {
     /// Evaluated hip orientation for the current missed-tech recovery suffix.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prone: Option<damage::ProneOrientation>,
+    /// Shared DownWait/DownDamage countdown from the original state union.
+    pub down_timer: u32,
     /// Last wall/ceiling reflected during the current damage lifecycle.
     pub last_damage_surface: Option<crate::collision::stage::Surface>,
     /// Frames before another configured damage-surface reflection is eligible.

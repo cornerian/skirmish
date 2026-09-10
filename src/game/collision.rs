@@ -289,6 +289,7 @@ pub(crate) fn resolve(
                     f.action,
                     Action::Damage
                         | Action::DamageFall
+                        | Action::DownDamage
                         | Action::FlyReflectWall
                         | Action::FlyReflectCeiling
                 )
@@ -418,7 +419,11 @@ fn land(
         simulation::enter(f, Action::ShieldBreakDown);
     } else if matches!(
         f.action,
-        Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
+        Action::Damage
+            | Action::DamageFall
+            | Action::DownDamage
+            | Action::FlyReflectWall
+            | Action::FlyReflectCeiling
     ) {
         let pose = simulation::pose(f, data)?;
         super::damage::land(f, data, &pose, &rules.damage, input)?;
