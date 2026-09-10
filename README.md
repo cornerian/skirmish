@@ -86,6 +86,8 @@ collision run in the headless `collision` and `fighter` modules; there is no ren
 stage data subsets are preserved with [provenance and missing fields](docs/native-data.md).
 Optional [blast-death resources](docs/deaths.md) expose normal, star and screen
 KO timelines, exact selector RNG and delayed stock loss to headless consumers.
+The [shield profile](docs/shield.md) includes direct digital and analog
+shield-to-Pass drops through one-way platforms with pinned input predicates.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.

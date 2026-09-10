@@ -2,7 +2,8 @@
 //! same native implementation, so success does not certify Melee fidelity.
 use peppi::frame::mutable;
 use serde_json::Value;
-use skirmish::game::data::HitElement;
+use skirmish::collision::stage;
+use skirmish::game::data::{HitElement, MatchData, StageGeometry};
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, State,
 };
@@ -73,6 +74,45 @@ fn powershield_data() -> skirmish::game::data::MatchData {
         for hit in &mut frame.hitboxes {
             hit.element = HitElement::Inert;
         }
+    }
+    data
+}
+
+fn shield_drop_data() -> MatchData {
+    let mut data: MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    let profile: ShieldProfile =
+        serde_json::from_str(include_str!("../../../tests/fixtures/game/shield.json")).unwrap();
+    let locomotion: skirmish::game::locomotion::Parameters =
+        serde_json::from_str(include_str!("../../../tests/fixtures/game/locomotion.json")).unwrap();
+    data.rules.countdown_frames = 0;
+    data.rules.time_limit_frames = 9_999;
+    data.rules.shield = Some(profile.rules);
+    data.stage.floor.left = -40.0;
+    data.stage.floor.right = 40.0;
+    data.stage.spawns = [[0.0, 0.0], [20.0, 0.0]];
+    data.stage.blast = [-100.0, 100.0, -100.0, 100.0];
+    data.stage.geometry = Some(StageGeometry {
+        lines: vec![stage::Line {
+            start: [-40.0, 0.0],
+            end: [40.0, 0.0],
+            flags: stage::FLOOR | stage::ENABLED,
+            material_flags: stage::PLATFORM as u16,
+            ..Default::default()
+        }],
+        joints: vec![stage::Joint {
+            flags: stage::ENABLED,
+            bounds_min: [-40.0, -100.0],
+            bounds_max: [40.0, 100.0],
+            floor: 0..1,
+            ..Default::default()
+        }],
+    });
+    for fighter in &mut data.fighters {
+        fighter.shield = Some(profile.attributes.clone());
+        fighter.locomotion = Some(locomotion);
     }
     data
 }
@@ -448,6 +488,34 @@ fn physical_l_drives_file_backed_shield_state_and_detects_its_removal() {
             checked_frames: 0,
             ..
         }
+    ));
+}
+
+#[test]
+fn file_backed_shield_drop_matches_and_detects_the_first_changed_stick_frame() {
+    let mut inputs = vec![IDLE; 6];
+    inputs[0][0].buttons = BUTTON_L;
+    inputs[1][0].buttons = BUTTON_L;
+    inputs[1][0].stick[1] = -1.0;
+    let recording = Recording::from_script(shield_drop_data(), 29, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::GuardOn);
+    let dropped = &recording.states[1].fighters[0];
+    assert_eq!(dropped.action, Action::Pass);
+    assert!(!dropped.grounded);
+    assert_eq!(dropped.skip_floor, Some(0));
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.joystick.y.set(1, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame,
+            checked_frames: 1,
+            ..
+        } if frame == FIRST + 1
     ));
 }
 

@@ -62,6 +62,20 @@ pub fn multi_jump_turn(remaining: &mut i32, facing: &mut f32, yaw: &mut f32, tot
     }
 }
 
+/// Input predicate composed by `ftCo_8009A080` and `ftCo_80099F1C` for an
+/// immediate platform drop from shield. The caller owns the Pass transition,
+/// input-age consumption and collision-line skip.
+pub fn shield_drop_request(
+    shield_held: bool,
+    stick_y: f32,
+    tilt_age: u8,
+    threshold: f32,
+    window: u8,
+    on_platform: bool,
+) -> bool {
+    shield_held && stick_y <= -threshold && tilt_age < window && on_platform
+}
+
 /// Walking coefficients, including the environment query result used by the
 /// original ground projection. No character or material defaults are assumed.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -183,6 +197,15 @@ mod tests {
         let stopped = yaw;
         multi_jump_turn(&mut remaining, &mut facing, &mut yaw, 5);
         assert_eq!(yaw.to_bits(), stopped.to_bits());
+    }
+
+    #[test]
+    fn shield_drop_uses_inclusive_stick_and_strict_age_boundaries() {
+        assert!(shield_drop_request(true, -0.7, 2, 0.7, 3, true));
+        assert!(!shield_drop_request(true, -0.699, 2, 0.7, 3, true));
+        assert!(!shield_drop_request(true, -0.7, 3, 0.7, 3, true));
+        assert!(!shield_drop_request(false, -1.0, 0, 0.7, 3, true));
+        assert!(!shield_drop_request(true, -1.0, 0, 0.7, 3, false));
     }
 
     #[test]

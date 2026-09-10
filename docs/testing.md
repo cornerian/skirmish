@@ -307,7 +307,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `locomotion` | Input age, launch timing, standing and running-turn lifecycle, Run and RunBrake trigger priority, velocity-gated marker freeze, animation-time carry, ordinary and five-aerial-jump exhaustion/restoration, multijump held-input markers, bone turn/facing, drift and checkpoint replay |
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
-| `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |
+| `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input, digital/analog shield drops, scheduler transition ownership and checkpoint history |
 | `blast_zones` | Strict upward-knockback/top-position thresholds, self-velocity jumps, grounded crossings, side/bottom KOs and checkpoint restoration |
 | `death` | Directional action timers, star/screen selection and motion, delayed/final stock loss, RNG/checkpoint state and invalid resources |
 | `stage_motion` | Affine/cyclic collision lines, current geometry, grounded/self-motion/hitlag carry, air detachment/relanding, checkpoints and invalid resources |

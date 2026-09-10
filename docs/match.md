@@ -328,7 +328,7 @@ a jab, all five ordinary aerials with landing/autocancel/L-cancel, ordinary
 damage/armor, integral fixed-angle launch, angle 361 and body-contact angle 362.
 Aerial resources and callback limits are described in [aerials.md](aerials.md). The optional
 [shield profile](shield.md) adds ordinary raise/hold/release, stun, recoil,
-break and dizzy recovery. The optional [grab profile](grabs.md) adds ordinary
+break, dizzy recovery and direct shield drops through one-way platforms. The optional [grab profile](grabs.md) adds ordinary
 standing, dash and pivot catches, paired holds, pummels with captured reaction
 poses, mash escape and four-direction throws. The optional [ledge
 profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape

@@ -268,5 +268,10 @@
     "fixture": "tests/oracle/original/attack_counter.c",
     "upstream": "src/melee/pl/plattack.c",
     "sha256": "8ac9163d7ade4af6740167098b7daa6bea50c6881ec31d8f0cb34db71fe90316"
+  },
+  {
+    "fixture": "tests/oracle/original/pass.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Pass.c",
+    "sha256": "5a54a6cd1171bab28687ce55a96d0ed3a1eb36356b5c94a66b4af60ff6d1eaa1"
   }
 ]

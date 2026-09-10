@@ -2,9 +2,15 @@
 //! mpUpdateFloorSkip and Fighter_ChangeMotionState's floor-skip clearing.
 use skirmish::collision::stage;
 use skirmish::game::{
-    Action, BUTTON_A, Controller, Match, State,
+    Action, BUTTON_A, BUTTON_L, Controller, Match, State,
     data::{MatchData, StageGeometry},
 };
+
+#[derive(serde::Deserialize)]
+struct ShieldProfile {
+    rules: skirmish::game::shield::Rules,
+    attributes: skirmish::game::shield::Attributes,
+}
 
 const IDLE: [Controller; 2] = [Controller {
     cstick: [0.0; 2],
@@ -55,6 +61,12 @@ fn data() -> MatchData {
     parameters.pass_animation_frames = 60;
     for fighter in &mut data.fighters {
         fighter.locomotion = Some(parameters);
+    }
+    let shield: ShieldProfile =
+        serde_json::from_str(include_str!("fixtures/game/shield.json")).unwrap();
+    data.rules.shield = Some(shield.rules);
+    for fighter in &mut data.fighters {
+        fighter.shield = Some(shield.attributes.clone());
     }
     data
 }
@@ -141,6 +153,67 @@ fn old_held_down_input_does_not_drop_on_landing_but_a_new_tilt_does() {
     game.step(IDLE).unwrap();
     let passing = until(&mut game, down(), |s| s.fighters[0].action == Action::Pass);
     assert_eq!(passing.fighters[0].skip_floor, Some(0));
+}
+
+#[test]
+fn shielding_drops_immediately_through_a_platform_for_digital_and_analog_shoulders() {
+    for shield in [
+        Controller {
+            buttons: BUTTON_L,
+            ..Default::default()
+        },
+        Controller {
+            trigger: 0.5,
+            ..Default::default()
+        },
+    ] {
+        let mut game = Match::new(data(), 0).unwrap();
+        let mut input = IDLE;
+        input[0] = shield;
+        assert_eq!(
+            game.step(input).unwrap().fighters[0].action,
+            Action::GuardOn
+        );
+
+        input[0].stick[1] = -1.0;
+        let passing = game.step(input).unwrap().fighters[0].clone();
+        assert_eq!(passing.action, Action::Pass);
+        assert!(!passing.grounded);
+        assert_eq!(passing.ground_line, None);
+        assert_eq!(passing.skip_floor, Some(0));
+        assert!(passing.velocity[1] < 0.0);
+        assert_eq!(passing.locomotion.tilt_y_age, 254);
+    }
+}
+
+#[test]
+fn shield_entry_does_not_chain_a_drop_and_a_solid_floor_refuses_it() {
+    let mut combined = IDLE;
+    combined[0] = Controller {
+        buttons: BUTTON_L,
+        stick: [0.0, -1.0],
+        ..Default::default()
+    };
+    let mut game = Match::new(data(), 0).unwrap();
+    let entered = game.step(combined).unwrap();
+    assert_eq!(entered.fighters[0].action, Action::GuardOn);
+    assert!(entered.fighters[0].grounded);
+
+    let mut solid = data();
+    solid.stage.geometry.as_mut().unwrap().lines[0].material_flags = 0;
+    let mut game = Match::new(solid, 0).unwrap();
+    let mut neutral_shield = combined;
+    neutral_shield[0].stick[1] = 0.0;
+    game.step(neutral_shield).unwrap();
+    for _ in 0..3 {
+        let state = game.step(combined).unwrap();
+        assert!(state.fighters[0].grounded);
+        assert_eq!(state.fighters[0].skip_floor, None);
+        assert!(matches!(
+            state.fighters[0].action,
+            Action::GuardOn | Action::Guard
+        ));
+    }
 }
 
 #[test]

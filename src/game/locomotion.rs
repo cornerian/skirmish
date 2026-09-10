@@ -630,7 +630,36 @@ pub fn pass_request(
     input: Controller,
     on_platform: bool,
 ) -> Option<f32> {
+    pass_request_after_actions(f, data, input, on_platform, false)
+}
+
+pub(crate) fn pass_request_after_actions(
+    f: &mut Fighter,
+    data: &FighterData,
+    input: Controller,
+    on_platform: bool,
+    shield_owned_frame: bool,
+) -> Option<f32> {
     let p = data.locomotion.as_ref()?;
+    if shield_owned_frame
+        && matches!(
+            f.action,
+            Action::GuardOn | Action::Guard | Action::GuardReflect
+        )
+        && math::shield_drop_request(
+            input.shield_held(),
+            input.stick[1],
+            f.locomotion.tilt_y_age,
+            p.pass_stick_threshold,
+            p.pass_window,
+            on_platform,
+        )
+    {
+        f.locomotion.pass_delay = None;
+        f.locomotion.tilt_y_age = 254;
+        f.locomotion.jumps_used = 1;
+        return Some(p.pass_velocity);
+    }
     if !matches!(f.action, Action::Squat | Action::SquatWait) {
         return None;
     }

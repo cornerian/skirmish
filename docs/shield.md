@@ -48,6 +48,11 @@ The implementation preserves these examined source branches:
   tangent, using the shared input ages and explicit displacement coefficients.
   The original airborne attacker-recoil decay typo is retained: its small-vector
   branch clears damage-knockback Y instead of shield-recoil Y.
+- `ftCo_8009A080` and `ftCo_80099F1C` route held digital or processed analog
+  shield plus a fresh downward main-stick tilt directly into Pass on a one-way
+  platform. The transition reuses the ordinary floor-line skip, falling physics
+  and ECB lock. A shield entered on the current scheduler frame cannot also
+  drop until its next action callback.
 - `ftCo_ShieldBreak{Fly,Fall,Down,Stand}.c` launches a broken fighter, suppresses
   air control, preserves the break hurt-status branch, and transitions on landing
   and supplied animation endings. `ftCo_Furafura.c` resets shield health, computes
@@ -60,14 +65,14 @@ Nonfinite results fail a step atomically. Tests exercise the complete ordinary
 cycle, shield pokes, zero boundaries, staling interaction, hitlag displacement
 and deterministic replay. Selected complete C functions independently check
 radius, drain, strength, powershield-window ticking, ordinary/powershield
-stun-rate/push, displacement, damage conversion and mash arithmetic. C adapters omit presentation/statistics callbacks whose results do
+stun-rate/push, displacement, shield-drop input, damage conversion and mash arithmetic. C adapters omit presentation/statistics callbacks whose results do
 not feed those calculations.
 
 This is still an experimental scheduler rather than complete Melee equivalence.
 Reflected-projectile motion is not yet simulated even though the fighter's
 reflector-active window is represented. Yoshi's shield, Jigglypuff's special break-death flag, electric-hit
 branches, shield tilting and native shield/body animation tracks, rolls, grabs,
-shield-drop input, C-stick shield jumps, full callback ordering and material
+C-stick shield jumps, full callback ordering and material
 friction are not provided by this batch. Break down/up pose selection is grouped
 into one lifecycle with supplied durations. Real Slippi parity also requires
 the missing authentic gameplay resources and other action systems.

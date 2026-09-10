@@ -388,11 +388,12 @@ pub(crate) fn advance(
             clank_owns[player],
             shield_owns[player],
         );
-        if let Some(velocity_y) = locomotion::pass_request(
+        if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
             &data.fighters[player],
             input,
             collision::on_platform(fighter, &geometry),
+            shield_owns[player],
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
         }

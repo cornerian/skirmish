@@ -1,5 +1,20 @@
 # Local validation provenance
 
+The 2026-09-10 shield-drop coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-shield-drop-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Integration coverage drives digital and processed analog shields through
+an immediate Pass transition on a one-way platform, rejects the same request on
+a solid floor, preserves the single-transition scheduler boundary and reuses
+the existing collision-line skip and ECB lock. The exact `ftCo_8009A080` and
+`ftCo_80099F1C` predicates are compared with pinned C over arbitrary input bit
+patterns and boundary values. A Peppi-written replay matches the resulting
+GuardOn-to-Pass suffix and detects a changed down-stick on its first affected
+frame.
+
 The 2026-09-10 inert shield-touch batch is recorded at:
 
 `/mnt/archive/runs/skirmish-shield-touch-20260910-verified`
