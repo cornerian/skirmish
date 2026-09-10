@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::{
     controller::host::{Button, ControllerId, ControllerInfo, ControllerState},
-    menu::{ItemId, MenuCommand, interaction::InteractionMap},
+    menu::{Direction, ItemId, MenuCommand, interaction::InteractionMap},
 };
 use sdl3::keyboard::Scancode;
 
@@ -82,6 +82,134 @@ fn controller_button(button: Button) -> u32 {
         Button::DPadLeft => pad::LEFT,
         Button::DPadRight => pad::RIGHT,
         _ => 0,
+    }
+}
+
+const INITIAL_REPEAT_DELAY: u16 = 20;
+const FIRST_REPEAT_PERIOD: u16 = 8;
+const FASTER_REPEAT_AGE: u16 = 40;
+const FASTER_REPEAT_PERIOD: u16 = 4;
+const FASTEST_REPEAT_AGE: u16 = 100;
+const FASTEST_REPEAT_PERIOD: u16 = 2;
+
+#[derive(Clone, Copy)]
+struct RepeatState {
+    buttons: u32,
+    timer: u16,
+    age: u16,
+}
+
+impl Default for RepeatState {
+    fn default() -> Self {
+        Self {
+            buttons: 0,
+            timer: INITIAL_REPEAT_DELAY,
+            age: 0,
+        }
+    }
+}
+
+impl RepeatState {
+    fn sample(&mut self, buttons: u32) -> DigitalSample {
+        let triggered = buttons & !self.buttons;
+        let released = self.buttons & !buttons;
+        self.buttons = buttons;
+
+        if triggered != 0 || released != 0 {
+            self.timer = INITIAL_REPEAT_DELAY;
+            self.age = 0;
+            return DigitalSample {
+                triggered,
+                repeated: triggered,
+            };
+        }
+
+        if self.age < FASTEST_REPEAT_AGE {
+            self.age += 1;
+        }
+        if self.timer != 0 {
+            self.timer -= 1;
+            return DigitalSample {
+                triggered: 0,
+                repeated: 0,
+            };
+        }
+
+        self.timer = if self.age >= FASTEST_REPEAT_AGE {
+            FASTEST_REPEAT_PERIOD
+        } else if self.age >= FASTER_REPEAT_AGE {
+            FASTER_REPEAT_PERIOD
+        } else {
+            FIRST_REPEAT_PERIOD
+        };
+        DigitalSample {
+            triggered: 0,
+            repeated: buttons,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DigitalSample {
+    triggered: u32,
+    repeated: u32,
+}
+
+/// Converts independently repeated digital sources into canonical menu commands.
+///
+/// Each keyboard or controller source retains Melee's 20/8/4/2-frame repeat
+/// schedule before the results are combined, matching the game's aggregate
+/// virtual port without making host devices share a repeat timer.
+pub struct DigitalMenuInput<const SOURCES: usize> {
+    sources: [RepeatState; SOURCES],
+}
+
+impl<const SOURCES: usize> Default for DigitalMenuInput<SOURCES> {
+    fn default() -> Self {
+        Self {
+            sources: [RepeatState::default(); SOURCES],
+        }
+    }
+}
+
+impl<const SOURCES: usize> DigitalMenuInput<SOURCES> {
+    pub fn sample(&mut self, buttons: [u32; SOURCES]) -> Vec<MenuCommand> {
+        let (triggered, repeated) = self.sources.iter_mut().zip(buttons).fold(
+            (0, 0),
+            |(all_triggered, all_repeated), (state, buttons)| {
+                let sample = state.sample(buttons);
+                (
+                    all_triggered | sample.triggered,
+                    all_repeated | sample.repeated,
+                )
+            },
+        );
+
+        let mut commands = Vec::with_capacity(7);
+        if triggered & pad::A != 0 {
+            commands.push(MenuCommand::Confirm);
+        }
+        if triggered & pad::START != 0 {
+            commands.push(MenuCommand::Start);
+        }
+        if triggered & pad::B != 0 {
+            commands.push(MenuCommand::Back);
+        }
+        for (mask, direction) in [
+            (pad::UP | pad::STICK_UP, Direction::Up),
+            (pad::DOWN | pad::STICK_DOWN, Direction::Down),
+            (pad::LEFT | pad::STICK_LEFT, Direction::Left),
+            (pad::RIGHT | pad::STICK_RIGHT, Direction::Right),
+        ] {
+            if repeated & mask != 0 {
+                commands.push(MenuCommand::Navigate(direction));
+            }
+        }
+        commands
+    }
+
+    pub fn clear(&mut self) {
+        self.sources.fill(RepeatState::default());
     }
 }
 
@@ -312,6 +440,66 @@ mod tests {
         ] {
             assert_eq!(ports.sample(&[device(1, x)])[0], expected);
         }
+    }
+
+    #[test]
+    fn digital_actions_are_edges_and_repress_after_release() {
+        let mut input = DigitalMenuInput::<1>::default();
+        assert_eq!(input.sample([pad::A]), [MenuCommand::Confirm]);
+        assert!(input.sample([pad::A]).is_empty());
+        assert!(input.sample([0]).is_empty());
+        assert_eq!(input.sample([pad::A]), [MenuCommand::Confirm]);
+    }
+
+    #[test]
+    fn directional_repeat_uses_the_source_20_8_4_2_schedule() {
+        let mut input = DigitalMenuInput::<1>::default();
+        let emitted = (0..=109)
+            .filter(|_| input.sample([pad::UP]) == [MenuCommand::Navigate(Direction::Up)])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            emitted,
+            [
+                0, 21, 30, 39, 48, 53, 58, 63, 68, 73, 78, 83, 88, 93, 98, 103, 106, 109
+            ]
+        );
+    }
+
+    #[test]
+    fn repeat_state_is_independent_per_physical_source() {
+        let mut input = DigitalMenuInput::<2>::default();
+        assert_eq!(
+            input.sample([pad::UP, 0]),
+            [MenuCommand::Navigate(Direction::Up)]
+        );
+        for _ in 0..9 {
+            assert!(input.sample([pad::UP, 0]).is_empty());
+        }
+        assert_eq!(
+            input.sample([pad::UP, pad::DOWN]),
+            [MenuCommand::Navigate(Direction::Down)]
+        );
+        for _ in 0..10 {
+            assert!(input.sample([pad::UP, pad::DOWN]).is_empty());
+        }
+        assert_eq!(
+            input.sample([pad::UP, pad::DOWN]),
+            [MenuCommand::Navigate(Direction::Up)]
+        );
+    }
+
+    #[test]
+    fn clear_releases_inputs_and_same_frame_priority_remains_in_the_runtime() {
+        let mut input = DigitalMenuInput::<1>::default();
+        assert_eq!(
+            input.sample([pad::START | pad::B]),
+            [MenuCommand::Start, MenuCommand::Back]
+        );
+        input.clear();
+        assert_eq!(
+            input.sample([pad::START | pad::B]),
+            [MenuCommand::Start, MenuCommand::Back]
+        );
     }
 
     fn pointer_definition() -> MenuDefinition {

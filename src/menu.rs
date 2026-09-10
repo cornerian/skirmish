@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod interaction;
+pub mod melee;
 
 macro_rules! string_id {
     ($name:ident, $description:literal) => {
