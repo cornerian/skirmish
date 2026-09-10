@@ -123,6 +123,65 @@ fn catch_contact_uses_the_sampled_bone_pose_and_miss_recovers() {
 }
 
 #[test]
+fn airborne_capture_keeps_the_high_family_through_pummel_escape_and_checkpoint() {
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [0.5, 3.0]];
+    resource.rules.grab.as_mut().unwrap().escape.timer_base = 15.0;
+    let catch = &mut resource.fighters[0].grab.as_mut().unwrap().catch;
+    catch.grounded_targets_only = false;
+    for frame in &mut catch.frames {
+        frame.bones[1].translation[1] = 3.0;
+    }
+    resource.fighters[1]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage
+        .high[0][1]
+        .translation[0] += 2.0;
+
+    let mut game = Match::new(resource, 16).unwrap();
+    assert!(!game.state().fighters[1].grounded);
+    let caught = step(&mut game, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
+    assert_eq!(caught.fighters[0].action, Action::CatchPull);
+    assert_eq!(caught.fighters[1].action, Action::CapturePulledHi);
+    let waiting = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    assert_eq!(waiting.fighters[1].action, Action::CaptureWaitHi);
+    let waiting_position = waiting.fighters[1].position;
+
+    let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    assert_eq!(entered.fighters[1].action, Action::CaptureWaitHi);
+    let checkpoint = game.checkpoint();
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageHi);
+    assert_eq!(hit.fighters[1].percent, 3.0);
+    assert!(hit.fighters[1].position[0] < waiting_position[0] - 1.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(step(&mut game, IDLE), hit);
+
+    let waiting = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+            && state.fighters[1].action == Action::CaptureWaitHi
+    });
+    assert_eq!(waiting.fighters[0].grab.victim, Some(1));
+    let escaped = step(&mut game, input(1, BUTTON_X, [0.0; 2], [0.0; 2]));
+    assert!(escaped.events.contains(&Event::GrabEscaped {
+        holder: 0,
+        victim: 1,
+    }));
+    assert_eq!(escaped.fighters[0].action, Action::CatchCut);
+    assert_eq!(escaped.fighters[1].action, Action::Landing);
+    assert!(
+        escaped
+            .fighters
+            .iter()
+            .all(|fighter| fighter.grab == grab::State::default())
+    );
+}
+
+#[test]
 fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
     let mut resource = with_locomotion(data());
     resource.stage.spawns = [[-2.0, 0.0], [6.0, 0.0]];
@@ -145,7 +204,7 @@ fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
     assert_eq!(dashed.fighters[0].action, Action::Dash);
     let caught = step(&mut contact, input(0, BUTTON_Z, [1.0, 0.0], [0.0; 2]));
     assert_eq!(caught.fighters[0].action, Action::CatchDashPull);
-    assert_eq!(caught.fighters[1].action, Action::CapturePulled);
+    assert_eq!(caught.fighters[1].action, Action::CapturePulledLw);
     assert!(caught.fighters[0].position[0] > dashed.fighters[0].position[0]);
     assert!(caught.events.contains(&Event::Grabbed {
         holder: 0,
@@ -154,7 +213,7 @@ fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
     let waiting = until(&mut contact, |state| {
         state.fighters[0].action == Action::CatchWait
     });
-    assert_eq!(waiting.fighters[1].action, Action::CaptureWait);
+    assert_eq!(waiting.fighters[1].action, Action::CaptureWaitLw);
 
     let mut resource = with_locomotion(data());
     resource.stage.spawns = [[-8.0, 0.0], [8.0, 0.0]];
@@ -203,7 +262,7 @@ fn turn_grab_applies_the_pending_facing_before_standing_catch_contact() {
     let caught = step(&mut game, input(0, BUTTON_Z, [-1.0, 0.0], [0.0; 2]));
     assert_eq!(caught.fighters[0].facing, -1.0);
     assert_eq!(caught.fighters[0].action, Action::CatchPull);
-    assert_eq!(caught.fighters[1].action, Action::CapturePulled);
+    assert_eq!(caught.fighters[1].action, Action::CapturePulledLw);
     assert!(caught.events.contains(&Event::Grabbed {
         holder: 0,
         victim: 1,
@@ -368,7 +427,7 @@ fn capture_ignores_victim_actions_and_checkpoint_replays_the_pair_exactly() {
     let held_position = game.state().fighters[1].position;
     for buttons in [BUTTON_A, BUTTON_X, BUTTON_A | BUTTON_X] {
         let state = step(&mut game, input(1, buttons, [1.0, 1.0], [1.0, 1.0]));
-        assert_eq!(state.fighters[1].action, Action::CaptureWait);
+        assert_eq!(state.fighters[1].action, Action::CaptureWaitLw);
         assert_eq!(state.fighters[1].position, held_position);
         assert_eq!(state.fighters[1].grab.captor, Some(0));
     }
@@ -391,13 +450,13 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
 
     let entered = step(&mut game, input(0, BUTTON_A, [1.0, 0.0], [0.0; 2]));
     assert_eq!(entered.fighters[0].action, Action::CatchAttack);
-    assert_eq!(entered.fighters[1].action, Action::CaptureWait);
+    assert_eq!(entered.fighters[1].action, Action::CaptureWaitLw);
     assert_eq!(entered.fighters[0].grab.victim, Some(1));
     let checkpoint = game.checkpoint();
 
     let hit = step(&mut game, IDLE);
     assert_eq!(hit.fighters[1].percent, 3.0);
-    assert_eq!(hit.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageLw);
     assert!(hit.fighters[0].grab.pummel_hit);
     assert!(hit.fighters.iter().all(|fighter| fighter.hitlag == 2.0));
     assert!(hit.fighters[1].position[0] > held_position[0] + 1.0);
@@ -434,7 +493,7 @@ fn repeated_pummels_stale_once_per_instance_and_replay_from_a_checkpoint() {
 
     until(&mut game, |state| {
         state.fighters[0].action == Action::CatchWait
-            && state.fighters[1].action == Action::CaptureWait
+            && state.fighters[1].action == Action::CaptureWaitLw
     });
     let checkpoint = game.checkpoint();
     let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
@@ -480,7 +539,7 @@ fn pummel_and_throw_identities_stale_independently_and_holder_death_clears_them(
     until(&mut game, |state| state.fighters[1].percent == 3.0);
     until(&mut game, |state| {
         state.fighters[0].action == Action::CatchWait
-            && state.fighters[1].action == Action::CaptureWait
+            && state.fighters[1].action == Action::CaptureWaitLw
     });
     step(&mut game, input(0, 0, [1.0, 0.0], [0.0; 2]));
     let first_throw = until(&mut game, |state| state.fighters[1].percent > 3.0);
@@ -558,7 +617,8 @@ fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
         .grab
         .as_mut()
         .unwrap()
-        .capture_damage_poses;
+        .capture_damage
+        .low;
     *reaction = vec![resource.fighters[1].bones.clone(); 8];
     reaction[0][1].translation[0] += 1.0;
     let mut game = held(resource);
@@ -566,7 +626,7 @@ fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
 
     step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
     let hit = step(&mut game, IDLE);
-    assert_eq!(hit.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageLw);
     assert_eq!(hit.fighters[1].action_frame, 0);
     assert!(hit.fighters[1].position[0] < waiting_position[0] - 0.5);
 
@@ -584,14 +644,14 @@ fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
     let holder_wait = until(&mut game, |state| {
         state.fighters[0].action == Action::CatchWait
     });
-    assert_eq!(holder_wait.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(holder_wait.fighters[1].action, Action::CaptureDamageLw);
     step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
     let restarted = until(&mut game, |state| state.fighters[1].percent == 6.0);
-    assert_eq!(restarted.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(restarted.fighters[1].action, Action::CaptureDamageLw);
     assert_eq!(restarted.fighters[1].action_frame, 0);
     let pair_wait = until(&mut game, |state| {
         state.fighters[0].action == Action::CatchWait
-            && state.fighters[1].action == Action::CaptureWait
+            && state.fighters[1].action == Action::CaptureWaitLw
     });
     assert_eq!(pair_wait.fighters[0].action, Action::CatchWait);
     assert_eq!(pair_wait.fighters[0].grab.victim, Some(1));
@@ -710,7 +770,7 @@ fn passive_capture_timer_releases_without_mash_input() {
 
     let retained = step(&mut game, IDLE);
     assert_eq!(retained.fighters[1].grab.escape_timer, 1.0);
-    assert_eq!(retained.fighters[1].action, Action::CaptureWait);
+    assert_eq!(retained.fighters[1].action, Action::CaptureWaitLw);
     let escaped = step(&mut game, IDLE);
     assert_eq!(escaped.fighters[0].action, Action::CatchCut);
     assert_eq!(escaped.fighters[1].action, Action::CaptureCut);
@@ -808,7 +868,8 @@ fn expired_timer_waits_for_capture_damage_to_finish() {
         .grab
         .as_mut()
         .unwrap()
-        .capture_damage_poses = vec![resource.fighters[1].bones.clone(); 5];
+        .capture_damage
+        .low = vec![resource.fighters[1].bones.clone(); 5];
     let mut game = held(resource);
 
     step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
@@ -816,7 +877,7 @@ fn expired_timer_waits_for_capture_damage_to_finish() {
     let expired = until(&mut game, |state| {
         state.fighters[1].grab.escape_timer <= 0.0
     });
-    assert_eq!(expired.fighters[1].action, Action::CaptureDamage);
+    assert_eq!(expired.fighters[1].action, Action::CaptureDamageLw);
     assert_eq!(expired.fighters[0].grab.victim, Some(1));
     let escaped = until(&mut game, |state| {
         state.events.contains(&Event::GrabEscaped {
@@ -964,7 +1025,17 @@ fn malformed_grab_resources_are_rejected() {
         .grab
         .as_mut()
         .unwrap()
-        .capture_damage_poses
+        .capture_damage
+        .low
+        .clear();
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage
+        .high
         .clear();
     cases.push(bad);
     let mut bad = data();

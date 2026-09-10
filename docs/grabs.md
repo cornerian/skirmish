@@ -5,8 +5,8 @@ stick thresholds used by ordinary throw selection, plus explicit hold-timer,
 mash, release-speed and throw-weight coefficients. Each `fighters[].grab`
 resource supplies separate complete standing and dash-catch poses with
 bone-attached grab capsules, their explicit pull durations, two bone-local
-attachment anchors, complete holder poses for pummel and four throws, and the
-fighter's own CaptureDamage, CatchCut and CaptureCut poses.
+attachment anchors, complete holder poses for pummel and four throws, separate
+high/low CaptureDamage poses, and the fighter's own CatchCut and CaptureCut poses.
 Pummel supplies one captured-damage frame, damage value, and native move-table
 identity; each throw supplies its own identity, weight-independent flag, release
 event, and hit coefficients. The identities are required when stale-move rules are enabled.
@@ -14,8 +14,9 @@ Every fighter needs parameters when the common profile is enabled.
 
 A catch tests its current sampled grab capsules against enabled, grabbable target
 hurt capsules with the matrix-aware source solver. Bone scale and shear retain
-directional radius. Successful contact enters CatchPull or CatchDashPull with
-CapturePulled and records the bidirectional relationship in deterministic match
+directional radius. Successful contact enters CatchPull or CatchDashPull and
+selects CapturePulledLw for a grounded victim or CapturePulledHi for an airborne
+victim. Pull, wait, and pummel damage retain that family in deterministic match
 state. The victim's selected bone point is aligned to the holder's selected
 bone point throughout
 pull, wait, and throw; controller input cannot move or dispatch actions for the
@@ -37,7 +38,8 @@ latched sign changes beyond the strict threshold. Digital and analog shoulder
 pressure share one logical edge, so pressing digital L/R over held analog
 pressure does not mash twice. Neutral stick does not reset a latch, and button
 plus stick input can subtract twice. Hitlag freezes all of this state.
-Expiry in CaptureDamage waits for that reaction to return to CaptureWait; expiry
+Expiry in either CaptureDamage family waits for that reaction to return to its
+matching CaptureWait family; expiry
 there detaches the pair, applies opposite release velocities, and enters sampled
 CatchCut/CaptureCut actions before ordinary recovery.
 
@@ -69,9 +71,10 @@ entry, retained dash momentum, pending and completed Turn facing, Squat entry,
 pummel priority,
 single-hit timing, repeated and staled pummels, independent throw identities,
 queue insertion and death reset, shared hitlag, sampled holder and victim
-reaction poses, independent reaction completion, passive and mashed escape,
+high/low reaction poses, independent reaction completion, passive and mashed escape,
 button and analog-shoulder freshness, stick latches, hitlag timer freeze, cut
-actions and release motion, all throw directions, input suppression, checkpoint replay, stable
+actions and release motion, grounded/airborne capture-family selection, all throw
+directions, input suppression, checkpoint replay, stable
 simultaneous-catch order, airborne rejection, weight-dependent and independent
 throw timing, fast event crossing, hurtbox pair cleanup on KO, and
 malformed resources. `game_hurtbox_eligibility` adds the per-capsule
@@ -83,7 +86,8 @@ throw stick-crossing predicates; `grab_mash_differential` compares the complete
 mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C.
 
-This profile does not yet implement tether catches, cargo carries, separate
-high/low capture reactions, character overrides, or multiplayer
-capture interference. Catch-versus-hit and capture-clash priority also need the
-larger original contact scheduler.
+This profile does not yet implement tether catches, cargo carries, dynamic
+low/high conversion when attachment motion or collision crosses the source
+threshold, character overrides, or multiplayer capture interference.
+Catch-versus-hit and capture-clash priority also need the larger original
+contact scheduler.

@@ -207,10 +207,11 @@ over ceiling response at a corner. Surface-tech poses remain separate work.
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus
-forward/back/up/down throws. Captured fighters remain
+forward/back/up/down throws. Contact selects separate grounded-low and
+airborne-high captured-victim action families. Captured fighters remain
 attached through explicit holder/victim bone anchors. A pummel has priority over
 throw selection, applies one shared-hitlag percent event, starts the victim's
-sampled CaptureDamage pose sequence, and returns both sides independently to
+matching sampled high/low CaptureDamage pose sequence, and returns both sides independently to
 hold without breaking the pair. The shared input history applies the original throw
 direction priority, and each supplied release event enters the ordinary damage
 pipeline. Victim weight and the per-direction independence flag drive a shared
@@ -220,7 +221,7 @@ checkpointed and cleared transactionally on release or stock loss. Captured
 fighters also run an explicit percent-scaled hold timer and the complete
 button/stick `ftCommon_GrabMash`
 transition. Expiry enters resource-driven CatchCut/CaptureCut release actions.
-Tether variants, separate high/low victim reactions and
+Tether variants, dynamic low/high conversion during attachment motion and
 capture-contact interference remain unported.
 
 Optional [`rules.ledge`](ledges.md) and per-fighter ledge resources add static

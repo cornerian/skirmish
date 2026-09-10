@@ -1,8 +1,8 @@
 use skirmish::game::{
     data::{Capsule, MatchData},
     grab::{
-        Attachment, Catch, CatchFrame, Escape, EscapeRules, Parameters, Pummel, Rules, Throw,
-        ThrowHit, Throws,
+        Attachment, CaptureDamage, Catch, CatchFrame, Escape, EscapeRules, Parameters, Pummel,
+        Rules, Throw, ThrowHit, Throws,
     },
 };
 
@@ -75,7 +75,10 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 hit_frame: 1,
                 damage: 3,
             },
-            capture_damage_poses: vec![bones.clone(); 3],
+            capture_damage: CaptureDamage {
+                high: vec![bones.clone(); 3],
+                low: vec![bones.clone(); 3],
+            },
             escape: Escape {
                 catch_cut_poses: vec![bones.clone(); 3],
                 capture_cut_poses: vec![bones.clone(); 3],

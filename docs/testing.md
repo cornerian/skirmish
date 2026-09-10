@@ -187,14 +187,15 @@ jump selection across timer boundaries and arbitrary binary32 values.
 The [grab profile](grabs.md) promotes all three paired grab/throw conformance
 scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
 Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
-directions, pummel priority and repeat lifecycle, one captured-damage
-event, shared hitlag, sampled holder/victim attachment motion, paired fractional
+directions, pummel priority and repeat lifecycle, grounded-low/airborne-high
+capture families, split captured-damage poses, one captured-damage event, shared
+hitlag, sampled holder/victim attachment motion, paired fractional
 throw timing for heavy/light victims and weight-independent directions, independent
 CaptureDamage completion, passive and button/stick/analog-shoulder-mashed
 escape, logical shoulder rearming, timer freeze,
 release motion and cut actions, main/C-stick priority and fresh-edge history,
 held-victim input suppression, checkpoint suffixes,
-simultaneous ordering, target policy, KO cleanup and invalid resources. A focused
+simultaneous ordering, target policy, KO cleanup and invalid resources. Focused
 unit tests cover the exact `fn_800DA4C0` A-bit predicate and complete
 `ftCommon_GrabMash` mutation. `grab_differential` compares the three exact
 `ftCo_800DD1E4` main-stick threshold predicates; `grab_mash_differential`
