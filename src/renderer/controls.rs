@@ -1,8 +1,13 @@
 //! Native menu bindings; simulation controller calibration remains separate.
 use std::collections::HashSet;
 
-use crate::controller::host::{Button, ControllerId, ControllerInfo, ControllerState};
+use crate::{
+    controller::host::{Button, ControllerId, ControllerInfo, ControllerState},
+    menu::{ItemId, MenuCommand, interaction::InteractionMap},
+};
 use sdl3::keyboard::Scancode;
+
+use super::viewport::PresentationTransform;
 
 /// Dolphin/HSD digital button bits supplied to the original menu runtime.
 pub mod pad {
@@ -78,6 +83,86 @@ fn controller_button(button: Button) -> u32 {
         Button::DPadRight => pad::RIGHT,
         _ => 0,
     }
+}
+
+/// Bounded SDL-pointer state translated into canonical menu commands.
+///
+/// A hover transition is retained until an input-enabled menu tick accepts it.
+/// A click is a one-tick edge and always carries its own hit-tested focus target,
+/// so a stale hover can never activate another item.
+#[derive(Default)]
+pub struct PointerInput {
+    hovered: Option<ItemId>,
+    pending_focus: Option<ItemId>,
+    pending_click: Option<ItemId>,
+}
+
+impl PointerInput {
+    pub fn motion(
+        &mut self,
+        window_point: [f32; 2],
+        transform: Option<PresentationTransform>,
+        map: &InteractionMap,
+    ) {
+        let target = pointer_target(window_point, transform, map);
+        if target != self.hovered {
+            self.hovered = target.clone();
+            self.pending_focus = target;
+        }
+    }
+
+    pub fn primary_down(
+        &mut self,
+        window_point: [f32; 2],
+        transform: Option<PresentationTransform>,
+        map: &InteractionMap,
+    ) {
+        let target = pointer_target(window_point, transform, map);
+        self.hovered = target.clone();
+        self.pending_click = target.clone();
+        self.pending_focus = target;
+    }
+
+    /// Drain commands for one fixed tick.
+    ///
+    /// `accepts_input` must reflect the canonical runtime's entrance/action
+    /// cooldown. Click edges are discarded while blocked just like controller
+    /// triggers, while a stationary hover remains pending for the first open
+    /// tick.
+    pub fn sample(&mut self, accepts_input: bool) -> Vec<MenuCommand> {
+        if !accepts_input {
+            self.pending_click = None;
+            return Vec::new();
+        }
+        if let Some(item) = self.pending_click.take() {
+            if self.pending_focus.as_ref() == Some(&item) {
+                self.pending_focus = None;
+            }
+            return vec![MenuCommand::Focus(item), MenuCommand::Confirm];
+        }
+        self.pending_focus
+            .take()
+            .map(MenuCommand::Focus)
+            .into_iter()
+            .collect()
+    }
+
+    pub fn clear(&mut self) {
+        self.hovered = None;
+        self.pending_focus = None;
+        self.pending_click = None;
+    }
+}
+
+fn pointer_target(
+    window_point: [f32; 2],
+    transform: Option<PresentationTransform>,
+    map: &InteractionMap,
+) -> Option<ItemId> {
+    transform
+        .and_then(|transform| transform.window_to_authored(window_point))
+        .and_then(|point| map.hit_test(point))
+        .cloned()
 }
 
 /// Stable menu ports across hot-plug events. Disconnecting a device releases its
@@ -158,6 +243,14 @@ fn axis(value: i16, previous: u32, negative: u32, positive: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        menu::{
+            AnimationCue, AnimationId, EnableCondition, FrameRange, InputFrame, ItemPresentation,
+            MenuAction, MenuDefinition, MenuEffect, MenuItem, MenuRuntime, NavigationAxis, SoundId,
+            StartBehavior, interaction::HitRect, interaction::ItemHitRegion,
+        },
+        renderer::viewport::MELEE_AUTHORED_EXTENT,
+    };
 
     #[test]
     fn short_key_taps_survive_until_one_tick_and_focus_loss_releases_everything() {
@@ -219,5 +312,142 @@ mod tests {
         ] {
             assert_eq!(ports.sample(&[device(1, x)])[0], expected);
         }
+    }
+
+    fn pointer_definition() -> MenuDefinition {
+        let item = |id: &str| MenuItem {
+            id: id.into(),
+            enabled_when: EnableCondition::Always,
+            presentation: ItemPresentation {
+                description: None,
+                animation: AnimationCue {
+                    id: AnimationId::from(format!("idle.{id}")),
+                    frames: FrameRange {
+                        start: 0.0,
+                        end: 1.0,
+                        loop_start: None,
+                    },
+                },
+            },
+            confirm: Some(MenuAction {
+                destination: format!("destination.{id}").into(),
+                sound: Some(SoundId(1)),
+                transition: None,
+                cooldown_frames: 5,
+            }),
+        };
+        MenuDefinition {
+            id: "pointer-test".into(),
+            items: vec![item("one"), item("two")],
+            default_item: "one".into(),
+            navigation_axis: NavigationAxis::Vertical,
+            initial_cooldown_frames: 0,
+            move_sound: Some(SoundId(2)),
+            back: None,
+            start: StartBehavior::Ignore,
+        }
+    }
+
+    fn pointer_map() -> InteractionMap {
+        InteractionMap {
+            regions: vec![
+                ItemHitRegion {
+                    item: "one".into(),
+                    bounds: HitRect {
+                        min: [0.0, 0.0],
+                        max: [640.0, 240.0],
+                    },
+                },
+                ItemHitRegion {
+                    item: "two".into(),
+                    bounds: HitRect {
+                        min: [0.0, 240.0],
+                        max: [640.0, 480.0],
+                    },
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn pointer_maps_high_density_window_coordinates_and_deduplicates_hover() {
+        let transform =
+            PresentationTransform::new([1280, 720], [2560, 1440], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([640.0, 180.0], transform, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("one".into())]);
+        pointer.motion([640.0, 180.0], transform, &map);
+        assert!(pointer.sample(true).is_empty());
+        pointer.motion([640.0, 540.0], transform, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+    }
+
+    #[test]
+    fn gutters_and_leave_do_not_change_canonical_focus() {
+        let transform = PresentationTransform::new([1280, 720], [1280, 720], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([100.0, 360.0], transform, &map);
+        assert!(pointer.sample(true).is_empty());
+        pointer.motion([640.0, 180.0], transform, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("one".into())]);
+        pointer.clear();
+        assert!(pointer.sample(true).is_empty());
+        pointer.motion([640.0, 180.0], transform, &map);
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("one".into())]);
+    }
+
+    #[test]
+    fn click_retests_its_position_and_wins_over_later_motion() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([10.0, 10.0], transform, &map);
+        pointer.primary_down([10.0, 300.0], transform, &map);
+        pointer.motion([10.0, 10.0], transform, &map);
+        assert_eq!(
+            pointer.sample(true),
+            [MenuCommand::Focus("two".into()), MenuCommand::Confirm]
+        );
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("one".into())]);
+    }
+
+    #[test]
+    fn blocked_tick_drops_click_but_retries_stationary_hover() {
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let map = pointer_map();
+        let mut pointer = PointerInput::default();
+
+        pointer.motion([10.0, 300.0], transform, &map);
+        pointer.primary_down([10.0, 300.0], transform, &map);
+        assert!(pointer.sample(false).is_empty());
+        assert_eq!(pointer.sample(true), [MenuCommand::Focus("two".into())]);
+        assert!(pointer.sample(true).is_empty());
+    }
+
+    #[test]
+    fn pointer_click_uses_the_canonical_runtime_action_path() {
+        let definition = pointer_definition();
+        let map = pointer_map();
+        map.validate(&definition).unwrap();
+        let mut runtime = MenuRuntime::new(definition, []).unwrap();
+        let transform = PresentationTransform::new([640, 480], [640, 480], MELEE_AUTHORED_EXTENT);
+        let mut pointer = PointerInput::default();
+
+        pointer.primary_down([10.0, 300.0], transform, &map);
+        let effects = runtime.tick(&InputFrame::new(pointer.sample(true)));
+        assert!(matches!(
+            effects.as_slice(),
+            [
+                MenuEffect::SelectionChanged { selected, .. },
+                MenuEffect::ActionRequested { item: Some(action_item), action, .. }
+            ] if selected.as_str() == "two"
+                && action_item == selected
+                && action.destination.as_str() == "destination.two"
+        ));
     }
 }

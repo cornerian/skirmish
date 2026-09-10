@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod interaction;
+
 macro_rules! string_id {
     ($name:ident, $description:literal) => {
         #[doc = $description]
