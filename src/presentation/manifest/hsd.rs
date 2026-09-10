@@ -534,7 +534,7 @@ fn bind_texture_animations(
                     dobj_index: Some(dobj_index),
                     texture_index: Some(texture_index),
                 };
-                let texture = texture_source(resource_id, view, identity, texanim)?;
+                let texture = texture_source(resource_id, view, identity, mobj, texanim)?;
                 let has_image_table = !texture.image_slots.is_empty();
                 let has_tev = texture.konst.is_some();
                 if seen_textures.insert(identity) {
@@ -720,6 +720,7 @@ fn texture_source(
     resource_id: &str,
     view: HsdView<'_>,
     identity: SourceBindingIdentity,
+    owner_material: u32,
     texanim: u32,
 ) -> Result<BoundTextureSource, BindError> {
     let tobj = identity.descriptor_offset.get();
@@ -768,6 +769,7 @@ fn texture_source(
     Ok(BoundTextureSource {
         identity,
         source_id: texture_source_id(resource_id, identity),
+        owner_material_offset: DataOffset::new(owner_material),
         initial_image_descriptor: (initial_image != 0).then(|| DataOffset::new(initial_image)),
         current_image: (initial_image != 0)
             .then(|| image_source_id(resource_id, DataOffset::new(initial_image))),

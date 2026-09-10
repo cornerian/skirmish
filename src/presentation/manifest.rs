@@ -373,6 +373,12 @@ pub struct TextureImageSlot {
 pub struct BoundTextureSource {
     pub identity: SourceBindingIdentity,
     pub source_id: SourceTextureId,
+    /// Native MObj descriptor that owns this TObj occurrence.
+    ///
+    /// The DObj/TObj ordinals in `identity` address runtime state, while this
+    /// parent descriptor lets visual adapters verify their complete nested
+    /// occurrence tuple.
+    pub owner_material_offset: DataOffset,
     pub initial_image_descriptor: Option<DataOffset>,
     pub current_image: Option<SourceImageId>,
     /// Ordered table from TexAnim. Null slots intentionally remain present.

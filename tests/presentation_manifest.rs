@@ -160,6 +160,7 @@ fn structurally_derives_exact_targets_and_preserves_null_image_slots() {
         hierarchy.textures()[0].identity.descriptor_offset.get(),
         TOBJ
     );
+    assert_eq!(hierarchy.textures()[0].owner_material_offset.get(), MOBJ);
     assert_eq!(hierarchy.materials()[0].diffuse, [10, 20, 30]);
     assert_eq!(hierarchy.materials()[0].alpha, 0.75);
     assert!(hierarchy.joints()[0].branch_recurses);
