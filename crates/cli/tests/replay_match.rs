@@ -2,7 +2,7 @@
 //! same native implementation, so success does not certify Melee fidelity.
 use peppi::frame::mutable;
 use serde_json::Value;
-use skirmish::game::{Action, BUTTON_A, BUTTON_X, Controller, Event, State};
+use skirmish::game::{Action, BUTTON_A, BUTTON_B, BUTTON_X, BUTTON_Z, Controller, Event, State};
 use skirmish_replay::{
     Checkpoint,
     match_validation::{self as replay_match, Initialization, Outcome, Report},
@@ -13,6 +13,10 @@ use std::{fs, process::Command};
 
 #[path = "../../../tests/support/aerial.rs"]
 mod aerial_support;
+#[path = "../../../tests/support/grab.rs"]
+mod grab_support;
+#[path = "../../../tests/support/special.rs"]
+mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
 
@@ -32,6 +36,30 @@ struct Recording {
 }
 
 impl Recording {
+    fn from_script(
+        data: skirmish::game::data::MatchData,
+        seed: u32,
+        inputs: Vec<[Controller; 2]>,
+    ) -> Self {
+        let initialization = Initialization {
+            data,
+            seed,
+            ports: PORTS,
+            next_frame: FIRST,
+            warmup: Vec::new(),
+        };
+        let mut game = replay_match::initialize(&initialization).unwrap();
+        let states = inputs
+            .iter()
+            .map(|&input| game.step(input).unwrap().clone())
+            .collect();
+        Self {
+            initialization,
+            inputs,
+            states,
+        }
+    }
+
     fn new() -> Self {
         let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
             "../../../tests/fixtures/game/integration-match.json"
@@ -41,13 +69,6 @@ impl Recording {
         data.stage.floor.left = -100.0;
         data.stage.floor.right = 100.0;
         data.stage.blast = [-500.0, 500.0, -100.0, 200.0];
-        let initialization = Initialization {
-            data,
-            seed: 42,
-            ports: PORTS,
-            next_frame: FIRST,
-            warmup: Vec::new(),
-        };
         let mut inputs = vec![IDLE; 56];
         inputs[0][0].buttons = BUTTON_A;
         for input in &mut inputs[10..14] {
@@ -63,16 +84,7 @@ impl Recording {
         inputs[52][0].buttons = BUTTON_A;
         // Independently execute the complete script once. No replay or future
         // expected observation is available to the simulator during this run.
-        let mut game = replay_match::initialize(&initialization).unwrap();
-        let states = inputs
-            .iter()
-            .map(|&input| game.step(input).unwrap().clone())
-            .collect();
-        Self {
-            initialization,
-            inputs,
-            states,
-        }
+        Self::from_script(data, 42, inputs)
     }
 
     fn bytes(
@@ -99,7 +111,7 @@ impl Recording {
                     let post = &mut port.leader.post;
                     post.state.set(
                         row,
-                        Some(observation::action_state(fighter).expect(
+                        Some(observation::action_state(fighter, Some(2)).expect(
                             "the synthetic recording uses only mapped common action states",
                         )),
                     );
@@ -200,6 +212,83 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
     assert_eq!(report.resources_sha256.len(), 64);
+}
+
+#[test]
+fn physical_b_drives_file_backed_neutral_special_and_detects_its_removal() {
+    let mut data = special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 8];
+    inputs[0][0].buttons = BUTTON_B;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::SpecialN);
+    assert!(recording.states.iter().any(|state| {
+        state.events.iter().any(|event| {
+            matches!(
+                event,
+                Event::Hit {
+                    attacker: 0,
+                    victim: 1,
+                    damage: 10.0,
+                    ..
+                }
+            )
+        })
+    }));
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn physical_z_drives_file_backed_grab_capture_and_detects_its_removal() {
+    let mut data = grab_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[-0.5, 0.0], [0.5, 0.0]];
+    let mut inputs = vec![IDLE; 8];
+    inputs[0][0].buttons = BUTTON_Z;
+    let recording = Recording::from_script(data, 11, inputs);
+    assert!(recording.states[0].events.contains(&Event::Grabbed {
+        holder: 0,
+        victim: 1,
+    }));
+    assert_eq!(recording.states[0].fighters[0].action, Action::CatchPull);
+    assert_eq!(
+        recording.states[0].fighters[1].action,
+        Action::CapturePulledLw
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|state| state.fighters[0].action == Action::CatchWait)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -440,8 +529,8 @@ fn unsupported_inputs_fail_at_their_frame_after_the_matching_prefix() {
                 0 => pre.cstick.x.set(row, Some(1.01)),
                 1 => pre.triggers.set(row, Some(-0.25)),
                 2 => pre.triggers_physical.r.set(row, Some(1.5)),
-                3 => pre.buttons_physical.set(row, Some(0x200)),
-                _ => pre.buttons.set(row, Some(0x200)),
+                3 => pre.buttons_physical.set(row, Some(0x80)),
+                _ => pre.buttons.set(row, Some(0x80)),
             }
         });
         let report = recording.compare(&bytes);

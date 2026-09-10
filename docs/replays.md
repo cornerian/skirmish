@@ -125,7 +125,8 @@ Native comparison requires exactly two human-controlled leaders in a non-team
 match. Peppi preserves
 Nana/follower data, but this adapter rejects followers. Processed joystick X/Y
 supplies normalized main-stick input; processed C-stick and analog trigger
-values pass through without recalibration. Physical button bits supply A/X/Y/L/R.
+values pass through without recalibration. Physical button bits supply
+A/B/X/Y/Z/L/R.
 Derived main-stick, C-stick and logical-trigger flags are accepted; a logical
 trigger flag without analog pressure or digital L/R is rejected. Other buttons
 remain unsupported. Raw stick and physical analog samples remain preserved by
@@ -153,10 +154,12 @@ mapped actor:
 The report's `fields` array follows the replay version, so fields absent from an
 older Slippi schema are visible rather than silently claimed. The refactored
 action enum collapses some original motion states. Those actions map to one
-documented common-state ID; character-specific specials and internal respawn or
-elimination phases remain unmapped and therefore produce an action-state
-mismatch. RNG, ground-line identity, state flags, hurtbox state, items and stage
-state are not compared. Nonempty item and dynamic stage-event records are
+documented common-state ID. Fox's current neutral-special shell maps to its
+ground and air startup families using GameStart character metadata; other
+character-specific specials and internal respawn or elimination phases remain
+unmapped and therefore produce an action-state mismatch. RNG, ground-line
+identity, state flags, hurtbox state, items and stage state are not compared.
+Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not
 establish equality of hidden state, complete frame behavior or Melee gameplay.
 The match remains an experimental ruleset with incomplete character resources;

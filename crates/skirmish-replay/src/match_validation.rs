@@ -72,6 +72,7 @@ impl Report {
 struct Stepper<'a> {
     game: &'a mut game::Match,
     ports: [Port; 2],
+    characters: [u8; 2],
 }
 
 impl FrameStepper for Stepper<'_> {
@@ -85,7 +86,7 @@ impl FrameStepper for Stepper<'_> {
     }
     fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
         self.game.step(*input)?;
-        Ok(observation::observe(self.game, self.ports))
+        Ok(observation::observe(self.game, self.ports, self.characters))
     }
 }
 
@@ -122,6 +123,14 @@ pub fn validate(
         "follower simulation is not implemented"
     );
     let indices = replay.frame_indices(timeline)?;
+    let characters = ports.map(|port| {
+        settings
+            .players
+            .iter()
+            .find(|player| player.port == port)
+            .expect("port coverage checked above")
+            .character
+    });
     let ids = replay.game().frames.id.values();
     let start = indices.partition_point(|&i| ids[i] < checkpoint.next_frame);
     ensure!(
@@ -158,7 +167,11 @@ pub fn validate(
         .resource_id()
         .map(|byte| format!("{byte:02x}"))
         .concat();
-    let mut stepper = Stepper { game, ports };
+    let mut stepper = Stepper {
+        game,
+        ports,
+        characters,
+    };
     let result = replay_validation::validate_fallible(
         &mut stepper,
         checkpoint,

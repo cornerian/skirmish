@@ -39,10 +39,15 @@ pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     fields
 }
 
-pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger; physical A/X/Y/L/R; derived stick/trigger flags allowed; no replay state or RNG overrides";
+pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger; physical A/B/X/Y/Z/L/R; derived stick/trigger flags allowed; no replay state or RNG overrides";
 
-const BUTTONS: u16 =
-    game::BUTTON_A | game::BUTTON_X | game::BUTTON_Y | game::BUTTON_L | game::BUTTON_R;
+const BUTTONS: u16 = game::BUTTON_A
+    | game::BUTTON_B
+    | game::BUTTON_X
+    | game::BUTTON_Y
+    | game::BUTTON_Z
+    | game::BUTTON_L
+    | game::BUTTON_R;
 // HSD_PadADConvert in the pinned controller.c derives these four flags from the
 // main stick. C-stick directions occupy bits 20..23. Logical LR is represented
 // by native digital buttons or processed analog pressure, not silently dropped.
@@ -215,7 +220,7 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
     })
 }
 
-pub fn observe(game: &game::Match, ports: [Port; 2]) -> Observation {
+pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
             let fighter = &game.state().fighters[index];
@@ -225,7 +230,7 @@ pub fn observe(game: &game::Match, ports: [Port; 2]) -> Observation {
                 .map_or(2, |parameters| parameters.max_jumps);
             FighterObservation {
                 port: ports[index],
-                action_state: action_state(fighter),
+                action_state: action_state(fighter, Some(characters[index])),
                 action_age: fighter.action_frame as f32,
                 position: fighter.position,
                 direction: fighter.facing,
@@ -249,8 +254,9 @@ pub fn observe(game: &game::Match, ports: [Port; 2]) -> Observation {
 
 /// Map each refactored action to the exact common-state identity that remains
 /// available in native state. Collapsed distinctions use their canonical first
-/// state; character-specific specials and lifecycle-only states stay unmapped.
-pub fn action_state(fighter: &game::Fighter) -> Option<u16> {
+/// state; only the current Fox neutral-special shell has a character-specific
+/// mapping, and lifecycle-only states stay unmapped.
+pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u16> {
     use game::Action::*;
     Some(match fighter.action {
         DeadDown => 0,
@@ -392,6 +398,10 @@ pub fn action_state(fighter: &game::Fighter) -> Option<u16> {
                 262
             }
         }
+        // The current character-specific resource slice is Fox. Its generic
+        // neutral-special shell retains only the startup family distinction.
+        SpecialN if character == Some(2) => 341,
+        SpecialAirN if character == Some(2) => 344,
         SpecialN | SpecialAirN | Respawn | Eliminated => return None,
     })
 }
@@ -571,8 +581,8 @@ mod tests {
             x: -0.0,
             y: f32::from_bits(0x3eaa_aaab),
         };
-        pre.buttons_physical = game::BUTTON_A | game::BUTTON_X;
-        pre.buttons = u32::from(game::BUTTON_A) | MAIN_STICK_FLAGS;
+        pre.buttons_physical = game::BUTTON_A | game::BUTTON_B | game::BUTTON_X | game::BUTTON_Z;
+        pre.buttons = u32::from(pre.buttons_physical) | MAIN_STICK_FLAGS;
         pre.cstick.x = -0.0;
         pre.triggers_physical.r = -0.0;
         pre.position = row::Position {
@@ -586,18 +596,21 @@ mod tests {
             controllers[0].stick.map(f32::to_bits),
             [0x8000_0000, 0x3eaa_aaab]
         );
-        assert_eq!(controllers[0].buttons, game::BUTTON_A | game::BUTTON_X);
+        assert_eq!(
+            controllers[0].buttons,
+            game::BUTTON_A | game::BUTTON_B | game::BUTTON_X | game::BUTTON_Z
+        );
         assert_eq!(controllers[1], game::Controller::default());
     }
 
     #[test]
     fn unsupported_inputs_and_actor_sets_are_errors() {
-        for flag in [0x1, 0x10, 0x80, 0x200, 0x1000] {
+        for flag in [0x1, 0x80, 0x1000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons_physical = flag;
             assert!(controllers(&frame, PORTS).is_err());
         }
-        for flag in [0x1, 0x10, 0x200, 0x1000, 0x0100_0000, 0x8000_0000] {
+        for flag in [0x1, 0x1000, 0x0100_0000, 0x8000_0000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons = flag;
             assert!(controllers(&frame, PORTS).is_err());
@@ -710,7 +723,7 @@ mod tests {
         ))
         .unwrap();
         let game = game::Match::new(data, 1).unwrap();
-        let observed = observe(&game, PORTS);
+        let observed = observe(&game, PORTS, [2; 2]);
         for (index, fighter) in observed.fighters.iter().enumerate() {
             let native = &game.state().fighters[index];
             assert_eq!(fighter.port, PORTS[index]);
@@ -721,7 +734,7 @@ mod tests {
             assert_eq!(fighter.direction.to_bits(), native.facing.to_bits());
             assert_eq!(fighter.percent.to_bits(), native.percent.to_bits());
             assert_eq!(fighter.action_age, native.action_frame as f32);
-            assert_eq!(fighter.action_state, action_state(native));
+            assert_eq!(fighter.action_state, action_state(native, Some(2)));
             assert_eq!(fighter.shield.to_bits(), native.shield.health.to_bits());
             assert_eq!(fighter.stocks, native.stocks);
             assert_eq!(fighter.airborne, !native.grounded);
@@ -762,7 +775,7 @@ mod tests {
             (game::Action::DeadUpFallHitCameraIce, 10),
         ] {
             fighter.action = action;
-            assert_eq!(action_state(&fighter), Some(state), "{action:?}");
+            assert_eq!(action_state(&fighter, Some(2)), Some(state), "{action:?}");
         }
 
         fighter.action = game::Action::Damage;
@@ -770,29 +783,31 @@ mod tests {
             level: 2,
             height: skirmish::fighter::damage::HurtHeight::Low,
         });
-        assert_eq!(action_state(&fighter), Some(83));
+        assert_eq!(action_state(&fighter, Some(2)), Some(83));
         fighter.damage_motion = Some(skirmish::fighter::damage::DamageMotion::Fly {
             height: skirmish::fighter::damage::HurtHeight::High,
         });
-        assert_eq!(action_state(&fighter), Some(87));
+        assert_eq!(action_state(&fighter, Some(2)), Some(87));
 
         fighter.action = game::Action::DownWait;
         fighter.prone = Some(game::damage::ProneOrientation::FaceDown);
-        assert_eq!(action_state(&fighter), Some(192));
+        assert_eq!(action_state(&fighter, Some(2)), Some(192));
         fighter.action = game::Action::CliffAttack;
         fighter.ledge.slow = false;
-        assert_eq!(action_state(&fighter), Some(257));
+        assert_eq!(action_state(&fighter, Some(2)), Some(257));
         fighter.ledge.slow = true;
-        assert_eq!(action_state(&fighter), Some(256));
+        assert_eq!(action_state(&fighter, Some(2)), Some(256));
 
-        for action in [
-            game::Action::SpecialN,
-            game::Action::SpecialAirN,
-            game::Action::Respawn,
-            game::Action::Eliminated,
-        ] {
+        fighter.action = game::Action::SpecialN;
+        assert_eq!(action_state(&fighter, Some(2)), Some(341));
+        fighter.action = game::Action::SpecialAirN;
+        assert_eq!(action_state(&fighter, Some(2)), Some(344));
+
+        for action in [game::Action::Respawn, game::Action::Eliminated] {
             fighter.action = action;
-            assert_eq!(action_state(&fighter), None, "{action:?}");
+            assert_eq!(action_state(&fighter, Some(2)), None, "{action:?}");
         }
+        fighter.action = game::Action::SpecialN;
+        assert_eq!(action_state(&fighter, None), None);
     }
 }
