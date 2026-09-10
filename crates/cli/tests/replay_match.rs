@@ -131,6 +131,20 @@ impl Recording {
                     post.direction.set(row, Some(fighter.facing));
                     post.percent.set(row, Some(fighter.percent));
                     post.shield.set(row, Some(fighter.shield.health));
+                    post.character
+                        .set(row, Some(observation::internal_character(2).unwrap()));
+                    post.last_attack_landed
+                        .set(row, Some(fighter.combo.last_attack_landed as u8));
+                    post.combo_count.set(row, Some(fighter.combo.count as u8));
+                    post.last_hit_by.set(
+                        row,
+                        Some(
+                            fighter
+                                .combo
+                                .last_hit_by
+                                .map_or(6, |source| PORTS[source] as u8),
+                        ),
+                    );
                     post.stocks.set(row, Some(fighter.stocks));
                     post.airborne
                         .as_mut()
@@ -252,10 +266,16 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
             && state.fighters[1].hitstun > 0
             && state.fighters[1].hitstun as f32 > 0.0
     }));
+    assert!(recording.states.iter().any(|state| {
+        state.fighters[0].combo.last_attack_landed == 1
+            && state.fighters[0].combo.count == 1
+            && state.fighters[0].combo.victim == Some(1)
+            && state.fighters[1].combo.last_hit_by == Some(0)
+    }));
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v4");
+    assert_eq!(report.policy, "fighter-post-v5");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -543,13 +563,26 @@ fn first_late_post_mismatch_reports_the_matched_prefix_and_expected_bits() {
 #[test]
 fn every_reported_post_field_detects_its_first_file_backed_difference() {
     let recording = Recording::new();
-    let player = 1;
     for field in observation::fields(Version(3, 18, 0)) {
+        let player = if matches!(field, "last_attack_landed" | "combo_count") {
+            0
+        } else {
+            1
+        };
         let row = if field == observation::MISC_HITSTUN_FIELD {
             recording
                 .states
                 .iter()
                 .position(|state| state.fighters[player].hitstun > 0)
+                .unwrap()
+        } else if matches!(field, "last_attack_landed" | "combo_count" | "last_hit_by") {
+            recording
+                .states
+                .iter()
+                .position(|state| {
+                    state.fighters[0].combo.count != 0
+                        && state.fighters[1].combo.last_hit_by.is_some()
+                })
                 .unwrap()
         } else {
             37
@@ -588,6 +621,14 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     .as_mut()
                     .unwrap()
                     .set(row, Some(fighter.l_cancel_status ^ 1)),
+                "character" => post.character.set(row, Some(3)),
+                "last_attack_landed" => post
+                    .last_attack_landed
+                    .set(row, Some((fighter.combo.last_attack_landed as u8) ^ 1)),
+                "combo_count" => post
+                    .combo_count
+                    .set(row, Some((fighter.combo.count as u8) ^ 1)),
+                "last_hit_by" => post.last_hit_by.set(row, Some(6)),
                 "state_flags.protected" => post
                     .state_flags
                     .as_mut()
@@ -676,7 +717,7 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                     ref difference,
                 } if frame == FIRST + row as i32
                     && checked_frames == row as u64
-                    && difference.port == Port::P3
+                    && difference.port == PORTS[player]
                     && difference.field == field
             ),
             "{field}: {report:?}"
@@ -812,7 +853,7 @@ fn file_backed_cstick_asdi_reaches_simulation_and_changed_input_diverges() {
 }
 
 #[test]
-fn followers_and_invalid_port_selection_are_explicit_setup_errors() {
+fn followers_invalid_ports_and_characters_are_explicit_setup_errors() {
     let recording = Recording::new();
     for (follower, ports) in [
         (true, PORTS),
@@ -843,6 +884,32 @@ fn followers_and_invalid_port_selection_are_explicit_setup_errors() {
             .is_err()
         );
     }
+
+    let bytes = support::replay_bytes_with(&support::Fixture::default(), |start, _| {
+        start.players[0].character = 26;
+    });
+    let replay = load(&bytes);
+    let mut game = replay_match::initialize(&recording.initialization).unwrap();
+    let before = serde_json::to_vec(game.state()).unwrap();
+    let checkpoint = Checkpoint {
+        next_frame: FIRST,
+        state: game.checkpoint(),
+    };
+    let error = replay_match::validate(
+        &replay,
+        &mut game,
+        &checkpoint,
+        PORTS,
+        Timeline::LastRecorded,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported external character ID"),
+        "{error:#}"
+    );
+    assert_eq!(serde_json::to_vec(game.state()).unwrap(), before);
 }
 
 #[test]
@@ -1027,7 +1094,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v4");
+        assert_eq!(report["policy"], "fighter-post-v5");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

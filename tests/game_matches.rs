@@ -3,6 +3,7 @@ use replay_validation::{
     Checkpoint, FrameStepper, Transition, ValidationError, branch_from, validate,
 };
 use serde_json::Value;
+use skirmish::fighter::stale::Rules as StaleRules;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_X, Controller, Error, Event, FinishReason, Match, Phase, State,
     data::{MatchData, Profile},
@@ -87,6 +88,63 @@ fn compare(expected: &State, actual: &State) -> Option<String> {
 }
 
 #[test]
+fn same_move_multihit_updates_retained_combo_and_source_attribution() {
+    let mut resource = data();
+    resource.rules.countdown_frames = 0;
+    resource.rules.knockback_speed = 0.0;
+    resource.rules.damage.combo_reset_frames = 100;
+    resource.rules.staling = Some(StaleRules {
+        penalties: [0.0; 9],
+        debug_bypass: false,
+    });
+    for fighter in &mut resource.fighters {
+        fighter.jab.move_id = Some(7);
+    }
+
+    let mut game = Match::new(resource, 23).unwrap();
+    game.step(press(0, BUTTON_A)).unwrap();
+    let hit = game.step(IDLE).unwrap().clone();
+    assert_eq!(
+        hit.events
+            .iter()
+            .filter(|event| matches!(event, Event::Hit { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(hit.fighters[0].combo.last_attack_landed, 7);
+    assert_eq!(hit.fighters[0].combo.count, 1);
+    assert_eq!(hit.fighters[0].combo.victim, Some(1));
+    assert_eq!(hit.fighters[1].combo.last_hit_by, Some(0));
+    until(&mut game, 60, |state| {
+        state
+            .fighters
+            .iter()
+            .all(|fighter| fighter.action == Action::Wait)
+    });
+    assert_eq!(game.state().fighters[0].combo.victim, Some(1));
+
+    let checkpoint = game.checkpoint();
+    let inputs = [press(0, BUTTON_A), IDLE];
+    let expected: Vec<_> = inputs
+        .iter()
+        .map(|input| game.step(*input).unwrap().clone())
+        .collect();
+    assert_eq!(expected[1].fighters[0].combo.count, 2);
+    assert!(expected[1].events.iter().any(|event| matches!(
+        event,
+        Event::Hit {
+            attacker: 0,
+            victim: 1,
+            ..
+        }
+    )));
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for (input, expected) in inputs.into_iter().zip(expected) {
+        assert_eq!(game.step(input).unwrap(), &expected);
+    }
+}
+
+#[test]
 fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
     let resource = data();
     assert_eq!(resource.profile, Profile::IntegrationFixture);
@@ -167,6 +225,10 @@ fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
     ));
     assert_eq!(game.state().fighters[1].percent, 10.0);
     assert_eq!(game.state().fighters[1].action, Action::Damage);
+    assert_eq!(game.state().fighters[0].combo.last_attack_landed, 1);
+    assert_eq!(game.state().fighters[0].combo.count, 1);
+    assert_eq!(game.state().fighters[0].combo.victim, Some(1));
+    assert_eq!(game.state().fighters[1].combo.last_hit_by, Some(0));
     let contact = game.state().clone();
     assert!(contact.fighters.iter().all(|f| f.hitlag > 0.0));
     for _ in 0..contact.fighters[0].hitlag as usize {
@@ -196,6 +258,8 @@ fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
     assert!(respawn.contains(&Event::Respawned { player: 1 }));
     assert_eq!(game.state().fighters[1].percent, 0.0);
     assert_eq!(game.state().fighters[1].position, resource.stage.spawns[1]);
+    assert_eq!(game.state().fighters[1].combo, Default::default());
+    assert_eq!(game.state().fighters[0].combo.victim, None);
     until(&mut game, 10, |state| {
         state.fighters[1].invincibility == 0 && state.fighters[0].action == Action::Wait
     });

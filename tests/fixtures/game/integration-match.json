@@ -750,7 +750,8 @@
       "special_angle_min": 362,
       "special_angle_max": 362,
       "special_angle_timer": 0,
-      "knockback_replace_window": 3
+      "knockback_replace_window": 3,
+      "combo_reset_frames": 2
     }
   }
 }

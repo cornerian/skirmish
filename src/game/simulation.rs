@@ -75,6 +75,7 @@ fn spawn(
         stocks,
         hitlag: 0.0,
         hitstun: 0,
+        combo: crate::fighter::combo::State::default(),
         damage_elapsed: -1,
         damage_angle_flag: 0,
         damage_angle_timer: 0,
@@ -308,6 +309,7 @@ pub(crate) fn advance(
         }
         active[player] = true;
     }
+    combat_history::update(&mut state.fighters, active);
 
     let mut just_turned = [false; 2];
     let mut clank_owns = [false; 2];
@@ -768,6 +770,12 @@ pub(crate) fn advance(
                     && !locomotion::hold_action_frame(fighter)
                 {
                     fighter.action_frame = fighter.action_frame.saturating_add(1);
+                }
+                if fighter.hitstun == 1 {
+                    crate::fighter::combo::finish_hitstun(
+                        &mut fighter.combo,
+                        data.rules.damage.combo_reset_frames,
+                    );
                 }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);
             }

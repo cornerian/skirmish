@@ -20,6 +20,8 @@ pub struct CombatRules {
     pub special_angle_max: u32,
     pub special_angle_timer: i32,
     pub knockback_replace_window: i32,
+    /// Common x4CC: grace after hitstun before an attacker's combo victim clears.
+    pub combo_reset_frames: u16,
     /// None retains the explicitly incomplete legacy match profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub displacement: Option<HitlagDisplacementRules>,
@@ -878,6 +880,7 @@ pub(crate) fn apply_hit(
     if !angle.radians.is_finite() || merged.into_iter().any(|value| !value.is_finite()) {
         return Err(Error::NonFinite);
     }
+    super::combat_history::record_hit(state, attacker, victim, staled.identity.move_id);
     state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     let target = &mut state.fighters[victim];
     // ftCo_8008DCE0 first installs the hit direction. Its prone low-damage

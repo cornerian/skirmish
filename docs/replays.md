@@ -134,7 +134,7 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v4`** policy compares these post-frame fields for each
+The named **`fighter-post-v5`** policy compares these post-frame fields for each
 mapped actor:
 
 | Replay field | Native observation | Comparison |
@@ -150,6 +150,10 @@ mapped actor:
 | `jumps` | Configured maximum minus jumps used | Exact integer |
 | `ground` | Last contacted collision-line ID, retaining `0xffff` before first contact | Exact `u16` |
 | `l_cancel` | Per-frame aerial-landing result | Exact integer |
+| `character` | GameStart external character mapped through Melee's internal-fighter table | Exact integer |
+| `last_attack_landed` | Attacker's retained move-table ID | Exact low byte |
+| `combo_count` | Attacker's retained `ftColl_800763C0` counter | Exact low byte |
+| `last_hit_by` | Recorded source physical port, or Melee's initial sentinel 6 | Exact integer |
 | selected `state_flags` | Protection, fast-fall, hitlag, active shield and hitstun bits | Exact bits |
 | `misc_as` while in hitstun | Remaining hitstun | Exact `f32` bits |
 | `hurtbox_state` (Slippi 2.1+) | Timed vulnerable, invulnerable or intangible state | Exact integer |
@@ -162,7 +166,9 @@ action enum collapses some original motion states. Those actions map to one
 documented common-state ID. Fox's current neutral-special shell maps to its
 ground and air startup families using GameStart character metadata; other
 character-specific specials and internal respawn or elimination phases remain
-unmapped and therefore produce an action-state mismatch. RNG, collision-line
+unmapped and therefore produce an action-state mismatch. Zelda/Sheik
+transformations are also unimplemented, so a post-frame internal character
+change produces a character mismatch. RNG, collision-line
 geometry, unselected state-flag bits, items and stage state are not compared.
 Nonempty item and dynamic stage-event records are
 rejected as unsupported simulation. Equality of the selected fields does not

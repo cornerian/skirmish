@@ -653,6 +653,15 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             f.staling.transitions.is_empty(),
             "unflushed attack identity transition",
         )?;
+        require(
+            f.combo
+                .victim
+                .is_none_or(|victim| victim < state.fighters.len())
+                && f.combo
+                    .last_hit_by
+                    .is_none_or(|source| source < state.fighters.len()),
+            "invalid combat attribution state",
+        )?;
         if f.position
             .into_iter()
             .chain([f.depth])

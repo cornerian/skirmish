@@ -21,6 +21,12 @@ pub const BASE_FIELDS: &[&str] = &[
     "last_ground_id",
     "l_cancel",
 ];
+pub const PROVENANCE_FIELDS: &[&str] = &[
+    "character",
+    "last_attack_landed",
+    "combo_count",
+    "last_hit_by",
+];
 pub const HURTBOX_FIELD: &str = "hurtbox_state";
 pub const VELOCITY_FIELDS: &[&str] = &[
     "velocities.self_x_air",
@@ -41,6 +47,7 @@ pub const MISC_HITSTUN_FIELD: &str = "misc_as.hitstun";
 
 pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     let mut fields = BASE_FIELDS.to_vec();
+    fields.extend_from_slice(PROVENANCE_FIELDS);
     fields.extend_from_slice(STATE_FLAG_FIELDS);
     fields.push(MISC_HITSTUN_FIELD);
     if version.gte(2, 1) {
@@ -89,6 +96,10 @@ pub struct FighterObservation {
     pub last_ground_id: u16,
     /// None, successful, unsuccessful.
     pub l_cancel: u8,
+    pub character: u8,
+    pub last_attack_landed: u8,
+    pub combo_count: u8,
+    pub last_hit_by: u8,
     /// Raw Melee flag bytes. The policy selects only bits modeled by Skirmish.
     pub state_flags: Option<[u8; 5]>,
     /// Action-state union slot, compared only while the hitstun flag is set.
@@ -246,6 +257,10 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
                 .ground
                 .ok_or_else(|| format!("{} post.ground must be present", actor.port))?,
             l_cancel,
+            character: post.character,
+            last_attack_landed: post.last_attack_landed,
+            combo_count: post.combo_count,
+            last_hit_by: post.last_hit_by,
             state_flags: Some([flags.0, flags.1, flags.2, flags.3, flags.4]),
             misc_as: Some(
                 post.misc_as
@@ -293,6 +308,14 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                     .last_ground_line
                     .map_or(u16::MAX, |line| line as u16),
                 l_cancel: fighter.l_cancel_status,
+                character: internal_character(characters[index])
+                    .expect("replay setup validates external character IDs"),
+                last_attack_landed: fighter.combo.last_attack_landed as u8,
+                combo_count: fighter.combo.count as u8,
+                last_hit_by: fighter
+                    .combo
+                    .last_hit_by
+                    .map_or(6, |source| ports[source] as u8),
                 state_flags: Some(state_flags(fighter)),
                 misc_as: Some(fighter.hitstun as f32),
                 hurtbox_state: Some(hurtbox_state(fighter)),
@@ -307,6 +330,15 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
             }
         }),
     }
+}
+
+/// Player data uses external CSS IDs; post-frame records internal fighter IDs.
+pub fn internal_character(external: u8) -> Option<u8> {
+    const IDS: [u8; 26] = [
+        2, 3, 1, 24, 4, 5, 6, 17, 0, 18, 16, 8, 9, 12, 10, 15, 13, 14, 19, 7, 22, 20, 21, 26, 23,
+        25,
+    ];
+    IDS.get(usize::from(external)).copied()
 }
 
 /// Project Slippi serializes the move-induced state first, then the timed
@@ -601,6 +633,30 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
         ) {
             return Some(difference);
         }
+        for (field, expected, actual) in [
+            (PROVENANCE_FIELDS[0], expected.character, actual.character),
+            (
+                PROVENANCE_FIELDS[1],
+                expected.last_attack_landed,
+                actual.last_attack_landed,
+            ),
+            (
+                PROVENANCE_FIELDS[2],
+                expected.combo_count,
+                actual.combo_count,
+            ),
+            (
+                PROVENANCE_FIELDS[3],
+                expected.last_hit_by,
+                actual.last_hit_by,
+            ),
+        ] {
+            if let Some(difference) =
+                difference(port, field, u32::from(expected), u32::from(actual), 2)
+            {
+                return Some(difference);
+            }
+        }
         let selected_flags = [(1, 0x04), (1, 0x08), (1, 0x20), (2, 0x80), (3, 0x02)];
         if let Some(expected_flags) = expected.state_flags {
             let Some(actual_flags) = actual.state_flags else {
@@ -725,6 +781,10 @@ mod tests {
                         jumps: Some(2),
                         ground: Some(u16::MAX),
                         l_cancel: Some(0),
+                        character: 1,
+                        last_attack_landed: 0,
+                        combo_count: 0,
+                        last_hit_by: 6,
                         state_flags: Some(row::StateFlags(0, 0, 0, 2, 0)),
                         misc_as: Some(0.0),
                         hurtbox_state: Some(0),
@@ -848,6 +908,7 @@ mod tests {
         assert!(compare(&expected, &expected).is_none());
         for &field in BASE_FIELDS
             .iter()
+            .chain(PROVENANCE_FIELDS)
             .chain(STATE_FLAG_FIELDS)
             .chain([MISC_HITSTUN_FIELD].iter())
             .chain([HURTBOX_FIELD].iter())
@@ -869,6 +930,10 @@ mod tests {
                 "jumps_remaining" => fighter.jumps_remaining -= 1,
                 "last_ground_id" => fighter.last_ground_id = 7,
                 "l_cancel" => fighter.l_cancel = 1,
+                "character" => fighter.character ^= 1,
+                "last_attack_landed" => fighter.last_attack_landed = 7,
+                "combo_count" => fighter.combo_count = 1,
+                "last_hit_by" => fighter.last_hit_by = 0,
                 "state_flags.protected" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x04,
                 "state_flags.fast_fall" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x08,
                 "state_flags.hitlag" => fighter.state_flags.as_mut().unwrap()[1] ^= 0x20,
@@ -933,6 +998,13 @@ mod tests {
                 native.last_ground_line.map_or(u16::MAX, |line| line as u16)
             );
             assert_eq!(fighter.l_cancel, native.l_cancel_status);
+            assert_eq!(fighter.character, 1);
+            assert_eq!(
+                fighter.last_attack_landed,
+                native.combo.last_attack_landed as u8
+            );
+            assert_eq!(fighter.combo_count, native.combo.count as u8);
+            assert_eq!(fighter.last_hit_by, 6);
             assert_eq!(fighter.state_flags, Some(state_flags(native)));
             assert_eq!(fighter.misc_as, Some(native.hitstun as f32));
             assert_eq!(fighter.hurtbox_state, Some(hurtbox_state(native)));
@@ -1026,5 +1098,18 @@ mod tests {
         fighter.hitstun = 3;
         fighter.action = game::Action::Guard;
         assert_eq!(state_flags(&fighter), [0, 0x2c, 0x80, 0x02, 0]);
+    }
+
+    #[test]
+    fn external_character_ids_map_to_the_original_internal_table() {
+        let expected = [
+            2, 3, 1, 24, 4, 5, 6, 17, 0, 18, 16, 8, 9, 12, 10, 15, 13, 14, 19, 7, 22, 20, 21, 26,
+            23, 25,
+        ];
+        for (external, internal) in expected.into_iter().enumerate() {
+            assert_eq!(internal_character(external as u8), Some(internal));
+        }
+        assert_eq!(internal_character(26), None);
+        assert_eq!(internal_character(u8::MAX), None);
     }
 }

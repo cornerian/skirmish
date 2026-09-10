@@ -3,6 +3,7 @@
 pub mod aerial;
 pub mod clank;
 pub mod combat;
+pub mod combo;
 mod compat;
 pub mod damage;
 pub mod death;

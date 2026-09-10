@@ -6,6 +6,7 @@
 pub mod aerial;
 pub mod clank;
 mod collision;
+mod combat_history;
 pub mod damage;
 pub mod data;
 pub mod death;
@@ -212,6 +213,8 @@ pub struct Fighter {
     pub stocks: u8,
     pub hitlag: f32,
     pub hitstun: u32,
+    /// Retained hit attribution and raw combo-counter state recorded by Slippi.
+    pub combo: crate::fighter::combo::State,
     /// Time since the previous damage transition; freezes during hitlag.
     pub damage_elapsed: i32,
     pub damage_angle_flag: u8,

@@ -131,6 +131,12 @@ pub fn validate(
             .expect("port coverage checked above")
             .character
     });
+    ensure!(
+        characters
+            .into_iter()
+            .all(|character| observation::internal_character(character).is_some()),
+        "unsupported external character ID"
+    );
     let ids = replay.game().frames.id.values();
     let start = indices.partition_point(|&i| ids[i] < checkpoint.next_frame);
     ensure!(
@@ -226,7 +232,7 @@ pub fn validate(
     };
     Ok(Report {
         replay: replay.summary(timeline)?,
-        policy: "fighter-post-v4",
+        policy: "fighter-post-v5",
         input_policy: observation::INPUT_POLICY,
         fields: observation::fields(settings.slippi.version),
         resources_sha256,

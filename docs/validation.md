@@ -1,5 +1,20 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi combat-provenance batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-combat-provenance-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 562 native
+workspace tests, and 752 original-C differential tests in both debug and release
+modes. The `fighter-post-v5` replay policy now compares internal character ID,
+last landed attack, retained combo count and last-hitting physical port. The
+native scheduler retains the source combo pointer through hitstun and the
+configured post-hitstun grace period. Exact unit tests cover every translated
+counter branch and the complete character-ID mapping; match and Peppi-written
+file tests cover source attribution, repeated hits, checkpoint replay and an
+independently corrupted value for every new field. The 19 ignored tests require
+external references, extracted assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 Slippi state-flags batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-state-flags-20260910`

@@ -43,10 +43,10 @@ ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
 time, selected damage motion, grounded knockback scalar, tumble eligibility,
 damage-surface history/lockout and tech timer, wall-jump contact timer, side,
 repeat count and startup/exponent state, physical-L/R
-tech ages, jump-press age, swept hitbox centers, ECB
-interpolation history, stage contacts, ledge endpoint ownership/cooldown, stocks,
-invincibility, match clock, reserved RNG seed and events. This slice has no
-random events and consumes no RNG draws. Checkpoints are opaque in-memory
+tech ages, jump-press age, retained attack/combo/source attribution, swept
+hitbox centers, ECB interpolation history, stage contacts, ledge endpoint
+ownership/cooldown, stocks, invincibility, match clock, reserved RNG seed and
+events. This slice has no random events and consumes no RNG draws. Checkpoints are opaque in-memory
 values, and restoration rejects different resource/rule identities. Persistent
 checkpoint encoding is a later versioned interface.
 

@@ -15,17 +15,20 @@ the command-line executable. C-stick ASDI cases check inclusive selection,
 main-stick-only DI, hitlag freeze and checkpoint branching; the file-backed
 version detects a changed C-stick at the first affected frame. A table-driven
 file-backed case independently corrupts every reported action, timer, position,
-damage, shield, stock, airborne, jump, retained ground, l-cancel, selected state
-flag, hitstun-union, hurtbox, velocity and hitlag field and requires the first
+damage, shield, stock, airborne, jump, retained ground, l-cancel, character,
+hit-attribution, raw combo, selected state-flag, hitstun-union, hurtbox, velocity
+and hitlag field and requires the first
 divergence at that row. Slippi 2.0, 2.1, 3.5 and 3.8 fixtures prove the report's
 version-dependent field set. Separate Peppi-written replay cases drive physical
 B through neutral-special combat, physical Z through grab/capture and physical L
 through shield entry, then remove each recorded input and require divergence on
-that frame. The main file-backed script also reaches fast fall, hitlag and
-hitstun. Deliberate late post-state corruption and changed controller input
-produce first-divergence failures. Altered recorded pre-state and RNG values
-cannot reset the simulator. These expected recordings come from the native
-implementation itself, so this is harness validation; independent Melee
+that frame. The main file-backed script also reaches fast fall, hitlag, hitstun,
+and fighter-hit attribution. Deliberate late post-state corruption and changed
+controller input produce first-divergence failures. Altered recorded pre-state
+and RNG values cannot reset the simulator. Exact unit cases cover every retained
+combo-counter branch, its native-width wrap, the escape timer and the complete
+external-to-internal character table. These expected recordings come from the
+native implementation itself, so this is harness validation; independent Melee
 observations must supply the fidelity oracle. See [replays.md](replays.md) for
 the exact selected fields and initialization contract.
 

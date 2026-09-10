@@ -422,6 +422,10 @@ fn all_four_throw_directions_release_into_the_shared_damage_pipeline() {
             released.fighters[0].staling.queue.entries()[0].move_id,
             move_id
         );
+        assert_eq!(released.fighters[0].combo.last_attack_landed, move_id);
+        assert_eq!(released.fighters[0].combo.count, 1);
+        assert_eq!(released.fighters[0].combo.victim, Some(1));
+        assert_eq!(released.fighters[1].combo.last_hit_by, Some(0));
         assert_eq!(released.fighters[1].facing, -1.0);
         assert!(
             released
@@ -568,6 +572,9 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
     assert_eq!(hit.fighters[1].percent, 3.0);
     assert_eq!(hit.fighters[1].action, Action::CaptureDamageLw);
     assert!(hit.fighters[0].grab.pummel_hit);
+    assert_eq!(hit.fighters[0].combo.last_attack_landed, 1);
+    assert_eq!(hit.fighters[0].combo.count, 1);
+    assert_eq!(hit.fighters[1].combo.last_hit_by, Some(0));
     assert!(hit.fighters.iter().all(|fighter| fighter.hitlag == 2.0));
     assert!(hit.fighters[1].position[0] > held_position[0] + 1.0);
     assert!(hit.events.contains(&Event::Hit {
@@ -590,6 +597,7 @@ fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
     let second = until(&mut game, |state| state.fighters[1].percent == 6.0);
     assert_eq!(second.fighters[0].action, Action::CatchAttack);
     assert_eq!(second.fighters[0].grab.victim, Some(1));
+    assert_eq!(second.fighters[0].combo.count, 1);
 }
 
 #[test]
@@ -600,6 +608,9 @@ fn repeated_pummels_stale_once_per_instance_and_replay_from_a_checkpoint() {
     assert_eq!(first.fighters[1].percent, 3.0);
     assert_eq!(first.fighters[0].staling.queue.next(), 1);
     assert_eq!(first.fighters[0].staling.queue.entries()[0].move_id, 40);
+    assert_eq!(first.fighters[0].combo.last_attack_landed, 40);
+    assert_eq!(first.fighters[0].combo.count, 1);
+    assert_eq!(first.fighters[1].combo.last_hit_by, Some(0));
 
     until(&mut game, |state| {
         state.fighters[0].action == Action::CatchWait
@@ -615,6 +626,8 @@ fn repeated_pummels_stale_once_per_instance_and_replay_from_a_checkpoint() {
         expected.fighters[0].staling.queue.entries()[0].attack_instance,
         expected.fighters[0].staling.queue.entries()[1].attack_instance
     );
+    assert_eq!(expected.fighters[0].combo.last_attack_landed, 40);
+    assert_eq!(expected.fighters[0].combo.count, 1);
     assert!(expected.events.iter().any(|event| matches!(
         event,
         Event::Hit {
