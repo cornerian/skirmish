@@ -271,6 +271,7 @@ pub(crate) fn advance(
         if fighter.hitlag > 0.0 {
             let previous_position = fighter.position;
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
+            combat_history::push(fighter, &data.rules.damage.combo);
             shield::hitlag(fighter, input, &data.rules, fighter.hitlag == 0.0);
             if fighter.hitlag == 0.0 {
                 damage::exit_hitlag(fighter, input, &data.rules.damage)?;
@@ -337,6 +338,9 @@ pub(crate) fn advance(
     let pair_frozen = grab::update_pairs(data, state, inputs, active)?;
     for player in 0..2 {
         if pair_frozen[player] {
+            if active[player] {
+                combat_history::push(&mut state.fighters[player], &data.rules.damage.combo);
+            }
             active[player] = false;
             frozen[player] = true;
         }
@@ -376,6 +380,7 @@ pub(crate) fn advance(
         let input = inputs[player];
         if fighter.grab.captor.is_some() {
             fighter.nudge = [0.0; 2];
+            combat_history::push(fighter, &data.rules.damage.combo);
             staling::flush(
                 fighter,
                 &data.fighters[player],
@@ -392,6 +397,7 @@ pub(crate) fn advance(
                 .as_ref()
                 .ok_or_else(|| Error::Data("rebirth state requires explicit rules".into()))?;
             rebirth::move_fighter(fighter, rules, player);
+            combat_history::push(fighter, &data.rules.damage.combo);
             collision::sample(
                 fighter,
                 &data.fighters[player],
@@ -408,6 +414,7 @@ pub(crate) fn advance(
         }
         if ledge::attached(fighter) {
             ledge::attach(fighter, &data.fighters[player], &geometry)?;
+            combat_history::push(fighter, &data.rules.damage.combo);
             collision::sample(
                 fighter,
                 &data.fighters[player],
@@ -427,6 +434,7 @@ pub(crate) fn advance(
         }
         let previous_position = fighter.position;
         move_fighter(fighter, &data.fighters[player], &data.rules, input);
+        combat_history::push(fighter, &data.rules.damage.combo);
         stage_motion::carry(&data.stage, &state.stage, fighter)?;
         advance_ecb_lock(fighter);
         collision::sample(
@@ -774,7 +782,7 @@ pub(crate) fn advance(
                 if fighter.hitstun == 1 {
                     crate::fighter::combo::finish_hitstun(
                         &mut fighter.combo,
-                        data.rules.damage.combo_reset_frames,
+                        &data.rules.damage.combo,
                     );
                 }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);
@@ -858,6 +866,7 @@ fn lose_stock(
     fighter.ground_knockback = 0.0;
     fighter.hitlag = 0.0;
     fighter.hitstun = 0;
+    fighter.combo = crate::fighter::combo::State::default();
     fighter.di_pending = false;
     fighter.ledge = ledge::State::default();
     if fighter.stocks == 0 {

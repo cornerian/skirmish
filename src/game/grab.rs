@@ -1133,7 +1133,13 @@ fn apply_pummel(
     target.hitlag = target.hitlag.max(hitlag);
     target.di_pending = false;
     simulation::enter(target, damage_action);
-    super::combat_history::record_hit(state, holder, victim, staled.identity.move_id);
+    super::combat_history::record_hit(
+        state,
+        holder,
+        victim,
+        staled.identity.move_id,
+        &data.rules.damage.combo,
+    );
     state.events.push(Event::Hit {
         attacker: holder,
         victim,

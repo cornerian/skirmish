@@ -751,7 +751,16 @@
       "special_angle_max": 362,
       "special_angle_timer": 0,
       "knockback_replace_window": 3,
-      "combo_reset_frames": 2
+      "combo": {
+        "push_count": 2,
+        "strong_push_count": 4,
+        "escape_frames": 2,
+        "push_distance": [
+          0.25,
+          0.5
+        ],
+        "push_frames": 2
+      }
     }
   }
 }

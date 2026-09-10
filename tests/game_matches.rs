@@ -88,11 +88,11 @@ fn compare(expected: &State, actual: &State) -> Option<String> {
 }
 
 #[test]
-fn same_move_multihit_updates_retained_combo_and_source_attribution() {
+fn repeated_same_move_updates_retained_combo_push_and_source_attribution() {
     let mut resource = data();
     resource.rules.countdown_frames = 0;
     resource.rules.knockback_speed = 0.0;
-    resource.rules.damage.combo_reset_frames = 100;
+    resource.rules.damage.combo.escape_frames = 100;
     resource.rules.staling = Some(StaleRules {
         penalties: [0.0; 9],
         debug_bypass: false,
@@ -124,12 +124,14 @@ fn same_move_multihit_updates_retained_combo_and_source_attribution() {
     assert_eq!(game.state().fighters[0].combo.victim, Some(1));
 
     let checkpoint = game.checkpoint();
-    let inputs = [press(0, BUTTON_A), IDLE];
+    let initial_x = game.state().fighters[0].position[0];
+    let inputs = [press(0, BUTTON_A), IDLE, IDLE, IDLE];
     let expected: Vec<_> = inputs
         .iter()
         .map(|input| game.step(*input).unwrap().clone())
         .collect();
     assert_eq!(expected[1].fighters[0].combo.count, 2);
+    assert_eq!(expected[1].fighters[0].combo.push_timer, 2);
     assert!(expected[1].events.iter().any(|event| matches!(
         event,
         Event::Hit {
@@ -138,6 +140,10 @@ fn same_move_multihit_updates_retained_combo_and_source_attribution() {
             ..
         }
     )));
+    assert_eq!(expected[2].fighters[0].combo.push_timer, 1);
+    assert_eq!(expected[2].fighters[0].position[0], initial_x - 0.25);
+    assert_eq!(expected[3].fighters[0].combo.push_timer, 0);
+    assert_eq!(expected[3].fighters[0].position[0], initial_x - 0.5);
     game.restore_checkpoint(&checkpoint).unwrap();
     for (input, expected) in inputs.into_iter().zip(expected) {
         assert_eq!(game.step(input).unwrap(), &expected);
@@ -252,6 +258,7 @@ fn countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish() {
         player: 1,
         stocks: 1
     }));
+    assert_eq!(game.state().fighters[1].combo, Default::default());
     let respawn = until(&mut game, 10, |state| {
         state.fighters[1].action != Action::Respawn
     });
@@ -512,7 +519,7 @@ fn final_invincible_frame_blocks_contact_and_zero_hitlag_preserves_damage_entry(
 
 #[test]
 fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
-    let changes: [fn(&mut MatchData); 8] = [
+    let changes: [fn(&mut MatchData); 12] = [
         |data| data.provenance.clear(),
         |data| data.rules.stocks = 0,
         |data| data.stage.floor.right = data.stage.blast[1],
@@ -521,6 +528,10 @@ fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
         |data| data.fighters[0].jab.frames[1].hitboxes[0].angle_degrees = 363.0,
         |data| data.fighters[0].jab.frames[1].bones[1].classical_scale = true,
         |data| data.fighters[0].bones[0].scale = [1_000_000.0; 3],
+        |data| data.rules.damage.combo.push_count = 0,
+        |data| data.rules.damage.combo.strong_push_count = 1,
+        |data| data.rules.damage.combo.push_distance[0] = f32::NAN,
+        |data| data.rules.damage.combo.push_frames = 0,
     ];
     for change in changes {
         let mut resource = data();

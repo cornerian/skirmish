@@ -1,5 +1,20 @@
 # Local validation provenance
 
+The 2026-09-10 retained-combo push batch is recorded at:
+
+`/mnt/archive/runs/skirmish-combo-push-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 563 native
+workspace tests, and 755 original-C differential tests in both debug and release
+modes. Repeated same-move hits now start the fighter-owned separation timer and
+apply the original grounded floor-tangent displacement during ordinary frames
+and hitlag. The exact `ftcoll.c` bodies are compared over arbitrary retained
+pointer identities, signed thresholds, 32-bit timer values, native counter
+wraps, eligibility states and binary32 bit patterns. Match coverage checks both
+timer frames, position changes, checkpoints and stock-loss reset. The 19 ignored
+tests require external references, extracted assets, or a GPU/window and are
+unchanged.
+
 The 2026-09-10 Slippi combat-provenance batch is recorded at:
 
 `/mnt/archive/runs/skirmish-slippi-combat-provenance-20260910`

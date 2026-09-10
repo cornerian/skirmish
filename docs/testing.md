@@ -27,8 +27,11 @@ and fighter-hit attribution. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. Exact unit cases cover every retained
 combo-counter branch, its native-width wrap, the escape timer and the complete
-external-to-internal character table. These expected recordings come from the
-native implementation itself, so this is harness validation; independent Melee
+external-to-internal character table. A pinned `ftcoll.c` adapter compares the
+retained pointer, counter, timer and grounded floor-tangent push against compiled
+original C over arbitrary states and float bit patterns. These expected
+recordings come from the native implementation itself, so this is harness
+validation; independent Melee
 observations must supply the fidelity oracle. See [replays.md](replays.md) for
 the exact selected fields and initialization contract.
 

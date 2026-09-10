@@ -20,8 +20,7 @@ pub struct CombatRules {
     pub special_angle_max: u32,
     pub special_angle_timer: i32,
     pub knockback_replace_window: i32,
-    /// Common x4CC: grace after hitstun before an attacker's combo victim clears.
-    pub combo_reset_frames: u16,
+    pub combo: crate::fighter::combo::Rules,
     /// None retains the explicitly incomplete legacy match profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub displacement: Option<HitlagDisplacementRules>,
@@ -539,6 +538,14 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
         || rules.special_angle_min > rules.special_angle_max
         || !(0..=255).contains(&rules.special_angle_timer)
         || !(0..1_000_000).contains(&rules.knockback_replace_window)
+        || rules.combo.push_count <= 0
+        || rules.combo.strong_push_count < rules.combo.push_count
+        || rules.combo.push_frames == 0
+        || !rules
+            .combo
+            .push_distance
+            .into_iter()
+            .all(|distance| distance.is_finite() && (0.0..=1_000_000.0).contains(&distance))
     {
         return Err(Error::Data("invalid explicit damage rules".into()));
     }
@@ -880,7 +887,13 @@ pub(crate) fn apply_hit(
     if !angle.radians.is_finite() || merged.into_iter().any(|value| !value.is_finite()) {
         return Err(Error::NonFinite);
     }
-    super::combat_history::record_hit(state, attacker, victim, staled.identity.move_id);
+    super::combat_history::record_hit(
+        state,
+        attacker,
+        victim,
+        staled.identity.move_id,
+        &data.rules.damage.combo,
+    );
     state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     let target = &mut state.fighters[victim];
     // ftCo_8008DCE0 first installs the hit direction. Its prone low-damage

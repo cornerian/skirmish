@@ -43,11 +43,12 @@ ECB bottom-lock timer, hitlag/hitstun, pending DI, elapsed damage
 time, selected damage motion, grounded knockback scalar, tumble eligibility,
 damage-surface history/lockout and tech timer, wall-jump contact timer, side,
 repeat count and startup/exponent state, physical-L/R
-tech ages, jump-press age, retained attack/combo/source attribution, swept
-hitbox centers, ECB interpolation history, stage contacts, ledge endpoint
-ownership/cooldown, stocks, invincibility, match clock, reserved RNG seed and
-events. This slice has no random events and consumes no RNG draws. Checkpoints are opaque in-memory
-values, and restoration rejects different resource/rule identities. Persistent
+tech ages, jump-press age, retained attack/combo/source attribution and combo
+separation timers, swept hitbox centers, ECB interpolation history, stage
+contacts, ledge endpoint ownership/cooldown, stocks, invincibility, match clock,
+reserved RNG seed and events. This slice has no random events and consumes no
+RNG draws. Checkpoints are opaque in-memory values, and restoration rejects
+different resource/rule identities. Persistent
 checkpoint encoding is a later versioned interface.
 
 Clones share only immutable native resources. Each branch owns its mutable state;
@@ -82,7 +83,10 @@ shield/hurtbox contact decisions before applying damage so both
 players can trade on the same frame. Hit-group history suppresses repeated
 contacts during one attack. With the [clank profile](clanks.md), active same-group
 slots instead share explicit victim histories that survive hitlag and clear on
-deactivation. Pending rebound yields to incoming body damage and shield stun.
+deactivation. Repeated hits retain the source combo count and start the original
+grounded attacker-separation timer. Its floor-tangent displacement runs during
+hitlag and selects the configured ordinary or strong distance from that count.
+Pending rebound yields to incoming body damage and shield stun.
 It then resolves stock losses together, checks the
 clock and emits events. A timeout compares stocks, then percent; exact ties
 finish as a draw. This schedule and these match policies are integration code,
