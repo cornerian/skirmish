@@ -36,7 +36,7 @@ pub struct Report {
     pub replay: slippi::Summary,
     pub policy: &'static str,
     pub input_policy: &'static str,
-    pub fields: &'static [&'static str],
+    pub fields: Vec<&'static str>,
     pub resources_sha256: String,
     pub ports: [Port; 2],
     pub checkpoint_next_frame: i32,
@@ -84,9 +84,8 @@ impl FrameStepper for Stepper<'_> {
         self.game.restore_checkpoint(checkpoint)
     }
     fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
-        self.game
-            .step(*input)
-            .map(|state| observation::observe(state, self.ports))
+        self.game.step(*input)?;
+        Ok(observation::observe(self.game, self.ports))
     }
 }
 
@@ -214,9 +213,9 @@ pub fn validate(
     };
     Ok(Report {
         replay: replay.summary(timeline)?,
-        policy: "fighter-post-v1",
+        policy: "fighter-post-v2",
         input_policy: observation::INPUT_POLICY,
-        fields: observation::FIELDS,
+        fields: observation::fields(settings.slippi.version),
         resources_sha256,
         ports,
         checkpoint_next_frame: checkpoint.next_frame,

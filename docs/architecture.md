@@ -32,7 +32,7 @@ formats and Arrow dependencies outside the headless game and the generic
 vectors carry recorded observations.
 `crates/skirmish-replay` connects these boundaries: it
 restores an explicit native checkpoint, maps supported recorded inputs, calls
-`Match::step` and compares a named subset of post-frame fields. The `validate-replay`
+`Match::step` and compares a named, version-aware subset of post-frame fields. The `validate-replay`
 CLI reads a real `.slp` file plus a separately supplied deterministic initialization
 and reports provenance and the first difference. `crates/equivalence` owns
 semantic traces, process comparison, native match trace adapters and differential

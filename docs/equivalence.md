@@ -86,7 +86,7 @@ and input/executable hashes even when no successful comparison report is produce
    their provenance and hashes. No ISO, DOL, emulator or GameCube runtime may be
    required for building, running or testing the project.
 3. Expand the existing Peppi-to-native-match checkpoint harness beyond its
-   experimental two-player input policy and six selected post fields. Apply
+   experimental two-player input policy and version-aware fighter post fields. Apply
    each frame's inputs and compare the simulated next observation with the
    recorded post-frame. Initial state reconstruction and observation coverage
    must be explicit.

@@ -129,10 +129,12 @@ cargo run --locked --bin skirmish -- validate-replay /path/to/game.slp --initial
 The required initialization embeds native match data, a seed, explicit port
 mapping, the next replay frame and deterministic warmup inputs. The command
 compares the entire selected suffix, reports the first difference, and exits
-unsuccessfully on mismatch or unsupported input. Its `fighter-post-v1` policy
-checks exact position, facing, percent, stocks and airborne observations for two
-human leaders. Matching those fields does not certify complete state or Melee
-gameplay. The current match rules and real Fox resources remain incomplete; see
+unsuccessfully on mismatch or unsupported input. Its `fighter-post-v2` policy
+checks action identity and age, position, facing, percent, shield, stocks,
+airborne state and remaining jumps for two human leaders. It also checks all
+five recorded velocity components from Slippi 3.5 onward and hitlag from 3.8
+onward. Matching those fields does not certify complete state or Melee gameplay.
+The current match rules and real Fox resources remain incomplete; see
 the [initialization format and comparison limits](docs/replays.md).
 
 See [headless architecture](docs/architecture.md) and

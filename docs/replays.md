@@ -133,23 +133,34 @@ the importer, but do not replace processed input. This channel support enables
 C-stick ASDI and, with explicit aerial resources, aerial selection. Pre-frame
 position, action and RNG never overwrite the simulation.
 
-The named **`fighter-post-v1`** policy compares only these post-frame fields for
-each mapped actor:
+The named **`fighter-post-v2`** policy compares these post-frame fields for each
+mapped actor:
 
 | Replay field | Native observation | Comparison |
 | --- | --- | --- |
+| `state` | Common action-state mapping | Exact `u16` |
+| `state_age` | Action frame | Exact `f32` bits |
 | `position.x`, `position.y` | Fighter position | Exact `f32` bits |
 | `direction` | Fighter facing | Exact `f32` bits |
 | `percent` | Damage percent | Exact `f32` bits |
+| `shield` | Shield health | Exact `f32` bits |
 | `stocks` | Remaining stocks | Exact integer |
 | `airborne` | Inverse of native grounded state | Exact boolean |
+| `jumps` | Configured maximum minus jumps used | Exact integer |
+| `velocities.*` (Slippi 3.5+) | Air X/Y, knockback X/Y and ground X velocity | Exact `f32` bits |
+| `hitlag` (Slippi 3.8+) | Remaining hitlag | Exact `f32` bits |
 
-Action state, velocities, hitlag and RNG are not compared. Nonempty item and
-dynamic stage-event records are rejected as unsupported simulation. Equality of
-the selected fields does not establish
-equality of hidden state, complete frame behavior or Melee gameplay. The match
-remains an experimental ruleset with incomplete character resources; the current
-Fox subset cannot validate arbitrary real Fox matches.
+The report's `fields` array follows the replay version, so fields absent from an
+older Slippi schema are visible rather than silently claimed. The refactored
+action enum collapses some original motion states. Those actions map to one
+documented common-state ID; character-specific specials and internal respawn or
+elimination phases remain unmapped and therefore produce an action-state
+mismatch. RNG, ground-line identity, state flags, hurtbox state, items and stage
+state are not compared. Nonempty item and dynamic stage-event records are
+rejected as unsupported simulation. Equality of the selected fields does not
+establish equality of hidden state, complete frame behavior or Melee gameplay.
+The match remains an experimental ruleset with incomplete character resources;
+the current Fox subset cannot validate arbitrary real Fox matches.
 
 ## Reports and regression cases
 

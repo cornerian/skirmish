@@ -13,7 +13,11 @@ files, and advances `game::Match` using their controller inputs. It exercises
 movement, jumps, landing, a jab, damage, explicit checkpoint restoration, and
 the command-line executable. C-stick ASDI cases check inclusive selection,
 main-stick-only DI, hitlag freeze and checkpoint branching; the file-backed
-version detects a changed C-stick at the first affected frame. Deliberate late post-state corruption and changed
+version detects a changed C-stick at the first affected frame. A table-driven
+file-backed case independently corrupts every reported action, timer, position,
+damage, shield, stock, airborne, jump, velocity and hitlag field and requires the
+first divergence at that row. Slippi 2.0, 3.5 and 3.8 fixtures prove the report's
+version-dependent field set. Deliberate late post-state corruption and changed
 controller input produce first-divergence failures. Altered recorded pre-state
 and RNG values cannot reset the simulator. These expected recordings come from
 the native implementation itself, so this is harness validation; independent

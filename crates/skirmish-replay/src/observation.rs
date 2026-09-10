@@ -7,14 +7,37 @@ use skirmish::game;
 use slippi::Port;
 use std::fmt;
 
-pub const FIELDS: &[&str] = &[
+pub const BASE_FIELDS: &[&str] = &[
+    "action_state",
+    "action_age",
     "position.x",
     "position.y",
     "direction",
     "percent",
+    "shield",
     "stocks",
     "airborne",
+    "jumps_remaining",
 ];
+pub const VELOCITY_FIELDS: &[&str] = &[
+    "velocities.self_x_air",
+    "velocities.self_y",
+    "velocities.knockback_x",
+    "velocities.knockback_y",
+    "velocities.self_x_ground",
+];
+pub const HITLAG_FIELD: &str = "hitlag";
+
+pub fn fields(version: slippi::Version) -> Vec<&'static str> {
+    let mut fields = BASE_FIELDS.to_vec();
+    if version.gte(3, 5) {
+        fields.extend_from_slice(VELOCITY_FIELDS);
+    }
+    if version.gte(3, 8) {
+        fields.push(HITLAG_FIELD);
+    }
+    fields
+}
 
 pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger; physical A/X/Y/L/R; derived stick/trigger flags allowed; no replay state or RNG overrides";
 
@@ -30,11 +53,19 @@ const LOGICAL_TRIGGER: u32 = 0x8000_0000;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct FighterObservation {
     pub port: Port,
+    /// The raw Melee motion-state ID. `None` means Skirmish's refactored action
+    /// does not yet retain enough information to identify one exact state.
+    pub action_state: Option<u16>,
+    pub action_age: f32,
     pub position: [f32; 2],
     pub direction: f32,
     pub percent: f32,
+    pub shield: f32,
     pub stocks: u8,
     pub airborne: bool,
+    pub jumps_remaining: u8,
+    pub velocities: Option<[f32; 5]>,
+    pub hitlag: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -54,7 +85,7 @@ impl fmt::Display for Difference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}.{}: expected bits {}, got {}",
+            "{}.{}: expected {}, got {}",
             self.port, self.field, self.expected, self.actual
         )
     }
@@ -153,11 +184,29 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
         };
         Ok(FighterObservation {
             port: actor.port,
+            action_state: Some(post.state),
+            action_age: post
+                .state_age
+                .ok_or_else(|| format!("{} post.state_age must be present", actor.port))?,
             position: [post.position.x, post.position.y],
             direction: post.direction,
             percent: post.percent,
+            shield: post.shield,
             stocks: post.stocks,
             airborne,
+            jumps_remaining: post
+                .jumps
+                .ok_or_else(|| format!("{} post.jumps must be present", actor.port))?,
+            velocities: post.velocities.map(|velocity| {
+                [
+                    velocity.self_x_air,
+                    velocity.self_y,
+                    velocity.knockback_x,
+                    velocity.knockback_y,
+                    velocity.self_x_ground,
+                ]
+            }),
+            hitlag: post.hitlag,
         })
     };
     let [first, second] = actors(frame, ports)?;
@@ -166,19 +215,191 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
     })
 }
 
-pub fn observe(state: &game::State, ports: [Port; 2]) -> Observation {
+pub fn observe(game: &game::Match, ports: [Port; 2]) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
-            let fighter = &state.fighters[index];
+            let fighter = &game.state().fighters[index];
+            let max_jumps = game.data().fighters[index]
+                .locomotion
+                .as_ref()
+                .map_or(2, |parameters| parameters.max_jumps);
             FighterObservation {
                 port: ports[index],
+                action_state: action_state(fighter),
+                action_age: fighter.action_frame as f32,
                 position: fighter.position,
                 direction: fighter.facing,
                 percent: fighter.percent,
+                shield: fighter.shield.health,
                 stocks: fighter.stocks,
                 airborne: !fighter.grounded,
+                jumps_remaining: max_jumps.saturating_sub(fighter.locomotion.jumps_used),
+                velocities: Some([
+                    fighter.velocity[0],
+                    fighter.velocity[1],
+                    fighter.knockback[0],
+                    fighter.knockback[1],
+                    fighter.ground_velocity,
+                ]),
+                hitlag: Some(fighter.hitlag),
             }
         }),
+    }
+}
+
+/// Map each refactored action to the exact common-state identity that remains
+/// available in native state. Collapsed distinctions use their canonical first
+/// state; character-specific specials and lifecycle-only states stay unmapped.
+pub fn action_state(fighter: &game::Fighter) -> Option<u16> {
+    use game::Action::*;
+    Some(match fighter.action {
+        DeadDown => 0,
+        DeadLeft => 1,
+        DeadRight => 2,
+        DeadUp => 3,
+        DeadUpStar => 4,
+        DeadUpStarIce => 5,
+        DeadUpFall => 6,
+        DeadUpFallHitCamera => 7,
+        DeadUpFallHitCameraFlat => 8,
+        DeadUpFallIce => 9,
+        DeadUpFallHitCameraIce => 10,
+        Rebirth => 12,
+        RebirthWait => 13,
+        Wait => 14,
+        Walk => 15,
+        Turn => 18,
+        RunTurn => 19,
+        Dash => 20,
+        Run => 21,
+        RunBrake => 23,
+        JumpSquat => 24,
+        Jump => 25,
+        JumpAerial => 27,
+        Fall => 29,
+        DamageFall => 38,
+        Squat => 39,
+        SquatWait => 40,
+        SquatRv => 41,
+        Landing => 42,
+        Jab => 44,
+        AttackAirN => 65,
+        AttackAirF => 66,
+        AttackAirB => 67,
+        AttackAirHi => 68,
+        AttackAirLw => 69,
+        LandingAirN => 70,
+        LandingAirF => 71,
+        LandingAirB => 72,
+        LandingAirHi => 73,
+        LandingAirLw => 74,
+        Damage => match fighter.damage_motion {
+            Some(skirmish::fighter::damage::DamageMotion::Ground { level, height }) => {
+                let base = match height {
+                    skirmish::fighter::damage::HurtHeight::High => 75,
+                    skirmish::fighter::damage::HurtHeight::Middle => 78,
+                    skirmish::fighter::damage::HurtHeight::Low => 81,
+                };
+                base + u16::from(level)
+            }
+            Some(skirmish::fighter::damage::DamageMotion::Air { level }) => 84 + u16::from(level),
+            Some(skirmish::fighter::damage::DamageMotion::Fly { height }) => match height {
+                skirmish::fighter::damage::HurtHeight::High => 87,
+                skirmish::fighter::damage::HurtHeight::Middle => 88,
+                skirmish::fighter::damage::HurtHeight::Low => 89,
+            },
+            // Legacy synthetic profiles predate sampled damage poses. Their
+            // single Damage action corresponds to the neutral light reaction.
+            None if fighter.grounded => 78,
+            None => 84,
+        },
+        GuardOn => 178,
+        Guard => 179,
+        GuardOff => 180,
+        GuardSetOff => 181,
+        DownBound => prone_state(fighter, 183, 191),
+        DownWait => prone_state(fighter, 184, 192),
+        DownDamage => prone_state(fighter, 185, 193),
+        DownStand => prone_state(fighter, 186, 194),
+        DownAttack => prone_state(fighter, 187, 195),
+        DownForward => prone_state(fighter, 188, 196),
+        DownBack => prone_state(fighter, 189, 197),
+        Passive => 199,
+        PassiveStandF => 200,
+        PassiveStandB => 201,
+        PassiveWall => 202,
+        PassiveWallJump => 203,
+        PassiveCeiling => 204,
+        ShieldBreakFly => 205,
+        ShieldBreakFall => 206,
+        ShieldBreakDown => prone_state(fighter, 207, 208),
+        ShieldBreakStand => prone_state(fighter, 209, 210),
+        Furafura => 211,
+        Catch => 212,
+        CatchPull => 213,
+        CatchDash => 214,
+        CatchDashPull => 215,
+        CatchWait => 216,
+        CatchAttack => 217,
+        CatchCut => 218,
+        ThrowF => 219,
+        ThrowB => 220,
+        ThrowHi => 221,
+        ThrowLw => 222,
+        CapturePulledHi => 223,
+        CaptureWaitHi => 224,
+        CaptureDamageHi => 225,
+        CapturePulledLw => 226,
+        CaptureWaitLw => 227,
+        CaptureDamageLw => 228,
+        CaptureCut => 229,
+        ReboundStop => 237,
+        Rebound => 238,
+        ThrownF => 239,
+        ThrownB => 240,
+        ThrownHi => 241,
+        ThrownLw => 242,
+        Pass => 244,
+        FlyReflectWall => 247,
+        FlyReflectCeiling => 248,
+        CliffCatch => 252,
+        CliffWait => 253,
+        CliffClimb => {
+            if fighter.ledge.slow {
+                254
+            } else {
+                255
+            }
+        }
+        CliffAttack => {
+            if fighter.ledge.slow {
+                256
+            } else {
+                257
+            }
+        }
+        CliffEscape => {
+            if fighter.ledge.slow {
+                258
+            } else {
+                259
+            }
+        }
+        CliffJump => {
+            if fighter.ledge.slow {
+                260
+            } else {
+                262
+            }
+        }
+        SpecialN | SpecialAirN | Respawn | Eliminated => return None,
+    })
+}
+
+fn prone_state(fighter: &game::Fighter, face_up: u16, face_down: u16) -> u16 {
+    match fighter.prone {
+        Some(game::damage::ProneOrientation::FaceDown) => face_down,
+        _ => face_up,
     }
 }
 
@@ -197,6 +418,29 @@ fn difference(
     })
 }
 
+fn optional_difference(
+    port: Port,
+    field: &'static str,
+    expected: Option<u16>,
+    actual: Option<u16>,
+) -> Option<Difference> {
+    (expected != actual).then(|| Difference {
+        port,
+        field,
+        expected: expected.map_or_else(|| "unmapped".into(), |v| format!("0x{v:04x}")),
+        actual: actual.map_or_else(|| "unmapped".into(), |v| format!("0x{v:04x}")),
+    })
+}
+
+fn float_difference(
+    port: Port,
+    field: &'static str,
+    expected: f32,
+    actual: f32,
+) -> Option<Difference> {
+    difference(port, field, expected.to_bits(), actual.to_bits(), 8)
+}
+
 pub fn compare(expected: &Observation, actual: &Observation) -> Option<Difference> {
     for (expected, actual) in expected.fighters.iter().zip(&actual.fighters) {
         let port = expected.port;
@@ -205,28 +449,76 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
         {
             return Some(difference);
         }
+        if let Some(difference) = optional_difference(
+            port,
+            BASE_FIELDS[0],
+            expected.action_state,
+            actual.action_state,
+        ) {
+            return Some(difference);
+        }
         for (field, expected, actual) in [
-            (FIELDS[0], expected.position[0], actual.position[0]),
-            (FIELDS[1], expected.position[1], actual.position[1]),
-            (FIELDS[2], expected.direction, actual.direction),
-            (FIELDS[3], expected.percent, actual.percent),
+            (BASE_FIELDS[1], expected.action_age, actual.action_age),
+            (BASE_FIELDS[2], expected.position[0], actual.position[0]),
+            (BASE_FIELDS[3], expected.position[1], actual.position[1]),
+            (BASE_FIELDS[4], expected.direction, actual.direction),
+            (BASE_FIELDS[5], expected.percent, actual.percent),
+            (BASE_FIELDS[6], expected.shield, actual.shield),
         ] {
-            if let Some(difference) =
-                difference(port, field, expected.to_bits(), actual.to_bits(), 8)
-            {
+            if let Some(difference) = float_difference(port, field, expected, actual) {
                 return Some(difference);
             }
         }
         for (field, expected, actual) in [
-            (FIELDS[4], expected.stocks, actual.stocks),
+            (BASE_FIELDS[7], expected.stocks, actual.stocks),
             (
-                FIELDS[5],
+                BASE_FIELDS[8],
                 u8::from(expected.airborne),
                 u8::from(actual.airborne),
+            ),
+            (
+                BASE_FIELDS[9],
+                expected.jumps_remaining,
+                actual.jumps_remaining,
             ),
         ] {
             if let Some(difference) =
                 difference(port, field, u32::from(expected), u32::from(actual), 2)
+            {
+                return Some(difference);
+            }
+        }
+        if let Some(expected_velocities) = expected.velocities {
+            let Some(actual_velocities) = actual.velocities else {
+                return Some(Difference {
+                    port,
+                    field: VELOCITY_FIELDS[0],
+                    expected: format!("0x{:08x}", expected_velocities[0].to_bits()),
+                    actual: "unavailable".into(),
+                });
+            };
+            for ((field, expected), actual) in VELOCITY_FIELDS
+                .iter()
+                .copied()
+                .zip(expected_velocities)
+                .zip(actual_velocities)
+            {
+                if let Some(difference) = float_difference(port, field, expected, actual) {
+                    return Some(difference);
+                }
+            }
+        }
+        if let Some(expected_hitlag) = expected.hitlag {
+            let Some(actual_hitlag) = actual.hitlag else {
+                return Some(Difference {
+                    port,
+                    field: HITLAG_FIELD,
+                    expected: format!("0x{:08x}", expected_hitlag.to_bits()),
+                    actual: "unavailable".into(),
+                });
+            };
+            if let Some(difference) =
+                float_difference(port, HITLAG_FIELD, expected_hitlag, actual_hitlag)
             {
                 return Some(difference);
             }
@@ -251,8 +543,13 @@ mod tests {
                     follower: false,
                     pre: row::Pre::default(),
                     post: row::Post {
+                        state: 14,
+                        state_age: Some(0.0),
                         airborne: Some(0),
+                        jumps: Some(2),
                         stocks: 4,
+                        velocities: Some(row::Velocities::default()),
+                        hitlag: Some(0.0),
                         ..Default::default()
                     },
                 })
@@ -365,16 +662,30 @@ mod tests {
         assert_eq!(expected.fighters[0].port, Port::P3);
         assert_eq!(expected.fighters[0].position[0].to_bits(), 0x8000_0000);
         assert!(compare(&expected, &expected).is_none());
-        for &field in FIELDS {
+        for &field in BASE_FIELDS
+            .iter()
+            .chain(VELOCITY_FIELDS)
+            .chain([HITLAG_FIELD].iter())
+        {
             let mut actual = expected.clone();
             let fighter = &mut actual.fighters[0];
             match field {
+                "action_state" => fighter.action_state = None,
+                "action_age" => fighter.action_age = 1.0,
                 "position.x" => fighter.position[0] = 0.0,
                 "position.y" => fighter.position[1] = f32::from_bits(1),
                 "direction" => fighter.direction = -1.0,
                 "percent" => fighter.percent = 1.0,
+                "shield" => fighter.shield = 1.0,
                 "stocks" => fighter.stocks -= 1,
                 "airborne" => fighter.airborne = true,
+                "jumps_remaining" => fighter.jumps_remaining -= 1,
+                "velocities.self_x_air" => fighter.velocities.as_mut().unwrap()[0] = 1.0,
+                "velocities.self_y" => fighter.velocities.as_mut().unwrap()[1] = 1.0,
+                "velocities.knockback_x" => fighter.velocities.as_mut().unwrap()[2] = 1.0,
+                "velocities.knockback_y" => fighter.velocities.as_mut().unwrap()[3] = 1.0,
+                "velocities.self_x_ground" => fighter.velocities.as_mut().unwrap()[4] = 1.0,
+                "hitlag" => fighter.hitlag = Some(1.0),
                 _ => unreachable!(),
             }
             let difference = compare(&expected, &actual).unwrap();
@@ -399,7 +710,7 @@ mod tests {
         ))
         .unwrap();
         let game = game::Match::new(data, 1).unwrap();
-        let observed = observe(game.state(), PORTS);
+        let observed = observe(&game, PORTS);
         for (index, fighter) in observed.fighters.iter().enumerate() {
             let native = &game.state().fighters[index];
             assert_eq!(fighter.port, PORTS[index]);
@@ -409,8 +720,79 @@ mod tests {
             );
             assert_eq!(fighter.direction.to_bits(), native.facing.to_bits());
             assert_eq!(fighter.percent.to_bits(), native.percent.to_bits());
+            assert_eq!(fighter.action_age, native.action_frame as f32);
+            assert_eq!(fighter.action_state, action_state(native));
+            assert_eq!(fighter.shield.to_bits(), native.shield.health.to_bits());
             assert_eq!(fighter.stocks, native.stocks);
             assert_eq!(fighter.airborne, !native.grounded);
+            assert_eq!(fighter.jumps_remaining, 2 - native.locomotion.jumps_used);
+            assert_eq!(
+                fighter.velocities.unwrap().map(f32::to_bits),
+                [
+                    native.velocity[0],
+                    native.velocity[1],
+                    native.knockback[0],
+                    native.knockback[1],
+                    native.ground_velocity,
+                ]
+                .map(f32::to_bits)
+            );
+            assert_eq!(fighter.hitlag.unwrap().to_bits(), native.hitlag.to_bits());
+        }
+    }
+
+    #[test]
+    fn common_action_ids_preserve_the_pinned_motion_state_numbers() {
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        for (action, state) in [
+            (game::Action::Wait, 14),
+            (game::Action::Walk, 15),
+            (game::Action::Dash, 20),
+            (game::Action::JumpSquat, 24),
+            (game::Action::AttackAirLw, 69),
+            (game::Action::Guard, 179),
+            (game::Action::PassiveWallJump, 203),
+            (game::Action::ThrowLw, 222),
+            (game::Action::FlyReflectCeiling, 248),
+            (game::Action::DeadUpFallHitCameraIce, 10),
+        ] {
+            fighter.action = action;
+            assert_eq!(action_state(&fighter), Some(state), "{action:?}");
+        }
+
+        fighter.action = game::Action::Damage;
+        fighter.damage_motion = Some(skirmish::fighter::damage::DamageMotion::Ground {
+            level: 2,
+            height: skirmish::fighter::damage::HurtHeight::Low,
+        });
+        assert_eq!(action_state(&fighter), Some(83));
+        fighter.damage_motion = Some(skirmish::fighter::damage::DamageMotion::Fly {
+            height: skirmish::fighter::damage::HurtHeight::High,
+        });
+        assert_eq!(action_state(&fighter), Some(87));
+
+        fighter.action = game::Action::DownWait;
+        fighter.prone = Some(game::damage::ProneOrientation::FaceDown);
+        assert_eq!(action_state(&fighter), Some(192));
+        fighter.action = game::Action::CliffAttack;
+        fighter.ledge.slow = false;
+        assert_eq!(action_state(&fighter), Some(257));
+        fighter.ledge.slow = true;
+        assert_eq!(action_state(&fighter), Some(256));
+
+        for action in [
+            game::Action::SpecialN,
+            game::Action::SpecialAirN,
+            game::Action::Respawn,
+            game::Action::Eliminated,
+        ] {
+            fighter.action = action;
+            assert_eq!(action_state(&fighter), None, "{action:?}");
         }
     }
 }

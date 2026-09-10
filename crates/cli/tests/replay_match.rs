@@ -6,7 +6,8 @@ use skirmish::game::{Action, BUTTON_A, BUTTON_X, Controller, Event, State};
 use skirmish_replay::{
     Checkpoint,
     match_validation::{self as replay_match, Initialization, Outcome, Report},
-    slippi::{Port, Replay, Timeline},
+    observation,
+    slippi::{Port, Replay, Timeline, Version},
 };
 use std::{fs, process::Command};
 
@@ -96,15 +97,42 @@ impl Recording {
                     pre.triggers_physical.r.set(row, Some(0.0));
                     let fighter = &state.fighters[player];
                     let post = &mut port.leader.post;
+                    post.state.set(
+                        row,
+                        Some(observation::action_state(fighter).expect(
+                            "the synthetic recording uses only mapped common action states",
+                        )),
+                    );
+                    post.state_age
+                        .as_mut()
+                        .unwrap()
+                        .set(row, Some(fighter.action_frame as f32));
                     post.position.x.set(row, Some(fighter.position[0]));
                     post.position.y.set(row, Some(fighter.position[1]));
                     post.direction.set(row, Some(fighter.facing));
                     post.percent.set(row, Some(fighter.percent));
+                    post.shield.set(row, Some(fighter.shield.health));
                     post.stocks.set(row, Some(fighter.stocks));
                     post.airborne
                         .as_mut()
                         .unwrap()
                         .set(row, Some(u8::from(!fighter.grounded)));
+                    post.jumps.as_mut().unwrap().set(
+                        row,
+                        Some(2_u8.saturating_sub(fighter.locomotion.jumps_used)),
+                    );
+                    if let Some(velocity) = &mut post.velocities {
+                        velocity.self_x_air.set(row, Some(fighter.velocity[0]));
+                        velocity.self_y.set(row, Some(fighter.velocity[1]));
+                        velocity.knockback_x.set(row, Some(fighter.knockback[0]));
+                        velocity.knockback_y.set(row, Some(fighter.knockback[1]));
+                        velocity
+                            .self_x_ground
+                            .set(row, Some(fighter.ground_velocity));
+                    }
+                    if let Some(hitlag) = &mut post.hitlag {
+                        hitlag.set(row, Some(fighter.hitlag));
+                    }
                 }
             }
             edit(frames);
@@ -167,7 +195,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v1");
+    assert_eq!(report.policy, "fighter-post-v2");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -247,6 +275,118 @@ fn first_late_post_mismatch_reports_the_matched_prefix_and_expected_bits() {
             assert_ne!(difference.expected, difference.actual);
         }
         other => panic!("expected a late position mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn every_reported_post_field_detects_its_first_file_backed_difference() {
+    let recording = Recording::new();
+    let row = 37;
+    let player = 1;
+    let fighter = &recording.states[row].fighters[player];
+    for field in observation::fields(Version(3, 18, 0)) {
+        let bytes = recording.bytes(support::Fixture::default(), |frames| {
+            let post = &mut frames.ports[player].leader.post;
+            match field {
+                "action_state" => post.state.set(row, Some(u16::MAX)),
+                "action_age" => post
+                    .state_age
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.action_frame as f32 + 0.5)),
+                "position.x" => post.position.x.set(row, Some(fighter.position[0] + 0.25)),
+                "position.y" => post.position.y.set(row, Some(fighter.position[1] - 0.25)),
+                "direction" => post.direction.set(row, Some(-fighter.facing)),
+                "percent" => post.percent.set(row, Some(fighter.percent + 0.25)),
+                "shield" => post.shield.set(row, Some(fighter.shield.health + 0.25)),
+                "stocks" => post.stocks.set(row, Some(fighter.stocks.saturating_sub(1))),
+                "airborne" => post
+                    .airborne
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(u8::from(fighter.grounded))),
+                "jumps_remaining" => post.jumps.as_mut().unwrap().set(
+                    row,
+                    Some(
+                        2_u8.saturating_sub(fighter.locomotion.jumps_used)
+                            .saturating_add(1),
+                    ),
+                ),
+                "velocities.self_x_air" => post
+                    .velocities
+                    .as_mut()
+                    .unwrap()
+                    .self_x_air
+                    .set(row, Some(fighter.velocity[0] + 0.25)),
+                "velocities.self_y" => post
+                    .velocities
+                    .as_mut()
+                    .unwrap()
+                    .self_y
+                    .set(row, Some(fighter.velocity[1] + 0.25)),
+                "velocities.knockback_x" => post
+                    .velocities
+                    .as_mut()
+                    .unwrap()
+                    .knockback_x
+                    .set(row, Some(fighter.knockback[0] + 0.25)),
+                "velocities.knockback_y" => post
+                    .velocities
+                    .as_mut()
+                    .unwrap()
+                    .knockback_y
+                    .set(row, Some(fighter.knockback[1] + 0.25)),
+                "velocities.self_x_ground" => post
+                    .velocities
+                    .as_mut()
+                    .unwrap()
+                    .self_x_ground
+                    .set(row, Some(fighter.ground_velocity + 0.25)),
+                "hitlag" => post
+                    .hitlag
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.hitlag + 0.25)),
+                _ => unreachable!(),
+            }
+        });
+        let report = recording.compare(&bytes);
+        assert!(
+            matches!(
+                report.outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames,
+                    ref difference,
+                } if frame == FIRST + row as i32
+                    && checked_frames == row as u64
+                    && difference.port == Port::P3
+                    && difference.field == field
+            ),
+            "{field}: {report:?}"
+        );
+    }
+}
+
+#[test]
+fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
+    let recording = Recording::new();
+    for version in [Version(2, 0, 0), Version(3, 5, 0), Version(3, 8, 0)] {
+        let bytes = recording.bytes(
+            support::Fixture {
+                version,
+                ..Default::default()
+            },
+            |_| {},
+        );
+        let report = recording.compare(&bytes);
+        matched(&report, FIRST, recording.inputs.len());
+        assert_eq!(report.fields, observation::fields(version));
+        assert_eq!(
+            report.fields.contains(&"velocities.self_x_air"),
+            version.gte(3, 5)
+        );
+        assert_eq!(report.fields.contains(&"hitlag"), version.gte(3, 8));
     }
 }
 
@@ -565,7 +705,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v1");
+        assert_eq!(report["policy"], "fighter-post-v2");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],
