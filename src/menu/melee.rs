@@ -254,8 +254,8 @@ mod tests {
         const SOURCE_FRAME: f32 = 5.0;
         const CANVAS: [f32; 2] = [640.0, 480.0];
         const CAMERA_EYE: [f32; 3] = [0.0, 0.0, 51.0];
-        const CAMERA_VERTICAL_FOV_DEGREES: f32 = 41.538_997_65;
-        const CAMERA_ASPECT: f32 = 1.333_333_015;
+        const CAMERA_VERTICAL_FOV_DEGREES: f64 = 41.538_997_65;
+        const CAMERA_ASPECT: f64 = 1.333_333_015;
         const POINTER_TOLERANCE: f32 = 8.0;
         const EPSILON: f32 = 0.000_1;
         const PROJECTED_LABELS: [(MainItem, HitRect); 5] = [
@@ -302,7 +302,7 @@ mod tests {
              {CAMERA_VERTICAL_FOV_DEGREES}, aspect {CAMERA_ASPECT}"
         );
         assert!(
-            (CANVAS[0] / CANVAS[1] - CAMERA_ASPECT).abs() <= 0.000_001,
+            (f64::from(CANVAS[0]) / f64::from(CANVAS[1]) - CAMERA_ASPECT).abs() <= 0.000_001,
             "invalid pinned projection provenance: {provenance}"
         );
 

@@ -241,8 +241,8 @@ mod tests {
         }
         let transform =
             PresentationTransform::new([1280, 960], [2560, 1920], MELEE_AUTHORED_EXTENT);
-        // Twice the source-derived authored center of the VS label.
-        host.pointer_primary_down([422.098, 387.023], transform);
+        // Twice the independently recorded authored center of the VS label.
+        host.pointer_primary_down([386.454_7, 388.632_2], transform);
         assert!(matches!(
             host.tick(&[], true).as_slice(),
             [

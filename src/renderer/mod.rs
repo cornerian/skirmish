@@ -1,5 +1,6 @@
 //! Native presentation, independent of simulation state and game resources.
 pub mod audio;
+pub mod clock;
 pub mod controls;
 #[path = "renderer.rs"]
 pub mod gpu;

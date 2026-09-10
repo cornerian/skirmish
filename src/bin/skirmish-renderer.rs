@@ -18,6 +18,7 @@ use skirmish::{
     },
     renderer::{
         audio::AudioOutput,
+        clock::FixedStepClock,
         gpu::{WindowRenderer, render_headless},
         melee as melee_renderer,
         menu_host::MenuHost,
@@ -25,11 +26,6 @@ use skirmish::{
         viewport::MELEE_AUTHORED_EXTENT,
     },
 };
-
-const FRAME_RATE: u8 = 60;
-const FRAME_BASE_NANOS: u64 = 1_000_000_000 / FRAME_RATE as u64;
-const FRAME_REMAINDER_NANOS: u8 = (1_000_000_000 % FRAME_RATE as u64) as u8;
-const MAX_CATCH_UP_TICKS: u8 = 4;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -70,8 +66,7 @@ struct App {
     visible: bool,
     quit: bool,
     dirty: bool,
-    next_frame: Instant,
-    frame_phase: u8,
+    frame_clock: FixedStepClock,
     presented_frames: u64,
     frame_limit: Option<u64>,
 }
@@ -114,8 +109,7 @@ impl App {
                     self.visible = true;
                     self.dirty = true;
                     if resumed {
-                        self.next_frame = Instant::now();
-                        self.frame_phase = 0;
+                        self.frame_clock.rebase(Instant::now());
                     }
                 }
                 WindowEvent::Resized(_, _)
@@ -218,22 +212,6 @@ impl App {
         self.visible && width > 0 && height > 0
     }
 
-    fn advance_frame_deadline(&mut self) {
-        let mut nanos = FRAME_BASE_NANOS;
-        self.frame_phase += FRAME_REMAINDER_NANOS;
-        if self.frame_phase >= FRAME_RATE {
-            self.frame_phase -= FRAME_RATE;
-            nanos += 1;
-        }
-        self.next_frame += Duration::from_nanos(nanos);
-    }
-
-    fn drop_frame_debt(&mut self, now: Instant) {
-        self.next_frame = now;
-        self.frame_phase = 0;
-        self.advance_frame_deadline();
-    }
-
     fn apply_menu_effects(&mut self, effects: Vec<MenuEffect>) {
         for effect in effects {
             match effect {
@@ -281,21 +259,14 @@ impl App {
             }
             let now = Instant::now();
             self.check_audio();
-            let frame_due = self.drawable() && now >= self.next_frame;
+            let frame_due = self.drawable() && self.frame_clock.is_due(now);
             if frame_due {
                 let controller_samples = if let Some(controllers) = &mut self.controllers {
                     controllers.poll().context("polling menu controllers")?
                 } else {
                     Vec::new()
                 };
-                let mut due_ticks = 0;
-                while now >= self.next_frame && due_ticks < MAX_CATCH_UP_TICKS {
-                    self.advance_frame_deadline();
-                    due_ticks += 1;
-                }
-                if now >= self.next_frame {
-                    self.drop_frame_debt(now);
-                }
+                let due_ticks = self.frame_clock.consume_due(now);
                 for tick in 0..due_ticks {
                     if let Some(menu) = &mut self.menu {
                         let effects = if tick + 1 == due_ticks {
@@ -331,7 +302,7 @@ impl App {
             let mut wait = Duration::from_millis(250);
             if self.drawable() && (self.dirty || self.frame_limit.is_some() || self.menu.is_some())
             {
-                wait = wait.min(self.next_frame.saturating_duration_since(Instant::now()));
+                wait = wait.min(self.frame_clock.time_until_next(Instant::now()));
             }
             // SDL waits in integer milliseconds. Round up to avoid busy polling
             // for the fractional millisecond at the end of a 60 Hz tick.
@@ -418,8 +389,7 @@ fn main() -> Result<()> {
         visible: true,
         quit: false,
         dirty: true,
-        next_frame: Instant::now(),
-        frame_phase: 0,
+        frame_clock: FixedStepClock::new(Instant::now()),
         presented_frames: 0,
         frame_limit: cli.frames,
     }
