@@ -2,14 +2,14 @@
 
 `rules.grab` enables physical Z-button catch dispatch and supplies the signed
 stick thresholds used by ordinary throw selection, plus explicit hold-timer,
-mash and release-speed coefficients. Each `fighters[].grab`
+mash, release-speed and throw-weight coefficients. Each `fighters[].grab`
 resource supplies separate complete standing and dash-catch poses with
 bone-attached grab capsules, their explicit pull durations, two bone-local
 attachment anchors, complete holder poses for pummel and four throws, and the
 fighter's own CaptureDamage, CatchCut and CaptureCut poses.
 Pummel supplies one captured-damage frame, damage value, and native move-table
-identity; each throw supplies its own identity, release event, and hit
-coefficients. The identities are required when stale-move rules are enabled.
+identity; each throw supplies its own identity, weight-independent flag, release
+event, and hit coefficients. The identities are required when stale-move rules are enabled.
 Every fighter needs parameters when the common profile is enabled.
 
 A catch tests its current sampled grab capsules against enabled, grabbable target
@@ -58,6 +58,12 @@ records the holder's throw instance. Holder stock loss resets the queue. A
 blast-zone exit also clears both sides of the relationship before publishing
 stock loss.
 
+Following `ftCo_800DD4B0`, each direction either advances at rate one or at
+`1 / (victim weight * common scale)`. Holder and victim share the fractional
+clock in checkpointed physics state. Integer pose sampling follows that clock,
+and a rate above one stops at the release event instead of skipping it. Release
+clears the pair clock and restores the holder's ordinary rate-one recovery.
+
 `game_grab` covers separate standing/dash bone contact versus a miss, Dash/Run
 entry, retained dash momentum, pending and completed Turn facing, Squat entry,
 pummel priority,
@@ -66,16 +72,18 @@ queue insertion and death reset, shared hitlag, sampled holder and victim
 reaction poses, independent reaction completion, passive and mashed escape,
 button and analog-shoulder freshness, stick latches, hitlag timer freeze, cut
 actions and release motion, all throw directions, input suppression, checkpoint replay, stable
-simultaneous-catch order, airborne rejection, hurtbox pair cleanup on KO, and
+simultaneous-catch order, airborne rejection, weight-dependent and independent
+throw timing, fast event crossing, hurtbox pair cleanup on KO, and
 malformed resources. `game_hurtbox_eligibility` adds the per-capsule
 state/grabbable filters and directional bone scale. Three grab/throw conformance
 scenarios now run normally. `fighter::grab` unit tests cover the exact fresh-A
-predicate and mash mutation. `grab_differential` compares the three retained
+predicate, mash mutation, and throw-rate branch and operand order.
+`grab_differential` compares the three retained
 throw stick-crossing predicates; `grab_mash_differential` compares the complete
 mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C.
 
 This profile does not yet implement tether catches, cargo carries, separate
-high/low capture reactions, weight-scaled animation rate, character overrides, or multiplayer
+high/low capture reactions, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.

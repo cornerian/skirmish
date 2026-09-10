@@ -25,6 +25,8 @@ pub struct Rules {
     pub up_threshold: f32,
     /// Signed negative common-data threshold.
     pub down_threshold: f32,
+    /// Common x37C multiplier for victim-weight-dependent throw animation.
+    pub throw_weight_scale: f32,
     pub escape: EscapeRules,
 }
 
@@ -106,6 +108,9 @@ pub struct Throw {
     /// Native move-table identity. Sentinel 1 is exempt from stale damage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_id: Option<u16>,
+    /// The fighter's per-direction weight-independent throw mask.
+    #[serde(default)]
+    pub weight_independent: bool,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
     /// Scripted release event. Zero is excluded so entry is observable.
@@ -139,6 +144,9 @@ pub struct State {
     pub pummel_hit: bool,
     pub escape_timer: f32,
     pub mash: input::MashState,
+    /// Paired HSD animation time and rate while a throw still owns its victim.
+    pub throw_elapsed: f32,
+    pub throw_rate: f32,
 }
 
 pub(crate) fn validate(
@@ -151,6 +159,7 @@ pub(crate) fn validate(
         rules.horizontal_threshold,
         rules.up_threshold,
         rules.down_threshold,
+        rules.throw_weight_scale,
         rules.escape.timer_base,
         rules.escape.timer_percent_scale,
         rules.escape.timer_decrement,
@@ -165,6 +174,7 @@ pub(crate) fn validate(
         || !(0.0..=1.0).contains(&rules.up_threshold)
         || rules.up_threshold == 0.0
         || !(-1.0..0.0).contains(&rules.down_threshold)
+        || !(0.0..1_000_000.0).contains(&rules.throw_weight_scale)
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_base)
         || !(0.0..1_000.0).contains(&rules.escape.timer_percent_scale)
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_decrement)
@@ -296,6 +306,10 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
             .axes
             .into_iter()
             .any(|axis| !(-1..=1).contains(&axis))
+        || !fighter.grab.throw_elapsed.is_finite()
+        || !fighter.grab.throw_rate.is_finite()
+        || fighter.grab.throw_elapsed < 0.0
+        || fighter.grab.throw_rate < 0.0
         || fighter.grab.pummel_hit
             && (fighter.grab.victim.is_none() || fighter.action != Action::CatchAttack)
     {
@@ -310,15 +324,33 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
                 && partner.grab.victim.is_none()
                 && partner.grab.captor == Some(player)
                 && !partner.grab.pummel_hit
+                && valid_throw_clock(fighter, partner)
                 && pair_actions(fighter.action, partner.action)
         }
         (None, Some(holder)) => {
             holder == other
                 && partner.grab.victim == Some(player)
                 && partner.grab.captor.is_none()
+                && valid_throw_clock(partner, fighter)
                 && pair_actions(partner.action, fighter.action)
         }
         (Some(_), Some(_)) => false,
+    }
+}
+
+fn valid_throw_clock(holder: &Fighter, victim: &Fighter) -> bool {
+    if matches!(
+        holder.action,
+        Action::ThrowF | Action::ThrowB | Action::ThrowHi | Action::ThrowLw
+    ) {
+        holder.grab.throw_rate > 0.0
+            && holder.grab.throw_rate.to_bits() == victim.grab.throw_rate.to_bits()
+            && holder.grab.throw_elapsed.to_bits() == victim.grab.throw_elapsed.to_bits()
+    } else {
+        holder.grab.throw_rate == 0.0
+            && holder.grab.throw_elapsed == 0.0
+            && victim.grab.throw_rate == 0.0
+            && victim.grab.throw_elapsed == 0.0
     }
 }
 
@@ -608,24 +640,67 @@ pub(crate) fn update_pairs(
     Ok(frozen)
 }
 
-pub(crate) fn synchronize_actions(state: &mut MatchState) {
+pub(crate) fn synchronize_actions(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
     for holder in 0..2 {
         let Some(victim) = state.fighters[holder].grab.victim else {
             continue;
         };
-        let victim_action = match state.fighters[holder].action {
-            Action::ThrowF => Some(Action::ThrownF),
-            Action::ThrowB => Some(Action::ThrownB),
-            Action::ThrowHi => Some(Action::ThrownHi),
-            Action::ThrowLw => Some(Action::ThrownLw),
-            _ => None,
+        let holder_action = state.fighters[holder].action;
+        let victim_action = match holder_action {
+            Action::ThrowF => Action::ThrownF,
+            Action::ThrowB => Action::ThrownB,
+            Action::ThrowHi => Action::ThrownHi,
+            Action::ThrowLw => Action::ThrownLw,
+            _ => continue,
         };
-        if let Some(action) = victim_action
-            && state.fighters[victim].action != action
-        {
-            simulation::enter(&mut state.fighters[victim], action);
+        if state.fighters[holder].grab.throw_rate == 0.0 {
+            let throw = data.fighters[holder]
+                .grab
+                .as_ref()
+                .and_then(|parameters| throw_for_action(&parameters.throws, holder_action))
+                .ok_or_else(|| Error::Data("throw state requires grab resources".into()))?;
+            let rate = input::throw_animation_rate(
+                throw.weight_independent,
+                data.fighters[victim].weight,
+                data.rules.grab.as_ref().unwrap().throw_weight_scale,
+            );
+            if !rate.is_finite() || rate <= 0.0 {
+                return Err(Error::Data("invalid weight-dependent throw rate".into()));
+            }
+            state.fighters[holder].grab.throw_rate = rate;
+            state.fighters[victim].grab.throw_rate = rate;
+        }
+        if state.fighters[victim].action != victim_action {
+            simulation::enter(&mut state.fighters[victim], victim_action);
         }
     }
+    Ok(())
+}
+
+/// Advances paired HSD time. Before release, a fast rate stops at the scripted
+/// event frame; the release callback restores ordinary rate-one advancement.
+pub(crate) fn paired_throw_release(
+    data: &MatchData,
+    state: &MatchState,
+    player: usize,
+) -> Option<u32> {
+    let holder = state.fighters[player].grab.captor.unwrap_or(player);
+    state.fighters[holder].grab.victim?;
+    let parameters = data.fighters[holder].grab.as_ref()?;
+    throw_for_action(&parameters.throws, state.fighters[holder].action)
+        .map(|throw_| throw_.release_frame)
+}
+
+pub(crate) fn advance_action_frame(fighter: &mut Fighter, release_frame: Option<u32>) -> bool {
+    let Some(release_frame) = release_frame else {
+        return false;
+    };
+    if fighter.grab.throw_rate == 0.0 {
+        return false;
+    }
+    fighter.grab.throw_elapsed += fighter.grab.throw_rate;
+    fighter.action_frame = (fighter.grab.throw_elapsed as u32).min(release_frame);
+    true
 }
 
 pub(crate) fn release_broken_pairs(state: &mut MatchState) {

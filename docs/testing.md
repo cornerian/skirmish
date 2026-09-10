@@ -188,7 +188,8 @@ The [grab profile](grabs.md) promotes all three paired grab/throw conformance
 scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
 Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
 directions, pummel priority and repeat lifecycle, one captured-damage
-event, shared hitlag, sampled holder/victim attachment motion, independent
+event, shared hitlag, sampled holder/victim attachment motion, paired fractional
+throw timing for heavy/light victims and weight-independent directions, independent
 CaptureDamage completion, passive and button/stick/analog-shoulder-mashed
 escape, logical shoulder rearming, timer freeze,
 release motion and cut actions, main/C-stick priority and fresh-edge history,

@@ -80,6 +80,20 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     if let Some(staling) = &rules.staling {
         super::staling::validate(staling)?;
     }
+    if let Some(grab) = &rules.grab {
+        for fighter in &data.fighters {
+            let denominator = fighter.weight * grab.throw_weight_scale;
+            let rate = crate::fighter::grab::throw_animation_rate(
+                false,
+                fighter.weight,
+                grab.throw_weight_scale,
+            );
+            require(
+                denominator.is_finite() && denominator > 0.0 && rate.is_finite() && rate > 0.0,
+                "invalid weight-dependent throw rate",
+            )?;
+        }
+    }
     if let Some(nudge) = &rules.nudge {
         require(
             nonnegative([

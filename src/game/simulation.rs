@@ -345,7 +345,7 @@ pub(crate) fn advance(
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
         }
     }
-    grab::synchronize_actions(state);
+    grab::synchronize_actions(data, state)?;
 
     for player in 0..2 {
         if !active[player] {
@@ -709,13 +709,16 @@ pub(crate) fn advance(
                 lose_stock(data, state, player, false)?;
                 continue;
             }
+            let throw_release = grab::paired_throw_release(data, state, player);
             let fighter = &mut state.fighters[player];
             if !frozen[player] {
                 // The last invincible frame still protects this frame's contacts.
                 fighter.invincibility = fighter.invincibility.saturating_sub(1);
             }
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
-                fighter.action_frame = fighter.action_frame.saturating_add(1);
+                if !grab::advance_action_frame(fighter, throw_release) {
+                    fighter.action_frame = fighter.action_frame.saturating_add(1);
+                }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);
             }
         }

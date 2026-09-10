@@ -213,7 +213,9 @@ throw selection, applies one shared-hitlag percent event, starts the victim's
 sampled CaptureDamage pose sequence, and returns both sides independently to
 hold without breaking the pair. The shared input history applies the original throw
 direction priority, and each supplied release event enters the ordinary damage
-pipeline. Pair ownership, pummel-hit history, the hold timer and mash latches are
+pipeline. Victim weight and the per-direction independence flag drive a shared
+fractional throw clock. Pair ownership, pummel-hit history, throw time and rate,
+the hold timer and mash latches are
 checkpointed and cleared transactionally on release or stock loss. Captured
 fighters also run an explicit percent-scaled hold timer and the complete
 button/stick `ftCommon_GrabMash`

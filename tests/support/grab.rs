@@ -11,6 +11,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         horizontal_threshold: 0.7,
         up_threshold: 0.6,
         down_threshold: -0.6,
+        throw_weight_scale: 0.01,
         escape: EscapeRules {
             timer_base: 100.0,
             timer_percent_scale: 0.5,
@@ -48,6 +49,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 90 => 43,
                 _ => 44,
             }),
+            weight_independent: false,
             poses: vec![bones.clone(); 6],
             release_frame: 2,
             hit: ThrowHit {

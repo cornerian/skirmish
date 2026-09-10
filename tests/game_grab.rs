@@ -285,6 +285,61 @@ fn all_four_throw_directions_release_into_the_shared_damage_pipeline() {
 }
 
 #[test]
+fn victim_weight_scales_paired_throw_timing_and_fast_rates_cannot_skip_release() {
+    let mut heavy = data();
+    heavy.fighters[1].weight = 200.0;
+    let mut game = held(heavy);
+    let entered = step(&mut game, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    for fighter in &entered.fighters {
+        assert_eq!(fighter.action_frame, 0);
+        assert_eq!(fighter.grab.throw_elapsed, 0.5);
+        assert_eq!(fighter.grab.throw_rate, 0.5);
+    }
+    let checkpoint = game.checkpoint();
+    let suffix = (0..4).map(|_| step(&mut game, IDLE)).collect::<Vec<_>>();
+    assert!(
+        suffix[..3]
+            .iter()
+            .all(|state| state.fighters[1].percent == 0.0)
+    );
+    assert_eq!(suffix[3].fighters[1].percent, 8.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in suffix {
+        assert_eq!(step(&mut game, IDLE), expected);
+    }
+
+    let mut independent = data();
+    independent.fighters[1].weight = 200.0;
+    independent.fighters[0]
+        .grab
+        .as_mut()
+        .unwrap()
+        .throws
+        .backward
+        .weight_independent = true;
+    let mut game = held(independent);
+    let entered = step(&mut game, input(0, 0, [-1.0, 0.0], [0.0; 2]));
+    assert_eq!(entered.fighters[0].grab.throw_rate, 1.0);
+    assert_eq!(step(&mut game, IDLE).fighters[1].percent, 0.0);
+    assert_eq!(step(&mut game, IDLE).fighters[1].percent, 8.0);
+
+    let mut light = data();
+    light.fighters[1].weight = 50.0;
+    let mut game = held(light);
+    let entered = step(&mut game, input(0, 0, [1.0, 0.0], [0.0; 2]));
+    assert_eq!(entered.fighters[0].grab.throw_rate, 2.0);
+    assert_eq!(entered.fighters[0].action_frame, 2);
+    let released = step(&mut game, IDLE);
+    assert_eq!(released.fighters[1].percent, 8.0);
+    assert!(
+        released
+            .fighters
+            .iter()
+            .all(|fighter| fighter.grab == grab::State::default())
+    );
+}
+
+#[test]
 fn cstick_throws_and_source_priority_select_main_horizontal_first() {
     let mut cstick = held(data());
     let entered = step(&mut cstick, input(0, 0, [0.0; 2], [0.0, 1.0]));
@@ -840,6 +895,9 @@ fn malformed_grab_resources_are_rejected() {
     let mut cases = Vec::new();
     let mut bad = data();
     bad.rules.grab.as_mut().unwrap().down_threshold = 0.0;
+    cases.push(bad);
+    let mut bad = data();
+    bad.rules.grab.as_mut().unwrap().throw_weight_scale = 0.0;
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0].grab.as_mut().unwrap().catch.frames[0]

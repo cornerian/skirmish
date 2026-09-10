@@ -58,6 +58,16 @@ pub const fn pummel_pressed(pressed_buttons: u16) -> bool {
     pressed_buttons & 0x100 != 0
 }
 
+/// Victim-weight branch retained from `ftCo_800DD4B0`. Multiplication precedes
+/// division; an independent direction does not inspect either coefficient.
+pub fn throw_animation_rate(independent: bool, victim_weight: f32, scale: f32) -> f32 {
+    if independent {
+        1.0
+    } else {
+        1.0 / (victim_weight * scale)
+    }
+}
+
 /// A main-stick horizontal threshold crossing has priority over vertical throws.
 pub fn fresh_horizontal(current: f32, previous: f32, threshold: f32) -> bool {
     (previous < threshold && current >= threshold)
@@ -136,6 +146,18 @@ mod tests {
         assert!(!pummel_pressed(0x200));
         assert!(pummel_pressed(0x100));
         assert!(pummel_pressed(0x110));
+    }
+
+    #[test]
+    fn throw_rate_preserves_the_source_branch_and_operation_order() {
+        assert_eq!(throw_animation_rate(true, f32::NAN, f32::NAN), 1.0);
+        let weight = f32::from_bits(0x5104_7A75);
+        let scale = f32::from_bits(0x2F2F_5F4B);
+        assert_eq!(
+            throw_animation_rate(false, weight, scale).to_bits(),
+            0x3E34_8831
+        );
+        assert_eq!(((1.0 / weight) / scale).to_bits(), 0x3E34_8830);
     }
 
     #[test]
