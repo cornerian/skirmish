@@ -1456,7 +1456,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use super::super::scene::{PeAlphaOp, RenderMode, VisualResourceId};
+    use super::super::scene::{GeometrySpace, PeAlphaOp, RenderMode, VisualResourceId};
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1558,6 +1558,7 @@ mod tests {
             resources: Vec::new(),
             joints: Vec::new(),
             meshes: vec![Mesh {
+                geometry_space: GeometrySpace::World,
                 name: "solid quad".into(),
                 joint: Some(7),
                 instance_id: Some("quad".into()),

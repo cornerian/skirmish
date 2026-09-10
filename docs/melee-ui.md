@@ -129,11 +129,20 @@ color channels remain identity factors when a material update arrives.
 
 These exported offsets are still resource-local and cannot distinguish runtime
 clones, so they are a transitional renderer boundary rather than canonical
-scene-instance identities. No animation manifest or synchronization layer
-drives the updates, and joint posing, skinning, texture selection, UV
-transforms, texture color registers, complete PE state, and additional texture
-stages are not GPU-bound. Consequently the rendered menu remains the
-serialized default pose.
+scene-instance identities. The exact join is specified in the
+[visual export contract](resources.md#exact-presentation-visual-exports):
+declared resource hash and offset spaces, JObj/DObj/MObj/TObj occurrence
+ordinals, and a per-draw `geometry_space`. `VisualPresentationBinding`
+cross-checks that declaration against the manifest and routes sampled
+visibility and material color to exact draws; joint-local deltas are retained
+with an explicit reason (`BakedWorldGeometry`, `UnmappedJointLocal`, or
+`UnsupportedJointLocal`) because the GPU has no per-draw joint transform yet.
+The resource project's current MnMaAll export carries none of that metadata
+and bakes every part into world space, so the interactive host still advances
+a plain `AnimationPlayback` and cannot construct exact bindings. Joint posing,
+skinning, texture selection, UV transforms, texture color registers, complete
+PE state, and additional texture stages are not GPU-bound. Consequently the
+rendered menu remains the serialized default pose.
 
 Versus behavior is a connected declarative menu, not an unavailable screen.
 Its Melee, Tournament, Special, Rules, and Name entries carry the source

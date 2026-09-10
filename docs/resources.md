@@ -61,3 +61,50 @@ When usable exports arrive, integrate one fighter pair and stage first, resolve
 their gameplay resource references, and validate bone poses, contacts and action
 timing before treating that bundle as a faithful matchup. Visual resources can
 be connected later without becoming a headless runtime dependency.
+
+## Exact presentation visual exports
+
+The `skirmish-visual-v1` scene schema carries an additive contract for exact
+presentation identity. A visual export that opts in must satisfy all of it;
+the loader and `renderer::presentation::VisualPresentationBinding` reject
+partial metadata instead of guessing, and never fall back to bare offsets or
+filenames for exact bindings.
+
+| Field | Requirement |
+| --- | --- |
+| `resources[].id` | Archive ID including its extension (`MnMaAll.dat`). |
+| `resources[].sha256` | Lowercase SHA-256 of the complete original DAT. It must equal the presentation manifest's `resource.sha256`. |
+| `resources[].offset_spaces` | `{"joints", "materials", "textures"}`, each `data_section` or `file`, stating the coordinate space of every descriptor identity below. The manifest's `visual_offsets` must agree; a mismatch is a bind error. |
+| mesh `joint` | Owning JObj descriptor offset in the joints space. |
+| mesh `resource_id`, `dobj_index` | The owning archive and the zero-based ordinal of the DObj in that JObj's `next` list. One JObj offset belongs to exactly one resource. |
+| mesh `geometry_space` | `joint_local` when positions are relative to the owning joint (rigid parts), `world` when the exporter baked the joint chain (envelope-skinned parts). Required for every exact mesh; `joint_local` also requires the owning joint's complete `flags`/`local`/`world`/`inverse_bind` pose. |
+| material `material_offset` | MObj descriptor offset in the materials space, plus the existing `render_mode` and pixel-engine fields. |
+| material `textures[i].tobj_offset`, `tobj_index` | TObj descriptor offset in the textures space; `tobj_index` must equal the stage ordinal `i`. |
+
+The consumer joins these occurrences to a `skirmish-presentation-v1` manifest
+bound over the same archive bytes. Sampled joint visibility and material color
+reach exact GPU draw occurrences. Native joint-local transforms are routed only
+for `joint_local` draws; world-baked draws retain them as
+`BakedWorldGeometry`, joints without draws as `UnmappedJointLocal`, and
+joint-local draws as `UnsupportedJointLocal` until the renderer carries a
+per-draw joint transform. Texture image, UV, and TEV register updates remain
+unsupported.
+
+`tests/presentation_binding.rs` exercises the whole chain with a pinned
+`MnMaAll.dat` rotation curve in a synthetic archive. Its blocked acceptance
+test binds the real export from `MNMAALL_DAT` and `MNMAALL_SCENE` against
+`tests/fixtures/melee-ui/mnmaall-visual-contract.json`.
+
+The resource project's current MnMaAll scene declares none of `resources`,
+`resource_id`, `dobj_index`, `tobj_index`, `offset_spaces`, or
+`geometry_space`, and writes every part in world space, so the interactive
+host cannot build exact bindings from it yet. Its reference report already
+carries `dobj_offset`, `material_offset`, `tobj_offset`, `local_positions`,
+`matrix_indices`, and the source hash, so the producer patch is narrow:
+`src/mesh.rs` (`Part` gains the DObj ordinal and its vertex space; `Mesh`
+gains the source hash and offset spaces), `src/visual.rs`
+(`Mesh::write_visual_scene_scales` emits the fields above and joint-local
+positions for single-matrix parts), `tools/model_recipes.py` (carries the
+ordinal, hash, and spaces into recipes), and the regenerated
+`assets/ui/menus/mnmaall/models/model.rs`. That repository is not modified
+from here without explicit authorization.

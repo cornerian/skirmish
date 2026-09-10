@@ -50,6 +50,11 @@ name = "menu_mouse_events"
 path = "tests/menu_mouse_events.rs"
 required-features = ["renderer"]
 
+[[test]]
+name = "presentation_binding"
+path = "tests/presentation_binding.rs"
+required-features = ["renderer"]
+
 [dependencies]
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"], optional = true }

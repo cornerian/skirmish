@@ -823,6 +823,12 @@ impl BoundPresentation {
         &self.diagnostics
     }
 
+    /// Coordinate spaces the manifest expects a corresponding visual export to
+    /// use for its joint, material, and texture identities.
+    pub const fn visual_offsets(&self) -> VisualOffsetSpaces {
+        self.visual_offsets
+    }
+
     /// Convert one exported ID into the canonical data-section coordinate.
     pub fn normalize_visual_offset(
         &self,

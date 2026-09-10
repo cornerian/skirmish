@@ -1,4 +1,5 @@
 //! CPU assets for the native visual export. This is a Lambert preview, not GX emulation.
+use crate::presentation::manifest::VisualOffsetSpaces;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::Value;
@@ -43,10 +44,15 @@ impl VisualResourceId {
 }
 
 /// Provenance required before visual offsets can be joined to a native manifest.
+///
+/// The exporter declares which coordinate space every descriptor identity uses
+/// so a presentation manifest can cross-check its own declaration instead of
+/// guessing from filenames or magic offsets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VisualResourceProvenance {
     id: VisualResourceId,
     sha256: Arc<str>,
+    offset_spaces: VisualOffsetSpaces,
 }
 
 impl VisualResourceProvenance {
@@ -56,6 +62,35 @@ impl VisualResourceProvenance {
 
     pub fn sha256(&self) -> &str {
         &self.sha256
+    }
+
+    /// Coordinate spaces of this resource's joint, material, and texture offsets.
+    pub const fn offset_spaces(&self) -> VisualOffsetSpaces {
+        self.offset_spaces
+    }
+}
+
+/// Coordinate space of an exported draw part's vertex positions.
+///
+/// Native joint animation can only move geometry that the exporter left in
+/// its owning joint's local space. World-baked geometry is still drawn at its
+/// serialized pose, but joint transforms are retained explicitly instead of
+/// being applied twice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GeometrySpace {
+    /// Positions already include the serialized joint chain (legacy exports and
+    /// envelope-skinned parts).
+    World,
+    /// Positions are relative to the owning source joint's transform.
+    JointLocal,
+}
+
+impl GeometrySpace {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::World => "world",
+            Self::JointLocal => "joint_local",
+        }
     }
 }
 
@@ -537,6 +572,8 @@ pub struct Mesh {
     pub instance_id: Option<String>,
     /// Complete resource/JObj/DObj identity, absent for legacy visual scenes.
     pub source_occurrence: Option<VisualDObjOccurrence>,
+    /// Declared vertex space; exact occurrences must state it explicitly.
+    pub geometry_space: GeometrySpace,
     pub vertices: Vec<Vertex>,
     /// Counterclockwise front faces, converted from the source's winding at load time.
     pub indices: Vec<u32>,
@@ -628,6 +665,8 @@ struct RawMesh {
     dobj_index: Option<u16>,
     #[serde(default)]
     instance_id: Option<String>,
+    #[serde(default)]
+    geometry_space: Option<String>,
     positions: Vec<[f32; 3]>,
     #[serde(default)]
     normals: Option<Vec<[f32; 3]>>,
@@ -654,6 +693,8 @@ struct RawMesh {
 struct RawVisualResource {
     id: String,
     sha256: String,
+    #[serde(default)]
+    offset_spaces: Option<VisualOffsetSpaces>,
 }
 
 #[derive(Deserialize)]
@@ -826,6 +867,11 @@ impl Scene {
             clear_color: [0.018, 0.025, 0.045, 1.0],
         };
         scene.warnings.push("Textured Lambert preview: GX TEV operations and fixed-point precision, source lighting, animation and skinning are not reproduced.".into());
+        let joint_poses: HashMap<u32, JointPose> = scene
+            .joints
+            .iter()
+            .filter_map(|joint| joint.pose.map(|pose| (joint.offset, pose)))
+            .collect();
         for mut raw in document.meshes {
             let count = raw.positions.len();
             validate_attribute(&raw.positions, count, &raw.name, "positions")?;
@@ -880,6 +926,13 @@ impl Scene {
             );
             let source_occurrence = visual_dobj_occurrence(&raw, &resource_ids)
                 .with_context(|| format!("{}: invalid source occurrence", raw.name))?;
+            let geometry_space = geometry_space(
+                raw.geometry_space.as_deref(),
+                source_occurrence.is_some(),
+                raw.joint
+                    .is_some_and(|joint| joint_poses.contains_key(&joint)),
+            )
+            .with_context(|| format!("{}: invalid geometry_space", raw.name))?;
             let material_source_id = optional_u32_field(&raw.material, "material_offset")
                 .with_context(|| format!("{}: invalid material_offset", raw.name))?
                 .map(MaterialSourceId::new);
@@ -1109,6 +1162,7 @@ impl Scene {
                 joint: raw.joint,
                 instance_id: raw.instance_id,
                 source_occurrence,
+                geometry_space,
                 vertices,
                 indices: raw.indices,
                 material: Material {
@@ -1154,6 +1208,7 @@ impl Scene {
             joint: None,
             instance_id: None,
             source_occurrence: None,
+            geometry_space: GeometrySpace::World,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
@@ -1208,6 +1263,7 @@ impl Scene {
             joint: None,
             instance_id: None,
             source_occurrence: None,
+            geometry_space: GeometrySpace::World,
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
@@ -1351,6 +1407,12 @@ fn load_visual_resources(
             "visual resource {:?} SHA-256 must be exactly 64 lowercase hexadecimal digits",
             resource.id
         );
+        let offset_spaces = resource.offset_spaces.with_context(|| {
+            format!(
+                "visual resource {:?} must declare offset_spaces for joints, materials, and textures as data_section or file",
+                resource.id
+            )
+        })?;
         let id = VisualResourceId(Arc::from(resource.id.as_str()));
         ensure!(
             ids.insert(resource.id.clone(), id.clone()).is_none(),
@@ -1360,9 +1422,41 @@ fn load_visual_resources(
         loaded.push(VisualResourceProvenance {
             id,
             sha256: Arc::from(resource.sha256),
+            offset_spaces,
         });
     }
     Ok((loaded, ids))
+}
+
+/// Resolve a draw part's declared vertex space.
+///
+/// Legacy parts default to world space. Exact occurrences must declare their
+/// space because the presentation layer routes joint transforms only to
+/// joint-local geometry, and joint-local parts need their owning joint's
+/// serialized pose to be drawn before any animation is applied.
+fn geometry_space(
+    declared: Option<&str>,
+    exact_occurrence: bool,
+    owner_pose_available: bool,
+) -> Result<GeometrySpace> {
+    let space = match (declared, exact_occurrence) {
+        (None, false) | (Some("world"), _) => GeometrySpace::World,
+        (None, true) => {
+            bail!("exact occurrences must declare geometry_space as world or joint_local")
+        }
+        (Some("joint_local"), true) => GeometrySpace::JointLocal,
+        (Some("joint_local"), false) => {
+            bail!("joint_local geometry requires an exact resource_id/dobj_index occurrence")
+        }
+        (Some(other), _) => bail!("unsupported geometry_space {other:?}"),
+    };
+    if space == GeometrySpace::JointLocal {
+        ensure!(
+            owner_pose_available,
+            "joint_local geometry requires the owning joint's complete pose metadata"
+        );
+    }
+    Ok(space)
 }
 
 fn visual_dobj_occurrence(
@@ -1711,6 +1805,7 @@ fn add_quad(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presentation::manifest::OffsetSpace;
     use serde_json::{Value, json};
     use std::fs;
 
@@ -1731,12 +1826,23 @@ mod tests {
         document["resources"] = json!([{
             "id": "fixture.dat",
             "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "offset_spaces": {"joints": "data_section", "materials": "file", "textures": "file"},
         }]);
         document["joints"] = json!([{"name": "root", "offset": 256}]);
         document["meshes"][0]["joint"] = json!(256);
         document["meshes"][0]["resource_id"] = json!("fixture.dat");
         document["meshes"][0]["dobj_index"] = json!(2);
+        document["meshes"][0]["geometry_space"] = json!("world");
         document
+    }
+
+    fn identity_pose() -> Value {
+        json!({
+            "flags": 0,
+            "local": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            "world": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            "inverse_bind": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        })
     }
 
     fn load_document(root: &Path, document: &Value) -> Result<Scene> {
@@ -1839,7 +1945,16 @@ mod tests {
             scene.resources[0].sha256(),
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
+        assert_eq!(
+            scene.resources[0].offset_spaces(),
+            VisualOffsetSpaces {
+                joints: OffsetSpace::DataSection,
+                materials: OffsetSpace::File,
+                textures: OffsetSpace::File,
+            }
+        );
         let mesh = &scene.meshes[0];
+        assert_eq!(mesh.geometry_space, GeometrySpace::World);
         let dobj = mesh.source_occurrence.as_ref().unwrap();
         assert_eq!(dobj.owner_joint.resource_id.as_str(), "fixture.dat");
         assert_eq!(dobj.owner_joint.visual_offset, 256);
@@ -1876,6 +1991,23 @@ mod tests {
     }
 
     #[test]
+    fn joint_local_geometry_is_retained_with_its_owning_pose() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut document = exact_document(json!({}));
+        document["joints"][0]
+            .as_object_mut()
+            .unwrap()
+            .extend(identity_pose().as_object().unwrap().clone());
+        document["meshes"][0]["geometry_space"] = json!("joint_local");
+
+        let scene = load_document(directory.path(), &document).unwrap();
+        assert_eq!(scene.meshes[0].geometry_space, GeometrySpace::JointLocal);
+        assert_eq!(scene.meshes[0].vertices[1].position, [1.0, 0.0, 0.0]);
+        assert!(scene.joints[0].pose.is_some());
+        assert_eq!(GeometrySpace::JointLocal.as_str(), "joint_local");
+    }
+
+    #[test]
     fn malformed_visual_resource_and_occurrence_metadata_is_rejected() {
         let directory = tempfile::tempdir().unwrap();
         let mut empty_resource = exact_document(json!({}));
@@ -1902,6 +2034,7 @@ mod tests {
             .push(json!({
                 "id": "other.dat",
                 "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                "offset_spaces": {"joints": "data_section", "materials": "file", "textures": "file"},
             }));
         let mut colliding_mesh = colliding_resource_joint["meshes"][0].clone();
         colliding_mesh["name"] = json!("other triangle");
@@ -1954,8 +2087,49 @@ mod tests {
         let anonymous_texture_without_material = exact_document(json!({
             "textures": [{}],
         }));
+        let mut missing_offset_spaces = exact_document(json!({}));
+        missing_offset_spaces["resources"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("offset_spaces");
+        let mut unknown_offset_space = exact_document(json!({}));
+        unknown_offset_space["resources"][0]["offset_spaces"]["joints"] = json!("absolute");
+        let mut partial_offset_spaces = exact_document(json!({}));
+        partial_offset_spaces["resources"][0]["offset_spaces"]
+            .as_object_mut()
+            .unwrap()
+            .remove("textures");
+        let mut undeclared_geometry_space = exact_document(json!({}));
+        undeclared_geometry_space["meshes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("geometry_space");
+        let mut unknown_geometry_space = exact_document(json!({}));
+        unknown_geometry_space["meshes"][0]["geometry_space"] = json!("bind_pose");
+        let mut joint_local_without_pose = exact_document(json!({}));
+        joint_local_without_pose["meshes"][0]["geometry_space"] = json!("joint_local");
+        let mut legacy_joint_local = document(json!({}));
+        legacy_joint_local["joints"] = json!([{"name": "root", "offset": 256}]);
+        legacy_joint_local["meshes"][0]["joint"] = json!(256);
+        legacy_joint_local["meshes"][0]["geometry_space"] = json!("joint_local");
 
         let cases = [
+            (missing_offset_spaces, "must declare offset_spaces"),
+            (unknown_offset_space, "unknown variant"),
+            (partial_offset_spaces, "missing field"),
+            (
+                undeclared_geometry_space,
+                "exact occurrences must declare geometry_space",
+            ),
+            (unknown_geometry_space, "unsupported geometry_space"),
+            (
+                joint_local_without_pose,
+                "requires the owning joint's complete pose metadata",
+            ),
+            (
+                legacy_joint_local,
+                "requires an exact resource_id/dobj_index occurrence",
+            ),
             (empty_resource, "resource ID is empty"),
             (invalid_hash, "64 lowercase hexadecimal digits"),
             (duplicate_resource, "duplicate visual resource ID"),

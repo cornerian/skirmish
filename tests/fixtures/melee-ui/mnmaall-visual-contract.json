@@ -1,0 +1,81 @@
+{
+  "schema": "skirmish-visual-contract-fixture-v1",
+  "purpose": "Acceptance expectations for the exact presentation visual export of the pinned MnMaAll.dat main-menu roots, consumed by tests/presentation_binding.rs::pinned_mnmaall_export_binds_every_animated_occurrence.",
+  "resource": {
+    "id": "MnMaAll.dat",
+    "sha256": "895e1895e004f84b2cec5583402dedc25ff6173b179f294d50e76945bae32ff0",
+    "data_section_file_offset": 32
+  },
+  "offset_spaces": {
+    "joints": "data_section",
+    "materials": "file",
+    "textures": "file"
+  },
+  "hierarchies": [
+    {
+      "id": "back",
+      "symbol": "MenMainBack_Top",
+      "model_root": 26664,
+      "joint_animation_root": 76892,
+      "material_animation_root": 83380,
+      "shape_animation_root": 108592,
+      "expected": {
+        "draws": 86,
+        "joints_with_draws": 85,
+        "world_baked_draws": 0,
+        "animated_materials": 0,
+        "animated_textures": 15,
+        "unmapped_animated_targets": []
+      }
+    },
+    {
+      "id": "panel",
+      "symbol": "MenMainPanel_Top",
+      "model_root": 140584,
+      "joint_animation_root": 350292,
+      "material_animation_root": 354560,
+      "shape_animation_root": 426336,
+      "expected": {
+        "draws": 47,
+        "joints_with_draws": 38,
+        "world_baked_draws": 12,
+        "animated_materials": 1,
+        "animated_textures": 3,
+        "unmapped_animated_targets": []
+      }
+    },
+    {
+      "id": "contop",
+      "symbol": "MenMainConTop_Top",
+      "model_root": 435944,
+      "joint_animation_root": 518904,
+      "material_animation_root": 526880,
+      "shape_animation_root": 751680,
+      "expected": {
+        "draws": 20,
+        "joints_with_draws": 14,
+        "world_baked_draws": 2,
+        "animated_materials": 13,
+        "animated_textures": 6,
+        "unmapped_animated_targets": []
+      }
+    },
+    {
+      "id": "cursor",
+      "symbol": "MenMainCursor_Top",
+      "model_root": 756884,
+      "joint_animation_root": 776500,
+      "material_animation_root": 779528,
+      "shape_animation_root": 1042288,
+      "expected": {
+        "draws": 10,
+        "joints_with_draws": 8,
+        "world_baked_draws": 1,
+        "animated_materials": 1,
+        "animated_textures": 4,
+        "unmapped_animated_targets": []
+      }
+    }
+  ],
+  "provenance": "Root and animation-root offsets match tests/presentation_manifest.rs::audit_pinned_mnmaall_bindings_and_color_domains, whose animated material/texture counts were audited against the pinned archive. Draw, joint, and world-baked (envelope-skinned, multi-matrix) counts were derived on 2026-09-10 from the resource project's skirmish-reference-mesh-v2 report for the same archive (/mnt/archive/runs/melee-visual-fidelity-20260909/model-references/MnMaAll.dat.json) and are regression pins, not independent evidence. Hidden draws are counted. unmapped_animated_targets must stay empty unless a real export proves an animated MObj/TObj has no exported draw, in which case the identity is recorded here explicitly."
+}

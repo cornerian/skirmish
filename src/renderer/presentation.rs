@@ -21,6 +21,7 @@ use crate::{
         manifest::{
             BatchApplyError, BindError, BoundClip, BoundHierarchy, BoundPresentation,
             PresentationUpdate, SampleError, SourceBindingIdentity, SourceObjectKind,
+            VisualOffsetSpaces,
         },
     },
 };
@@ -30,7 +31,10 @@ use super::{
         DrawUpdate, ExportDrawSelector, ExportMaterialSelector, RuntimeDrawBatchError,
         RuntimeDrawUpdate, WindowRenderer,
     },
-    scene::{Scene, VisualJointOccurrence, VisualMaterialOccurrence, VisualTextureOccurrence},
+    scene::{
+        GeometrySpace, Scene, VisualJointOccurrence, VisualMaterialOccurrence,
+        VisualTextureOccurrence,
+    },
 };
 
 /// A provenance-checked correspondence between one native hierarchy and its
@@ -40,6 +44,8 @@ pub struct VisualPresentationBinding {
     presentation: Arc<BoundPresentation>,
     hierarchy: String,
     joints: HashMap<SourceJointId, VisualJointOccurrence>,
+    /// Declared vertex space shared by every draw owned by a bound joint.
+    joint_geometry: HashMap<SourceJointId, GeometrySpace>,
     materials: HashMap<SourceMaterialId, VisualMaterialOccurrence>,
     textures: HashMap<SourceTextureId, VisualTextureOccurrence>,
 }
@@ -69,6 +75,7 @@ impl VisualPresentationBinding {
             presentation,
             hierarchy: hierarchy.to_owned(),
             joints: maps.joints,
+            joint_geometry: maps.joint_geometry,
             materials: maps.materials,
             textures: maps.textures,
         })
@@ -84,6 +91,12 @@ impl VisualPresentationBinding {
 
     pub fn joint_occurrence(&self, source: &SourceJointId) -> Option<&VisualJointOccurrence> {
         self.joints.get(source)
+    }
+
+    /// Vertex space declared by the draws owned by one bound joint, when any
+    /// exported draw is attached to it.
+    pub fn joint_geometry_space(&self, source: &SourceJointId) -> Option<GeometrySpace> {
+        self.joint_geometry.get(source).copied()
     }
 
     pub fn material_occurrence(
@@ -323,8 +336,16 @@ pub enum PresentationUpdateRoute {
 /// Why a lossless native source delta was retained instead of rendered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetainedPresentationReason {
+    /// The joint owns joint-local draws, but the renderer has no per-draw
+    /// joint transform yet.
     UnsupportedJointLocal,
+    /// The joint's exported draws were baked into world space, so a native
+    /// local transform cannot move them without double-transforming.
+    BakedWorldGeometry,
     UnsupportedTexture,
+    /// No exported draw is attached directly to this joint. Descendant draws
+    /// are not repositioned until hierarchy composition exists.
+    UnmappedJointLocal,
     UnmappedJointVisibility,
     UnmappedMaterial,
 }
@@ -486,8 +507,14 @@ fn route_update(
             .unwrap_or(PresentationUpdateRoute::Retained(
                 RetainedPresentationReason::UnmappedJointVisibility,
             )),
-        PresentationUpdate::JointLocal { .. } => {
-            PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+        PresentationUpdate::JointLocal { source_id, .. } => {
+            PresentationUpdateRoute::Retained(match binding.joint_geometry_space(source_id) {
+                Some(GeometrySpace::JointLocal) => {
+                    RetainedPresentationReason::UnsupportedJointLocal
+                }
+                Some(GeometrySpace::World) => RetainedPresentationReason::BakedWorldGeometry,
+                None => RetainedPresentationReason::UnmappedJointLocal,
+            })
         }
         PresentationUpdate::Material { source_id, .. } => binding
             .material_occurrence(source_id)
@@ -517,6 +544,16 @@ pub enum VisualPresentationBindError {
         expected: String,
         actual: String,
     },
+    #[error(
+        "visual resource {resource_id:?} declares offset spaces {declared:?}, but the presentation manifest expects {expected:?}"
+    )]
+    OffsetSpaceMismatch {
+        resource_id: String,
+        declared: VisualOffsetSpaces,
+        expected: VisualOffsetSpaces,
+    },
+    #[error("source joint {target:?} owns draws in both world and joint-local space")]
+    MixedGeometrySpace { target: SourceTarget },
     #[error("visual {kind:?} offset {visual_offset:#x} cannot be normalized: {source}")]
     InvalidVisualOffset {
         kind: SourceObjectKind,
@@ -544,6 +581,7 @@ pub enum VisualPresentationBindError {
 #[derive(Default)]
 struct ExactOccurrenceMaps {
     joints: HashMap<SourceJointId, VisualJointOccurrence>,
+    joint_geometry: HashMap<SourceJointId, GeometrySpace>,
     materials: HashMap<SourceMaterialId, VisualMaterialOccurrence>,
     textures: HashMap<SourceTextureId, VisualTextureOccurrence>,
 }
@@ -574,6 +612,13 @@ fn validate_resource(
             actual: resource.sha256().to_owned(),
         });
     }
+    if resource.offset_spaces() != presentation.visual_offsets() {
+        return Err(VisualPresentationBindError::OffsetSpaceMismatch {
+            resource_id: expected.id.clone(),
+            declared: resource.offset_spaces(),
+            expected: presentation.visual_offsets(),
+        });
+    }
     Ok(())
 }
 
@@ -597,8 +642,15 @@ fn bind_exact_occurrences(
                     &mut maps.joints,
                     source.clone(),
                     occurrence.owner_joint.clone(),
-                    target,
+                    target.clone(),
                 )?;
+                if let Some(previous) = maps
+                    .joint_geometry
+                    .insert(source.clone(), mesh.geometry_space)
+                    && previous != mesh.geometry_space
+                {
+                    return Err(VisualPresentationBindError::MixedGeometrySpace { target });
+                }
             }
         }
 
@@ -971,6 +1023,14 @@ mod tests {
         Arc::new(manifest.bind_hsd_dat(&archive).unwrap())
     }
 
+    fn resource_entry(id: &str, sha256: &str, spaces: VisualOffsetSpaces) -> serde_json::Value {
+        json!({
+            "id": id,
+            "sha256": sha256,
+            "offset_spaces": serde_json::to_value(spaces).unwrap(),
+        })
+    }
+
     fn scene_with_resources(path: &Path, resources: serde_json::Value) -> Scene {
         fs::write(
             path,
@@ -992,6 +1052,7 @@ mod tests {
                 "joint": ANIMATED_MODEL,
                 "resource_id": RESOURCE_ID,
                 "dobj_index": dobj_index,
+                "geometry_space": "world",
                 "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
                 "indices": [0, 1, 2],
                 "material": {
@@ -1004,7 +1065,15 @@ mod tests {
             path,
             serde_json::to_vec(&json!({
                 "schema": "skirmish-visual-v1",
-                "resources": [{"id": RESOURCE_ID, "sha256": hash}],
+                "resources": [resource_entry(
+                    RESOURCE_ID,
+                    hash,
+                    VisualOffsetSpaces {
+                        joints: OffsetSpace::DataSection,
+                        materials: OffsetSpace::File,
+                        textures: OffsetSpace::File,
+                    },
+                )],
                 "joints": [{"name": "root", "offset": ANIMATED_MODEL}],
                 "meshes": [mesh("first", 0), mesh("second", 1)]
             }))
@@ -1018,6 +1087,15 @@ mod tests {
         resource_id: VisualResourceId,
         visual_offset: u32,
     ) -> super::super::scene::Mesh {
+        exact_joint_mesh_in(resource_id, visual_offset, 0, GeometrySpace::World)
+    }
+
+    fn exact_joint_mesh_in(
+        resource_id: VisualResourceId,
+        visual_offset: u32,
+        dobj_index: u16,
+        geometry_space: GeometrySpace,
+    ) -> super::super::scene::Mesh {
         let mut mesh = Scene::demo().meshes.remove(0);
         mesh.joint = Some(visual_offset);
         mesh.source_occurrence = Some(VisualDObjOccurrence {
@@ -1025,8 +1103,9 @@ mod tests {
                 resource_id,
                 visual_offset,
             },
-            dobj_index: 0,
+            dobj_index,
         });
+        mesh.geometry_space = geometry_space;
         mesh
     }
 
@@ -1047,10 +1126,11 @@ mod tests {
     ) -> Arc<VisualPresentationBinding> {
         let mut scene = scene_with_resources(
             &directory.join("joint.json"),
-            json!([{
-                "id": RESOURCE_ID,
-                "sha256": presentation.resource().sha256,
-            }]),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                presentation.visual_offsets(),
+            )]),
         );
         scene.meshes.push(exact_joint_mesh(
             scene.resources[0].id().clone(),
@@ -1079,8 +1159,8 @@ mod tests {
         let mut scene = scene_with_resources(
             &directory.path().join("scene.json"),
             json!([
-                {"id": RESOURCE_ID, "sha256": hash},
-                {"id": "other.dat", "sha256": "1".repeat(64)}
+                resource_entry(RESOURCE_ID, &hash, presentation.visual_offsets()),
+                resource_entry("other.dat", &"1".repeat(64), presentation.visual_offsets()),
             ]),
         );
         let target_resource = scene.resources[0].id().clone();
@@ -1190,7 +1270,7 @@ mod tests {
                 },
                 RoutedPresentationUpdate {
                     route: PresentationUpdateRoute::Retained(
-                        RetainedPresentationReason::UnsupportedJointLocal
+                        RetainedPresentationReason::BakedWorldGeometry
                     ),
                     ..
                 },
@@ -1298,7 +1378,7 @@ mod tests {
         );
         assert_eq!(
             tick.updates()[2].route(),
-            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::BakedWorldGeometry)
         );
         assert!(matches!(
             tick.updates()[3].route(),
@@ -1341,9 +1421,7 @@ mod tests {
                 PresentationApplyOutcome::Retained(
                     RetainedPresentationReason::UnmappedJointVisibility
                 ),
-                PresentationApplyOutcome::Retained(
-                    RetainedPresentationReason::UnsupportedJointLocal
-                ),
+                PresentationApplyOutcome::Retained(RetainedPresentationReason::BakedWorldGeometry),
                 PresentationApplyOutcome::MatchedDraws(2),
                 PresentationApplyOutcome::Retained(RetainedPresentationReason::UnmappedMaterial),
                 PresentationApplyOutcome::Retained(RetainedPresentationReason::UnsupportedTexture),
@@ -1462,7 +1540,11 @@ mod tests {
 
         let mut wrong_hash = scene_with_resources(
             &directory.path().join("wrong.json"),
-            json!([{"id": RESOURCE_ID, "sha256": "0".repeat(64)}]),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &"0".repeat(64),
+                presentation.visual_offsets()
+            )]),
         );
         wrong_hash.meshes.push(exact_joint_mesh(
             wrong_hash.resources[0].id().clone(),
@@ -1475,7 +1557,11 @@ mod tests {
 
         let mut ambiguous = scene_with_resources(
             &directory.path().join("ambiguous.json"),
-            json!([{"id": RESOURCE_ID, "sha256": presentation.resource().sha256}]),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                presentation.visual_offsets()
+            )]),
         );
         ambiguous.resources.push(ambiguous.resources[0].clone());
         assert!(matches!(
@@ -1485,15 +1571,106 @@ mod tests {
 
         let legacy = scene_with_resources(
             &directory.path().join("legacy.json"),
-            json!([{"id": RESOURCE_ID, "sha256": presentation.resource().sha256}]),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                presentation.visual_offsets()
+            )]),
         );
         assert!(matches!(
             VisualPresentationBinding::bind(&legacy, presentation.clone(), "root"),
             Err(VisualPresentationBindError::NoExactOccurrences { .. })
         ));
         assert!(matches!(
-            VisualPresentationBinding::bind(&legacy, presentation, "missing"),
+            VisualPresentationBinding::bind(&legacy, presentation.clone(), "missing"),
             Err(VisualPresentationBindError::MissingHierarchy { .. })
+        ));
+
+        let file_spaces = VisualOffsetSpaces {
+            joints: OffsetSpace::File,
+            materials: OffsetSpace::File,
+            textures: OffsetSpace::File,
+        };
+        let mut mismatched = scene_with_resources(
+            &directory.path().join("mismatched.json"),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                file_spaces
+            )]),
+        );
+        mismatched.meshes.push(exact_joint_mesh(
+            mismatched.resources[0].id().clone(),
+            MODEL_ROOT,
+        ));
+        assert!(matches!(
+            VisualPresentationBinding::bind(&mismatched, presentation, "root"),
+            Err(VisualPresentationBindError::OffsetSpaceMismatch { declared, expected, .. })
+                if declared == file_spaces && expected.joints == OffsetSpace::DataSection
+        ));
+    }
+
+    #[test]
+    fn joint_local_geometry_is_retained_explicitly_until_transforms_exist() {
+        let presentation = one_joint_presentation(OffsetSpace::DataSection);
+        let directory = tempfile::tempdir().unwrap();
+        let joint = presentation.hierarchy("root").unwrap().joints()[0]
+            .source_id
+            .clone();
+        let local_update = |source_id: SourceJointId| PresentationUpdate::JointLocal {
+            instance_id: InstanceId::new(5),
+            source_id,
+            local: presentation.hierarchy("root").unwrap().joints()[0]
+                .local
+                .initial_runtime_local(),
+        };
+
+        let mut scene = scene_with_resources(
+            &directory.path().join("local.json"),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                presentation.visual_offsets()
+            )]),
+        );
+        let resource = scene.resources[0].id().clone();
+        scene.meshes.push(exact_joint_mesh_in(
+            resource.clone(),
+            MODEL_ROOT,
+            0,
+            GeometrySpace::JointLocal,
+        ));
+        scene.meshes.push(exact_joint_mesh_in(
+            resource.clone(),
+            MODEL_ROOT,
+            1,
+            GeometrySpace::JointLocal,
+        ));
+        let binding =
+            VisualPresentationBinding::bind(&scene, presentation.clone(), "root").unwrap();
+        assert_eq!(
+            binding.joint_geometry_space(&joint),
+            Some(GeometrySpace::JointLocal)
+        );
+        assert_eq!(
+            route_update(&binding, local_update(joint.clone())).route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnsupportedJointLocal)
+        );
+        assert_eq!(
+            binding.joint_geometry_space(&SourceJointId::from("absent")),
+            None
+        );
+        assert_eq!(
+            route_update(&binding, local_update(SourceJointId::from("absent"))).route(),
+            &PresentationUpdateRoute::Retained(RetainedPresentationReason::UnmappedJointLocal)
+        );
+
+        scene.meshes[1].geometry_space = GeometrySpace::World;
+        assert!(matches!(
+            VisualPresentationBinding::bind(&scene, presentation, "root"),
+            Err(VisualPresentationBindError::MixedGeometrySpace {
+                target: SourceTarget::Joint(source)
+            }) if source == joint
         ));
     }
 
@@ -1503,7 +1680,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut scene = scene_with_resources(
             &directory.path().join("scene.json"),
-            json!([{"id": RESOURCE_ID, "sha256": presentation.resource().sha256}]),
+            json!([resource_entry(
+                RESOURCE_ID,
+                &presentation.resource().sha256,
+                presentation.visual_offsets()
+            )]),
         );
         scene
             .meshes
