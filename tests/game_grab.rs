@@ -127,7 +127,9 @@ fn airborne_capture_keeps_the_high_family_through_pummel_escape_and_checkpoint()
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [0.5, 3.0]];
     resource.rules.grab.as_mut().unwrap().escape.timer_base = 15.0;
-    let catch = &mut resource.fighters[0].grab.as_mut().unwrap().catch;
+    let parameters = resource.fighters[0].grab.as_mut().unwrap();
+    parameters.attachment.holder_point[1] = 3.0;
+    let catch = &mut parameters.catch;
     catch.grounded_targets_only = false;
     for frame in &mut catch.frames {
         frame.bones[1].translation[1] = 3.0;
@@ -172,13 +174,78 @@ fn airborne_capture_keeps_the_high_family_through_pummel_escape_and_checkpoint()
         victim: 1,
     }));
     assert_eq!(escaped.fighters[0].action, Action::CatchCut);
-    assert_eq!(escaped.fighters[1].action, Action::Landing);
+    assert_eq!(escaped.fighters[1].action, Action::CaptureCut);
     assert!(
         escaped
             .fighters
             .iter()
             .all(|fighter| fighter.grab == grab::State::default())
     );
+}
+
+#[test]
+fn rising_holder_pose_converts_low_capture_to_high_without_resetting_its_clock() {
+    let mut resource = data();
+    resource.rules.grab.as_mut().unwrap().capture_lift_threshold = 1.0;
+    for pose in &mut resource.fighters[0].grab.as_mut().unwrap().pummel.poses {
+        pose[1].translation[1] = 4.0;
+    }
+    resource.fighters[1]
+        .grab
+        .as_mut()
+        .unwrap()
+        .capture_damage
+        .high[0][1]
+        .translation[0] += 2.0;
+    let mut game = held(resource);
+    let waiting = game.state().fighters[1].clone();
+    assert_eq!(waiting.action, Action::CaptureWaitLw);
+    assert!(waiting.grounded);
+
+    let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    assert_eq!(entered.fighters[1].action, Action::CaptureWaitHi);
+    assert!(!entered.fighters[1].grounded);
+    assert_eq!(entered.fighters[1].action_frame, waiting.action_frame + 1);
+    assert!(entered.fighters[1].position[1] > waiting.position[1] + 2.0);
+    let checkpoint = game.checkpoint();
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageHi);
+    assert!(hit.fighters[1].position[0] < entered.fighters[1].position[0] - 1.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(step(&mut game, IDLE), hit);
+}
+
+#[test]
+fn floor_contact_converts_high_capture_to_low_without_resetting_its_clock() {
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [0.5, 3.0]];
+    let parameters = resource.fighters[0].grab.as_mut().unwrap();
+    parameters.attachment.holder_point[1] = 3.0;
+    parameters.catch.grounded_targets_only = false;
+    for frame in &mut parameters.catch.frames {
+        frame.bones[1].translation[1] = 3.0;
+    }
+    for pose in &mut parameters.pummel.poses {
+        pose[1].translation[1] = -2.25;
+    }
+    let mut game = Match::new(resource, 17).unwrap();
+    let caught = step(&mut game, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
+    assert_eq!(caught.fighters[1].action, Action::CapturePulledHi);
+    let waiting = until(&mut game, |state| {
+        state.fighters[0].action == Action::CatchWait
+    });
+    assert_eq!(waiting.fighters[1].action, Action::CaptureWaitHi);
+
+    let entered = step(&mut game, input(0, BUTTON_A, [0.0; 2], [0.0; 2]));
+    assert_eq!(entered.fighters[1].action, Action::CaptureWaitLw);
+    assert!(entered.fighters[1].grounded);
+    assert_eq!(
+        entered.fighters[1].action_frame,
+        waiting.fighters[1].action_frame + 1
+    );
+    assert!(entered.events.contains(&Event::Landed { player: 1 }));
+    let hit = step(&mut game, IDLE);
+    assert_eq!(hit.fighters[1].action, Action::CaptureDamageLw);
 }
 
 #[test]
@@ -959,6 +1026,9 @@ fn malformed_grab_resources_are_rejected() {
     cases.push(bad);
     let mut bad = data();
     bad.rules.grab.as_mut().unwrap().throw_weight_scale = 0.0;
+    cases.push(bad);
+    let mut bad = data();
+    bad.rules.grab.as_mut().unwrap().capture_lift_threshold = 0.0;
     cases.push(bad);
     let mut bad = data();
     bad.fighters[0].grab.as_mut().unwrap().catch.frames[0]

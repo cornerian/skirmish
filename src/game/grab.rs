@@ -27,6 +27,8 @@ pub struct Rules {
     pub down_threshold: f32,
     /// Common x37C multiplier for victim-weight-dependent throw animation.
     pub throw_weight_scale: f32,
+    /// Common x3C4 rise threshold, scaled by the victim's root bone Y scale.
+    pub capture_lift_threshold: f32,
     pub escape: EscapeRules,
 }
 
@@ -167,6 +169,7 @@ pub(crate) fn validate(
         rules.up_threshold,
         rules.down_threshold,
         rules.throw_weight_scale,
+        rules.capture_lift_threshold,
         rules.escape.timer_base,
         rules.escape.timer_percent_scale,
         rules.escape.timer_decrement,
@@ -182,6 +185,8 @@ pub(crate) fn validate(
         || rules.up_threshold == 0.0
         || !(-1.0..0.0).contains(&rules.down_threshold)
         || !(0.0..1_000_000.0).contains(&rules.throw_weight_scale)
+        || !(0.0..1_000_000.0).contains(&rules.capture_lift_threshold)
+        || rules.capture_lift_threshold == 0.0
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_base)
         || !(0.0..1_000.0).contains(&rules.escape.timer_percent_scale)
         || !(0.0..1_000_000.0).contains(&rules.escape.timer_decrement)
@@ -439,6 +444,30 @@ fn captured(action: Action) -> bool {
             | Action::CaptureWaitLw
             | Action::CaptureDamageLw
     )
+}
+
+pub(crate) fn transfer_capture_family(fighter: &mut Fighter, airborne: bool) -> bool {
+    let action = match (fighter.action, airborne) {
+        (Action::CapturePulledLw, true) => Action::CapturePulledHi,
+        (Action::CaptureWaitLw, true) => Action::CaptureWaitHi,
+        (Action::CaptureDamageLw, true) => Action::CaptureDamageHi,
+        (Action::CapturePulledHi, false) => Action::CapturePulledLw,
+        (Action::CaptureWaitHi, false) => Action::CaptureWaitLw,
+        (Action::CaptureDamageHi, false) => Action::CaptureDamageLw,
+        _ => return false,
+    };
+    let frame = fighter.action_frame;
+    simulation::enter(fighter, action);
+    fighter.action_frame = frame;
+    if airborne {
+        fighter.grounded = false;
+        fighter.ground_line = None;
+        fighter.ground_knockback = 0.0;
+        fighter.ground_velocity = 0.0;
+        fighter.fast_fall = false;
+        fighter.locomotion.jumps_used = fighter.locomotion.jumps_used.max(1);
+    }
+    true
 }
 
 pub(crate) fn owns_action(action: Action) -> bool {
@@ -829,7 +858,7 @@ pub(crate) fn break_for_player(state: &mut MatchState, player: usize) {
 pub(crate) fn attach_all(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
     for holder in 0..2 {
         if let Some(victim) = state.fighters[holder].grab.victim {
-            attach(data, state, holder, victim)?;
+            attach(data, state, holder, victim, true)?;
         }
     }
     Ok(())
@@ -930,7 +959,7 @@ pub(crate) fn scan(
             simulation::enter(&mut state.fighters[holder], pull);
             simulation::enter(&mut state.fighters[victim], victim_action);
             state.events.push(Event::Grabbed { holder, victim });
-            attach(data, state, holder, victim)?;
+            attach(data, state, holder, victim, true)?;
         }
     }
     Ok(())
@@ -991,6 +1020,7 @@ fn attach(
     state: &mut MatchState,
     holder: usize,
     victim: usize,
+    allow_lift: bool,
 ) -> Result<(), Error> {
     let attachment = data.fighters[holder]
         .grab
@@ -1002,19 +1032,28 @@ fn attach(
         .transform(&holder_pose, 1.0)
         .map_err(physics)?
         .start;
-    let mut local_victim = state.fighters[victim].clone();
-    local_victim.position = [0.0; 2];
-    local_victim.depth = 0.0;
-    let victim_pose = simulation::pose(&local_victim, &data.fighters[victim])?;
+    let victim_pose = simulation::pose(&state.fighters[victim], &data.fighters[victim])?;
     let victim_anchor = BoneCapsule::sphere(attachment.victim_bone, attachment.victim_point, 0.0)
         .transform(&victim_pose, 1.0)
         .map_err(physics)?
         .start;
-    state.fighters[victim].position = [
-        holder_anchor[0] - victim_anchor[0],
-        holder_anchor[1] - victim_anchor[1],
+    let position = [
+        state.fighters[victim].position[0],
+        state.fighters[victim].position[1],
+        state.fighters[victim].depth,
     ];
-    state.fighters[victim].depth = holder_anchor[2] - victim_anchor[2];
+    let (position, lifted) = input::capture_alignment(
+        position,
+        holder_anchor,
+        victim_anchor,
+        data.rules.grab.as_ref().unwrap().capture_lift_threshold,
+        data.fighters[victim].bones[0].scale[1],
+    );
+    state.fighters[victim].position = [position[0], position[1]];
+    state.fighters[victim].depth = position[2];
+    if allow_lift && lifted && transfer_capture_family(&mut state.fighters[victim], true) {
+        attach(data, state, holder, victim, false)?;
+    }
     Ok(())
 }
 

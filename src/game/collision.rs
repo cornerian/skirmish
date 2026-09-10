@@ -285,7 +285,8 @@ pub(crate) fn resolve(
             // Ground-to-air conversion consumes the grounded jump slot, even
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
-            if !super::special::transfer_ground_air(f, false)
+            if !super::grab::transfer_capture_family(f, true)
+                && !super::special::transfer_ground_air(f, false)
                 && !matches!(
                     f.action,
                     Action::Damage
@@ -417,20 +418,22 @@ fn land(
     f.ecb_lock = 0;
     f.ecb.bottom_locked = false;
     f.skip_floor = None;
-    if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
-        simulation::enter(f, Action::ShieldBreakDown);
-    } else if matches!(
-        f.action,
-        Action::Damage
-            | Action::DamageFall
-            | Action::DownDamage
-            | Action::FlyReflectWall
-            | Action::FlyReflectCeiling
-    ) {
-        let pose = simulation::pose(f, data)?;
-        super::damage::land(f, data, &pose, &rules.damage, input)?;
-    } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
-        simulation::enter(f, Action::Landing);
+    if !super::grab::transfer_capture_family(f, false) {
+        if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
+            simulation::enter(f, Action::ShieldBreakDown);
+        } else if matches!(
+            f.action,
+            Action::Damage
+                | Action::DamageFall
+                | Action::DownDamage
+                | Action::FlyReflectWall
+                | Action::FlyReflectCeiling
+        ) {
+            let pose = simulation::pose(f, data)?;
+            super::damage::land(f, data, &pose, &rules.damage, input)?;
+        } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
+            simulation::enter(f, Action::Landing);
+        }
     }
     events.push(Event::Landed { player });
     Ok(())

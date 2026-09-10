@@ -238,5 +238,10 @@
     "fixture": "tests/oracle/original/down_damage.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownDamage.c",
     "sha256": "3a95e0bb90b4152649c00db02e374c7772aa47e0c4eacb19921245a430ffd9d2"
+  },
+  {
+    "fixture": "tests/oracle/original/capture_pulled.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CapturePulled.c",
+    "sha256": "14004df0dee607f3a84d2e205a35e298ab54b152c796d4dbb51975eafa0cbbbb"
   }
 ]

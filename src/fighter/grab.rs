@@ -68,6 +68,28 @@ pub fn throw_animation_rate(independent: bool, victim_weight: f32, scale: f32) -
     }
 }
 
+/// Matrix lookups excluded, this is complete `fn_800DAD18`: compute the three
+/// bone-alignment deltas, test its strict scaled-height branch, then translate
+/// the captured fighter in the source operation order.
+pub fn capture_alignment(
+    mut position: [f32; 3],
+    holder_anchor: [f32; 3],
+    victim_anchor: [f32; 3],
+    height_threshold: f32,
+    model_scale_y: f32,
+) -> ([f32; 3], bool) {
+    let delta = [
+        holder_anchor[0] - victim_anchor[0],
+        holder_anchor[1] - victim_anchor[1],
+        holder_anchor[2] - victim_anchor[2],
+    ];
+    let lifted = delta[1] > height_threshold * model_scale_y;
+    position[0] += delta[0];
+    position[1] += delta[1];
+    position[2] += delta[2];
+    (position, lifted)
+}
+
 /// A main-stick horizontal threshold crossing has priority over vertical throws.
 pub fn fresh_horizontal(current: f32, previous: f32, threshold: f32) -> bool {
     (previous < threshold && current >= threshold)
@@ -158,6 +180,16 @@ mod tests {
             0x3E34_8831
         );
         assert_eq!(((1.0 / weight) / scale).to_bits(), 0x3E34_8830);
+    }
+
+    #[test]
+    fn capture_alignment_uses_the_source_strict_scaled_height_branch() {
+        assert_eq!(
+            capture_alignment([1.0, 2.0, 3.0], [5.0, 6.0, 7.0], [2.0, 4.0, 6.0], 1.0, 2.0,),
+            ([4.0, 4.0, 4.0], false),
+        );
+        assert!(capture_alignment([0.0; 3], [0.0, 2.000_000_2, 0.0], [0.0; 3], 1.0, 2.0).1);
+        assert!(!capture_alignment([0.0; 3], [0.0; 3], [0.0; 3], f32::NAN, 1.0).1);
     }
 
     #[test]

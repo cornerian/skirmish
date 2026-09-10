@@ -2,7 +2,7 @@
 
 `rules.grab` enables physical Z-button catch dispatch and supplies the signed
 stick thresholds used by ordinary throw selection, plus explicit hold-timer,
-mash, release-speed and throw-weight coefficients. Each `fighters[].grab`
+mash, release-speed, throw-weight and capture-lift coefficients. Each `fighters[].grab`
 resource supplies separate complete standing and dash-catch poses with
 bone-attached grab capsules, their explicit pull durations, two bone-local
 attachment anchors, complete holder poses for pummel and four throws, separate
@@ -22,6 +22,11 @@ bone point throughout
 pull, wait, and throw; controller input cannot move or dispatch actions for the
 captured fighter. The relationship, input history, action clocks, positions, and
 bone-driven depth are included in observations and checkpoints.
+If bone alignment raises a low captured fighter strictly beyond the common
+threshold times its base root-bone Y scale, the family changes to high. Leaving
+support does the same; high-family floor contact changes back to low. These
+transitions preserve the current action frame and use the ordinary swept stage
+solver before attachment resumes on the next frame.
 
 A fresh grab request in Dash or Run enters CatchDash and uses the dedicated
 dash-catch samples while retained ground momentum decays through ordinary
@@ -74,20 +79,22 @@ queue insertion and death reset, shared hitlag, sampled holder and victim
 high/low reaction poses, independent reaction completion, passive and mashed escape,
 button and analog-shoulder freshness, stick latches, hitlag timer freeze, cut
 actions and release motion, grounded/airborne capture-family selection, all throw
-directions, input suppression, checkpoint replay, stable
+directions, animation-driven lift and swept floor conversion, input suppression,
+checkpoint replay, stable
 simultaneous-catch order, airborne rejection, weight-dependent and independent
 throw timing, fast event crossing, hurtbox pair cleanup on KO, and
 malformed resources. `game_hurtbox_eligibility` adds the per-capsule
 state/grabbable filters and directional bone scale. Three grab/throw conformance
 scenarios now run normally. `fighter::grab` unit tests cover the exact fresh-A
-predicate, mash mutation, and throw-rate branch and operand order.
+predicate, mash mutation, throw-rate branch and operand order, and the strict
+capture-alignment height branch.
 `grab_differential` compares the three retained
 throw stick-crossing predicates; `grab_mash_differential` compares the complete
 mash function over arbitrary timer, input and latch state. Both select complete
-functions from pinned original C.
+functions from pinned original C. `capture_alignment_differential` compares the
+complete `fn_800DAD18` position mutation and scaled-height result over arbitrary
+binary32 positions, anchors, thresholds, and scales.
 
-This profile does not yet implement tether catches, cargo carries, dynamic
-low/high conversion when attachment motion or collision crosses the source
-threshold, character overrides, or multiplayer capture interference.
-Catch-versus-hit and capture-clash priority also need the larger original
-contact scheduler.
+This profile does not yet implement tether catches, cargo carries, character
+overrides, or multiplayer capture interference. Catch-versus-hit and
+capture-clash priority also need the larger original contact scheduler.

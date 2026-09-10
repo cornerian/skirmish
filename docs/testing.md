@@ -189,7 +189,8 @@ scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
 Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
 directions, pummel priority and repeat lifecycle, grounded-low/airborne-high
 capture families, split captured-damage poses, one captured-damage event, shared
-hitlag, sampled holder/victim attachment motion, paired fractional
+hitlag, sampled holder/victim attachment motion, threshold lifts, swept floor
+conversion with preserved action time, paired fractional
 throw timing for heavy/light victims and weight-independent directions, independent
 CaptureDamage completion, passive and button/stick/analog-shoulder-mashed
 escape, logical shoulder rearming, timer freeze,
@@ -200,7 +201,9 @@ unit tests cover the exact `fn_800DA4C0` A-bit predicate and complete
 `ftCommon_GrabMash` mutation. `grab_differential` compares the three exact
 `ftCo_800DD1E4` main-stick threshold predicates; `grab_mash_differential`
 compares arbitrary binary32 timers, coefficients and input/latch state against
-the complete pinned C function.
+the complete pinned C function. `capture_alignment_differential` compares the
+complete position and strict scaled-height result of `fn_800DAD18` over arbitrary
+binary32 inputs.
 
 The [ledge profile](ledges.md) promotes all six ledge conformance scenarios.
 `game_ledge` covers endpoint flags/connectivity, both sides, eligibility,
