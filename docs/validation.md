@@ -1,5 +1,16 @@
 # Local validation provenance
 
+The 2026-09-09 prone-orientation coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-prone-orientation-20260909`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. Focused integration coverage selects face-up and face-down from
+the evaluated hip matrix, preserves the choice through checkpoints and drives
+distinct bound/wait poses, both roll directions, stand poses and get-up attacks.
+The strict matrix-axis/inversion selector has direct unit boundary coverage.
+
 The 2026-09-09 floor-recovery coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-floor-recovery-20260909`

@@ -5,7 +5,8 @@ use skirmish::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
         damage::{
             FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules,
-            KnockdownAttributes, KnockdownRules, RecoveryInvincibilityRules,
+            KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules,
+            ProneRecoveryAttributes, RecoveryInvincibilityRules,
         },
         data::{Attack, AttackFrame, Bone, CollisionBox},
     },
@@ -142,14 +143,37 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         wait_poses[0][1].translation[0] = 10.0;
         let mut stand_poses = vec![fighter.bones.clone(); stand_frames];
         stand_poses[0][1].translation[0] = 7.0;
-        fighter.knockdown = Some(KnockdownAttributes {
-            passive_poses,
+        let face_up = ProneRecoveryAttributes {
             bound_poses,
             wait_poses,
             forward: roll_motion(&fighter.bones, &[0.0, 0.6, 0.9, 0.3], 6.0),
             backward: roll_motion(&fighter.bones, &[0.0, -0.4, -0.7, -0.2, -0.1], -6.0),
             stand_poses,
             attack,
+        };
+        let mut face_down = face_up.clone();
+        face_down.bound_poses[1][1].translation[0] = 12.0;
+        face_down.wait_poses[0][1].translation[0] = 13.0;
+        face_down.stand_poses[0][1].translation[0] = 14.0;
+        face_down.forward = roll_motion(&fighter.bones, &[0.0, 1.2, 1.8, 0.6], 15.0);
+        face_down.backward = roll_motion(&fighter.bones, &[0.0, -0.8, -1.4, -0.4, -0.2], -15.0);
+        for hit in face_down
+            .attack
+            .frames
+            .iter_mut()
+            .flat_map(|frame| &mut frame.hitboxes)
+        {
+            hit.damage = 6;
+        }
+        fighter.knockdown = Some(KnockdownAttributes {
+            passive_poses,
+            orientation: ProneOrientationRules {
+                hip_bone: 1,
+                use_z_axis: false,
+                invert: false,
+            },
+            face_up,
+            face_down,
         });
     }
     resource.fighters[1].collision_box = CollisionBox::Bones {
@@ -186,11 +210,25 @@ fn recovery_data() -> skirmish::game::data::MatchData {
     resource
 }
 
+fn face_down_data() -> skirmish::game::data::MatchData {
+    let mut resource = knockdown_data();
+    resource.fighters[1]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .orientation
+        .invert = true;
+    resource
+}
+
 fn recovery_timer_data() -> skirmish::game::data::MatchData {
     let mut resource = recovery_data();
     for fighter in &mut resource.fighters {
-        for frame in &mut fighter.knockdown.as_mut().unwrap().attack.frames {
-            frame.hitboxes.clear();
+        let knockdown = fighter.knockdown.as_mut().unwrap();
+        for variant in [&mut knockdown.face_up, &mut knockdown.face_down] {
+            for frame in &mut variant.attack.frames {
+                frame.hitboxes.clear();
+            }
         }
     }
     resource
@@ -440,6 +478,75 @@ fn neutral_tech_bound_and_wait_sample_their_supplied_physics_poses() {
     let state = step(&mut missed, IDLE);
     assert_eq!(state.fighters[1].action, Action::DownWait);
     assert!((state.fighters[1].ecb.current.left[0] + 10.0).abs() < 1e-5);
+}
+
+#[test]
+fn evaluated_hip_orientation_selects_and_preserves_each_prone_physics_family() {
+    let mut face_up = down_bound(knockdown_data());
+    assert_eq!(
+        face_up.state().fighters[1].prone,
+        Some(ProneOrientation::FaceUp)
+    );
+    let state = step(&mut face_up, IDLE);
+    assert!((state.fighters[1].ecb.current.left[0] + 9.0).abs() < 1e-5);
+
+    let mut face_down = down_bound(face_down_data());
+    assert_eq!(
+        face_down.state().fighters[1].prone,
+        Some(ProneOrientation::FaceDown)
+    );
+    let checkpoint = face_down.checkpoint();
+    let state = step(&mut face_down, IDLE);
+    assert!((state.fighters[1].ecb.current.left[0] + 12.0).abs() < 1e-5);
+    advance_to_bound_expiry(&mut face_down);
+    let expected = step(&mut face_down, IDLE);
+    assert_eq!(expected.fighters[1].action, Action::DownWait);
+    assert_eq!(expected.fighters[1].prone, Some(ProneOrientation::FaceDown));
+    assert!((expected.fighters[1].ecb.current.left[0] + 13.0).abs() < 1e-5);
+
+    face_down.restore_checkpoint(&checkpoint).unwrap();
+    step(&mut face_down, IDLE);
+    advance_to_bound_expiry(&mut face_down);
+    assert_eq!(step(&mut face_down, IDLE), expected);
+
+    for (stick_x, action, delta, left) in [
+        (-0.7, Action::DownForward, -1.2, true),
+        (0.7, Action::DownBack, 0.8, false),
+    ] {
+        let mut roll = down_wait(face_down_data());
+        let entered = step(&mut roll, recovery_input(0, [stick_x, 0.0], [0.0; 2]));
+        assert_eq!(entered.fighters[1].action, action);
+        let before_x = entered.fighters[1].position[0];
+        let moved = step(&mut roll, IDLE);
+        assert_eq!(moved.fighters[1].prone, Some(ProneOrientation::FaceDown));
+        assert!((moved.fighters[1].position[0] - (before_x + delta)).abs() < 1e-5);
+        let side = if left {
+            moved.fighters[1].ecb.current.left[0]
+        } else {
+            moved.fighters[1].ecb.current.right[0]
+        };
+        assert!((side - if left { -15.0 } else { 15.0 }).abs() < 1e-5);
+    }
+
+    let mut stand = down_wait(face_down_data());
+    let state = step(&mut stand, recovery_input(0, [0.0, 0.7], [0.0; 2]));
+    assert_eq!(state.fighters[1].action, Action::DownStand);
+    assert!((state.fighters[1].ecb.current.left[0] + 14.0).abs() < 1e-5);
+    until(&mut stand, |state| state.fighters[1].action == Action::Wait);
+    assert_eq!(stand.state().fighters[1].prone, None);
+
+    let mut attack = down_wait(face_down_data());
+    let state = step(&mut attack, recovery_input(BUTTON_A, [0.0; 2], [0.0; 2]));
+    assert_eq!(state.fighters[1].action, Action::DownAttack);
+    assert!(state.events.iter().any(|event| matches!(
+        event,
+        Event::Hit {
+            attacker: 1,
+            victim: 0,
+            damage,
+            ..
+        } if *damage == 6.0
+    )));
 }
 
 #[test]
@@ -805,6 +912,7 @@ fn checkpoint_and_reset_preserve_tech_history_and_floor_suffixes() {
     assert_eq!(reset.fighters[1].locomotion.previous_tech_press_age, 255);
     assert_eq!(reset.fighters[1].locomotion.attack_a_age, 255);
     assert_eq!(reset.fighters[1].locomotion.attack_b_age, 255);
+    assert_eq!(reset.fighters[1].prone, None);
     assert!(!reset.fighters[1].tumbling);
 }
 
@@ -931,13 +1039,35 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
     let mut bad = knockdown_data();
     bad.fighters[0].knockdown = None;
     cases.push(bad);
-    for poses in ["passive", "bound", "wait"] {
+    let mut bad = knockdown_data();
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .orientation
+        .hip_bone = 99;
+    cases.push(bad);
+    let mut bad = knockdown_data();
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .face_down
+        .wait_poses
+        .pop();
+    cases.push(bad);
+    let mut bad = knockdown_data();
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .passive_poses
+        .pop();
+    cases.push(bad);
+    for poses in ["bound", "wait"] {
         let mut bad = knockdown_data();
-        let attributes = bad.fighters[0].knockdown.as_mut().unwrap();
+        let attributes = &mut bad.fighters[0].knockdown.as_mut().unwrap().face_up;
         match poses {
-            "passive" => {
-                attributes.passive_poses.pop();
-            }
             "bound" => {
                 attributes.bound_poses.pop();
             }
@@ -953,17 +1083,26 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
         .knockdown
         .as_mut()
         .unwrap()
+        .face_up
         .stand_poses
         .pop();
-    cases.push(bad);
-    let mut bad = knockdown_data();
-    bad.fighters[0].knockdown.as_mut().unwrap().forward.frames[0].root_translation = f32::INFINITY;
     cases.push(bad);
     let mut bad = knockdown_data();
     bad.fighters[0]
         .knockdown
         .as_mut()
         .unwrap()
+        .face_up
+        .forward
+        .frames[0]
+        .root_translation = f32::INFINITY;
+    cases.push(bad);
+    let mut bad = knockdown_data();
+    bad.fighters[0]
+        .knockdown
+        .as_mut()
+        .unwrap()
+        .face_down
         .attack
         .frames
         .clear();

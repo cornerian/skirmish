@@ -78,6 +78,7 @@ fn spawn(
         damage_angle_timer: 0,
         di_pending: false,
         tumbling: false,
+        prone: None,
         last_damage_surface: None,
         reflect_lockout: 0,
         surface_tech: damage::SurfaceTechState::default(),
@@ -114,6 +115,17 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         fighter.tumbling = false;
         fighter.last_damage_surface = None;
         fighter.reflect_lockout = 0;
+    }
+    if !matches!(
+        action,
+        Action::DownBound
+            | Action::DownWait
+            | Action::DownForward
+            | Action::DownBack
+            | Action::DownAttack
+            | Action::DownStand
+    ) {
+        fighter.prone = None;
     }
     if !matches!(
         action,
@@ -425,7 +437,10 @@ pub(crate) fn advance(
     let mut swept = [[None; 4]; 2];
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
-        let frame = if data.fighters[player].attack(fighter.action).is_some() {
+        let frame = if data.fighters[player]
+            .attack(fighter.action, fighter.prone)
+            .is_some()
+        {
             Some(attack_frame(fighter, &data.fighters[player])?)
         } else {
             None
@@ -442,7 +457,9 @@ pub(crate) fn advance(
         let victim = 1 - attacker;
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
         if frozen[attacker]
-            || data.fighters[attacker].attack(source.action).is_none()
+            || data.fighters[attacker]
+                .attack(source.action, source.prone)
+                .is_none()
             || target.invincibility > 0
             || target.grab.captor.is_some()
             || shield::break_invulnerable(target.action)
@@ -1099,7 +1116,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
-    } else if data.attack(fighter.action).is_some() {
+    } else if data.attack(fighter.action, fighter.prone).is_some() {
         &attack_frame(fighter, data)?.bones
     } else if aerial::landing_index(fighter.action).is_some() {
         aerial::landing_pose(fighter, data)
@@ -1133,7 +1150,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
-    data.attack(fighter.action)
+    data.attack(fighter.action, fighter.prone)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames
         .get(fighter.action_frame as usize)

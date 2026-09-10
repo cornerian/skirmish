@@ -294,6 +294,14 @@ pub enum KnockdownOption {
     Stand,
 }
 
+/// `ftCo_80097570` plus the caller's per-fighter inversion flag. The source
+/// selects one column from the evaluated HipN matrix and uses a strict sign
+/// test to choose the face-up recovery family.
+pub fn prone_face_up(hip_matrix: &[[f32; 4]; 3], use_z_axis: bool, invert: bool) -> bool {
+    let face_up = hip_matrix[1][if use_z_axis { 2 } else { 1 }] > 0.0;
+    face_up != invert
+}
+
 /// Refactored DownWait IASA composition. The original callback gives get-up
 /// attack priority, then a fresh C-stick or held main-stick roll, then stand.
 pub fn knockdown_option(input: KnockdownInput, rules: &KnockdownRules) -> Option<KnockdownOption> {
@@ -529,6 +537,18 @@ mod tests {
         );
         input.main = [0.0, 0.7];
         assert_eq!(down_bound_option(input, [4, 255], &rules), None);
+    }
+
+    #[test]
+    fn prone_orientation_uses_the_selected_hip_axis_strict_sign_and_inversion() {
+        let mut hip = [[0.0; 4]; 3];
+        hip[1][1] = f32::from_bits(0x8000_0000);
+        hip[1][2] = 1.0;
+        assert!(!prone_face_up(&hip, false, false));
+        assert!(prone_face_up(&hip, false, true));
+        assert!(prone_face_up(&hip, true, false));
+        hip[1][1] = f32::NAN;
+        assert!(!prone_face_up(&hip, false, false));
     }
 
     #[test]

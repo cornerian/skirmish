@@ -33,9 +33,17 @@ frames and checkpoints both timers.
 
 Optional `floor_response.knockdown_options` supplies the two stick thresholds,
 vertical angle, upward C-stick threshold and DownBound attack-buffer window.
-Each fighter then supplies one full bone pose for every Passive, DownBound,
-DownWait and DownStand frame, forward/backward missed-tech motions and a complete
-get-up `Attack`. These poses drive hurtboxes and ECBs in headless simulation.
+Each fighter then supplies one full bone pose for every Passive frame plus
+separate face-up and face-down DownBound, DownWait, DownStand, roll and get-up
+attack resources. These poses drive hurtboxes and ECBs in headless simulation.
+
+At missed-tech contact, the configured HipN bone and axis select the prone
+family from the evaluated world matrix using the source's strict positive sign
+test. Per-fighter axis and inversion flags cover the original x2226 flags. The
+chosen `ProneOrientation` is checkpointed and stays attached to the recovery
+until the fighter returns to an ordinary action. The reusable
+`fighter::damage::prone_face_up` kernel has unit coverage for both axes,
+inversion, zero and unordered comparisons.
 
 At the end of DownBound, separate A/B press ages are checked before a fresh
 upward C-stick and then roll input. The ages reset on entry, so an attack pressed
@@ -61,13 +69,15 @@ parity claims.
 `game_damage_floor` covers neutral tech recovery, tech and missed-tech rolls in
 both directions, DownBound buffering and reset, attack/roll/stand priority,
 fresh and held C-stick histories, inclusive thresholds, sampled root motion,
-bone-derived ECB changes for the full grounded recovery suffix, get-up attack
-contact through the shared combat pipeline, exact recovery protection and its
-first vulnerable frame, state durations, repeat lockout, non-tumble separation,
-DamageFall persistence, resource rejection, serialization, checkpoint replay
-and reset. The two tech/knockdown conformance scenarios run normally.
+bone-derived ECB changes for the full grounded recovery suffix, both evaluated
+prone families through rolls/stand/attack, get-up attack contact through the
+shared combat pipeline, exact recovery protection and its first vulnerable
+frame, state durations, repeat lockout, non-tumble separation, DamageFall
+persistence, resource rejection, serialization, checkpoint replay and reset.
+The two tech/knockdown conformance scenarios run normally.
 
-This profile does not yet provide action-specific airborne damage poses, prone
-orientation variants or input-lock states. Wall/ceiling reflection and techs
-are supplied separately by the [damage-surface profile](damage-surfaces.md).
-The remaining paths need their own native resources and scheduler integration.
+This profile does not yet provide action-specific airborne damage poses,
+grounded DownDamage reactions or input-lock states. Wall/ceiling reflection and
+techs are supplied separately by the
+[damage-surface profile](damage-surfaces.md). The remaining paths need their own
+native resources and scheduler integration.

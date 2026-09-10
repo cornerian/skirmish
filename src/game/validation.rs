@@ -422,7 +422,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             )
             .chain(fighter.ledge.iter().map(|p| &p.attack.attack))
             .chain(fighter.special.iter().flat_map(|p| [&p.ground, &p.air]))
-            .chain(fighter.knockdown.iter().map(|p| &p.attack))
+            .chain(
+                fighter
+                    .knockdown
+                    .iter()
+                    .flat_map(|p| [&p.face_up.attack, &p.face_down.attack]),
+            )
         {
             require(
                 rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),

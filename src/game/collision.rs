@@ -420,7 +420,8 @@ fn land(
         f.action,
         Action::Damage | Action::DamageFall | Action::FlyReflectWall | Action::FlyReflectCeiling
     ) {
-        super::damage::land(f, &rules.damage, input);
+        let pose = simulation::pose(f, data)?;
+        super::damage::land(f, data, &pose, &rules.damage, input)?;
     } else if !super::special::transfer_ground_air(f, true) && !super::aerial::land(f, data)? {
         simulation::enter(f, Action::Landing);
     }

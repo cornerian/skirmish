@@ -191,7 +191,11 @@ pub struct FighterData {
 }
 
 impl FighterData {
-    pub(crate) fn attack(&self, action: super::Action) -> Option<&Attack> {
+    pub(crate) fn attack(
+        &self,
+        action: super::Action,
+        prone: Option<super::damage::ProneOrientation>,
+    ) -> Option<&Attack> {
         if action == super::Action::Jab {
             return Some(&self.jab);
         }
@@ -199,7 +203,7 @@ impl FighterData {
             return Some(&self.ledge.as_ref()?.attack.attack);
         }
         if action == super::Action::DownAttack {
-            return Some(&self.knockdown.as_ref()?.attack);
+            return Some(&self.knockdown.as_ref()?.variant(prone)?.attack);
         }
         if let Some(attack) = self
             .special

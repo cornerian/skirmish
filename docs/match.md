@@ -167,7 +167,9 @@ recovery rules assign invincibility to each tech and get-up action. Physical
 L/R and separate A/B ages are sampled during hitlag and ordinary frames; A/B
 ages reset when DownBound begins and provide its attack buffer. Damage at or
 above its inclusive threshold retains tumble eligibility through DamageFall
-until floor contact. Optional
+until floor contact. The evaluated hip-bone matrix and per-fighter axis/inversion
+flags select checkpointed face-up or face-down resources for the entire
+missed-tech suffix. Optional
 [`rules.damage.surface_response`](damage-surfaces.md) adds strict directional
 wall/ceiling eligibility, normal-based reflected velocity, repeat state and
 configured FlyReflectWall/FlyReflectCeiling durations. Optional
@@ -274,7 +276,7 @@ priority action graph remain unported. The optional [damage-floor profile](damag
 and directional floor techs plus resource-driven missed-tech rolls, standing and
 get-up attacks. The
 [damage-surface profile](damage-surfaces.md) supplies ordinary tumble
-reflections and wall/ceiling techs. Prone-orientation variants remain unported.
+reflections and wall/ceiling techs. Grounded DownDamage reactions remain unported.
 
 Combat omits item/Slash/capture clash branches, dynamic metal/state knockback modifiers,
 vulnerability/target flags, powershield/reflect and character-specific shield responses,

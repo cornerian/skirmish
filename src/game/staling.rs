@@ -70,7 +70,7 @@ pub(crate) fn flush(
 ) -> Result<(), Error> {
     for action in fighter.staling.transitions.drain(..) {
         if rules.is_some() {
-            let move_id = match data.attack(action) {
+            let move_id = match data.attack(action, fighter.prone) {
                 Some(attack) => attack.move_id.ok_or_else(|| {
                     Error::Data("staling requires an explicit attack move_id".into())
                 })?,

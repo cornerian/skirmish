@@ -76,6 +76,29 @@ pub struct RecoveryInvincibilityRules {
 #[serde(deny_unknown_fields)]
 pub struct KnockdownAttributes {
     pub passive_poses: Vec<Vec<Bone>>,
+    pub orientation: ProneOrientationRules,
+    pub face_up: ProneRecoveryAttributes,
+    pub face_down: ProneRecoveryAttributes,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProneOrientation {
+    FaceUp,
+    FaceDown,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProneOrientationRules {
+    pub hip_bone: usize,
+    pub use_z_axis: bool,
+    pub invert: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProneRecoveryAttributes {
     pub bound_poses: Vec<Vec<Bone>>,
     pub wait_poses: Vec<Vec<Bone>>,
     pub forward: FloorTechMotion,
@@ -221,32 +244,43 @@ pub(crate) fn validate_knockdown_attributes(
     fighter: &FighterData,
     profile: &FloorResponseRules,
 ) -> Result<(), Error> {
-    for motion in [&attributes.forward, &attributes.backward] {
-        validate_ground_motion(motion, fighter)?;
+    if attributes.orientation.hip_bone >= fighter.bones.len() {
+        return Err(Error::Data(
+            "prone orientation requires a valid hip bone".into(),
+        ));
     }
-    for (poses, frames) in [
-        (&attributes.passive_poses, profile.passive_frames),
-        (&attributes.bound_poses, profile.down_bound_frames),
-        (&attributes.wait_poses, profile.down_wait_frames),
-        (&attributes.stand_poses, profile.down_stand_frames),
-    ] {
-        if poses.len() != frames as usize {
+    validate_poses(&attributes.passive_poses, profile.passive_frames, fighter)?;
+    for variant in [&attributes.face_up, &attributes.face_down] {
+        validate_ground_motion(&variant.forward, fighter)?;
+        validate_ground_motion(&variant.backward, fighter)?;
+        for (poses, frames) in [
+            (&variant.bound_poses, profile.down_bound_frames),
+            (&variant.wait_poses, profile.down_wait_frames),
+            (&variant.stand_poses, profile.down_stand_frames),
+        ] {
+            validate_poses(poses, frames, fighter)?;
+        }
+        if let Some(invincibility) = &profile.recovery_invincibility
+            && (invincibility.missed_roll_frames > variant.forward.frames.len() as u32
+                || invincibility.missed_roll_frames > variant.backward.frames.len() as u32
+                || invincibility.attack_frames > variant.attack.frames.len() as u32)
+        {
             return Err(Error::Data(
-                "floor-recovery poses must match the configured duration".into(),
+                "knockdown invincibility exceeds the supplied action".into(),
             ));
         }
-        for pose in poses {
-            super::validation::validate_animation_pose(pose, fighter)?;
-        }
     }
-    if let Some(invincibility) = &profile.recovery_invincibility
-        && (invincibility.missed_roll_frames > attributes.forward.frames.len() as u32
-            || invincibility.missed_roll_frames > attributes.backward.frames.len() as u32
-            || invincibility.attack_frames > attributes.attack.frames.len() as u32)
-    {
+    Ok(())
+}
+
+fn validate_poses(poses: &[Vec<Bone>], frames: u32, fighter: &FighterData) -> Result<(), Error> {
+    if poses.len() != frames as usize {
         return Err(Error::Data(
-            "knockdown invincibility exceeds the supplied action".into(),
+            "floor-recovery poses must match the configured duration".into(),
         ));
+    }
+    for pose in poses {
+        super::validation::validate_animation_pose(pose, fighter)?;
     }
     Ok(())
 }
@@ -279,10 +313,25 @@ impl FloorTechAttributes {
 }
 
 impl KnockdownAttributes {
-    pub(crate) fn motion(&self, action: Action) -> Option<&FloorTechMotion> {
+    pub(crate) fn variant(
+        &self,
+        orientation: Option<ProneOrientation>,
+    ) -> Option<&ProneRecoveryAttributes> {
+        match orientation? {
+            ProneOrientation::FaceUp => Some(&self.face_up),
+            ProneOrientation::FaceDown => Some(&self.face_down),
+        }
+    }
+
+    pub(crate) fn motion(
+        &self,
+        action: Action,
+        orientation: Option<ProneOrientation>,
+    ) -> Option<&FloorTechMotion> {
+        let variant = self.variant(orientation)?;
         match action {
-            Action::DownForward => Some(&self.forward),
-            Action::DownBack => Some(&self.backward),
+            Action::DownForward => Some(&variant.forward),
+            Action::DownBack => Some(&variant.backward),
             _ => None,
         }
     }
@@ -612,7 +661,7 @@ pub(crate) fn update_animation(
     input: super::Controller,
 ) {
     fighter.reflect_lockout = fighter.reflect_lockout.saturating_sub(1);
-    if let Some(motion) = ground_motion(fighter.action, data)
+    if let Some(motion) = ground_motion(fighter, data)
         && fighter.action_frame as usize >= motion.frames.len()
     {
         super::simulation::enter(fighter, Action::Wait);
@@ -620,7 +669,9 @@ pub(crate) fn update_animation(
     }
     if fighter.action == Action::DownAttack
         && data.knockdown.as_ref().is_some_and(|attributes| {
-            fighter.action_frame as usize >= attributes.attack.frames.len()
+            attributes
+                .variant(fighter.prone)
+                .is_some_and(|variant| fighter.action_frame as usize >= variant.attack.frames.len())
         })
     {
         super::simulation::enter(fighter, Action::Wait);
@@ -913,12 +964,18 @@ pub(crate) fn reflect(
 
 /// Damage-floor callback shared by Damage and DamageFall. False leaves a
 /// non-tumbling or profile-free damage action under its existing policy.
-pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules, input: super::Controller) -> bool {
+pub(crate) fn land(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    pose: &crate::collision::bones::Pose,
+    rules: &CombatRules,
+    input: super::Controller,
+) -> Result<bool, Error> {
     let Some(profile) = &rules.floor_response else {
-        return false;
+        return Ok(false);
     };
     if !fighter.tumbling {
-        return false;
+        return Ok(false);
     }
     let action = if damage::can_tech(
         false,
@@ -942,56 +999,71 @@ pub(crate) fn land(fighter: &mut Fighter, rules: &CombatRules, input: super::Con
     };
     enter_recovery(fighter, action, profile);
     if action == Action::DownBound {
+        if let Some(attributes) = &data.knockdown {
+            let matrix = pose
+                .world_matrix(attributes.orientation.hip_bone)
+                .map_err(physics)?;
+            fighter.prone = Some(
+                if damage::prone_face_up(
+                    matrix,
+                    attributes.orientation.use_z_axis,
+                    attributes.orientation.invert,
+                ) {
+                    ProneOrientation::FaceUp
+                } else {
+                    ProneOrientation::FaceDown
+                },
+            );
+        }
         fighter.locomotion.attack_a_age = 255;
         fighter.locomotion.attack_b_age = 255;
     }
-    true
+    Ok(true)
 }
 
 pub(crate) fn ground_recovery_pose<'a>(
     fighter: &Fighter,
     data: &'a FighterData,
 ) -> Option<&'a [Bone]> {
-    if fighter.action == Action::DownStand {
-        return data
-            .knockdown
-            .as_ref()?
-            .stand_poses
-            .get(fighter.action_frame as usize)
-            .map(Vec::as_slice);
-    }
     if let Some(attributes) = &data.knockdown {
+        if fighter.action == Action::Passive {
+            return attributes
+                .passive_poses
+                .get(fighter.action_frame as usize)
+                .map(Vec::as_slice);
+        }
+        let variant = attributes.variant(fighter.prone)?;
         let poses = match fighter.action {
-            Action::Passive => Some(&attributes.passive_poses),
-            Action::DownBound => Some(&attributes.bound_poses),
-            Action::DownWait => Some(&attributes.wait_poses),
+            Action::DownBound => Some(&variant.bound_poses),
+            Action::DownWait => Some(&variant.wait_poses),
+            Action::DownStand => Some(&variant.stand_poses),
             _ => None,
         };
         if let Some(poses) = poses {
             return poses.get(fighter.action_frame as usize).map(Vec::as_slice);
         }
     }
-    ground_motion(fighter.action, data)?
+    ground_motion(fighter, data)?
         .frames
         .get(fighter.action_frame as usize)
         .map(|frame| frame.bones.as_slice())
 }
 
 pub(crate) fn ground_recovery_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
-    let frame = ground_motion(fighter.action, data)?
+    let frame = ground_motion(fighter, data)?
         .frames
         .get(fighter.action_frame as usize)?;
     Some(frame.root_translation * fighter.facing)
 }
 
-fn ground_motion(action: Action, data: &FighterData) -> Option<&FloorTechMotion> {
+fn ground_motion<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a FloorTechMotion> {
     data.floor_tech
         .as_ref()
-        .and_then(|attributes| attributes.motion(action))
+        .and_then(|attributes| attributes.motion(fighter.action))
         .or_else(|| {
             data.knockdown
                 .as_ref()
-                .and_then(|attributes| attributes.motion(action))
+                .and_then(|attributes| attributes.motion(fighter.action, fighter.prone))
         })
 }
 
