@@ -31,9 +31,11 @@ Both catch animations recover normally after a miss.
 The victim's timer starts at `base + percent * scale` on contact. CaptureWait
 and CaptureDamage subtract the passive decrement once per active frame. The
 complete `ftCommon_GrabMash` transition subtracts one additional penalty for a
-fresh A/B/X/Y/shoulder press and one for any main-stick axis whose latched sign
-changes beyond the strict threshold. Neutral stick does not reset a latch, and
-button plus stick input can subtract twice. Hitlag freezes all of this state.
+fresh A/B/X/Y/processed-shoulder press and one for any main-stick axis whose
+latched sign changes beyond the strict threshold. Digital and analog shoulder
+pressure share one logical edge, so pressing digital L/R over held analog
+pressure does not mash twice. Neutral stick does not reset a latch, and button
+plus stick input can subtract twice. Hitlag freezes all of this state.
 Expiry in CaptureDamage waits for that reaction to return to CaptureWait; expiry
 there detaches the pair, applies opposite release velocities, and enters sampled
 CatchCut/CaptureCut actions before ordinary recovery.
@@ -56,8 +58,8 @@ entry, retained dash momentum, pending and completed Turn facing, Squat entry,
 pummel priority,
 single-hit timing, repeated pummels, shared hitlag, sampled holder and victim
 reaction poses, independent reaction completion, passive and mashed escape,
-button freshness, stick latches, hitlag timer freeze, cut actions and release
-motion, all throw directions, input suppression, checkpoint replay, stable
+button and analog-shoulder freshness, stick latches, hitlag timer freeze, cut
+actions and release motion, all throw directions, input suppression, checkpoint replay, stable
 simultaneous-catch order, airborne rejection, hurtbox pair cleanup on KO, and
 malformed resources. `game_hurtbox_eligibility` adds the per-capsule
 state/grabbable filters and directional bone scale. Three grab/throw conformance
@@ -67,8 +69,8 @@ throw stick-crossing predicates; `grab_mash_differential` compares the complete
 mash function over arbitrary timer, input and latch state. Both select complete
 functions from pinned original C.
 
-This profile does not yet implement tether catches, analog-trigger mash
-synthesis, cargo carries, separate high/low capture reactions, throw or
+This profile does not yet implement tether catches, cargo carries, separate
+high/low capture reactions, throw or
 pummel staling, weight-scaled animation rate, character overrides, or multiplayer
 capture interference. Catch-versus-hit and capture-clash priority also need the
 larger original contact scheduler.

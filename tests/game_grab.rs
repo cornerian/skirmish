@@ -521,6 +521,49 @@ fn passive_capture_timer_releases_without_mash_input() {
 }
 
 #[test]
+fn analog_shoulder_mash_uses_one_logical_edge_and_checkpoints_its_rearm() {
+    let mut resource = data();
+    let escape = &mut resource.rules.grab.as_mut().unwrap().escape;
+    escape.timer_base = 40.0;
+    escape.timer_percent_scale = 0.0;
+    escape.timer_decrement = 1.0;
+    escape.mash_penalty = 4.0;
+    let mut game = held(resource);
+    let victim_input = |buttons, stick, trigger| {
+        let mut controllers = IDLE;
+        controllers[1] = Controller {
+            buttons,
+            stick,
+            cstick: [0.0; 2],
+            trigger,
+        };
+        controllers
+    };
+
+    let fresh = step(&mut game, victim_input(0, [0.0; 2], 0.4));
+    assert_eq!(fresh.fighters[1].grab.escape_timer, 35.0);
+    let checkpoint = game.checkpoint();
+    let suffix = [
+        victim_input(0, [0.0; 2], 0.4),
+        victim_input(BUTTON_L, [0.0; 2], 0.4),
+        IDLE,
+        victim_input(0, [0.0; 2], 0.4),
+        victim_input(BUTTON_A, [0.8, 0.0], 0.4),
+    ];
+    let expected = suffix.map(|controllers| step(&mut game, controllers));
+    assert_eq!(expected[0].fighters[1].grab.escape_timer, 34.0);
+    assert_eq!(expected[1].fighters[1].grab.escape_timer, 33.0);
+    assert_eq!(expected[2].fighters[1].grab.escape_timer, 32.0);
+    assert_eq!(expected[3].fighters[1].grab.escape_timer, 27.0);
+    assert_eq!(expected[4].fighters[1].grab.escape_timer, 18.0);
+
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for (controllers, expected) in suffix.into_iter().zip(expected) {
+        assert_eq!(step(&mut game, controllers), expected);
+    }
+}
+
+#[test]
 fn capture_timer_scales_with_existing_percent_on_contact() {
     let mut resource = data();
     let escape = &mut resource.rules.grab.as_mut().unwrap().escape;

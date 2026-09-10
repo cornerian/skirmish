@@ -189,7 +189,8 @@ scenarios. `game_grab` covers distinct standing/dash bone-sampled contact,
 Dash/Run/Turn/Squat entry, retained momentum, miss recovery, all four throw
 directions, pummel priority and repeat lifecycle, one captured-damage
 event, shared hitlag, sampled holder/victim attachment motion, independent
-CaptureDamage completion, passive and button/stick-mashed escape, timer freeze,
+CaptureDamage completion, passive and button/stick/analog-shoulder-mashed
+escape, logical shoulder rearming, timer freeze,
 release motion and cut actions, main/C-stick priority and fresh-edge history,
 held-victim input suppression, checkpoint suffixes,
 simultaneous ordering, target policy, KO cleanup and invalid resources. A focused

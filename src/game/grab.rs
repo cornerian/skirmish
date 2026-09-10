@@ -854,7 +854,7 @@ fn update_escape(data: &MatchData, state: &mut MatchState, victim: usize, contro
     target.grab.escape_timer -= rules.timer_decrement;
     let pressed = controller.buttons & !target.previous_input.buttons;
     let logical_pressed = u32::from(pressed)
-        | if pressed & (super::BUTTON_L | super::BUTTON_R) != 0 {
+        | if controller.shield_held() && !target.previous_input.shield_held() {
             1 << 31
         } else {
             0
