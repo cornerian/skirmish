@@ -63,12 +63,12 @@ pub enum ChannelTarget {
     Texture,
 }
 
-/// A channel present in the background or panel animations of `MnMaAll.dat`.
+/// A channel present in the currently modeled `MnMaAll.dat` animation slices.
 ///
-/// ConTop additionally uses material diffuse and texture color-register channels;
-/// Cursor additionally uses texture scale and color-register channels. They are
-/// rejected until their renderer consumers are modeled rather than decoded into
-/// values that nothing can apply correctly.
+/// This includes every scalar channel needed by the background and panel roots,
+/// plus the Main-selection `ConTop` subtree. Cursor texture scale and its other
+/// color-register channels remain explicit decoding errors until their consumer
+/// state is modeled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Channel {
     JointRotationX,
@@ -81,11 +81,16 @@ pub enum Channel {
     JointScaleY,
     JointScaleZ,
     JointBranchVisibility,
+    MaterialDiffuseR,
+    MaterialDiffuseG,
+    MaterialDiffuseB,
     MaterialAlpha,
     TextureImage,
     TextureTranslationU,
     TextureTranslationV,
     TextureBlend,
+    TextureKonstAlpha,
+    TextureTev0Alpha,
 }
 
 impl Channel {
@@ -101,11 +106,16 @@ impl Channel {
             (ChannelTarget::Joint, 9) => Some(Self::JointScaleY),
             (ChannelTarget::Joint, 10) => Some(Self::JointScaleZ),
             (ChannelTarget::Joint, 12) => Some(Self::JointBranchVisibility),
+            (ChannelTarget::Material, 4) => Some(Self::MaterialDiffuseR),
+            (ChannelTarget::Material, 5) => Some(Self::MaterialDiffuseG),
+            (ChannelTarget::Material, 6) => Some(Self::MaterialDiffuseB),
             (ChannelTarget::Material, 10) => Some(Self::MaterialAlpha),
             (ChannelTarget::Texture, 1) => Some(Self::TextureImage),
             (ChannelTarget::Texture, 2) => Some(Self::TextureTranslationU),
             (ChannelTarget::Texture, 3) => Some(Self::TextureTranslationV),
             (ChannelTarget::Texture, 9) => Some(Self::TextureBlend),
+            (ChannelTarget::Texture, 15) => Some(Self::TextureKonstAlpha),
+            (ChannelTarget::Texture, 19) => Some(Self::TextureTev0Alpha),
             _ => None,
         }
     }
@@ -870,6 +880,19 @@ mod tests {
         bytes[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
     }
 
+    #[test]
+    fn maps_every_main_selection_material_and_texture_channel() {
+        for (target, raw, expected) in [
+            (ChannelTarget::Material, 4, Channel::MaterialDiffuseR),
+            (ChannelTarget::Material, 5, Channel::MaterialDiffuseG),
+            (ChannelTarget::Material, 6, Channel::MaterialDiffuseB),
+            (ChannelTarget::Texture, 15, Channel::TextureKonstAlpha),
+            (ChannelTarget::Texture, 19, Channel::TextureTev0Alpha),
+        ] {
+            assert_eq!(Channel::decode(target, raw), Some(expected));
+        }
+    }
+
     fn write_be_f32(bytes: &mut [u8], offset: usize, value: f32) {
         write_be_u32(bytes, offset, value.to_bits());
     }
@@ -1137,12 +1160,12 @@ mod tests {
             Err(DecodeError::MisalignedDescriptor { .. } | DecodeError::OutOfBounds { .. })
         ));
 
-        let unsupported_channel = fixture(&[0x11, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 4, 0, 0);
+        let unsupported_channel = fixture(&[0x11, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 14, 0, 0);
         assert!(matches!(
             HsdDataSection::new(&unsupported_channel)
                 .unwrap()
                 .decode_aobj(DataOffset::new(AOBJ as u32), ChannelTarget::Material),
-            Err(DecodeError::UnsupportedChannel { channel: 4, .. })
+            Err(DecodeError::UnsupportedChannel { channel: 14, .. })
         ));
 
         let incomplete = fixture(&[0x21, 0, 0, 0, 0, 0], 5, 0, 0);

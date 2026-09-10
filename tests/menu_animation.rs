@@ -207,11 +207,16 @@ fn raw_channel(value: Channel) -> u8 {
         Channel::JointScaleY => 9,
         Channel::JointScaleZ => 10,
         Channel::JointBranchVisibility => 12,
+        Channel::MaterialDiffuseR => 4,
+        Channel::MaterialDiffuseG => 5,
+        Channel::MaterialDiffuseB => 6,
         Channel::MaterialAlpha => 10,
         Channel::TextureImage => 1,
         Channel::TextureTranslationU => 2,
         Channel::TextureTranslationV => 3,
         Channel::TextureBlend => 9,
+        Channel::TextureKonstAlpha => 15,
+        Channel::TextureTev0Alpha => 19,
     }
 }
 
