@@ -4,6 +4,8 @@
 //! It deliberately knows nothing about scene graphs, renderers, or Melee menu
 //! identities, so the same clock can drive replacement and modded resources.
 
+pub mod instance;
+
 use thiserror::Error;
 
 use crate::menu::{AnimationCue, AnimationId, FrameRange};
