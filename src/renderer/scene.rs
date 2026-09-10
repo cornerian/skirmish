@@ -26,8 +26,116 @@ pub enum CullMode {
     All,
 }
 
+/// Source MObj descriptor identity within one `skirmish-visual-v1` resource.
+///
+/// The integer is an offset in the source archive's data section. It remains
+/// distinct from joints and texture stages so presentation adapters cannot
+/// accidentally target every material owned by one joint. Resource and runtime
+/// instance scope must be supplied by the future manifest/presentation bridge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct MaterialSourceId(u32);
+
+impl MaterialSourceId {
+    pub const fn new(offset: u32) -> Self {
+        Self(offset)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Source TObj descriptor identity for the first texture stage retained by the preview.
+///
+/// Like [`MaterialSourceId`], this offset is only unique within its visual
+/// resource; preserving all ordered stages belongs in the future manifest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct TextureSourceId(u32);
+
+impl TextureSourceId {
+    pub const fn new(offset: u32) -> Self {
+        Self(offset)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Fixed HSD draw pass encoded in the high render-mode bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RenderModeClass {
+    Opaque,
+    TextureEdge,
+    Translucent,
+}
+
+/// Validated source MObj render mode.
+///
+/// All flags are retained, while the mutually exclusive pass bits are checked
+/// once at load time. `0x2000_0000` is not a valid HSD pass class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct RenderMode(u32);
+
+impl RenderMode {
+    const CLASS_MASK: u32 = 0x6000_0000;
+    const CHANNEL_MODE_MASK: u32 = 0x3;
+    const ALPHA_MODE_SHIFT: u32 = 13;
+
+    pub const fn from_bits(bits: u32) -> Option<Self> {
+        if bits & Self::CLASS_MASK == 0x2000_0000 {
+            None
+        } else {
+            Some(Self(bits))
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn class(self) -> RenderModeClass {
+        match self.0 & Self::CLASS_MASK {
+            0 => RenderModeClass::Opaque,
+            0x4000_0000 => RenderModeClass::TextureEdge,
+            0x6000_0000 => RenderModeClass::Translucent,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Whether the HSD diffuse channel reads its value from vertex color.
+    pub const fn uses_vertex_color(self) -> bool {
+        self.diffuse_mode() & 0x2 != 0
+    }
+
+    /// Whether the HSD alpha channel reads its value from vertex alpha.
+    pub const fn uses_vertex_alpha(self) -> bool {
+        let encoded = (self.0 >> Self::ALPHA_MODE_SHIFT) & Self::CHANNEL_MODE_MASK;
+        let mode = if encoded == 0 {
+            self.diffuse_mode()
+        } else {
+            encoded
+        };
+        mode & 0x2 != 0
+    }
+
+    const fn diffuse_mode(self) -> u32 {
+        let encoded = self.0 & Self::CHANNEL_MODE_MASK;
+        if encoded == 0 { 1 } else { encoded }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Material {
+    /// Exact source MObj descriptor when exported; absent for legacy/procedural scenes.
+    pub source_id: Option<MaterialSourceId>,
+    /// Exact source TObj descriptor for the previewed first texture stage.
+    pub texture_source_id: Option<TextureSourceId>,
+    /// Fixed source pass and the remaining original MObj render flags.
+    pub render_mode: Option<RenderMode>,
     pub color: [f32; 4],
     pub texture: Option<usize>,
     pub cull_mode: CullMode,
@@ -319,6 +427,20 @@ impl Scene {
                 "{}: material must be an object",
                 raw.name
             );
+            let material_source_id = optional_u32_field(&raw.material, "material_offset")
+                .with_context(|| format!("{}: invalid material_offset", raw.name))?
+                .map(MaterialSourceId::new);
+            let render_mode = optional_u32_field(&raw.material, "render_mode")
+                .with_context(|| format!("{}: invalid render_mode", raw.name))?
+                .map(|bits| {
+                    RenderMode::from_bits(bits).with_context(|| {
+                        format!(
+                            "{}: render_mode {bits:#010x} uses reserved pass bits 0x20000000",
+                            raw.name
+                        )
+                    })
+                })
+                .transpose()?;
             let mut color = raw.color.unwrap_or([1.; 4]);
             if let Some(diffuse) = raw.material.get("diffuse").filter(|v| !v.is_null()) {
                 color = serde_json::from_value(diffuse.clone())
@@ -343,7 +465,7 @@ impl Scene {
             };
             let cull_mode =
                 cull_mode(cull).with_context(|| format!("{}: invalid cull mode", raw.name))?;
-            let texture = if let Some(stages) =
+            let (texture, texture_source_id) = if let Some(stages) =
                 raw.material.get("textures").filter(|v| !v.is_null())
             {
                 let stages = stages
@@ -357,6 +479,14 @@ impl Scene {
                     ));
                 }
                 if let Some(stage) = stages.first() {
+                    ensure!(
+                        stage.is_object(),
+                        "{}: texture stage must be an object",
+                        raw.name
+                    );
+                    let texture_source_id = optional_u32_field(stage, "tobj_offset")
+                        .with_context(|| format!("{}: invalid first-stage tobj_offset", raw.name))?
+                        .map(TextureSourceId::new);
                     scene.warnings.push(format!("{}: first texture uses UV0, repeat wrapping and linear filtering; GX texture transforms, coordinate generation, LOD and texture operations are approximated.", raw.name));
                     if ["wrap_s", "wrap_t"].iter().any(|key| {
                         stage
@@ -373,7 +503,7 @@ impl Scene {
                         .get("texture_id")
                         .and_then(Value::as_str)
                         .or_else(|| stage.get("texture_ids")?.get(0)?.as_str());
-                    match id.and_then(|id| table.get(id)) {
+                    let texture = match id.and_then(|id| table.get(id)) {
                         Some(source) => {
                             let index = if let Some(&index) = loaded.get(&source.id) {
                                 index
@@ -393,12 +523,13 @@ impl Scene {
                             ));
                             None
                         }
-                    }
+                    };
+                    (texture, texture_source_id)
                 } else {
-                    None
+                    (None, None)
                 }
             } else {
-                None
+                (None, None)
             };
             for warning in raw
                 .material
@@ -417,32 +548,46 @@ impl Scene {
                 ));
                 generated_normals(&raw.positions, &raw.indices)
             });
-            let use_color = raw
+            let explicit_use_color = raw
                 .material
                 .get("uses_vertex_color")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
-            let use_alpha = raw
+                .and_then(Value::as_bool);
+            let explicit_use_alpha = raw
                 .material
                 .get("uses_vertex_alpha")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
+                .and_then(Value::as_bool);
+            let (use_color, use_alpha) = if let Some(mode) = render_mode {
+                let use_color = mode.uses_vertex_color();
+                let use_alpha = mode.uses_vertex_alpha();
+                ensure!(
+                    explicit_use_color.is_none_or(|explicit| explicit == use_color),
+                    "{}: uses_vertex_color contradicts render_mode",
+                    raw.name
+                );
+                ensure!(
+                    explicit_use_alpha.is_none_or(|explicit| explicit == use_alpha),
+                    "{}: uses_vertex_alpha contradicts render_mode",
+                    raw.name
+                );
+                (use_color, use_alpha)
+            } else {
+                (
+                    explicit_use_color.unwrap_or(true),
+                    explicit_use_alpha.unwrap_or(true),
+                )
+            };
             // GX vertex channels replace their material channels; the renderer multiplies
             // these normalized factors, so an active source vertex channel needs identity.
-            if raw
-                .material
-                .get("uses_vertex_color")
-                .and_then(Value::as_bool)
-                == Some(true)
-            {
+            let material_uses_vertex_color = render_mode
+                .map(RenderMode::uses_vertex_color)
+                .unwrap_or(explicit_use_color == Some(true));
+            let material_uses_vertex_alpha = render_mode
+                .map(RenderMode::uses_vertex_alpha)
+                .unwrap_or(explicit_use_alpha == Some(true));
+            if material_uses_vertex_color {
                 color[..3].fill(1.);
             }
-            if raw
-                .material
-                .get("uses_vertex_alpha")
-                .and_then(Value::as_bool)
-                == Some(true)
-            {
+            if material_uses_vertex_alpha {
                 color[3] = 1.;
             }
             let vertices = raw
@@ -472,6 +617,9 @@ impl Scene {
                 vertices,
                 indices: raw.indices,
                 material: Material {
+                    source_id: material_source_id,
+                    texture_source_id,
+                    render_mode,
                     color,
                     texture,
                     cull_mode,
@@ -511,6 +659,9 @@ impl Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
+                source_id: None,
+                texture_source_id: None,
+                render_mode: None,
                 color: [1.; 4],
                 texture: Some(0),
                 cull_mode: CullMode::Back,
@@ -559,6 +710,9 @@ impl Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
             material: Material {
+                source_id: None,
+                texture_source_id: None,
+                render_mode: None,
                 color: [0.2, 0.24, 0.32, 1.],
                 texture: Some(0),
                 cull_mode: CullMode::Back,
@@ -690,6 +844,18 @@ fn validate_attribute<const N: usize>(
         "{name}: nonfinite {attribute}"
     );
     Ok(())
+}
+
+fn optional_u32_field(value: &Value, field: &str) -> Result<Option<u32>> {
+    let Some(value) = value.get(field).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let integer = value
+        .as_u64()
+        .with_context(|| format!("{field} must be an unsigned integer"))?;
+    Ok(Some(
+        u32::try_from(integer).with_context(|| format!("{field} exceeds 32 bits"))?,
+    ))
 }
 
 fn cull_mode(value: &Value) -> Result<CullMode> {
@@ -826,4 +992,186 @@ fn add_quad(
     }
     mesh.indices
         .extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use std::fs;
+
+    fn document(material: Value) -> Value {
+        json!({
+            "schema": "skirmish-visual-v1",
+            "meshes": [{
+                "name": "triangle",
+                "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                "indices": [0, 1, 2],
+                "material": material,
+            }],
+        })
+    }
+
+    fn load_document(root: &Path, document: &Value) -> Result<Scene> {
+        let path = root.join("scene.json");
+        fs::write(&path, serde_json::to_vec(document)?)?;
+        Scene::load(&path)
+    }
+
+    #[test]
+    fn visual_source_material_texture_and_render_mode_metadata_is_retained() {
+        let directory = tempfile::tempdir().unwrap();
+        let material_offset = 0x6_a180;
+        let texture_offset = 0x6_a110;
+        let render_mode = 0x6000_0019;
+        let scene = load_document(
+            directory.path(),
+            &document(json!({
+                "material_offset": material_offset,
+                "render_mode": render_mode,
+                "textures": [{"tobj_offset": texture_offset}],
+            })),
+        )
+        .unwrap();
+
+        let material = &scene.meshes[0].material;
+        assert_eq!(
+            material.source_id,
+            Some(MaterialSourceId::new(material_offset))
+        );
+        assert_eq!(
+            material.texture_source_id,
+            Some(TextureSourceId::new(texture_offset))
+        );
+        let mode = material.render_mode.unwrap();
+        assert_eq!(mode.bits(), render_mode);
+        assert_eq!(mode.class(), RenderModeClass::Translucent);
+        assert_eq!(material.texture, None, "identity survives a missing PNG");
+
+        let legacy = load_document(directory.path(), &document(json!({}))).unwrap();
+        assert_eq!(legacy.meshes[0].material.source_id, None);
+        assert_eq!(legacy.meshes[0].material.texture_source_id, None);
+        assert_eq!(legacy.meshes[0].material.render_mode, None);
+    }
+
+    #[test]
+    fn render_mode_is_canonical_for_initial_vertex_channel_ownership() {
+        let directory = tempfile::tempdir().unwrap();
+        let cases = [
+            (
+                "vertex color, material alpha",
+                0x0000_2002,
+                [1.0, 1.0, 1.0, 0.5],
+                [0.6, 0.7, 0.8, 1.0],
+            ),
+            (
+                "material color, vertex alpha",
+                0x0000_4001,
+                [0.2, 0.3, 0.4, 1.0],
+                [1.0, 1.0, 1.0, 0.9],
+            ),
+            (
+                "vertex alpha inherits vertex diffuse mode",
+                0x0000_0002,
+                [1.0; 4],
+                [0.6, 0.7, 0.8, 0.9],
+            ),
+        ];
+
+        for (label, render_mode, expected_material, expected_vertex) in cases {
+            let mut source = document(json!({
+                "render_mode": render_mode,
+                "diffuse": [0.2, 0.3, 0.4, 1.0],
+                "material_alpha": 0.5,
+            }));
+            source["meshes"][0]["colors0"] = json!([
+                [0.6, 0.7, 0.8, 0.9],
+                [0.6, 0.7, 0.8, 0.9],
+                [0.6, 0.7, 0.8, 0.9],
+            ]);
+
+            let scene = load_document(directory.path(), &source).unwrap();
+            assert_eq!(scene.meshes[0].material.color, expected_material, "{label}");
+            assert_eq!(
+                scene.meshes[0].vertices[0].color, expected_vertex,
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_visual_source_identity_and_render_mode_metadata_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let cases = [
+            (
+                "material type",
+                json!({"material_offset": "430464"}),
+                "material_offset must be an unsigned integer",
+            ),
+            (
+                "material width",
+                json!({"material_offset": u64::from(u32::MAX) + 1}),
+                "material_offset exceeds 32 bits",
+            ),
+            (
+                "reserved pass",
+                json!({"render_mode": 0x2000_0000_u32}),
+                "reserved pass bits",
+            ),
+            (
+                "vertex color contradiction",
+                json!({"render_mode": 0x0000_0002_u32, "uses_vertex_color": false}),
+                "uses_vertex_color contradicts render_mode",
+            ),
+            (
+                "vertex alpha contradiction",
+                json!({"render_mode": 0x0000_4001_u32, "uses_vertex_alpha": false}),
+                "uses_vertex_alpha contradicts render_mode",
+            ),
+            (
+                "texture type",
+                json!({"textures": [{"tobj_offset": -1}]}),
+                "tobj_offset must be an unsigned integer",
+            ),
+            (
+                "texture stage type",
+                json!({"textures": [7]}),
+                "texture stage must be an object",
+            ),
+        ];
+
+        for (label, material, expected) in cases {
+            let error = load_document(directory.path(), &document(material)).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(expected),
+                "unexpected {label} error: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_mode_vertex_channel_sources_follow_hsd_fallbacks() {
+        let expected_vertex_alpha = [
+            [false, false, true, true],
+            [false, false, true, true],
+            [true, false, true, true],
+            [true, false, true, true],
+        ];
+
+        for diffuse in 0_u32..4 {
+            for alpha in 0_u32..4 {
+                let mode = RenderMode::from_bits(diffuse | (alpha << 13)).unwrap();
+                assert_eq!(
+                    mode.uses_vertex_color(),
+                    diffuse & 0x2 != 0,
+                    "diffuse mode {diffuse}, alpha mode {alpha}"
+                );
+                assert_eq!(
+                    mode.uses_vertex_alpha(),
+                    expected_vertex_alpha[diffuse as usize][alpha as usize],
+                    "diffuse mode {diffuse}, alpha mode {alpha}"
+                );
+            }
+        }
+    }
 }

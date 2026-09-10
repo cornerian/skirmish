@@ -7,43 +7,66 @@ use sdl3::video::Window;
 use wgpu::util::DeviceExt;
 
 use super::platform::SdlSurface;
-use super::scene::{Camera, CullMode, Mesh, Scene, Texture, Vertex};
+use super::scene::{
+    Camera, CullMode, MaterialSourceId, Mesh, RenderMode, RenderModeClass, Scene, Texture, Vertex,
+};
 use super::viewport::{PresentationTransform, fitted_viewport};
 
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-/// Selects draw parts by the identities currently carried by a visual export.
+/// Selects draw parts attached to one exported joint for visibility updates.
 ///
 /// `instance_id` is an exact match: `None` only selects untagged parts. A source
-/// joint may own several draw parts, so one selector can intentionally update
-/// more than one draw until the export grows DObj/PObj identities. This is not a
-/// runtime scene-instance identity.
+/// joint may own several materials and draw parts, all of which intentionally
+/// share its branch visibility. This is not a runtime scene-instance identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExportDrawSelector<'a> {
     pub joint: u32,
     pub instance_id: Option<&'a str>,
 }
 
-/// Mutable presentation fields for draws selected from an immutable scene.
+/// Selects every draw using one source MObj offset in the loaded visual resource.
 ///
-/// Omitted fields retain their current values. Geometry and textures are never
-/// rebuilt by an update.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct DrawUpdate {
-    pub visible: Option<bool>,
-    pub material_color: Option<[f32; 4]>,
+/// One MObj may intentionally feed several draw parts. Legacy/procedural draws
+/// without source metadata cannot be selected through this source-facing API.
+/// This transitional selector does not distinguish future runtime clones.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExportMaterialSelector {
+    pub source_id: MaterialSourceId,
+}
+
+/// One type-safe mutable update over immutable scene resources.
+///
+/// Joint visibility may fan out over all attached materials. Material color is
+/// instead selected by exact MObj identity, preventing a joint with several
+/// materials from receiving an ambiguous broadcast.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DrawUpdate<'a> {
+    Visibility {
+        target: ExportDrawSelector<'a>,
+        visible: bool,
+    },
+    MaterialColor {
+        target: ExportMaterialSelector,
+        color: [f32; 4],
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ExportDrawIdentity {
     joint: Option<u32>,
     instance_id: Option<String>,
+    material_source_id: Option<MaterialSourceId>,
 }
 
 impl ExportDrawIdentity {
-    fn matches(&self, selector: ExportDrawSelector<'_>) -> bool {
+    fn matches_joint(&self, selector: ExportDrawSelector<'_>) -> bool {
         self.joint == Some(selector.joint) && self.instance_id.as_deref() == selector.instance_id
+    }
+
+    fn matches_material(&self, selector: ExportMaterialSelector) -> bool {
+        self.material_source_id == Some(selector.source_id)
     }
 }
 
@@ -52,6 +75,7 @@ impl From<&Mesh> for ExportDrawIdentity {
         Self {
             joint: mesh.joint,
             instance_id: mesh.instance_id.clone(),
+            material_source_id: mesh.material.source_id,
         }
     }
 }
@@ -60,17 +84,6 @@ impl From<&Mesh> for ExportDrawIdentity {
 struct DrawState {
     visible: bool,
     material_color: [f32; 4],
-}
-
-impl DrawState {
-    fn apply(&mut self, update: DrawUpdate) {
-        if let Some(visible) = update.visible {
-            self.visible = visible;
-        }
-        if let Some(color) = update.material_color {
-            self.material_color = color;
-        }
-    }
 }
 
 impl From<&Mesh> for DrawState {
@@ -86,6 +99,7 @@ impl From<&Mesh> for DrawState {
 struct DrawPresentation {
     identity: ExportDrawIdentity,
     state: DrawState,
+    material_render_mode: Option<RenderMode>,
     render_class: DrawRenderClass,
 }
 
@@ -94,31 +108,64 @@ impl DrawPresentation {
         Self {
             identity: mesh.into(),
             state: mesh.into(),
-            render_class: DrawRenderClass::infer(mesh, textures),
+            material_render_mode: mesh.material.render_mode,
+            render_class: DrawRenderClass::from_mesh(mesh, textures),
         }
     }
 
-    fn update(&mut self, selector: ExportDrawSelector<'_>, update: DrawUpdate) -> bool {
-        if !self.identity.matches(selector) {
-            return false;
+    fn update(&mut self, update: DrawUpdate<'_>) -> bool {
+        match update {
+            DrawUpdate::Visibility { target, visible } if self.identity.matches_joint(target) => {
+                self.state.visible = visible;
+                true
+            }
+            DrawUpdate::MaterialColor { target, color }
+                if self.identity.matches_material(target) =>
+            {
+                let mut color = color;
+                if self
+                    .material_render_mode
+                    .is_some_and(RenderMode::uses_vertex_color)
+                {
+                    color[..3].fill(1.0);
+                }
+                if self
+                    .material_render_mode
+                    .is_some_and(RenderMode::uses_vertex_alpha)
+                {
+                    color[3] = 1.0;
+                }
+                self.state.material_color = color;
+                true
+            }
+            _ => false,
         }
-        self.state.apply(update);
-        true
     }
 }
 
-/// Immutable approximation of HSD's MObj-derived OPA/XLU classification.
+/// Immutable HSD draw-pass classification, with a legacy inference fallback.
 ///
-/// The current export omits the source render mode, so this is inferred once
-/// from serialized alpha. Material animation changes color but never the
-/// render pass, depth-write policy, or sort bucket.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Material animation changes color but never this pass, its depth-write
+/// policy, or its sort bucket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum DrawRenderClass {
     Opaque,
-    Transparent,
+    TextureEdge,
+    Translucent,
 }
 
 impl DrawRenderClass {
+    const ALL: [Self; 3] = [Self::Opaque, Self::TextureEdge, Self::Translucent];
+
+    fn from_mesh(mesh: &Mesh, textures: &[Texture]) -> Self {
+        match mesh.material.render_mode.map(|mode| mode.class()) {
+            Some(RenderModeClass::Opaque) => Self::Opaque,
+            Some(RenderModeClass::TextureEdge) => Self::TextureEdge,
+            Some(RenderModeClass::Translucent) => Self::Translucent,
+            None => Self::infer(mesh, textures),
+        }
+    }
+
     fn infer(mesh: &Mesh, textures: &[Texture]) -> Self {
         let transparent = mesh
             .vertices
@@ -133,15 +180,27 @@ impl DrawRenderClass {
                     .any(|pixel| pixel[3] < 255)
             });
         if transparent {
-            Self::Transparent
+            Self::Translucent
         } else {
             Self::Opaque
         }
     }
 
-    const fn is_transparent(self) -> bool {
-        matches!(self, Self::Transparent)
+    const fn uses_blending(self) -> bool {
+        !matches!(self, Self::Opaque)
     }
+
+    const fn writes_depth(self) -> bool {
+        !matches!(self, Self::Translucent)
+    }
+
+    const fn pipeline_offset(self) -> usize {
+        self as usize * 3
+    }
+}
+
+fn compare_draw_order(a_class: DrawRenderClass, b_class: DrawRenderClass) -> std::cmp::Ordering {
+    a_class.cmp(&b_class)
 }
 
 fn retain_draw(mesh: &Mesh) -> bool {
@@ -163,17 +222,11 @@ struct Draw {
     count: u32,
     texture: usize,
     cull_pipeline: usize,
-    center: Vec3,
 }
 
 impl Draw {
     fn pipeline(&self) -> usize {
-        self.cull_pipeline
-            + if self.presentation.render_class.is_transparent() {
-                3
-            } else {
-                0
-            }
+        self.cull_pipeline + self.presentation.render_class.pipeline_offset()
     }
 }
 
@@ -389,7 +442,14 @@ impl GpuScene {
         });
         let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
         let mut pipelines = Vec::new();
-        for transparent in [false, true] {
+        for render_class in DrawRenderClass::ALL {
+            let targets = [Some(wgpu::ColorTargetState {
+                format,
+                blend: render_class
+                    .uses_blending()
+                    .then_some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })];
             for cull_mode in [None, Some(wgpu::Face::Front), Some(wgpu::Face::Back)] {
                 pipelines.push(
                     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -412,8 +472,8 @@ impl GpuScene {
                         },
                         depth_stencil: Some(wgpu::DepthStencilState {
                             format: DEPTH_FORMAT,
-                            depth_write_enabled: Some(!transparent),
-                            depth_compare: Some(wgpu::CompareFunction::Less),
+                            depth_write_enabled: Some(render_class.writes_depth()),
+                            depth_compare: Some(wgpu::CompareFunction::LessEqual),
                             stencil: Default::default(),
                             bias: Default::default(),
                         }),
@@ -422,11 +482,7 @@ impl GpuScene {
                             module: &shader,
                             entry_point: Some("fs_main"),
                             compilation_options: Default::default(),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format,
-                                blend: transparent.then_some(wgpu::BlendState::ALPHA_BLENDING),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
+                            targets: &targets,
                         }),
                         multiview_mask: None,
                         cache: None,
@@ -444,12 +500,6 @@ impl GpuScene {
                 CullMode::Front => 1,
                 CullMode::Back => 2,
             };
-            let mut low = Vec3::splat(f32::INFINITY);
-            let mut high = Vec3::splat(f32::NEG_INFINITY);
-            for vertex in &mesh.vertices {
-                low = low.min(Vec3::from(vertex.position));
-                high = high.max(Vec3::from(vertex.position));
-            }
             let uniform = MaterialUniform {
                 color: mesh.material.color,
             };
@@ -485,7 +535,6 @@ impl GpuScene {
                 count: mesh.indices.len() as u32,
                 texture: mesh.material.texture.unwrap_or(scene.textures.len()),
                 cull_pipeline,
-                center: low * 0.5 + high * 0.5,
             });
         }
         if let Some(error) = scope.pop().await {
@@ -531,12 +580,8 @@ impl GpuScene {
         })
     }
 
-    fn update_draws(
-        &mut self,
-        selector: ExportDrawSelector<'_>,
-        update: DrawUpdate,
-    ) -> Result<usize> {
-        if let Some(color) = update.material_color {
+    fn update_draws(&mut self, update: DrawUpdate<'_>) -> Result<usize> {
+        if let DrawUpdate::MaterialColor { color, .. } = update {
             ensure!(
                 color.iter().all(|component| component.is_finite()),
                 "material color must contain finite components"
@@ -544,10 +589,10 @@ impl GpuScene {
         }
         let mut matched = 0;
         for draw in &mut self.draws {
-            if !draw.presentation.update(selector, update) {
+            if !draw.presentation.update(update) {
                 continue;
             }
-            if update.material_color.is_some() {
+            if matches!(update, DrawUpdate::MaterialColor { .. }) {
                 self.queue.write_buffer(
                     &draw.material,
                     0,
@@ -618,17 +663,7 @@ impl GpuScene {
             .filter(|draw| draw.presentation.state.visible)
             .collect();
         order.sort_by(|a, b| {
-            let a_transparent = a.presentation.render_class.is_transparent();
-            let b_transparent = b.presentation.render_class.is_transparent();
-            a_transparent.cmp(&b_transparent).then_with(|| {
-                if a_transparent {
-                    view.transform_point3(a.center)
-                        .z
-                        .total_cmp(&view.transform_point3(b.center).z)
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            })
+            compare_draw_order(a.presentation.render_class, b.presentation.render_class)
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene"),
@@ -813,17 +848,14 @@ impl WindowRenderer {
         )
     }
 
-    /// Updates every draw part with this exact export joint/instance identity.
+    /// Applies one source-targeted visibility or material update to resident draws.
     ///
-    /// The returned count lets callers detect missing or grouped source parts.
-    /// This only writes small presentation uniforms and CPU visibility state;
+    /// Visibility uses an exported joint/part selector and may fan out to every
+    /// attached material. Color requires an exact source MObj identity.
+    /// The returned count exposes missing or intentionally grouped draw parts;
     /// immutable geometry and textures remain resident.
-    pub fn update_draws(
-        &mut self,
-        selector: ExportDrawSelector<'_>,
-        update: DrawUpdate,
-    ) -> Result<usize> {
-        self.gpu.update_draws(selector, update)
+    pub fn update_draws(&mut self, update: DrawUpdate<'_>) -> Result<usize> {
+        self.gpu.update_draws(update)
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -917,14 +949,14 @@ async fn render_rgba_with_updates(
     scene: &Scene,
     width: u32,
     height: u32,
-    updates: &[(ExportDrawSelector<'_>, DrawUpdate)],
+    updates: &[DrawUpdate<'_>],
 ) -> Result<Vec<u8>> {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = request_adapter(&instance, None).await?;
     let mut gpu = GpuScene::new(&adapter, scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
-    for &(selector, update) in updates {
-        gpu.update_draws(selector, update)?;
+    for &update in updates {
+        gpu.update_draws(update)?;
     }
     capture_gpu_rgba(&gpu, width, height).await
 }
@@ -1008,6 +1040,7 @@ async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
+    use super::super::scene::RenderMode;
     use super::*;
 
     // Some host Vulkan loaders are not safe to initialize twice in parallel.
@@ -1089,6 +1122,9 @@ mod tests {
                 vertices,
                 indices: vec![0, 1, 2, 0, 2, 3],
                 material: super::super::scene::Material {
+                    source_id: Some(MaterialSourceId::new(100)),
+                    texture_source_id: None,
+                    render_mode: None,
                     color,
                     texture: None,
                     cull_mode: CullMode::None,
@@ -1141,6 +1177,7 @@ mod tests {
             ExportDrawIdentity {
                 joint: Some(0x1234),
                 instance_id: Some("cursor-2".into()),
+                material_source_id: None,
             }
         );
         assert_eq!(
@@ -1166,16 +1203,13 @@ mod tests {
         let matched = presentations
             .iter_mut()
             .map(|draw| {
-                usize::from(draw.update(
-                    ExportDrawSelector {
+                usize::from(draw.update(DrawUpdate::Visibility {
+                    target: ExportDrawSelector {
                         joint: 7,
                         instance_id: Some("clone-a"),
                     },
-                    DrawUpdate {
-                        visible: Some(true),
-                        ..Default::default()
-                    },
-                ))
+                    visible: true,
+                }))
             })
             .sum::<usize>();
 
@@ -1187,7 +1221,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [true, true, false, false, false]
         );
-        assert!(presentations[3].identity.matches(ExportDrawSelector {
+        assert!(presentations[3].identity.matches_joint(ExportDrawSelector {
             joint: 7,
             instance_id: None,
         }));
@@ -1199,37 +1233,191 @@ mod tests {
         let mesh = exported_mesh(42, None, true, color);
         let mut presentation = exported_presentation(&mesh);
 
-        assert!(presentation.update(
-            ExportDrawSelector {
+        assert!(presentation.update(DrawUpdate::Visibility {
+            target: ExportDrawSelector {
                 joint: 42,
                 instance_id: None,
             },
-            DrawUpdate {
-                visible: Some(true),
-                ..Default::default()
-            },
-        ));
+            visible: true,
+        }));
 
         assert!(presentation.state.visible);
         assert_eq!(presentation.state.material_color, color);
     }
 
     #[test]
+    fn material_selector_requires_exact_source_identity() {
+        let material_a = MaterialSourceId::new(100);
+        let material_b = MaterialSourceId::new(200);
+        let mut meshes = [
+            exported_mesh(7, Some("part"), false, [1.0; 4]),
+            exported_mesh(7, Some("part"), false, [1.0; 4]),
+            exported_mesh(7, Some("part"), false, [1.0; 4]),
+            exported_mesh(7, Some("part"), false, [1.0; 4]),
+        ];
+        meshes[0].material.source_id = Some(material_a);
+        meshes[1].material.source_id = Some(material_a);
+        meshes[2].material.source_id = Some(material_b);
+        let mut presentations = meshes.iter().map(exported_presentation).collect::<Vec<_>>();
+
+        let matched = presentations
+            .iter_mut()
+            .map(|draw| {
+                usize::from(draw.update(DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector {
+                        source_id: material_a,
+                    },
+                    color: [0.25, 0.5, 0.75, 1.0],
+                }))
+            })
+            .sum::<usize>();
+
+        assert_eq!(matched, 2, "one MObj may feed several draw parts");
+        assert_eq!(
+            presentations
+                .iter()
+                .map(|draw| draw.state.material_color)
+                .collect::<Vec<_>>(),
+            [
+                [0.25, 0.5, 0.75, 1.0],
+                [0.25, 0.5, 0.75, 1.0],
+                [1.0; 4],
+                [1.0; 4],
+            ]
+        );
+        assert!(!presentations[3].update(DrawUpdate::MaterialColor {
+            target: ExportMaterialSelector {
+                source_id: material_a,
+            },
+            color: [0.0; 4],
+        }));
+        assert_eq!(presentations[3].state.material_color, [1.0; 4]);
+        assert_eq!(presentations[2].state.material_color, [1.0; 4]);
+    }
+
+    #[test]
+    fn material_update_preserves_identity_for_vertex_owned_channels() {
+        let material = MaterialSourceId::new(100);
+        let update = [0.125, 0.25, 0.5, 0.75];
+        let cases = [
+            ("legacy", None, update),
+            (
+                "source material color and alpha",
+                RenderMode::from_bits(0),
+                update,
+            ),
+            (
+                "vertex color, material alpha",
+                RenderMode::from_bits(0x0000_2002),
+                [1.0, 1.0, 1.0, update[3]],
+            ),
+            (
+                "material color, vertex alpha",
+                RenderMode::from_bits(0x0000_4001),
+                [update[0], update[1], update[2], 1.0],
+            ),
+            (
+                "vertex alpha inherits vertex diffuse mode",
+                RenderMode::from_bits(0x0000_0002),
+                [1.0; 4],
+            ),
+        ];
+
+        for (label, render_mode, expected) in cases {
+            let mut mesh = exported_mesh(7, None, false, [0.9; 4]);
+            mesh.material.source_id = Some(material);
+            mesh.material.render_mode = render_mode;
+            let mut presentation = exported_presentation(&mesh);
+
+            assert!(presentation.update(DrawUpdate::MaterialColor {
+                target: ExportMaterialSelector {
+                    source_id: material,
+                },
+                color: update,
+            }));
+            assert_eq!(presentation.state.material_color, expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn source_render_mode_selects_three_fixed_gpu_passes() {
+        let cases = [
+            (0x0000_0011, DrawRenderClass::Opaque, false, true, 0),
+            (0x4000_0011, DrawRenderClass::TextureEdge, true, true, 3),
+            (0x6000_0011, DrawRenderClass::Translucent, true, false, 6),
+        ];
+        for (bits, expected, blending, depth_write, pipeline_offset) in cases {
+            let mut mesh = exported_mesh(7, None, false, [1.0, 1.0, 1.0, 0.25]);
+            mesh.material.render_mode = RenderMode::from_bits(bits);
+            let class = exported_presentation(&mesh).render_class;
+
+            assert_eq!(class, expected);
+            assert_eq!(class.uses_blending(), blending);
+            assert_eq!(class.writes_depth(), depth_write);
+            assert_eq!(class.pipeline_offset(), pipeline_offset);
+        }
+    }
+
+    #[test]
+    fn legacy_render_class_is_inferred_once_from_serialized_alpha() {
+        let material = MaterialSourceId::new(100);
+        let mut opaque = exported_mesh(7, None, false, [1.0; 4]);
+        opaque.material.source_id = Some(material);
+        let translucent = exported_mesh(7, None, false, [1.0, 1.0, 1.0, 0.25]);
+        let mut opaque_presentation = exported_presentation(&opaque);
+
+        assert_eq!(opaque_presentation.render_class, DrawRenderClass::Opaque);
+        assert_eq!(
+            exported_presentation(&translucent).render_class,
+            DrawRenderClass::Translucent
+        );
+        assert!(opaque_presentation.update(DrawUpdate::MaterialColor {
+            target: ExportMaterialSelector {
+                source_id: material,
+            },
+            color: [1.0, 1.0, 1.0, 0.25],
+        }));
+        assert_eq!(
+            opaque_presentation.render_class,
+            DrawRenderClass::Opaque,
+            "animated alpha cannot move a legacy draw between passes"
+        );
+    }
+
+    #[test]
+    fn draw_order_keeps_fixed_passes_and_authored_order_within_each_pass() {
+        let mut draws = [
+            (DrawRenderClass::Translucent, "xlu-a"),
+            (DrawRenderClass::Opaque, "opa-a"),
+            (DrawRenderClass::TextureEdge, "tex-a"),
+            (DrawRenderClass::Opaque, "opa-b"),
+            (DrawRenderClass::Translucent, "xlu-b"),
+            (DrawRenderClass::TextureEdge, "tex-b"),
+        ];
+
+        draws.sort_by(|(a, _), (b, _)| compare_draw_order(*a, *b));
+
+        assert_eq!(
+            draws.map(|(_, name)| name),
+            ["opa-a", "opa-b", "tex-a", "tex-b", "xlu-a", "xlu-b"]
+        );
+    }
+
+    #[test]
     fn material_alpha_does_not_change_the_fixed_render_class() {
-        let mesh = exported_mesh(42, None, false, [1.0; 4]);
+        let mut mesh = exported_mesh(42, None, false, [1.0; 4]);
+        let material = MaterialSourceId::new(100);
+        mesh.material.source_id = Some(material);
+        mesh.material.render_mode = RenderMode::from_bits(0);
         let mut presentation = exported_presentation(&mesh);
         assert_eq!(presentation.render_class, DrawRenderClass::Opaque);
 
-        assert!(presentation.update(
-            ExportDrawSelector {
-                joint: 42,
-                instance_id: None,
+        assert!(presentation.update(DrawUpdate::MaterialColor {
+            target: ExportMaterialSelector {
+                source_id: material,
             },
-            DrawUpdate {
-                material_color: Some([1.0, 1.0, 1.0, 0.25]),
-                ..Default::default()
-            },
-        ));
+            color: [1.0, 1.0, 1.0, 0.25],
+        }));
 
         assert_eq!(presentation.state.material_color[3], 0.25);
         assert_eq!(presentation.render_class, DrawRenderClass::Opaque);
@@ -1269,16 +1457,13 @@ mod tests {
                 GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
             let hidden = capture_gpu_rgba(&gpu, 257, 193).await?;
             assert_eq!(
-                gpu.update_draws(
-                    ExportDrawSelector {
+                gpu.update_draws(DrawUpdate::Visibility {
+                    target: ExportDrawSelector {
                         joint: 7,
                         instance_id: Some("cube"),
                     },
-                    DrawUpdate {
-                        visible: Some(true),
-                        ..Default::default()
-                    },
-                )?,
+                    visible: true,
+                })?,
                 1
             );
             let visible = capture_gpu_rgba(&gpu, 257, 193).await?;
@@ -1311,26 +1496,33 @@ mod tests {
                 GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
             let red = capture_gpu_rgba(&gpu, 257, 193).await?;
             assert_eq!(
-                gpu.update_draws(
-                    ExportDrawSelector {
-                        joint: 7,
-                        instance_id: Some("quad"),
+                gpu.update_draws(DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector {
+                        source_id: MaterialSourceId::new(100),
                     },
-                    DrawUpdate {
-                        material_color: Some([0.0, 1.0, 0.0, 1.0]),
-                        ..Default::default()
+                    color: [0.0, 0.0, 1.0, 1.0],
+                })?,
+                1
+            );
+            assert_eq!(
+                gpu.update_draws(DrawUpdate::MaterialColor {
+                    target: ExportMaterialSelector {
+                        source_id: MaterialSourceId::new(100),
                     },
-                )?,
+                    color: [0.0, 1.0, 0.0, 1.0],
+                })?,
                 1
             );
             let quad = gpu
                 .draws
                 .iter()
                 .position(|draw| {
-                    draw.presentation.identity.matches(ExportDrawSelector {
-                        joint: 7,
-                        instance_id: Some("quad"),
-                    })
+                    draw.presentation
+                        .identity
+                        .matches_joint(ExportDrawSelector {
+                            joint: 7,
+                            instance_id: Some("quad"),
+                        })
                 })
                 .expect("uploaded quad draw");
             assert_eq!(
