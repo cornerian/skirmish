@@ -1,11 +1,12 @@
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use skirmish::{
+    animation::{Channel, ChannelValue, DataOffset},
     menu::AnimationId,
     presentation::{
         instance::{
             InstanceDescriptor, InstanceId, JointDescriptor, JointLocal, MaterialDescriptor,
-            SceneInstance,
+            SceneInstance, SourceTarget,
         },
         manifest::{
             AuthoredJointLocal, BindError, BindingDiagnosticKind, ClipScope, ClipSpec,
@@ -232,6 +233,148 @@ fn structurally_derives_exact_targets_and_preserves_null_image_slots() {
             .len(),
         3
     );
+}
+
+#[test]
+fn exact_occurrence_lookup_builds_independent_runtime_instances() {
+    const SECOND_DOBJ: u32 = 0x680;
+    const SECOND_MAT_ANIM: u32 = 0x6a0;
+
+    let (mut archive, mut manifest) = fixture_archive(true);
+    put_u32(&mut archive, 32 + DOBJ + 4, SECOND_DOBJ);
+    put_u32(&mut archive, 32 + SECOND_DOBJ + 8, MOBJ);
+    put_u32(&mut archive, 32 + MAT_ANIM, SECOND_MAT_ANIM);
+    put_u32(&mut archive, 32 + SECOND_MAT_ANIM + 4, MATERIAL_AOBJ);
+    put_u32(&mut archive, 32 + SECOND_MAT_ANIM + 8, TEX_ANIM);
+    manifest.resource.sha256 = format!("{:x}", Sha256::digest(&archive));
+
+    let bound = manifest.bind_hsd_dat(&archive).unwrap();
+    let hierarchy = bound.hierarchy("fixture").unwrap();
+    assert_eq!(hierarchy.materials().len(), 2);
+    assert_eq!(hierarchy.textures().len(), 2);
+
+    let joint = &hierarchy.joints()[0];
+    assert_eq!(
+        hierarchy.target(joint.identity),
+        Some(SourceTarget::Joint(joint.source_id.clone()))
+    );
+
+    let first_material = &hierarchy.materials()[0];
+    let second_material = &hierarchy.materials()[1];
+    assert_eq!(
+        first_material.identity.descriptor_offset,
+        second_material.identity.descriptor_offset
+    );
+    assert_ne!(first_material.identity, second_material.identity);
+    assert_ne!(first_material.source_id, second_material.source_id);
+    assert_eq!(
+        hierarchy.target(first_material.identity),
+        Some(SourceTarget::Material(first_material.source_id.clone()))
+    );
+    assert_eq!(
+        hierarchy.target(second_material.identity),
+        Some(SourceTarget::Material(second_material.source_id.clone()))
+    );
+
+    let first_texture = &hierarchy.textures()[0];
+    let second_texture = &hierarchy.textures()[1];
+    assert_eq!(
+        first_texture.identity.descriptor_offset,
+        second_texture.identity.descriptor_offset
+    );
+    assert_ne!(first_texture.identity, second_texture.identity);
+    assert_ne!(first_texture.source_id, second_texture.source_id);
+    assert_eq!(
+        hierarchy.target(first_texture.identity),
+        Some(SourceTarget::Texture(first_texture.source_id.clone()))
+    );
+    assert_eq!(
+        hierarchy.target(second_texture.identity),
+        Some(SourceTarget::Texture(second_texture.source_id.clone()))
+    );
+
+    let mut wrong_kind = first_texture.identity;
+    wrong_kind.kind = SourceObjectKind::Material;
+    let mut wrong_descriptor = first_texture.identity;
+    wrong_descriptor.descriptor_offset = DataOffset::new(TOBJ + 4);
+    let mut wrong_owner = first_texture.identity;
+    wrong_owner.owner_joint_offset = DataOffset::new(MODEL + 4);
+    let mut wrong_dobj = first_texture.identity;
+    wrong_dobj.dobj_index = Some(99);
+    let mut wrong_texture = first_texture.identity;
+    wrong_texture.texture_index = Some(99);
+    for nonexistent in [
+        wrong_kind,
+        wrong_descriptor,
+        wrong_owner,
+        wrong_dobj,
+        wrong_texture,
+    ] {
+        assert_eq!(hierarchy.target(nonexistent), None);
+    }
+
+    let descriptor = hierarchy.instance_descriptor();
+    assert_eq!(descriptor.joints.len(), hierarchy.joints().len());
+    assert_eq!(descriptor.materials.len(), hierarchy.materials().len());
+    assert_eq!(descriptor.textures.len(), hierarchy.textures().len());
+    assert_eq!(descriptor.joints[0].source_id, joint.source_id);
+    assert_eq!(descriptor.joints[0].parent, joint.parent);
+    assert_eq!(
+        descriptor.joints[0].local,
+        joint.local.initial_runtime_local()
+    );
+    assert_eq!(descriptor.joints[0].visible, joint.visible);
+    assert_eq!(descriptor.joints[0].branch_recurses, joint.branch_recurses);
+    assert_eq!(descriptor.materials[0].source_id, first_material.source_id);
+    assert_eq!(descriptor.materials[0].diffuse, first_material.diffuse);
+    assert_eq!(descriptor.materials[0].alpha, first_material.alpha);
+    assert_eq!(descriptor.textures[0].source_id, first_texture.source_id);
+    assert_eq!(
+        descriptor.textures[0].current_image,
+        first_texture.current_image
+    );
+    assert_eq!(
+        descriptor.textures[0].translation,
+        first_texture.translation
+    );
+    assert_eq!(descriptor.textures[0].scale, first_texture.scale);
+    assert_eq!(descriptor.textures[0].blend, first_texture.blend);
+    assert_eq!(descriptor.textures[0].konst, first_texture.konst);
+    assert_eq!(descriptor.textures[0].tev0, first_texture.tev0);
+    assert_eq!(
+        descriptor.textures[0].image_slots,
+        first_texture
+            .image_slots
+            .iter()
+            .map(|slot| slot.source_id.clone())
+            .collect::<Vec<_>>()
+    );
+
+    let mut first = hierarchy.instantiate(InstanceId::new(100)).unwrap();
+    let second = hierarchy.instantiate(InstanceId::new(101)).unwrap();
+    let first_target = hierarchy.target(first_material.identity).unwrap();
+    first
+        .apply_channel(
+            &first_target,
+            ChannelValue {
+                channel: Channel::MaterialDiffuseR,
+                value: 0.5,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        first.material(&first_material.source_id).unwrap().diffuse()[0],
+        127
+    );
+    assert_eq!(
+        second
+            .material(&first_material.source_id)
+            .unwrap()
+            .diffuse()[0],
+        first_material.diffuse[0]
+    );
+    assert_eq!(first.id(), InstanceId::new(100));
+    assert_eq!(second.id(), InstanceId::new(101));
 }
 
 #[test]

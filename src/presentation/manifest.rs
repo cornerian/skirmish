@@ -18,8 +18,9 @@ use crate::{
     },
     menu::AnimationId,
     presentation::instance::{
-        ApplyError, InstanceError, InstanceId, LocalSrt, SceneInstance, SourceImageId,
-        SourceJointId, SourceMaterialId, SourceTarget, SourceTextureId,
+        ApplyError, InstanceDescriptor, InstanceError, InstanceId, JointDescriptor, LocalSrt,
+        MaterialDescriptor, SceneInstance, SourceImageId, SourceJointId, SourceMaterialId,
+        SourceTarget, SourceTextureId, TextureDescriptor,
     },
 };
 
@@ -581,6 +582,81 @@ impl BoundHierarchy {
 
     pub fn bindings(&self) -> &[BoundAnimation] {
         &self.bindings
+    }
+
+    /// Resolve one exact source occurrence to its typed runtime target.
+    ///
+    /// Every [`SourceBindingIdentity`] field participates in equality. Callers
+    /// that already have an occurrence identity should prefer this over an
+    /// offset-only query so shared MObj/TObj descriptors never broadcast.
+    pub fn target(&self, identity: SourceBindingIdentity) -> Option<SourceTarget> {
+        match identity.kind {
+            SourceObjectKind::Joint => self
+                .joints
+                .iter()
+                .find(|source| source.identity == identity)
+                .map(|source| SourceTarget::Joint(source.source_id.clone())),
+            SourceObjectKind::Material => self
+                .materials
+                .iter()
+                .find(|source| source.identity == identity)
+                .map(|source| SourceTarget::Material(source.source_id.clone())),
+            SourceObjectKind::Texture => self
+                .textures
+                .iter()
+                .find(|source| source.identity == identity)
+                .map(|source| SourceTarget::Texture(source.source_id.clone())),
+        }
+    }
+
+    /// Copy the bound hierarchy's validated initial state into the generic
+    /// renderer-independent instance description.
+    pub fn instance_descriptor(&self) -> InstanceDescriptor {
+        InstanceDescriptor {
+            joints: self
+                .joints
+                .iter()
+                .map(|source| JointDescriptor {
+                    source_id: source.source_id.clone(),
+                    parent: source.parent.clone(),
+                    local: source.local.initial_runtime_local(),
+                    visible: source.visible,
+                    branch_recurses: source.branch_recurses,
+                })
+                .collect(),
+            materials: self
+                .materials
+                .iter()
+                .map(|source| MaterialDescriptor {
+                    source_id: source.source_id.clone(),
+                    diffuse: source.diffuse,
+                    alpha: source.alpha,
+                })
+                .collect(),
+            textures: self
+                .textures
+                .iter()
+                .map(|source| TextureDescriptor {
+                    source_id: source.source_id.clone(),
+                    image_slots: source
+                        .image_slots
+                        .iter()
+                        .map(|slot| slot.source_id.clone())
+                        .collect(),
+                    current_image: source.current_image.clone(),
+                    translation: source.translation,
+                    scale: source.scale,
+                    blend: source.blend,
+                    konst: source.konst,
+                    tev0: source.tev0,
+                })
+                .collect(),
+        }
+    }
+
+    /// Construct one independently mutable runtime instance at initial state.
+    pub fn instantiate(&self, id: InstanceId) -> Result<SceneInstance, InstanceError> {
+        SceneInstance::new(id, self.instance_descriptor())
     }
 
     /// Resolve a canonical descriptor offset without discarding occurrences.
