@@ -73,6 +73,69 @@ fn dash_entry_then_held_input_runs_without_reapplying_initial_speed() {
     assert_eq!(game.state().fighters[0].action, Action::Wait);
 }
 
+// Run tests TurnRun before RunBrake. TurnRun stores the entry facing, pauses at
+// its script marker until velocity crosses x0.01, then flips and resumes Run.
+#[test]
+fn reversed_run_turns_after_deceleration_and_checkpoints_the_frozen_marker() {
+    let mut game = game();
+    for _ in 0..20 {
+        if step(&mut game, 0, [1.0, 0.0]).fighters[0].action == Action::Run {
+            break;
+        }
+    }
+    assert_eq!(game.state().fighters[0].action, Action::Run);
+    let boundary = game.data().fighters[0]
+        .locomotion
+        .as_ref()
+        .unwrap()
+        .turn_threshold;
+    let mut brake = game.clone();
+    assert_eq!(
+        step(&mut brake, 0, [boundary.next_up(), 0.0]).fighters[0].action,
+        Action::RunBrake
+    );
+    let entered = step(&mut game, 0, [boundary, 0.0]);
+    assert_eq!(entered.fighters[0].action, Action::RunTurn);
+    assert_eq!(entered.fighters[0].facing, 1.0);
+    assert_eq!(entered.fighters[0].locomotion.run_turn_facing, 1.0);
+
+    for _ in 0..20 {
+        if game.state().fighters[0].locomotion.run_turn_waiting {
+            break;
+        }
+        step(&mut game, 0, [-1.0, 0.0]);
+    }
+    let marker = game.data().fighters[0]
+        .locomotion
+        .as_ref()
+        .unwrap()
+        .run_turn_flip_frame;
+    assert!(game.state().fighters[0].locomotion.run_turn_waiting);
+    assert_eq!(game.state().fighters[0].action_frame, marker);
+    let checkpoint = game.checkpoint();
+    let mut expected = Vec::new();
+    for _ in 0..80 {
+        let before = game.state().fighters[0].clone();
+        let state = step(&mut game, 0, [-1.0, 0.0]);
+        if state.fighters[0].facing == 1.0 {
+            assert_eq!(state.fighters[0].action_frame, marker);
+        } else if before.facing == 1.0 {
+            assert!(before.ground_velocity <= 0.01);
+        }
+        expected.push(state);
+        if game.state().fighters[0].action == Action::Run {
+            break;
+        }
+    }
+    assert_eq!(game.state().fighters[0].action, Action::Run);
+    assert_eq!(game.state().fighters[0].facing, -1.0);
+    assert!(game.state().fighters[0].ground_velocity < 0.0);
+    game.restore_checkpoint(&checkpoint).unwrap();
+    for expected in expected {
+        assert_eq!(step(&mut game, 0, [-1.0, 0.0]), expected);
+    }
+}
+
 // fighter.c starts smash ages at the small common deadzone, not dash threshold.
 #[test]
 fn slow_tilt_misses_dash_window_but_neutral_rearms_it() {
@@ -423,5 +486,12 @@ fn legacy_profiles_remain_optional_and_unsupported_multijumps_are_rejected() {
     }
     let mut invalid = data();
     invalid.fighters[0].locomotion.as_mut().unwrap().max_jumps = 3;
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = data();
+    invalid.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .run_turn_velocity_scale = 0.0;
     assert!(Match::new(invalid, 42).is_err());
 }

@@ -251,14 +251,14 @@ motion rejection. The squeeze helpers already run against their complete pinned
 original C bodies in `ecb_differential`. Independent scheduler traces remain
 blocked until a separate producer exists.
 
-The movement/combat milestone activates the source-backed dash, standing turn,
-crouch, ordinary double jump, tap-jump/input-window, armor, main-stick SDI/ASDI,
-platform-drop and ordinary top-KO scenarios. Focused match integration targets
+The movement/combat milestone activates the source-backed dash, running and
+standing turns, crouch, ordinary double jump, tap-jump/input-window, armor,
+main-stick SDI/ASDI, platform-drop and ordinary top-KO scenarios. Focused match integration targets
 in the root `tests/game_*.rs` suite extend these beyond the original single gap scenario:
 
 | Passing target | Additional contracts |
 | --- | --- |
-| `locomotion` | Input age, launch timing, turn/crouch lifecycle, jump exhaustion and restoration |
+| `locomotion` | Input age, launch timing, standing and running-turn lifecycle, velocity-gated marker freeze, trigger priority, checkpoint replay, jump exhaustion and restoration |
 | `input_history` | Shared input ages through hitlag and recovery, fresh re-presses and conflicting resource rejection |
 | `hitlag_displacement` | Threshold boundaries, input held before damage, attacker/victim callbacks, expiry ordering, armor channels, checkpoint suffixes and transactional errors |
 | `platform_drop` | Supporting-line skip, stacked and solid floors, high-speed substeps, fresh versus held down input and checkpoint history |

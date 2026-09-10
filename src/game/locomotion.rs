@@ -1,8 +1,8 @@
-//! Ordinary locomotion callbacks from ftCo_{Dash,Run,RunBrake,Turn,Squat,
+//! Ordinary locomotion callbacks from ftCo_{Dash,Run,TurnRun,RunBrake,Turn,Squat,
 //! SquatWait,SquatRv,Jump,KneeBend,JumpAerial,Pass}.c and fighter.c input history.
 //! Parameters are supplied resources, not character presets. Animation lengths
-//! and the dash-to-run script event are explicit; animation poses, turn-run,
-//! character-specific jumps, multijumps and other interrupt chains remain absent.
+//! and script events are explicit; animation poses, character-specific jumps,
+//! multijumps and other interrupt chains remain absent.
 use super::{Action, BUTTON_A, BUTTON_X, BUTTON_Y, Controller, Error, Fighter, data::FighterData};
 use crate::fighter::{Movement, locomotion as math};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,9 @@ pub struct Parameters {
     pub run_threshold: f32,
     pub run_accel_taper_gain: f32,
     pub run_friction_multiplier: f32,
+    pub run_turn_animation_frames: u32,
+    pub run_turn_flip_frame: u32,
+    pub run_turn_velocity_scale: f32,
     pub run_brake_animation_frames: u32,
     pub run_brake_max_frames: f32,
     pub turn_threshold: f32,
@@ -77,6 +80,10 @@ pub struct State {
     pub turn_has_turned: bool,
     pub turn_smash: bool,
     pub dash_initial_delta: f32,
+    /// Facing captured by `ftCo_TurnRun_Enter` for its physics branch.
+    pub run_turn_facing: f32,
+    /// The animation event fired and is waiting for velocity to cross x0.01.
+    pub run_turn_waiting: bool,
     pub run_brake_frames: f32,
     pub pass_delay: Option<f32>,
 }
@@ -98,6 +105,8 @@ impl Default for State {
             turn_has_turned: false,
             turn_smash: false,
             dash_initial_delta: 0.0,
+            run_turn_facing: 0.0,
+            run_turn_waiting: false,
             run_brake_frames: 0.0,
             pass_delay: None,
         }
@@ -125,6 +134,7 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         p.dash_max_velocity,
         p.run_accel_taper_gain,
         p.run_friction_multiplier,
+        p.run_turn_velocity_scale,
         p.run_brake_max_frames,
         p.standing_turn_frames,
         p.air_jump_horizontal_multiplier,
@@ -133,6 +143,7 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
     ];
     let durations = [
         p.dash_animation_frames,
+        p.run_turn_animation_frames,
         p.run_brake_animation_frames,
         p.turn_animation_frames,
         p.crouch_animation_frames,
@@ -148,6 +159,8 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         || !(-1_000_000.0..=0.0).contains(&p.pass_velocity)
         || !durations.into_iter().all(|n| (1..=1_000_000).contains(&n))
         || p.dash_run_frame >= p.dash_animation_frames
+        || p.run_turn_flip_frame >= p.run_turn_animation_frames
+        || p.run_turn_velocity_scale == 0.0
         || ![p.dash_window, p.tap_jump_window, p.pass_window]
             .into_iter()
             .all(|n| (1..254).contains(&n))
@@ -205,6 +218,14 @@ fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     f.locomotion.turn_frames = if smash { 0.0 } else { p.standing_turn_frames };
     f.locomotion.turn_has_turned = false;
     f.locomotion.turn_smash = smash;
+}
+
+fn start_run_turn(f: &mut Fighter) {
+    let facing = f.facing;
+    enter(f, Action::RunTurn);
+    f.locomotion.run_turn_facing = facing;
+    f.locomotion.run_turn_waiting = false;
+    f.locomotion.turn_has_turned = false;
 }
 
 fn try_dash(f: &mut Fighter, p: &Parameters, input: Controller) -> bool {
@@ -272,6 +293,23 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
                 enter(f, Action::Wait);
             }
         }
+        Action::RunTurn => {
+            if !f.locomotion.turn_has_turned && f.action_frame >= p.run_turn_flip_frame {
+                f.locomotion.run_turn_waiting = true;
+                if p.run_turn_velocity_scale * f.ground_velocity <= 0.01 {
+                    f.locomotion.run_turn_waiting = false;
+                    f.locomotion.turn_has_turned = true;
+                    f.facing = -f.facing;
+                }
+            }
+            if f.locomotion.turn_has_turned && f.action_frame >= p.run_turn_animation_frames {
+                if input.stick[0] * f.facing >= p.run_threshold {
+                    enter(f, Action::Run);
+                } else {
+                    enter(f, Action::Wait);
+                }
+            }
+        }
         Action::Turn => {
             if f.locomotion.turn_frames > 0.0 {
                 f.locomotion.turn_frames -= 1.0;
@@ -311,6 +349,7 @@ pub(crate) fn update_actions(
                 | Action::Walk
                 | Action::Dash
                 | Action::Run
+                | Action::RunTurn
                 | Action::RunBrake
                 | Action::Turn
                 | Action::Squat
@@ -334,7 +373,10 @@ pub(crate) fn update_actions(
             f,
             p,
             input,
-            matches!(f.action, Action::Dash | Action::Run | Action::RunBrake),
+            matches!(
+                f.action,
+                Action::Dash | Action::Run | Action::RunTurn | Action::RunBrake
+            ),
         ) {
             f.short_hop = false;
             f.locomotion.jump_input = source;
@@ -370,9 +412,13 @@ pub(crate) fn update_actions(
         {
             enter(f, Action::Run)
         }
-        Action::Run if input.stick[0].abs() < p.run_threshold => {
-            enter(f, Action::RunBrake);
-            f.locomotion.run_brake_frames = p.run_brake_max_frames;
+        Action::Run => {
+            if input.stick[0] * f.facing <= p.turn_threshold {
+                start_run_turn(f);
+            } else if input.stick[0].abs() < p.run_threshold {
+                enter(f, Action::RunBrake);
+                f.locomotion.run_brake_frames = p.run_brake_max_frames;
+            }
         }
         Action::RunBrake if input.stick[1] < -p.crouch_enter_threshold => enter(f, Action::Squat),
         Action::Turn => {
@@ -477,7 +523,10 @@ pub fn ground_motion(
     let Some(p) = data.locomotion.as_ref() else {
         return false;
     };
-    if !matches!(f.action, Action::Dash | Action::Run | Action::RunBrake) {
+    if !matches!(
+        f.action,
+        Action::Dash | Action::Run | Action::RunTurn | Action::RunBrake
+    ) {
         return false;
     }
     let friction = data.movement.ground_friction * p.run_friction_multiplier;
@@ -499,6 +548,17 @@ pub fn ground_motion(
             -p.dash_acceleration_base
         };
         let target = input.stick[0] * p.dash_max_velocity;
+        if f.action == Action::RunTurn {
+            math::turn_run(
+                movement,
+                accel,
+                target,
+                f.locomotion.run_turn_facing,
+                data.movement.ground_friction,
+                p.run_friction_multiplier,
+            );
+            return true;
+        }
         if f.action == Action::Run && target != 0.0 {
             let ratio = movement.ground_velocity / target;
             if ratio > 0.0 && ratio < 1.0 {
@@ -509,4 +569,8 @@ pub fn ground_motion(
     }
     movement.project_ground();
     true
+}
+
+pub(crate) fn hold_action_frame(f: &Fighter) -> bool {
+    f.action == Action::RunTurn && f.locomotion.run_turn_waiting
 }

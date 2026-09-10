@@ -644,6 +644,7 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
                 f.locomotion.turn_frames,
                 f.locomotion.run_brake_frames,
                 f.locomotion.dash_initial_delta,
+                f.locomotion.run_turn_facing,
                 f.aerial.landing_elapsed,
                 f.aerial.landing_rate,
                 f.clank.clock,

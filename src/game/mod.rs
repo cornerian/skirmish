@@ -72,6 +72,7 @@ pub enum Action {
     Walk,
     Dash,
     Run,
+    RunTurn,
     RunBrake,
     Turn,
     Squat,

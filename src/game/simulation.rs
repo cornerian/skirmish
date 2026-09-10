@@ -743,7 +743,9 @@ pub(crate) fn advance(
                 fighter.invincibility = fighter.invincibility.saturating_sub(1);
             }
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
-                if !grab::advance_action_frame(fighter, throw_release) {
+                if !grab::advance_action_frame(fighter, throw_release)
+                    && !locomotion::hold_action_frame(fighter)
+                {
                     fighter.action_frame = fighter.action_frame.saturating_add(1);
                 }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);

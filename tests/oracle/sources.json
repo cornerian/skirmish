@@ -243,5 +243,10 @@
     "fixture": "tests/oracle/original/capture_pulled.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CapturePulled.c",
     "sha256": "14004df0dee607f3a84d2e205a35e298ab54b152c796d4dbb51975eafa0cbbbb"
+  },
+  {
+    "fixture": "tests/oracle/original/turn_run.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_TurnRun.c",
+    "sha256": "162624ab052be87b8d8046070059164de0b7c822be5c51ff54878f00a67d81f1"
   }
 ]
