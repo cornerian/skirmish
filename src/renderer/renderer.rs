@@ -86,13 +86,15 @@ impl From<&Mesh> for DrawState {
 struct DrawPresentation {
     identity: ExportDrawIdentity,
     state: DrawState,
+    render_class: DrawRenderClass,
 }
 
 impl DrawPresentation {
-    fn from_mesh(mesh: &Mesh) -> Self {
+    fn from_mesh(mesh: &Mesh, textures: &[Texture]) -> Self {
         Self {
             identity: mesh.into(),
             state: mesh.into(),
+            render_class: DrawRenderClass::infer(mesh, textures),
         }
     }
 
@@ -102,6 +104,43 @@ impl DrawPresentation {
         }
         self.state.apply(update);
         true
+    }
+}
+
+/// Immutable approximation of HSD's MObj-derived OPA/XLU classification.
+///
+/// The current export omits the source render mode, so this is inferred once
+/// from serialized alpha. Material animation changes color but never the
+/// render pass, depth-write policy, or sort bucket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DrawRenderClass {
+    Opaque,
+    Transparent,
+}
+
+impl DrawRenderClass {
+    fn infer(mesh: &Mesh, textures: &[Texture]) -> Self {
+        let transparent = mesh
+            .vertices
+            .iter()
+            .any(|vertex| vertex.color[3] * mesh.material.color[3] < 1.0)
+            || mesh.material.texture.is_some_and(|index| {
+                textures[index]
+                    .rgba
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|pixel| pixel[3] < 255)
+            });
+        if transparent {
+            Self::Transparent
+        } else {
+            Self::Opaque
+        }
+    }
+
+    const fn is_transparent(self) -> bool {
+        matches!(self, Self::Transparent)
     }
 }
 
@@ -125,26 +164,16 @@ struct Draw {
     texture: usize,
     cull_pipeline: usize,
     center: Vec3,
-    vertex_alpha_range: [f32; 2],
-    texture_transparent: bool,
 }
 
 impl Draw {
-    fn transparent(&self) -> bool {
-        if self.texture_transparent {
-            return true;
-        }
-        let material_alpha = self.presentation.state.material_color[3];
-        let vertex_alpha = if material_alpha.is_sign_negative() {
-            self.vertex_alpha_range[1]
-        } else {
-            self.vertex_alpha_range[0]
-        };
-        vertex_alpha * material_alpha < 1.0
-    }
-
     fn pipeline(&self) -> usize {
-        self.cull_pipeline + if self.transparent() { 3 } else { 0 }
+        self.cull_pipeline
+            + if self.presentation.render_class.is_transparent() {
+                3
+            } else {
+                0
+            }
     }
 }
 
@@ -417,13 +446,9 @@ impl GpuScene {
             };
             let mut low = Vec3::splat(f32::INFINITY);
             let mut high = Vec3::splat(f32::NEG_INFINITY);
-            let mut minimum_alpha = f32::INFINITY;
-            let mut maximum_alpha = f32::NEG_INFINITY;
             for vertex in &mesh.vertices {
                 low = low.min(Vec3::from(vertex.position));
                 high = high.max(Vec3::from(vertex.position));
-                minimum_alpha = minimum_alpha.min(vertex.color[3]);
-                maximum_alpha = maximum_alpha.max(vertex.color[3]);
             }
             let uniform = MaterialUniform {
                 color: mesh.material.color,
@@ -431,7 +456,9 @@ impl GpuScene {
             let material = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("{} material", mesh.name)),
                 contents: bytemuck::bytes_of(&uniform),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             });
             let material_binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some(&format!("{} material", mesh.name)),
@@ -442,7 +469,7 @@ impl GpuScene {
                 }],
             });
             draws.push(Draw {
-                presentation: DrawPresentation::from_mesh(mesh),
+                presentation: DrawPresentation::from_mesh(mesh, &scene.textures),
                 vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&mesh.name),
                     contents: bytemuck::cast_slice(&mesh.vertices),
@@ -459,15 +486,6 @@ impl GpuScene {
                 texture: mesh.material.texture.unwrap_or(scene.textures.len()),
                 cull_pipeline,
                 center: low * 0.5 + high * 0.5,
-                vertex_alpha_range: [minimum_alpha, maximum_alpha],
-                texture_transparent: mesh.material.texture.is_some_and(|i| {
-                    scene.textures[i]
-                        .rgba
-                        .as_chunks::<4>()
-                        .0
-                        .iter()
-                        .any(|p| p[3] < 255)
-                }),
             });
         }
         if let Some(error) = scope.pop().await {
@@ -600,8 +618,8 @@ impl GpuScene {
             .filter(|draw| draw.presentation.state.visible)
             .collect();
         order.sort_by(|a, b| {
-            let a_transparent = a.transparent();
-            let b_transparent = b.transparent();
+            let a_transparent = a.presentation.render_class.is_transparent();
+            let b_transparent = b.presentation.render_class.is_transparent();
             a_transparent.cmp(&b_transparent).then_with(|| {
                 if a_transparent {
                     view.transform_point3(a.center)
@@ -908,6 +926,14 @@ async fn render_rgba_with_updates(
     for &(selector, update) in updates {
         gpu.update_draws(selector, update)?;
     }
+    capture_gpu_rgba(&gpu, width, height).await
+}
+
+/// Render and read back one frame from an already-created GPU scene.
+///
+/// Keeping capture separate from construction lets tests exercise the same
+/// queue and resident resources across presentation updates.
+async fn capture_gpu_rgba(gpu: &GpuScene, width: u32, height: u32) -> Result<Vec<u8>> {
     ensure!(
         width <= gpu.device.limits().max_texture_dimension_2d
             && height <= gpu.device.limits().max_texture_dimension_2d,
@@ -989,6 +1015,37 @@ mod tests {
     // caller selects both with the default multi-threaded Rust test harness.
     static GPU_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    async fn read_material_uniform(gpu: &GpuScene, draw_index: usize) -> Result<[f32; 4]> {
+        let size = std::mem::size_of::<MaterialUniform>() as u64;
+        let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("material test readback"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&gpu.draws[draw_index].material, 0, &buffer, 0, size);
+        let submission = gpu.queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+        gpu.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(30)),
+        })?;
+        receiver
+            .recv_timeout(Duration::from_secs(30))
+            .context("waiting for material test readback")??;
+        let mapped = buffer.slice(..).get_mapped_range()?;
+        let color = bytemuck::from_bytes::<MaterialUniform>(&mapped).color;
+        drop(mapped);
+        buffer.unmap();
+        Ok(color)
+    }
+
     fn exported_mesh(
         joint: u32,
         instance_id: Option<&str>,
@@ -1003,8 +1060,62 @@ mod tests {
         mesh
     }
 
+    fn exported_presentation(mesh: &Mesh) -> DrawPresentation {
+        DrawPresentation::from_mesh(mesh, &Scene::demo().textures)
+    }
+
+    fn solid_quad_scene(color: [f32; 4]) -> Scene {
+        let vertices = [
+            [-1.0, -1.0, 0.0],
+            [1.0, -1.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0],
+        ]
+        .into_iter()
+        .map(|position| Vertex {
+            position,
+            normal: [0.0, 0.0, 1.0],
+            uv: [0.0, 0.0],
+            color: [1.0; 4],
+        })
+        .collect();
+        Scene {
+            source: None,
+            joints: Vec::new(),
+            meshes: vec![Mesh {
+                name: "solid quad".into(),
+                joint: Some(7),
+                instance_id: Some("quad".into()),
+                vertices,
+                indices: vec![0, 1, 2, 0, 2, 3],
+                material: super::super::scene::Material {
+                    color,
+                    texture: None,
+                    cull_mode: CullMode::None,
+                },
+                hidden: false,
+            }],
+            textures: Vec::new(),
+            warnings: Vec::new(),
+            camera: Some(Camera {
+                eye: [0.0, 0.0, 5.0],
+                interest: [0.0, 0.0, 0.0],
+                up: [0.0, 1.0, 0.0],
+                vertical_fov_radians: 45.0_f32.to_radians(),
+                aspect: 1.0,
+                near: 0.1,
+                far: 10.0,
+            }),
+            clear_color: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
     #[test]
     fn linked_wesl_is_valid_for_the_rendering_backend() {
+        assert!(
+            MESH_SHADER.contains("var<uniform> material"),
+            "compiled mesh shader must consume the dynamic material uniform"
+        );
         let module = wgpu::naga::front::wgsl::parse_str(MESH_SHADER).expect("valid generated WGSL");
         wgpu::naga::valid::Validator::new(
             wgpu::naga::valid::ValidationFlags::all(),
@@ -1019,7 +1130,7 @@ mod tests {
     fn draw_defaults_preserve_export_visibility_and_material_color() {
         let color = [0.25, 0.5, 0.75, 0.125];
         let mesh = exported_mesh(0x1234, Some("cursor-2"), true, color);
-        let presentation = DrawPresentation::from_mesh(&mesh);
+        let presentation = exported_presentation(&mesh);
 
         assert!(
             retain_draw(&mesh),
@@ -1050,10 +1161,7 @@ mod tests {
             exported_mesh(7, None, true, [1.; 4]),
             exported_mesh(8, Some("clone-a"), true, [1.; 4]),
         ];
-        let mut presentations = meshes
-            .iter()
-            .map(DrawPresentation::from_mesh)
-            .collect::<Vec<_>>();
+        let mut presentations = meshes.iter().map(exported_presentation).collect::<Vec<_>>();
 
         let matched = presentations
             .iter_mut()
@@ -1089,7 +1197,7 @@ mod tests {
     fn partial_update_can_reveal_a_hidden_draw_without_losing_its_material() {
         let color = [0.2, 0.4, 0.6, 0.8];
         let mesh = exported_mesh(42, None, true, color);
-        let mut presentation = DrawPresentation::from_mesh(&mesh);
+        let mut presentation = exported_presentation(&mesh);
 
         assert!(presentation.update(
             ExportDrawSelector {
@@ -1104,6 +1212,27 @@ mod tests {
 
         assert!(presentation.state.visible);
         assert_eq!(presentation.state.material_color, color);
+    }
+
+    #[test]
+    fn material_alpha_does_not_change_the_fixed_render_class() {
+        let mesh = exported_mesh(42, None, false, [1.0; 4]);
+        let mut presentation = exported_presentation(&mesh);
+        assert_eq!(presentation.render_class, DrawRenderClass::Opaque);
+
+        assert!(presentation.update(
+            ExportDrawSelector {
+                joint: 42,
+                instance_id: None,
+            },
+            DrawUpdate {
+                material_color: Some([1.0, 1.0, 1.0, 0.25]),
+                ..Default::default()
+            },
+        ));
+
+        assert_eq!(presentation.state.material_color[3], 0.25);
+        assert_eq!(presentation.render_class, DrawRenderClass::Opaque);
     }
 
     #[test]
@@ -1131,22 +1260,30 @@ mod tests {
         scene.meshes[0].joint = Some(7);
         scene.meshes[0].instance_id = Some("cube".into());
         scene.meshes[0].hidden = true;
-        let hidden = pollster::block_on(render_rgba(&scene, 257, 193)).unwrap();
-        let visible = pollster::block_on(render_rgba_with_updates(
-            &scene,
-            257,
-            193,
-            &[(
-                ExportDrawSelector {
-                    joint: 7,
-                    instance_id: Some("cube"),
-                },
-                DrawUpdate {
-                    visible: Some(true),
-                    ..Default::default()
-                },
-            )],
-        ))
+        let (hidden, visible) = pollster::block_on(async {
+            let instance = wgpu::Instance::new(
+                wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
+            );
+            let adapter = request_adapter(&instance, None).await?;
+            let mut gpu =
+                GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let hidden = capture_gpu_rgba(&gpu, 257, 193).await?;
+            assert_eq!(
+                gpu.update_draws(
+                    ExportDrawSelector {
+                        joint: 7,
+                        instance_id: Some("cube"),
+                    },
+                    DrawUpdate {
+                        visible: Some(true),
+                        ..Default::default()
+                    },
+                )?,
+                1
+            );
+            let visible = capture_gpu_rgba(&gpu, 257, 193).await?;
+            Ok::<_, anyhow::Error>((hidden, visible))
+        })
         .unwrap();
 
         let changed = hidden
@@ -1157,5 +1294,94 @@ mod tests {
             .filter(|(before, after)| before != after)
             .count();
         assert!(changed > 500, "only {changed} pixels changed after reveal");
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan/Metal/DX12/GLES graphics adapter"]
+    fn gpu_material_update_reaches_a_resident_uniform_between_frames() {
+        let _guard = GPU_TEST_LOCK.lock().unwrap();
+        let scene = solid_quad_scene([1.0, 0.0, 0.0, 1.0]);
+
+        let (red, green) = pollster::block_on(async {
+            let instance = wgpu::Instance::new(
+                wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
+            );
+            let adapter = request_adapter(&instance, None).await?;
+            let mut gpu =
+                GpuScene::new(&adapter, &scene, wgpu::TextureFormat::Rgba8UnormSrgb).await?;
+            let red = capture_gpu_rgba(&gpu, 257, 193).await?;
+            assert_eq!(
+                gpu.update_draws(
+                    ExportDrawSelector {
+                        joint: 7,
+                        instance_id: Some("quad"),
+                    },
+                    DrawUpdate {
+                        material_color: Some([0.0, 1.0, 0.0, 1.0]),
+                        ..Default::default()
+                    },
+                )?,
+                1
+            );
+            let quad = gpu
+                .draws
+                .iter()
+                .position(|draw| {
+                    draw.presentation.identity.matches(ExportDrawSelector {
+                        joint: 7,
+                        instance_id: Some("quad"),
+                    })
+                })
+                .expect("uploaded quad draw");
+            assert_eq!(
+                gpu.draws[quad].presentation.state.material_color,
+                [0.0, 1.0, 0.0, 1.0]
+            );
+            assert_eq!(
+                read_material_uniform(&gpu, quad).await?,
+                [0.0, 1.0, 0.0, 1.0]
+            );
+            let green = capture_gpu_rgba(&gpu, 257, 193).await?;
+            Ok::<_, anyhow::Error>((red, green))
+        })
+        .unwrap();
+
+        let changed = red
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(green.as_chunks::<4>().0)
+            .filter(|(before, after)| before != after)
+            .count();
+        let red_dominant = red
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[0] > pixel[1] && pixel[0] > pixel[2])
+            .count();
+        let green_dominant = green
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[1] > pixel[0] && pixel[1] > pixel[2])
+            .count();
+        let transitioned = red
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(green.as_chunks::<4>().0)
+            .filter(|(before, after)| {
+                before[0] > before[1]
+                    && before[0] > before[2]
+                    && after[1] > after[0]
+                    && after[1] > after[2]
+            })
+            .count();
+        assert!(
+            transitioned > 500,
+            "only {transitioned} pixels changed from red-dominant to green-dominant; \
+             {changed} changed, {red_dominant} started red-dominant, \
+             {green_dominant} ended green-dominant"
+        );
     }
 }

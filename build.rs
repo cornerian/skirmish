@@ -8,13 +8,33 @@ fn main() {
 #[cfg(feature = "renderer")]
 fn build_renderer() {
     let shaders = "src/renderer/shaders";
-    println!("cargo:rerun-if-changed={shaders}");
+    watch_shader_tree(std::path::Path::new(shaders));
     let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"));
     let shader = wesl::Wesl::new(shaders)
         .compile(&"package::mesh".parse().expect("valid shader module path"))
         .unwrap_or_else(|error| panic!("WESL compilation failed: {error}"));
     std::fs::write(output.join("mesh.wgsl"), shader.to_string())
         .expect("write compiled shader into Cargo build output");
+}
+
+#[cfg(feature = "renderer")]
+fn watch_shader_tree(directory: &std::path::Path) {
+    // Watching only a directory does not reliably notice edits to existing
+    // files on every Cargo/filesystem combination. Watch the directory for
+    // additions and each source for content changes, including future imports.
+    println!("cargo:rerun-if-changed={}", directory.display());
+    let mut entries = std::fs::read_dir(directory)
+        .unwrap_or_else(|error| panic!("read shader directory {}: {error}", directory.display()))
+        .map(|entry| entry.expect("read shader directory entry").path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            watch_shader_tree(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
 }
 
 #[cfg(feature = "c-oracle")]
