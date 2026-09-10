@@ -8,6 +8,7 @@ use wgpu::util::DeviceExt;
 
 use super::platform::SdlSurface;
 use super::scene::{Camera, CullMode, Scene, Texture, Vertex};
+use super::viewport::{PresentationTransform, fitted_viewport};
 
 pub const MESH_SHADER: &str = include_str!(concat!(env!("OUT_DIR"), "/mesh.wgsl"));
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -439,7 +440,8 @@ impl GpuScene {
             ..Default::default()
         });
         if let Some(camera) = self.source_camera {
-            let [x, y, width, height] = authored_viewport(dimensions, camera.aspect);
+            let [x, y, width, height] = fitted_viewport(dimensions, camera.aspect)
+                .expect("validated camera aspect and nonzero render target");
             pass.set_viewport(x, y, width, height, 0.0, 1.0);
         }
         pass.set_bind_group(0, &self.camera_binding, &[]);
@@ -487,23 +489,6 @@ fn validate_camera(camera: Camera) -> Result<()> {
         "source camera view direction and up vector must define a basis"
     );
     Ok(())
-}
-
-fn authored_viewport(dimensions: [u32; 2], aspect: f32) -> [f32; 4] {
-    let width = dimensions[0] as f32;
-    let height = dimensions[1] as f32;
-    if width / height > aspect {
-        let viewport_width = height * aspect;
-        [(width - viewport_width) * 0.5, 0.0, viewport_width, height]
-    } else {
-        let viewport_height = width / aspect;
-        [
-            0.0,
-            (height - viewport_height) * 0.5,
-            width,
-            viewport_height,
-        ]
-    }
 }
 
 fn extent(width: u32, height: u32) -> wgpu::Extent3d {
@@ -597,6 +582,22 @@ impl WindowRenderer {
 
     pub fn pixel_size(&self) -> (u32, u32) {
         self.presentation.window().size_in_pixels()
+    }
+
+    /// Snapshot the mapping from SDL window coordinates into an authored canvas.
+    ///
+    /// Pointer adapters should request this after resize and display-change events
+    /// so they use the exact surface extent and containment viewport used to draw.
+    pub fn presentation_transform(
+        &self,
+        authored_extent: [f32; 2],
+    ) -> Option<PresentationTransform> {
+        let (window_width, window_height) = self.presentation.window().size();
+        PresentationTransform::new(
+            [window_width, window_height],
+            [self.config.width, self.config.height],
+            authored_extent,
+        )
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -772,24 +773,6 @@ mod tests {
         )
         .validate(&module)
         .expect("shader validates without optional GPU capabilities");
-    }
-
-    #[test]
-    fn authored_camera_viewport_preserves_aspect_ratio() {
-        for (dimensions, expected) in [
-            ([640, 480], [0.0, 0.0, 640.0, 480.0]),
-            ([1280, 720], [160.0, 0.0, 960.0, 720.0]),
-            ([640, 640], [0.0, 80.0, 640.0, 480.0]),
-        ] {
-            let actual = authored_viewport(dimensions, 4.0 / 3.0);
-            assert!(
-                actual
-                    .into_iter()
-                    .zip(expected)
-                    .all(|(actual, expected)| (actual - expected).abs() < 0.001),
-                "{actual:?} != {expected:?}"
-            );
-        }
     }
 
     #[test]

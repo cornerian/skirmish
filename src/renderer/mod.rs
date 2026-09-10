@@ -6,3 +6,4 @@ pub mod gpu;
 pub mod melee;
 mod platform;
 pub mod scene;
+pub mod viewport;
