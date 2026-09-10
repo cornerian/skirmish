@@ -58,6 +58,16 @@ recursive visibility, SIS text, and material/shape animation masks. Unsupported
 calls remain errors; success stubs are not a substitute for executing the
 original UI.
 
+The renderer-independent `skirmish::animation` module now safely decodes and
+evaluates the exact FObj subset used by the Back and Panel roots. A small
+provenance fixture binds one visible Back joint to its original AObj/FObj byte
+ranges and asserts five sample values bit-for-bit against the pinned C runtime.
+ConTop still requires the SLP opcode, material diffuse channels, and texture
+color-register channels; Cursor still requires texture scale and color-register
+channels. Those inputs fail explicitly until their exact consumers exist. The
+decoder is not yet connected to joint posing or GPU updates, so this milestone
+does not change the rendered default pose.
+
 VS mode is implemented by the original source. The panel transition itself is
 now verified through the original callback: `MENU_KIND_VS` requests frame 400
 and settles into its frame-500 idle loop after 51 callback invocations. The

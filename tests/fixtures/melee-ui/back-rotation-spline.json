@@ -1,0 +1,42 @@
+{
+  "schema": "skirmish-hsd-animation-fixture-v1",
+  "source": "MnMaAll.dat",
+  "source_sha256": "895e1895e004f84b2cec5583402dedc25ff6173b179f294d50e76945bae32ff0",
+  "source_revision": "Melee USA 1.02",
+  "data_section_file_offset": 32,
+  "binding": {
+    "model": "MenMainBack_Top_joint",
+    "model_offset": 26664,
+    "animation": "MenMainBack_Top_animjoint",
+    "animation_offset": 76892,
+    "preorder_index": 93,
+    "anim_joint_offset": 78752,
+    "joint_offset": 32616,
+    "joint_name": "joint_7f68",
+    "parent_chain": [32616, 32552, 32488, 26728, 26664],
+    "dobj_offset": 25560,
+    "mesh_name": "joint_7f68_p63c0",
+    "mesh_vertex_count": 3,
+    "channel": "rotation_x"
+  },
+  "aobj": {
+    "offset": 76484,
+    "bytes_hex": "200000004447c00000012ab000000000"
+  },
+  "fobj": {
+    "offset": 76464,
+    "bytes_hex": "0000000000000012000000000165870000012a9c"
+  },
+  "program": {
+    "offset": 76444,
+    "bytes_hex": "0100c80103001e0443001e03009b04010000"
+  },
+  "expected_samples": [
+    { "frame": 200.0, "value_bits": "00000000" },
+    { "frame": 215.0, "value_bits": "3f860001" },
+    { "frame": 230.0, "value_bits": "40060000" },
+    { "frame": 245.0, "value_bits": "3f85ffff" },
+    { "frame": 260.0, "value_bits": "00000000" }
+  ],
+  "provenance": "Exact data-section byte ranges extracted from the verified source file; expected sample bits were captured from a host C harness compiling the pinned fobj.c and spline.c at revision 0bac93a5ee2f985dac6220bd36ed7078ae6ac0c9. This fixture covers one visible Back-menu joint curve, not the complete menu animation set."
+}
