@@ -16,6 +16,7 @@ use skirmish::{
         MenuEffect,
         melee::{main_definition, main_interaction_map},
     },
+    presentation::AnimationPlayback,
     renderer::{
         audio::AudioOutput,
         clock::FixedStepClock,
@@ -61,6 +62,7 @@ struct App {
     audio: Option<AudioOutput>,
     controllers: Option<ControllerHub>,
     menu: Option<MenuHost>,
+    presentation: Option<AnimationPlayback>,
     orbit: [f32; 3],
     focused: bool,
     visible: bool,
@@ -212,12 +214,20 @@ impl App {
         self.visible && width > 0 && height > 0
     }
 
-    fn apply_menu_effects(&mut self, effects: Vec<MenuEffect>) {
+    fn apply_menu_effects(&mut self, effects: Vec<MenuEffect>) -> Result<()> {
         for effect in effects {
             match effect {
                 MenuEffect::SelectionChanged {
-                    selected, sound, ..
+                    selected,
+                    sound,
+                    presentation,
+                    ..
                 } => {
+                    if let Some(playback) = &mut self.presentation {
+                        playback
+                            .restart(presentation.animation)
+                            .context("requesting selected menu presentation")?;
+                    }
                     println!(
                         "Melee menu selection: {}{}",
                         selected.as_str(),
@@ -229,6 +239,13 @@ impl App {
                     item,
                     action,
                 } => {
+                    if let (Some(playback), Some(transition)) =
+                        (&mut self.presentation, action.transition.clone())
+                    {
+                        playback
+                            .restart(transition)
+                            .context("requesting menu transition presentation")?;
+                    }
                     println!(
                         "Melee menu action: {trigger:?}{} -> {}{}",
                         item.map_or_else(String::new, |item| format!(" on {}", item.as_str())),
@@ -241,6 +258,7 @@ impl App {
             }
             self.dirty = true;
         }
+        Ok(())
     }
 
     fn run(mut self, mut events: sdl3::EventPump) -> Result<()> {
@@ -274,9 +292,12 @@ impl App {
                         } else {
                             menu.tick_previous()
                         };
-                        self.apply_menu_effects(effects);
-                        // The presentation clock will consume every menu tick as
-                        // runtime animation tracks are connected.
+                        self.apply_menu_effects(effects)?;
+                        if let Some(playback) = &mut self.presentation {
+                            playback.tick();
+                        }
+                        // Every fixed menu tick also advances the authored
+                        // presentation clock, including catch-up ticks.
                         self.dirty = true;
                     }
                 }
@@ -368,6 +389,13 @@ fn main() -> Result<()> {
         .then(|| MenuHost::new(main_definition(), main_interaction_map(), []))
         .transpose()
         .context("initializing Melee Main menu")?;
+    let presentation = menu
+        .as_ref()
+        .map(|menu| {
+            AnimationPlayback::new(menu.runtime().selected().presentation.animation.clone())
+        })
+        .transpose()
+        .context("initializing Melee Main presentation")?;
     let audio = if cli.no_audio {
         None
     } else {
@@ -384,6 +412,7 @@ fn main() -> Result<()> {
         audio,
         controllers,
         menu,
+        presentation,
         orbit: [0.0, 0.0, 1.0],
         focused: true,
         visible: true,
