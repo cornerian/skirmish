@@ -8,6 +8,12 @@ struct Camera {
 @group(1) @binding(0) var color_texture: texture_2d<f32>;
 @group(1) @binding(1) var color_sampler: sampler;
 
+struct Material {
+    color: vec4f,
+}
+
+@group(2) @binding(0) var<uniform> material: Material;
+
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) normal: vec3f,
@@ -32,7 +38,8 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let color = textureSample(color_texture, color_sampler, in.uv) * in.color;
+    let vertex_color = in.color * material.color;
+    let color = textureSample(color_texture, color_sampler, in.uv) * vertex_color;
     if color.a < 0.01 { discard; }
     return vec4f(color.rgb * inspection_light(in.normal), color.a);
 }
