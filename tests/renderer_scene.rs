@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use skirmish::renderer::melee::{MAIN_MENU_ROOTS, load_main_menu_default_pose};
-use skirmish::renderer::scene::{CullMode, Scene};
+use skirmish::renderer::scene::{CullMode, JointPose, Scene};
 use std::{fs, path::Path};
 
 fn triangle() -> Value {
@@ -94,6 +94,87 @@ fn source_joint_roots_select_only_the_original_scene_subtrees() {
     assert!(load_roots(directory.path(), &document, &[999]).is_err());
     document["joints"][0]["parent"] = json!(101);
     assert!(load(directory.path(), &document).is_err());
+}
+
+#[test]
+fn complete_joint_pose_metadata_is_preserved_and_legacy_joints_remain_valid() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut document = triangle();
+    let local = [
+        1., 0., 0., 0., 0., 2., 0., 0., 0., 0., 3., 0., 4., 5., 6., 1.,
+    ];
+    let world = [
+        7., 0., 0., 0., 0., 8., 0., 0., 0., 0., 9., 0., 10., 11., 12., 1.,
+    ];
+    let inverse_bind = [
+        0.5, 0., 0., 0., 0., 0.25, 0., 0., 0., 0., 0.125, 0., -2., -1.25, -0.75, 1.,
+    ];
+    document["joints"] = json!([
+        {
+            "name":"posed",
+            "offset":100,
+            "parent":null,
+            "flags":0x2000_0008_u32,
+            "local":local,
+            "world":world,
+            "inverse_bind":inverse_bind,
+        },
+        {"name":"legacy","offset":101,"parent":100},
+    ]);
+    document["meshes"][0]["joint"] = json!(101);
+
+    let scene = load(directory.path(), &document).unwrap();
+    assert_eq!(
+        scene.joints[0].pose,
+        Some(JointPose {
+            flags: 0x2000_0008,
+            local,
+            world,
+            inverse_bind,
+        })
+    );
+    assert_eq!(scene.joints[1].pose, None);
+}
+
+#[test]
+fn incomplete_or_nonfinite_joint_pose_metadata_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let identity = [
+        1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
+    ];
+    let complete = json!({
+        "name":"posed",
+        "offset":100,
+        "parent":null,
+        "flags":0_u32,
+        "local":identity,
+        "world":identity,
+        "inverse_bind":identity,
+    });
+
+    for missing in ["flags", "local", "world", "inverse_bind"] {
+        let mut document = triangle();
+        let mut joint = complete.clone();
+        joint.as_object_mut().unwrap().remove(missing);
+        document["joints"] = json!([joint]);
+        let error = load(directory.path(), &document).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("must provide flags, local, world, and inverse_bind"),
+            "unexpected error for missing {missing}: {error:#}"
+        );
+    }
+
+    for matrix in ["local", "world", "inverse_bind"] {
+        let mut document = triangle();
+        let mut joint = complete.clone();
+        joint[matrix][5] = json!(1e39);
+        document["joints"] = json!([joint]);
+        let error = load(directory.path(), &document).unwrap_err();
+        assert!(
+            format!("{error:#}").contains(&format!("nonfinite {matrix} joint matrix")),
+            "unexpected error for nonfinite {matrix}: {error:#}"
+        );
+    }
 }
 
 #[test]

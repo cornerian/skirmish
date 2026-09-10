@@ -47,11 +47,25 @@ pub struct Mesh {
     pub hidden: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Serialized source-joint state retained for future instance and animation evaluation.
+///
+/// Matrices use the exporter's column-major layout. They are immutable resource
+/// metadata for now; the preview renderer does not apply them to draw calls yet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JointPose {
+    pub flags: u32,
+    pub local: [f32; 16],
+    pub world: [f32; 16],
+    pub inverse_bind: [f32; 16],
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Joint {
     pub name: String,
     pub offset: u32,
     pub parent: Option<u32>,
+    /// Present when the visual export includes its complete serialized pose tuple.
+    pub pose: Option<JointPose>,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +152,14 @@ struct RawJoint {
     offset: u32,
     #[serde(default)]
     parent: Option<u32>,
+    #[serde(default)]
+    flags: Option<u32>,
+    #[serde(default)]
+    local: Option<[f32; 16]>,
+    #[serde(default)]
+    world: Option<[f32; 16]>,
+    #[serde(default)]
+    inverse_bind: Option<[f32; 16]>,
 }
 
 #[derive(Deserialize)]
@@ -196,12 +218,8 @@ impl Scene {
         let mut joints: Vec<_> = document
             .joints
             .drain(..)
-            .map(|joint| Joint {
-                name: joint.name,
-                offset: joint.offset,
-                parent: joint.parent,
-            })
-            .collect();
+            .map(load_joint)
+            .collect::<Result<_>>()?;
         let parents = validate_joint_tree(&joints)?;
         for mesh in &document.meshes {
             ensure!(
@@ -581,6 +599,41 @@ impl Scene {
             clear_color: [0.018, 0.025, 0.045, 1.0],
         }
     }
+}
+
+fn load_joint(raw: RawJoint) -> Result<Joint> {
+    let pose = match (raw.flags, raw.local, raw.world, raw.inverse_bind) {
+        (None, None, None, None) => None,
+        (Some(flags), Some(local), Some(world), Some(inverse_bind)) => {
+            for (label, matrix) in [
+                ("local", &local),
+                ("world", &world),
+                ("inverse_bind", &inverse_bind),
+            ] {
+                ensure!(
+                    matrix.iter().all(|value| value.is_finite()),
+                    "{}: nonfinite {label} joint matrix",
+                    raw.name
+                );
+            }
+            Some(JointPose {
+                flags,
+                local,
+                world,
+                inverse_bind,
+            })
+        }
+        _ => bail!(
+            "{}: joint pose metadata must provide flags, local, world, and inverse_bind together",
+            raw.name
+        ),
+    };
+    Ok(Joint {
+        name: raw.name,
+        offset: raw.offset,
+        parent: raw.parent,
+        pose,
+    })
 }
 
 fn validate_joint_tree(joints: &[Joint]) -> Result<HashMap<u32, Option<u32>>> {
