@@ -884,6 +884,7 @@ pub(crate) fn scan(
             || source.grab != State::default()
             || target.grab != State::default()
             || target.invincibility > 0
+            || target.intangibility > 0
             || matches!(
                 target.action,
                 Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait

@@ -188,6 +188,8 @@ pub struct Fighter {
     pub facing: f32,
     pub grounded: bool,
     pub ground_line: Option<usize>,
+    /// Retained collision-line identity serialized by Slippi even while airborne.
+    pub last_ground_line: Option<usize>,
     /// Pass skips its supporting line until the next action transition.
     pub skip_floor: Option<usize>,
     pub floor_normal: [f32; 3],
@@ -232,6 +234,11 @@ pub struct Fighter {
     pub surface_tech: damage::SurfaceTechState,
     pub wall_jump: wall_jump::State,
     pub invincibility: u32,
+    /// Intangibility has priority over ordinary invincibility in Melee's
+    /// fighter-wide hurtbox collision state.
+    pub intangibility: u32,
+    /// Slippi's per-frame landing result: none, successful, unsuccessful.
+    pub l_cancel_status: u8,
     pub short_hop: bool,
     pub fast_fall: bool,
     /// Attack hit-group history is checkpointed, not inferred from observations.

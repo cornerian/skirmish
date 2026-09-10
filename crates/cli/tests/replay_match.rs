@@ -15,6 +15,8 @@ use std::{fs, process::Command};
 mod aerial_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
+#[path = "../../../tests/support/ledge.rs"]
+mod ledge_support;
 #[path = "../../../tests/support/special.rs"]
 mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
@@ -133,6 +135,21 @@ impl Recording {
                         row,
                         Some(2_u8.saturating_sub(fighter.locomotion.jumps_used)),
                     );
+                    post.ground.as_mut().unwrap().set(
+                        row,
+                        Some(
+                            fighter
+                                .last_ground_line
+                                .map_or(u16::MAX, |line| line as u16),
+                        ),
+                    );
+                    post.l_cancel
+                        .as_mut()
+                        .unwrap()
+                        .set(row, Some(fighter.l_cancel_status));
+                    if let Some(hurtbox_state) = &mut post.hurtbox_state {
+                        hurtbox_state.set(row, Some(observation::hurtbox_state(fighter)));
+                    }
                     if let Some(velocity) = &mut post.velocities {
                         velocity.self_x_air.set(row, Some(fighter.velocity[0]));
                         velocity.self_y.set(row, Some(fighter.velocity[1]));
@@ -198,6 +215,9 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
                 .any(|s| s.fighters[0].action == action)
         );
     }
+    assert!(recording.states.iter().any(|state| {
+        !state.fighters[0].grounded && state.fighters[0].last_ground_line == Some(0)
+    }));
     assert!(recording.states.iter().any(|s| {
         s.events
             .iter()
@@ -207,7 +227,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     let report = recording.compare(&bytes);
     matched(&report, FIRST, recording.inputs.len());
-    assert_eq!(report.policy, "fighter-post-v2");
+    assert_eq!(report.policy, "fighter-post-v3");
     assert_eq!(report.ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
@@ -292,6 +312,54 @@ fn physical_z_drives_file_backed_grab_capture_and_detects_its_removal() {
 }
 
 #[test]
+fn file_backed_ledge_intangibility_uses_hurtbox_state_two() {
+    let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    data.rules.countdown_frames = 0;
+    data.rules.time_limit_frames = 9_999;
+    data.stage.floor.left = -2.0;
+    data.stage.floor.right = 2.0;
+    data.stage.spawns = [[-1.9, 1.0], [0.0, 0.0]];
+    data.stage.blast = [-20.0, 20.0, -30.0, 30.0];
+    let data = ledge_support::profile(data);
+    let mut inputs = vec![IDLE; 4];
+    inputs[0][0].stick = [-1.0, 0.0];
+    let recording = Recording::from_script(data, 13, inputs);
+    let caught = &recording.states[0];
+    assert!(caught.events.contains(&Event::LedgeCaught {
+        player: 0,
+        line: 0,
+        side: skirmish::game::ledge::Side::Left,
+    }));
+    assert!(caught.fighters[0].intangibility > 0);
+    assert_eq!(caught.fighters[0].invincibility, 0);
+    assert_eq!(observation::hurtbox_state(&caught.fighters[0]), 2);
+    assert_eq!(caught.fighters[0].last_ground_line, None);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0]
+            .leader
+            .post
+            .hurtbox_state
+            .as_mut()
+            .unwrap()
+            .set(0, Some(1));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ref difference,
+        } if difference.field == "hurtbox_state"
+    ));
+}
+
+#[test]
 fn file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_diverges() {
     let mut data = aerial_support::data();
     data.stage.spawns[0] = [-10.0, 4.0];
@@ -316,6 +384,11 @@ fn file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_diverges()
     for action in [Action::AttackAirF, Action::LandingAirF, Action::Wait] {
         assert!(states.iter().any(|s| s.fighters[0].action == action));
     }
+    assert!(
+        states
+            .iter()
+            .any(|state| state.fighters[0].l_cancel_status == 1)
+    );
     let recording = Recording {
         initialization,
         inputs,
@@ -329,6 +402,34 @@ fn file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_diverges()
     assert!(
         matches!(recording.compare(&changed).outcome, Outcome::Mismatch { frame, checked_frames: 2, .. } if frame == FIRST + 2)
     );
+}
+
+#[test]
+fn file_backed_failed_l_cancel_is_reported_only_on_the_landing_frame() {
+    let mut data = aerial_support::data();
+    data.stage.spawns[0] = [-10.0, 4.0];
+    data.fighters[0].movement.gravity = 0.5;
+    data.fighters[0].movement.terminal_velocity = 2.0;
+    let mut inputs = vec![IDLE; 24];
+    inputs[2][0].cstick = [1.0, 0.0];
+    let recording = Recording::from_script(data, 17, inputs);
+    let row = recording
+        .states
+        .iter()
+        .position(|state| state.fighters[0].l_cancel_status == 2)
+        .expect("unshielded aerial landing must report failed l-cancel");
+    assert_eq!(
+        recording.states[row].fighters[0].action,
+        Action::LandingAirF
+    );
+    assert!(
+        recording.states[..row]
+            .iter()
+            .all(|state| state.fighters[0].l_cancel_status == 0)
+    );
+    assert_eq!(recording.states[row + 1].fighters[0].l_cancel_status, 0);
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
 }
 
 #[test]
@@ -401,6 +502,17 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
                             .saturating_add(1),
                     ),
                 ),
+                "last_ground_id" => post.ground.as_mut().unwrap().set(row, Some(u16::MAX)),
+                "l_cancel" => post
+                    .l_cancel
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(fighter.l_cancel_status ^ 1)),
+                "hurtbox_state" => post
+                    .hurtbox_state
+                    .as_mut()
+                    .unwrap()
+                    .set(row, Some(observation::hurtbox_state(fighter) ^ 1)),
                 "velocities.self_x_air" => post
                     .velocities
                     .as_mut()
@@ -460,7 +572,12 @@ fn every_reported_post_field_detects_its_first_file_backed_difference() {
 #[test]
 fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
     let recording = Recording::new();
-    for version in [Version(2, 0, 0), Version(3, 5, 0), Version(3, 8, 0)] {
+    for version in [
+        Version(2, 0, 0),
+        Version(2, 1, 0),
+        Version(3, 5, 0),
+        Version(3, 8, 0),
+    ] {
         let bytes = recording.bytes(
             support::Fixture {
                 version,
@@ -476,6 +593,7 @@ fn report_fields_follow_the_slippi_version_without_silent_missing_checks() {
             version.gte(3, 5)
         );
         assert_eq!(report.fields.contains(&"hitlag"), version.gte(3, 8));
+        assert_eq!(report.fields.contains(&"hurtbox_state"), version.gte(2, 1));
     }
 }
 
@@ -794,7 +912,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["policy"], "fighter-post-v2");
+        assert_eq!(report["policy"], "fighter-post-v3");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
             report["outcome"]["status"],

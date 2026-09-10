@@ -27,7 +27,7 @@ pub struct Rules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slow: Option<SlowRules>,
     pub regrab_cooldown: u32,
-    pub invincibility_frames: u32,
+    pub intangibility_frames: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -207,7 +207,7 @@ pub(crate) fn validate(
         })
         || rules.slow.is_some() != parameters.slow.is_some()
         || rules.regrab_cooldown >= 1_000_000
-        || rules.invincibility_frames >= 1_000_000
+        || rules.intangibility_frames >= 1_000_000
         || parameters.attachment.bone >= fighter.bones.len()
         || parameters
             .attachment
@@ -540,7 +540,7 @@ pub(crate) fn scan(
         fighter.ledge.side = Some(side);
         fighter.ledge.input_ready = false;
         fighter.ledge.slow = selected_slow(fighter, rules);
-        fighter.invincibility = fighter.invincibility.max(rules.invincibility_frames);
+        fighter.intangibility = fighter.intangibility.max(rules.intangibility_frames);
         simulation::enter(fighter, Action::CliffCatch);
         attach(fighter, &data.fighters[player], geometry)?;
         state.events.push(Event::LedgeCaught { player, line, side });

@@ -328,7 +328,7 @@ fn ledge_attack_uses_its_bone_pose_and_shared_damage_pipeline() {
 #[test]
 fn an_opponent_hit_releases_ledge_ownership_before_entering_damage() {
     let mut resource = data();
-    resource.rules.ledge.as_mut().unwrap().invincibility_frames = 0;
+    resource.rules.ledge.as_mut().unwrap().intangibility_frames = 0;
     resource.stage.spawns[1] = [-1.0, 0.0];
     let bones = resource.fighters[1].bones.clone();
     resource.fighters[1].jab.frames = vec![

@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-10 Slippi post-frame v3 batch is recorded at:
+
+`/mnt/archive/runs/skirmish-slippi-post-v3-20260910`
+
+It validates formatting, strict all-target/all-feature Clippy, 557 native
+workspace tests, and 747 original-C differential tests in both debug and release
+modes. File-backed replay coverage now compares retained ground-line identity,
+successful and unsuccessful l-cancel results, and version-gated hurtbox collision
+state. Native physics keeps ordinary invincibility and intangibility separate;
+ledge intangibility blocks hits and grabs and serializes with the recorder's
+priority. Debug and release traces are identical. The 19 ignored tests require
+external references, extracted assets, or a GPU/window and are unchanged.
+
 The 2026-09-10 airborne Damage callback batch is recorded at:
 
 `/mnt/archive/runs/skirmish-damage-air-20260910`

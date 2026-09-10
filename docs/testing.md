@@ -15,8 +15,8 @@ the command-line executable. C-stick ASDI cases check inclusive selection,
 main-stick-only DI, hitlag freeze and checkpoint branching; the file-backed
 version detects a changed C-stick at the first affected frame. A table-driven
 file-backed case independently corrupts every reported action, timer, position,
-damage, shield, stock, airborne, jump, velocity and hitlag field and requires the
-first divergence at that row. Slippi 2.0, 3.5 and 3.8 fixtures prove the report's
+damage, shield, stock, airborne, jump, retained ground, l-cancel, hurtbox, velocity and hitlag field and requires the
+first divergence at that row. Slippi 2.0, 2.1, 3.5 and 3.8 fixtures prove the report's
 version-dependent field set. Separate Peppi-written replay cases drive physical
 B through neutral-special combat and physical Z through grab/capture, then remove
 each recorded input and require divergence on that frame. Deliberate late post-state corruption and changed

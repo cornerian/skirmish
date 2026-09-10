@@ -115,6 +115,7 @@ pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
     fighter.hitstun = 0;
     fighter.di_pending = false;
     fighter.invincibility = 0;
+    fighter.intangibility = 0;
     fighter.death = State {
         kind: Some(kind),
         timer: match kind {

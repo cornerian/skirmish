@@ -177,6 +177,7 @@ pub(crate) fn land(f: &mut Fighter, data: &FighterData) -> Result<bool, Error> {
         return Ok(false);
     }
     let movement = &p.moves[index];
+    let l_cancelled = i32::from(f.locomotion.trigger_age) < p.l_cancel_window;
     let lag = math::landing_lag(
         movement.landing_lag,
         f.locomotion.trigger_age,
@@ -185,6 +186,7 @@ pub(crate) fn land(f: &mut Fighter, data: &FighterData) -> Result<bool, Error> {
     )
     .map_err(|e| Error::Physics(e.to_string()))?;
     super::simulation::enter(f, LANDINGS[index]);
+    f.l_cancel_status = if l_cancelled { 1 } else { 2 };
     f.aerial.landing_rate = math::landing_animation_rate(movement.landing_animation_end, lag);
     Ok(true)
 }

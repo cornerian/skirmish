@@ -14,7 +14,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         wait_frames: 30,
         slow: None,
         regrab_cooldown: 6,
-        invincibility_frames: 12,
+        intangibility_frames: 12,
     });
     for fighter in &mut data.fighters {
         let bones = fighter.bones.clone();

@@ -1,7 +1,7 @@
 # Ledge action profile
 
 `rules.ledge` enables static-stage ledge discovery and supplies catch ranges,
-stick thresholds, hang duration, regrab cooldown and catch invincibility. Its
+stick thresholds, hang duration, regrab cooldown and catch intangibility. Its
 optional `slow` table supplies the source percent threshold and slow hang
 duration. Every fighter then supplies `fighters[].ledge`: a bone anchor, complete physics poses
 and root offsets for catch, wait, climb, jump, attack and escape. A paired
@@ -19,7 +19,7 @@ or the checkpointed cooldown is active. Candidate traversal and equal-distance
 ties use stable line, side and player order.
 
 Catch clears self velocity and knockback, turns inward, grants the configured
-invincibility and enters `CliffCatch`. While the fighter is attached, every
+intangibility and enters `CliffCatch`. While the fighter is attached, every
 frame solves the fighter root so the selected bone point reaches the endpoint
 plus the supplied action-frame offset. This makes the collision pose, hurtboxes
 and ledge-attack hitboxes headless physics inputs; no renderer participates.
@@ -50,5 +50,5 @@ cooldowns, including the quick/slow percent selector.
 The profile uses supplied generic action tracks. Moving or remapped collision
 lines, disappearing ledges, ledge trumping, tether grabs,
 character overrides, ledge stalls, complete collision-environment
-flags and the original invincibility-refresh policy remain unported. Authentic
+flags and the original intangibility-refresh policy remain unported. Authentic
 values and poses must come from separately attributed native resources.

@@ -53,6 +53,7 @@ fn spawn(
         facing: if player == 0 { 1.0 } else { -1.0 },
         grounded: false,
         ground_line: None,
+        last_ground_line: None,
         skip_floor: None,
         floor_normal: [0.0, 1.0, 0.0],
         contacts: [None; 4],
@@ -87,6 +88,8 @@ fn spawn(
         surface_tech: damage::SurfaceTechState::default(),
         wall_jump: wall_jump::State::default(),
         invincibility,
+        intangibility: 0,
+        l_cancel_status: 0,
         short_hop: false,
         fast_fall: false,
         hit_groups: 0,
@@ -95,6 +98,7 @@ fn spawn(
         previous_input: Controller::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], geometry)?;
+    fighter.last_ground_line = fighter.ground_line;
     if !fighter.grounded {
         fighter.locomotion.jumps_used = 1;
     }
@@ -176,6 +180,12 @@ pub(crate) fn advance(
             fighter.previous_input = input;
         }
         return Ok(());
+    }
+
+    // Slippi's recorder clears this byte before the map callback. A landing
+    // later in the same callback replaces it with the frame's result.
+    for fighter in &mut state.fighters {
+        fighter.l_cancel_status = 0;
     }
 
     let previous_stage_frame = state.stage.frame;
@@ -519,6 +529,7 @@ pub(crate) fn advance(
                 .attack(source.action, source.prone, source.ledge.slow)
                 .is_none()
             || target.invincibility > 0
+            || target.intangibility > 0
             || target.grab.captor.is_some()
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
@@ -750,6 +761,7 @@ pub(crate) fn advance(
             if !frozen[player] {
                 // The last invincible frame still protects this frame's contacts.
                 fighter.invincibility = fighter.invincibility.saturating_sub(1);
+                fighter.intangibility = fighter.intangibility.saturating_sub(1);
             }
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
                 if !grab::advance_action_frame(fighter, throw_release)
@@ -759,6 +771,11 @@ pub(crate) fn advance(
                 }
                 fighter.hitstun = fighter.hitstun.saturating_sub(1);
             }
+        }
+    }
+    for fighter in &mut state.fighters {
+        if fighter.ground_line.is_some() {
+            fighter.last_ground_line = fighter.ground_line;
         }
     }
     state.remaining_frames -= 1;

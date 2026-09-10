@@ -18,7 +18,10 @@ pub const BASE_FIELDS: &[&str] = &[
     "stocks",
     "airborne",
     "jumps_remaining",
+    "last_ground_id",
+    "l_cancel",
 ];
+pub const HURTBOX_FIELD: &str = "hurtbox_state";
 pub const VELOCITY_FIELDS: &[&str] = &[
     "velocities.self_x_air",
     "velocities.self_y",
@@ -30,6 +33,9 @@ pub const HITLAG_FIELD: &str = "hitlag";
 
 pub fn fields(version: slippi::Version) -> Vec<&'static str> {
     let mut fields = BASE_FIELDS.to_vec();
+    if version.gte(2, 1) {
+        fields.push(HURTBOX_FIELD);
+    }
     if version.gte(3, 5) {
         fields.extend_from_slice(VELOCITY_FIELDS);
     }
@@ -69,6 +75,11 @@ pub struct FighterObservation {
     pub stocks: u8,
     pub airborne: bool,
     pub jumps_remaining: u8,
+    /// Melee retains `-1` until a floor is found; Slippi narrows it to 0xffff.
+    pub last_ground_id: u16,
+    /// None, successful, unsuccessful.
+    pub l_cancel: u8,
+    pub hurtbox_state: Option<u8>,
     pub velocities: Option<[f32; 5]>,
     pub hitlag: Option<f32>,
 }
@@ -187,6 +198,18 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
                 ));
             }
         };
+        let l_cancel = post.l_cancel.filter(|status| *status <= 2).ok_or_else(|| {
+            format!(
+                "{} post.l_cancel must be present and within 0..=2",
+                actor.port
+            )
+        })?;
+        if post.hurtbox_state.is_some_and(|state| state > 2) {
+            return Err(format!(
+                "{} post.hurtbox_state must be within 0..=2",
+                actor.port
+            ));
+        }
         Ok(FighterObservation {
             port: actor.port,
             action_state: Some(post.state),
@@ -202,6 +225,11 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
             jumps_remaining: post
                 .jumps
                 .ok_or_else(|| format!("{} post.jumps must be present", actor.port))?,
+            last_ground_id: post
+                .ground
+                .ok_or_else(|| format!("{} post.ground must be present", actor.port))?,
+            l_cancel,
+            hurtbox_state: post.hurtbox_state,
             velocities: post.velocities.map(|velocity| {
                 [
                     velocity.self_x_air,
@@ -239,6 +267,11 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 stocks: fighter.stocks,
                 airborne: !fighter.grounded,
                 jumps_remaining: max_jumps.saturating_sub(fighter.locomotion.jumps_used),
+                last_ground_id: fighter
+                    .last_ground_line
+                    .map_or(u16::MAX, |line| line as u16),
+                l_cancel: fighter.l_cancel_status,
+                hurtbox_state: Some(hurtbox_state(fighter)),
                 velocities: Some([
                     fighter.velocity[0],
                     fighter.velocity[1],
@@ -249,6 +282,16 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 hitlag: Some(fighter.hitlag),
             }
         }),
+    }
+}
+
+/// Project Slippi serializes the move-induced state first, then the timed
+/// game-induced state. Skirmish currently models the latter as two timers.
+pub fn hurtbox_state(fighter: &game::Fighter) -> u8 {
+    if fighter.intangibility > 0 {
+        2
+    } else {
+        u8::from(fighter.invincibility > 0)
     }
 }
 
@@ -498,6 +541,43 @@ pub fn compare(expected: &Observation, actual: &Observation) -> Option<Differenc
                 return Some(difference);
             }
         }
+        if let Some(difference) = difference(
+            port,
+            BASE_FIELDS[10],
+            u32::from(expected.last_ground_id),
+            u32::from(actual.last_ground_id),
+            4,
+        ) {
+            return Some(difference);
+        }
+        if let Some(difference) = difference(
+            port,
+            BASE_FIELDS[11],
+            u32::from(expected.l_cancel),
+            u32::from(actual.l_cancel),
+            2,
+        ) {
+            return Some(difference);
+        }
+        if let Some(expected_hurtbox_state) = expected.hurtbox_state {
+            let Some(actual_hurtbox_state) = actual.hurtbox_state else {
+                return Some(Difference {
+                    port,
+                    field: HURTBOX_FIELD,
+                    expected: format!("0x{expected_hurtbox_state:02x}"),
+                    actual: "unavailable".into(),
+                });
+            };
+            if let Some(difference) = difference(
+                port,
+                HURTBOX_FIELD,
+                u32::from(expected_hurtbox_state),
+                u32::from(actual_hurtbox_state),
+                2,
+            ) {
+                return Some(difference);
+            }
+        }
         if let Some(expected_velocities) = expected.velocities {
             let Some(actual_velocities) = actual.velocities else {
                 return Some(Difference {
@@ -557,6 +637,9 @@ mod tests {
                         state_age: Some(0.0),
                         airborne: Some(0),
                         jumps: Some(2),
+                        ground: Some(u16::MAX),
+                        l_cancel: Some(0),
+                        hurtbox_state: Some(0),
                         stocks: 4,
                         velocities: Some(row::Velocities::default()),
                         hitlag: Some(0.0),
@@ -669,14 +752,15 @@ mod tests {
 
     #[test]
     fn observations_map_ports_and_report_each_selected_field_by_bits() {
-        let mut frame = frame();
-        frame.actors[1].post.position.x = -0.0;
-        let expected = expected(&frame, PORTS).unwrap();
+        let mut replay_frame = frame();
+        replay_frame.actors[1].post.position.x = -0.0;
+        let expected = expected(&replay_frame, PORTS).unwrap();
         assert_eq!(expected.fighters[0].port, Port::P3);
         assert_eq!(expected.fighters[0].position[0].to_bits(), 0x8000_0000);
         assert!(compare(&expected, &expected).is_none());
         for &field in BASE_FIELDS
             .iter()
+            .chain([HURTBOX_FIELD].iter())
             .chain(VELOCITY_FIELDS)
             .chain([HITLAG_FIELD].iter())
         {
@@ -693,6 +777,9 @@ mod tests {
                 "stocks" => fighter.stocks -= 1,
                 "airborne" => fighter.airborne = true,
                 "jumps_remaining" => fighter.jumps_remaining -= 1,
+                "last_ground_id" => fighter.last_ground_id = 7,
+                "l_cancel" => fighter.l_cancel = 1,
+                "hurtbox_state" => fighter.hurtbox_state = Some(1),
                 "velocities.self_x_air" => fighter.velocities.as_mut().unwrap()[0] = 1.0,
                 "velocities.self_y" => fighter.velocities.as_mut().unwrap()[1] = 1.0,
                 "velocities.knockback_x" => fighter.velocities.as_mut().unwrap()[2] = 1.0,
@@ -711,8 +798,14 @@ mod tests {
             }
         }
         for airborne in [None, Some(2)] {
-            frame.actors[0].post.airborne = airborne;
-            assert!(super::expected(&frame, PORTS).is_err());
+            replay_frame.actors[0].post.airborne = airborne;
+            assert!(super::expected(&replay_frame, PORTS).is_err());
+        }
+        for (l_cancel, hurtbox_state) in [(Some(3), Some(0)), (Some(0), Some(3))] {
+            let mut invalid = frame();
+            invalid.actors[0].post.l_cancel = l_cancel;
+            invalid.actors[0].post.hurtbox_state = hurtbox_state;
+            assert!(super::expected(&invalid, PORTS).is_err());
         }
     }
 
@@ -739,6 +832,12 @@ mod tests {
             assert_eq!(fighter.stocks, native.stocks);
             assert_eq!(fighter.airborne, !native.grounded);
             assert_eq!(fighter.jumps_remaining, 2 - native.locomotion.jumps_used);
+            assert_eq!(
+                fighter.last_ground_id,
+                native.last_ground_line.map_or(u16::MAX, |line| line as u16)
+            );
+            assert_eq!(fighter.l_cancel, native.l_cancel_status);
+            assert_eq!(fighter.hurtbox_state, Some(hurtbox_state(native)));
             assert_eq!(
                 fighter.velocities.unwrap().map(f32::to_bits),
                 [
@@ -809,5 +908,20 @@ mod tests {
         }
         fighter.action = game::Action::SpecialN;
         assert_eq!(action_state(&fighter, None), None);
+    }
+
+    #[test]
+    fn hurtbox_state_preserves_intangibility_priority() {
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        assert_eq!(hurtbox_state(&fighter), 0);
+        fighter.invincibility = 3;
+        assert_eq!(hurtbox_state(&fighter), 1);
+        fighter.intangibility = 2;
+        assert_eq!(hurtbox_state(&fighter), 2);
     }
 }
