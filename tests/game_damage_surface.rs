@@ -13,6 +13,7 @@ use skirmish::{
             FloorResponseRules, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
         },
         data::{Bone, CollisionBox, MatchData, StageGeometry},
+        stage_motion::{Rules as MotionRules, Track, Transform},
         wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules},
     },
 };
@@ -209,6 +210,15 @@ fn released_neutral_wall_tech(data: MatchData) -> Match {
     }
     assert_eq!(game.state().fighters[1].action, Action::PassiveWall);
     game
+}
+
+fn add_wall_motion(data: &mut MatchData, frames: Vec<Transform>) {
+    data.stage.motion = Some(MotionRules {
+        tracks: vec![Track {
+            lines: 2..3,
+            frames,
+        }],
+    });
 }
 
 fn attack() -> [Controller; 2] {
@@ -669,6 +679,47 @@ fn every_surface_tech_action_lands_cleans_shared_state_and_replays() {
         }
         assert_eq!(step(&mut game).fighters[1].action, Action::Landing);
         assert_eq!(step(&mut game).fighters[1].action, Action::Wait);
+    }
+}
+
+#[test]
+fn moving_wall_pushes_inward_but_does_not_drag_a_frozen_wall_tech() {
+    let mut probe_resource = tech_data(0.0);
+    add_wall_motion(&mut probe_resource, vec![Transform::IDENTITY]);
+    let mut probe = hit(probe_resource);
+    buffer_tech(&mut probe, BUTTON_L, [0.0; 2]);
+    let probe_tech = until(&mut probe, |state| {
+        state.fighters[1].action == Action::PassiveWall
+    });
+    let tech_frame = probe_tech.stage.frame as usize;
+
+    for (translation, expected_delta, expected_contact) in [(-1.0, -1.0, Some(2)), (1.0, 0.0, None)]
+    {
+        let mut frames = vec![Transform::IDENTITY; tech_frame + 3];
+        frames[tech_frame + 1] = Transform {
+            matrix: [[1.0, 0.0, translation], [0.0, 1.0, 0.0]],
+        };
+        frames[tech_frame + 2] = frames[tech_frame + 1];
+        let mut resource = tech_data(0.0);
+        add_wall_motion(&mut resource, frames);
+        let mut game = hit(resource);
+        buffer_tech(&mut game, BUTTON_L, [0.0; 2]);
+        let teched = until(&mut game, |state| {
+            state.fighters[1].action == Action::PassiveWall
+        });
+        assert_eq!(teched.stage.frame as usize, tech_frame);
+        let before = teched.fighters[1].position;
+        let checkpoint = game.checkpoint();
+        let moved = step(&mut game);
+        assert_eq!(moved.fighters[1].action, Action::PassiveWall);
+        assert_eq!(moved.fighters[1].surface_tech.timer, 2);
+        assert_eq!(moved.fighters[1].velocity, [0.0; 2]);
+        assert_eq!(moved.fighters[1].contacts[2], expected_contact);
+        assert!((moved.fighters[1].position[0] - (before[0] + expected_delta)).abs() < 0.0001);
+        assert_eq!(moved.fighters[1].position[1], before[1]);
+
+        game.restore_checkpoint(&checkpoint).unwrap();
+        assert_eq!(step(&mut game), moved);
     }
 }
 

@@ -37,6 +37,17 @@ release modes. One match-level integration test drives neutral wall tech,
 wall-jump tech and ceiling tech through gravity, floor contact, shared Landing
 timing, transient surface/wall-jump cleanup and checkpoint replay.
 
+The 2026-09-10 moving-wall tech coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-surface-tech-moving-wall-20260910`
+
+It validates the isolated commit with formatting, strict all-target/all-feature
+Clippy, native workspace tests and original-C differential tests in debug and
+release modes. The integration scenario schedules a collision-line translation
+immediately after wall-tech entry and checks inward displacement, outward
+separation, contact state, frozen self velocity, one timer callback and
+deterministic checkpoint replay.
+
 The 2026-09-09 grounded-launch coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-ground-launch-20260909`
