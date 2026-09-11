@@ -84,6 +84,7 @@ fn spawn(
         aerial: aerial::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
+        jab: jab::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
         ledge: ledge::State::default(),
@@ -141,8 +142,8 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
         crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
     }
-    if action != Action::AttackLw3 {
-        // ftCo_AttackLw3 enters with Ft_MF_SkipAttackCount.
+    if !matches!(action, Action::AttackLw3 | Action::Attack100Loop) {
+        // ftCo_AttackLw3 and Attack100Loop enter with Ft_MF_SkipAttackCount.
         crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
     }
     clank::transition(fighter, action);
@@ -163,6 +164,10 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.body_state = BodyState::default();
     // ftCo_800DEEA8: every motion change clears the smash charge.
     fighter.smash = smash::State::default();
+    // Fighter_ChangeMotionState keeps the jab timer only for Wait and walks.
+    if !jab::keeps_window(action) {
+        fighter.jab.window = 0.0;
+    }
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
@@ -1125,15 +1130,8 @@ fn update_animation(
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
+    jab::update_animation(f, data)?;
     match f.action {
-        Action::Jab if f.action_frame as usize >= data.jab.frames.len() => enter(
-            f,
-            if f.grounded {
-                Action::Wait
-            } else {
-                Action::Fall
-            },
-        ),
         Action::Landing if f.action_frame >= attrs.landing_frames => enter(f, Action::Wait),
         Action::JumpSquat
             if data.locomotion.is_none() && f.action_frame >= attrs.jump_startup_frames =>
@@ -1218,6 +1216,12 @@ fn update_actions(
     if smash::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
         return Ok(());
     }
+    // Uninterruptible jab frames still count rapid presses and buffer the
+    // follow-up; interruptible ones run those inside their chains.
+    if jab::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
+        jab::update_actions(f, data, input);
+        return Ok(());
+    }
     if clank_owns {
         return Ok(());
     }
@@ -1289,6 +1293,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         } else if let Some(target) = damage::ground_recovery_velocity(f, data)
             .or_else(|| escape::ground_target_velocity(f, data))
             .or_else(|| smash::ground_target_velocity(f, data))
+            .or_else(|| jab::ground_target_velocity(f, data))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.

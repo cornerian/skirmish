@@ -1,5 +1,49 @@
 # Local validation provenance
 
+The 2026-09-11 jab-combo coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-jab-combos-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage starts the first jab from Wait (a held
+press is not fresh), latches a buffered press on an uninterruptible pose and
+fires the second jab on the first pose whose follow-up flag is raised, and
+chains the same pattern into the third jab, which has no follow-up of its
+own. The follow-up window survives into Wait and decays there without a
+press; any other motion resets it immediately rather than gradually. The
+first and second jabs' interruptible poses try smashes, then tilts, then the
+ordinary jump/dash/squat/turn/walk dispatch, and never reach shield or catch;
+the third jab's interruptible pose reaches the complete Wait chain, including
+catch, shield and a fresh first jab. The rapid jab counts fresh presses and
+releases (a held button does not add to the count) into Attack100Start,
+which plays into Attack100Loop keeping the action instance
+(`Ft_MF_SkipAttackCount`) before the loop's own frame zero restarts the stale
+identity and allocates a fresh instance id; tapping through the loop's
+continuation check keeps it going and re-hits an in-reach victim each cycle,
+and no input at the check ends it into Attack100End and Wait. A later pose's
+explicit `rapid: Some(false)` turns the flag back off, a script's clear_hits
+command lets one hitbox group hit the same victim twice within a jab, the
+rapid press count persists into the second jab and resets on a fresh first
+jab, the second jab's TransN root motion is applied in both facings,
+checkpoints restore every phase (first jab both before and after
+`allow_interrupt`, second, third, rapid start/loop/end and Wait with the
+window still open), and invalid resources (mismatched flag/root-translation
+lengths, a loop check outside the rapid cycle, a follow-up flag without its
+next jab, a rapid flag without the rapid jab, a cycle without any
+continuation check, a negative rapid window, a non-finite window, staled
+rapid animations with differing move identities and missing locomotion) are
+rejected before a match is constructed; `jab_combo = None` keeps the
+original chainless jab. `ftCo_Attack1_CheckInput`, `checkAttack11`,
+`doAttack12`, `checkAttack12`, `doAttack13`, `checkAttack13`,
+`ftCo_Attack11_IASA`, `ftCo_Attack12_IASA`, `ftCo_Attack13_IASA`,
+`ftCo_Attack_800D6A50`, `ftCo_800D6B00`, `ftCo_Attack100Loop_Anim` and
+`ftCo_Attack100Loop_IASA` are compared with pinned C over generated
+press/release and script-flag sequences. Peppi-written replays match a
+three-jab combo and a rapid jab, report Slippi states 44..46 with animation
+indices 46..48 and states 47..49 with animation indices 49..51, and detect a
+removed press at its first affected frame.
+
 The 2026-09-10 smash coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-smashes-20260910-verified`

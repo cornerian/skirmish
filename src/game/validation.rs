@@ -273,6 +273,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        if let Some(parameters) = &fighter.jab_combo {
+            jab::validate(parameters, fighter, rules.staling.is_some())?;
+        }
         match (&rules.smash, &fighter.smashes) {
             (Some(smash_rules), Some(parameters)) => {
                 smash::validate(smash_rules, parameters, fighter, rules.staling.is_some())?;
@@ -593,6 +596,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .iter()
                     .flat_map(|p| smash::attacks(p).map(|(attack, _)| &attack.attack)),
             )
+            .chain(fighter.jab_combo.iter().flat_map(jab::attacks))
             .chain(fighter.tilts.iter().flat_map(|p| {
                 [
                     p.forward.high.as_ref(),

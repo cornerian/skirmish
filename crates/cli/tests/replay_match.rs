@@ -25,6 +25,8 @@ mod escape_air_support;
 mod escape_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
+#[path = "../../../tests/support/jab.rs"]
+mod jab_support;
 #[path = "../../../tests/support/ledge.rs"]
 mod ledge_support;
 #[path = "../../../tests/support/smash.rs"]
@@ -1090,6 +1092,111 @@ fn file_backed_smashes_match_and_detect_their_first_changed_input_frame() {
     }
 }
 
+#[test]
+fn file_backed_jab_combos_match_and_detect_their_first_changed_press_frame() {
+    let data = jab_support::profile(smash_support::profile(tilt_support::profile(
+        shield_drop_data(),
+    )));
+
+    // press, hold, release, press: the release (count 1) makes the row 3
+    // press fresh; row 3 is also the first pose whose follow_up_ready is
+    // raised (pose 3 of the 5-pose first jab), so that fresh press both
+    // latches and fires the second jab in the same row (a held run cannot
+    // be used here: editing an earlier row of a hold would just shift the
+    // fresh edge onto the next row and still fire, since the follow-up
+    // latch does not require the firing row's own press to be fresh). A
+    // release then a fresh press fires the third the moment the second
+    // jab's own follow-up flag (pose 2 of its 6 poses) is reached: Slippi
+    // states 44, 45, 46 with animations 46, 47, 48.
+    {
+        let mut inputs = vec![IDLE; 12];
+        inputs[0][0].buttons = BUTTON_A;
+        inputs[1][0].buttons = BUTTON_A;
+        inputs[3][0].buttons = BUTTON_A;
+        inputs[5][0].buttons = BUTTON_A;
+        let recording = Recording::from_script(data.clone(), 47, inputs);
+        for &(row, action, state, animation) in &[
+            (0, Action::Jab, 44, 46),
+            (3, Action::Attack12, 45, 47),
+            (5, Action::Attack13, 46, 48),
+        ] {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "row {row}");
+            assert_eq!(fighter.action_frame, 1, "row {row}");
+            assert_eq!(observation::action_state(fighter, Some(2)), Some(state));
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation)
+            );
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        // Removing row 3's press: it is no longer fresh (row 2 was already
+        // released), so the second jab never fires.
+        let row = 3;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            let pre = &mut frames.ports[0].leader.pre;
+            pre.buttons.set(row, Some(0));
+            pre.buttons_physical.set(row, Some(0));
+        });
+        assert!(matches!(
+            recording.compare(&changed).outcome,
+            Outcome::Mismatch {
+                frame,
+                checked_frames,
+                ..
+            } if frame == FIRST + row as i32 && checked_frames == row as u64
+        ));
+    }
+
+    // press, release, press, release: the entry pose's rapid flag is live
+    // immediately, so three counted presses/releases (1, 2, 3) reach the
+    // rapid window on row 3, before the ordinary follow-up (pose 3) is ever
+    // checked: Attack100Start, Attack100Loop and Attack100End on their
+    // first poses, states 47, 48, 49 with animations 49, 50, 51.
+    {
+        let mut inputs = vec![IDLE; 12];
+        inputs[0][0].buttons = BUTTON_A;
+        inputs[2][0].buttons = BUTTON_A;
+        let recording = Recording::from_script(data, 47, inputs);
+        for &(row, action, state, animation, frame) in &[
+            (3, Action::Attack100Start, 47, 49, 1),
+            (6, Action::Attack100Loop, 48, 50, 1),
+            (9, Action::Attack100End, 49, 51, 1),
+        ] {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "row {row}");
+            assert_eq!(fighter.action_frame, frame, "row {row}");
+            assert_eq!(observation::action_state(fighter, Some(2)), Some(state));
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation)
+            );
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        // Removing row 2's press leaves the count at 2 (rows 1 and 3 are
+        // both releases, and row 3 is not fresh once row 2 is already
+        // idle), so Attack100Start no longer fires on row 3.
+        let edited_row: usize = 2;
+        let expected_row: i32 = 3;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            let pre = &mut frames.ports[0].leader.pre;
+            pre.buttons.set(edited_row, Some(0));
+            pre.buttons_physical.set(edited_row, Some(0));
+        });
+        assert!(matches!(
+            recording.compare(&changed).outcome,
+            Outcome::Mismatch {
+                frame,
+                checked_frames,
+                ..
+            } if frame == FIRST + expected_row && checked_frames == expected_row as u64
+        ));
+    }
+}
 #[test]
 fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [

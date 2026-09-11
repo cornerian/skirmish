@@ -188,3 +188,23 @@ and airborne animation, contact, terrain conversion and input rearming.
 adapter records its selected death callback and compares line order, top
 eligibility, ice variants, screen chance and exact HSD RNG consumption. Native
 match tests own the resource-driven death action timelines and stock lifecycle.
+
+`attack1.c` preserves complete `ftCo_Attack1_CheckInput`, `decideAttack11`,
+`getMotionFlags`, `checkAttack11`, `ftCo_Attack11_IASA`, `doAttack12Rapid`,
+`doAttack12Normal`, `doAttack12`, `checkAttack12`, `ftCo_Attack12_IASA`,
+`doAttack13`, `checkAttack13` and `ftCo_Attack13_IASA` from `ftCo_Attack1.c`,
+and `ftCo_Attack_800D6A50`, `fn_800D6AC4`, `ftCo_800D6B00`, `fn_800D6B8C`,
+`ftCo_Attack100Loop_Anim` and `ftCo_Attack100Loop_IASA` from
+`ftCo_Attack100.c`, compiled together because they call each other. Its host
+adapter's single `oracle_jab_sequence` drives every included body frame by
+frame from Wait, applying one event word per frame (fresh press/release, the
+script's follow-up-ready and rapid commands, `allow_interrupt`, animation
+end, the loop's continuation check and its frame zero) in the same fixed
+order the Rust differential mirror uses, and records the motion, the
+follow-up window, the five compared flags and the press count after every
+frame. Item throws/drops and the Game & Watch, Pikachu/Pichu and Marth
+overrides are disabled by construction (kind stays 0, `item_gobj` stays
+`NULL`); their branches still compile unmodified. `Fighter_ChangeMotionState`
+reproduces the jab-timer reset rule at `fighter.c:1143`. Native match tests
+own the second/third jab and rapid-jab resources, script-driven hitboxes and
+root motion, and checkpoint replay.

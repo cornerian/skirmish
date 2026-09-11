@@ -328,5 +328,15 @@
     "fixture": "tests/oracle/original/smash_charge.c",
     "upstream": "src/melee/ft/ft_0DF0.c",
     "sha256": "38836511908f55b2c5860ff30174374b980abf9e99869b151ad9b1c48d72673e"
+  },
+  {
+    "fixture": "tests/oracle/original/attack1.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack1.c",
+    "sha256": "41af2de0d294cb2127cd16c8d4af90dbde72c82616d90b08d374d71d75a5c075"
+  },
+  {
+    "fixture": "tests/oracle/original/attack100.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack100.c",
+    "sha256": "7d56d7d8fc4f6d8528c21053e69530c865109edd8b9bd255e45c201543b6e6bf"
   }
 ]

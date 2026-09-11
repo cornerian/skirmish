@@ -1,0 +1,15 @@
+[
+  "ftCo_Attack1_CheckInput",
+  "decideAttack11",
+  "getMotionFlags",
+  "checkAttack11",
+  "ftCo_Attack11_IASA",
+  "doAttack12Rapid",
+  "doAttack12Normal",
+  "doAttack12",
+  "checkAttack12",
+  "ftCo_Attack12_IASA",
+  "doAttack13",
+  "checkAttack13",
+  "ftCo_Attack13_IASA"
+]

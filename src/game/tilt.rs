@@ -84,6 +84,9 @@ pub(crate) enum Chain {
     Wait,
     /// `ftCo_AttackLw3_IASA`: attacks, jump, dash, squat, turn and walk only.
     DownTilt,
+    /// `ftCo_Attack11_IASA` / `ftCo_Attack12_IASA`: smashes and tilts, the
+    /// rapid and follow-up checks, then jump, dash, squat, turn and walk.
+    Jab,
 }
 
 pub(crate) fn validate(
@@ -202,6 +205,9 @@ fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {
 pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<Chain> {
     if super::smash::interruptible(fighter, data) {
         return Some(Chain::Wait);
+    }
+    if super::jab::owns_action(fighter.action) {
+        return super::jab::interrupt_chain(fighter, data);
     }
     if !fighter.grounded || !owns_action(fighter.action) {
         return None;
@@ -330,6 +336,10 @@ pub(crate) fn update_ground_attacks(
         fighter.facing
     };
     let chain = interrupt_chain(fighter, data);
+    // ftCo_Attack13_IASA runs the rapid check before its Wait chain.
+    if fighter.action == Action::Attack13 && super::jab::update_actions(fighter, data, input) {
+        return true;
+    }
     // Smashes precede every tilt in the Wait chain and in the down tilt's
     // interruptible block; up and down smashes keep the chain facing.
     if (fighter.action != Action::AttackLw3 || chain.is_some())
@@ -372,13 +382,18 @@ pub(crate) fn update_ground_attacks(
         start(fighter, action);
         return true;
     }
+    // The first and second jabs run the rapid and follow-up checks after
+    // their attacks and never reach the jab check itself.
+    if matches!(fighter.action, Action::Jab | Action::Attack12) {
+        return super::jab::update_actions(fighter, data, input);
+    }
     if pressed {
         if fighter.action == Action::Turn && !fighter.locomotion.turn_has_turned {
             fighter.facing = -fighter.facing;
         }
-        super::simulation::enter(fighter, Action::Jab);
-        return true;
+        return super::jab::press(fighter, data);
     }
+    super::jab::decay(fighter);
     false
 }
 

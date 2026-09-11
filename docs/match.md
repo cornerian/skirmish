@@ -336,7 +336,10 @@ profile](ledges.md) adds static endpoint catch/hang, climb, jump, attack, escape
 and drop. The optional [air-dodge profile](air-dodge.md) adds EscapeAir,
 FallSpecial and the LandingFallSpecial landing. The optional [tilt
 profile](tilts.md) adds forward, up and down tilts with their input chains. The optional [smash
-profile](smashes.md) adds forward, up and down smashes with their charge. The optional [neutral-special
+profile](smashes.md) adds forward, up and down smashes with their charge. The
+optional [jab profile](jabs.md) adds the second and third jab with their
+buffered follow-up windows and the rapid jab's entry count, loop and end;
+without it the jab keeps its previous chainless behaviour. The optional [neutral-special
 profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials and character-specific special state remain
 unported. Some accepted stick/button

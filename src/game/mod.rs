@@ -14,6 +14,7 @@ pub mod escape;
 pub mod escape_air;
 pub mod grab;
 pub mod hitboxes;
+pub mod jab;
 pub mod ledge;
 pub mod locomotion;
 pub mod nudge;
@@ -106,6 +107,11 @@ pub enum Action {
     FallSpecial,
     LandingFallSpecial,
     Jab,
+    Attack12,
+    Attack13,
+    Attack100Start,
+    Attack100Loop,
+    Attack100End,
     AttackS3Hi,
     AttackS3HiS,
     AttackS3S,
@@ -229,6 +235,7 @@ pub struct Fighter {
     pub aerial: aerial::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
+    pub jab: jab::State,
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,

@@ -212,6 +212,8 @@ pub struct FighterData {
     pub tilts: Option<super::tilt::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smashes: Option<super::smash::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jab_combo: Option<super::jab::Parameters>,
 }
 
 impl FighterData {
@@ -229,6 +231,9 @@ impl FighterData {
         }
         if super::smash::owns_action(action) {
             return super::smash::attack(self.smashes.as_ref()?, action);
+        }
+        if super::jab::owns_action(action) {
+            return super::jab::attack(self.jab_combo.as_ref()?, action);
         }
         if action == super::Action::CliffAttack {
             return Some(super::ledge::attack(self.ledge.as_ref()?, slow_ledge));
