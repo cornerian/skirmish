@@ -84,6 +84,7 @@ fn spawn(
         aerial: aerial::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
+        dash: dash::State::default(),
         jab: jab::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
@@ -164,6 +165,9 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.body_state = BodyState::default();
     // ftCo_800DEEA8: every motion change clears the smash charge.
     fighter.smash = smash::State::default();
+    // mv.co.attackdash.x0 is cleared by doEnter; the AttackDash entry callers
+    // (Dash/Run) arm it to x68 immediately after this.
+    fighter.dash = dash::State::default();
     // Fighter_ChangeMotionState keeps the jab timer only for Wait and walks.
     if !jab::keeps_window(action) {
         fighter.jab.window = 0.0;
@@ -1163,6 +1167,7 @@ fn update_animation(
     escape_air::update_animation(f, data, rules.escape_air.as_ref())?;
     tilt::update_animation(f, data)?;
     smash::update_animation(f, data)?;
+    dash::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1222,10 +1227,28 @@ fn update_actions(
         jab::update_actions(f, data, input);
         return Ok(());
     }
+    // ftCo_Dash_IASA / ftCo_Run_IASA / ftCo_AttackDash_IASA in one place;
+    // when rules.dash is Some this always consumes Dash and Run frames, and
+    // AttackDash's own catch-buffer check always runs before its Wait chain
+    // opens (below) or its uninterruptible frames stop here.
+    if dash::update_actions(f, data, rules, input)? {
+        return Ok(());
+    }
+    if dash::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
+        return Ok(());
+    }
     if clank_owns {
         return Ok(());
     }
+    let dash_before_special = f.action == Action::Dash;
     if special::update_actions(f, data, input) {
+        // ftCo_SpecialS_CheckInput is the first check of both ftCo_Dash_IASA
+        // phases; firing from Dash falls through to the shared x54 friction
+        // tail exactly like the transitions dash::update_actions applies it
+        // after, but special::update_actions runs after that module returned.
+        if dash_before_special && let Some(dash_rules) = rules.dash.as_ref() {
+            dash::apply_transition_friction(f, dash_rules);
+        }
         return Ok(());
     }
     if grab::update_actions(f, data, rules.grab.as_ref(), input) {
@@ -1294,6 +1317,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             .or_else(|| escape::ground_target_velocity(f, data))
             .or_else(|| smash::ground_target_velocity(f, data))
             .or_else(|| jab::ground_target_velocity(f, data))
+            .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.

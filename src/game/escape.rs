@@ -220,6 +220,22 @@ pub(crate) fn try_spot_dodge(
     Ok(true)
 }
 
+/// `ftCo_80099264`: a held shoulder starts the forward roll directly
+/// (`ftCo_800992A8(EscapeF, false)`), skipping the ordinary stick-based
+/// selection in `try_roll`. Dash's early phase only.
+pub(crate) fn dash_forward_roll(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: Option<&Rules>,
+    input: Controller,
+) -> Result<bool, Error> {
+    if rules.is_none() || data.escape.is_none() || !input.shield_held() {
+        return Ok(false);
+    }
+    start(fighter, data, Action::EscapeF)?;
+    Ok(true)
+}
+
 /// `ftCo_8009917C`: fresh main-stick roll with held-C-stick fallback, with the
 /// facing-relative direction chosen from the selected axis value.
 pub(crate) fn try_roll(

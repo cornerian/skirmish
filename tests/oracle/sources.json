@@ -338,5 +338,15 @@
     "fixture": "tests/oracle/original/attack100.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack100.c",
     "sha256": "7d56d7d8fc4f6d8528c21053e69530c865109edd8b9bd255e45c201543b6e6bf"
+  },
+  {
+    "fixture": "tests/oracle/original/dash.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Dash.c",
+    "sha256": "7251dcee053adcaf812b245c569574a112713758d8d24f2e5101d98dbe6fdd84"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_dash.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackDash.c",
+    "sha256": "7321ca3fd67da63d3ea53c87df77129295724624400313f3f1574c18ac67f486"
   }
 ]

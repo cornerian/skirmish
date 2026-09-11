@@ -285,7 +285,12 @@ and action-dispatch gaps.
 coefficients, animation/event durations, crouch/turn timing, aerial jump data
 and platform-drop parameters. No authentic common-data values are implied. With
 that data, the scheduler supports Dash/Run/TurnRun/RunBrake, standing Turn,
-Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. An optional
+Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. The
+optional [dash-attack profile](dash-attack.md) adds Dash's own
+early/middle/late input phases (a dash-specific forward smash and forward
+roll, a dash attack with its own no-A catch buffer, and phase-gated shield
+entry) on top of this same locomotion data; without it Dash's ordinary
+scheduler behaviour above is unaffected. An optional
 fixed five-entry `multi_jump` table supplies per-jump vertical speeds and
 animation command markers, horizontal speed, air-control multipliers and the
 root-joint turn used by characters with up to five aerial jumps. The first
@@ -339,7 +344,10 @@ profile](tilts.md) adds forward, up and down tilts with their input chains. The 
 profile](smashes.md) adds forward, up and down smashes with their charge. The
 optional [jab profile](jabs.md) adds the second and third jab with their
 buffered follow-up windows and the rapid jab's entry count, loop and end;
-without it the jab keeps its previous chainless behaviour. The optional [neutral-special
+without it the jab keeps its previous chainless behaviour. The optional
+[dash-attack profile](dash-attack.md) adds the Dash early/middle/late input
+phases and the dash attack itself; without it Dash and Run keep their
+previous behaviour. The optional [neutral-special
 profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials and character-specific special state remain
 unported. Some accepted stick/button

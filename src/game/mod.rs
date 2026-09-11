@@ -8,6 +8,7 @@ pub mod clank;
 mod collision;
 mod combat_history;
 pub mod damage;
+pub mod dash;
 pub mod data;
 pub mod death;
 pub mod escape;
@@ -112,6 +113,7 @@ pub enum Action {
     Attack100Start,
     Attack100Loop,
     Attack100End,
+    AttackDash,
     AttackS3Hi,
     AttackS3HiS,
     AttackS3S,
@@ -235,6 +237,7 @@ pub struct Fighter {
     pub aerial: aerial::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
+    pub dash: dash::State,
     pub jab: jab::State,
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.

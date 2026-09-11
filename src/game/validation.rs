@@ -315,6 +315,20 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.dash, &fighter.dash_attack) {
+            (Some(dash_rules), Some(attack)) => {
+                dash::validate(dash_rules, attack, fighter, rules.grab.as_ref())?;
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "dash rules require an attack for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("dash attacks require common dash rules".into()));
+            }
+            (None, None) => {}
+        }
         match (&rules.escape_air, &fighter.escape_air) {
             (Some(rules), Some(parameters)) => escape_air::validate(rules, parameters, fighter)?,
             (Some(_), None) => {

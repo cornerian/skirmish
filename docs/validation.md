@@ -1,5 +1,59 @@
 # Local validation provenance
 
+The 2026-09-11 dash-attack coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-dash-attack-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage dashes into the early phase and, with the
+entry stick already stale (`ftCo_Dash_Enter` resets the age to 254), confirms
+the dash-specific forward smash needs no age window and keeps facing, while
+the C-stick crossing can still flip it; the held-shoulder forward roll fires
+through its own limit and does nothing once past it while still inside the
+early phase. A fresh A enters the dash attack from the middle phase and from
+Run, arming the shared shield-grab buffer, but never from the early phase
+(a neutral stick) or the late phase. An opposite fresh stick in the middle
+phase enters a smash Turn without restarting the dash; the same direction in
+the late phase restarts Dash with `dash_from_input` set and `action_frame`
+back at 1. Middle- and late-phase shield entry differ only by the buffer
+(unarmed before the limit, armed after), and a fresh press opens GuardReflect
+with the same buffer in both phases. The `x54` transition-friction tail
+applies on the same frame as every fall-through transition (the early
+forward smash/roll, the middle dash-back Turn/shield entry, the late
+re-dash/Turn/shield entry, and a neutral special entered from Dash) but
+never after the catch, the AttackDash entry, the jump-squat entry, the run
+transition, "nothing fired", or ever for Run: a late-phase re-dash's first
+observed `ground_velocity` matches `dash_initial_velocity - gr_vel_before *
+x54` by hand computation (`ftCo_Dash_Enter` reads `gr_vel` before the tail
+reduces it), a late-phase GuardOn entry's `ground_velocity` matches the tail
+composed with GuardOn's own ordinary ground friction, and an idle Dash frame
+(nothing fired) leaves `ground_velocity` exactly equal to the same frame
+with `rules.dash = None` — since the tail is otherwise gated behind the
+unmodeled taunt (`ftCo_800DE9D8`/`ftCo_800DE9B8`, D-pad up entering AppealS,
+`ftCo_AppealS.c:35,43`) in the pinned source's own `block_42`. AttackDash's
+catch buffer fires on a held shoulder without A, counts down and expires;
+its Wait chain opens only on the flagged pose; its physics apply friction
+absent supplied root motion; a close victim is hit exactly once; checkpoints
+and invalid resources (non-finite/negative rules, a repeat flag, mismatched
+root length, a missing grab shield-grab pairing, missing locomotion, and
+dash rules without a per-fighter attack or vice versa) are covered.
+`dash_differential` traces `ftCo_Dash_IASA`'s complete dispatch order against
+a Rust mirror of the exact pinned control flow (catch, forward smash, roll,
+AttackDash entry, the real `ftCo_Dash_CheckInput` predicate, both shield
+entries, the guard buffer arm, the taunt, jump and run checks, and the
+friction tail itself) over generated phases, sticks, ages, run flags and
+answer combinations, plus boundary cases, and separately compares
+`ftCo_Dash_CheckInput`, `ftCo_800D8AE0`'s catch buffer and
+`ftCommon_ApplyFrictionGround` (already pinned by the `locomotion_common`/
+`physics` adapters, which `apply_friction` mirrors, exercised here for
+AttackDash's `x50` deceleration) with pinned C. `tests/game_dash.rs` covers
+the full per-branch dispatch order, including the transition-friction
+arithmetic, end to end against the Rust implementation. Peppi-written
+replays match a dash attack entered from Run and report Slippi state 50 with
+animation 52, match a late-phase re-dash, and detect a removed press at its
+first affected frame in both.
+
 The 2026-09-11 jab-combo coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-jab-combos-20260911-verified`

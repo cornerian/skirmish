@@ -144,10 +144,12 @@ Smashes map to states 58..64 with animation indices 60..66; a held A freezes
 the reported action frame while charging. With the optional jab-combo
 profile the jab family maps to states 44..49 (animation indices 46..51):
 Jab, Attack12 and Attack13 are 44..46, and the rapid jab's Start, Loop and
-End are 47..49. File-backed regressions require changed down-stick,
-up-C-stick, roll-stick, horizontal/downward C-stick, shield-grab button,
-air-dodge trigger, tilt attack, smash attack or charge and jab press samples
-to diverge at their first affected frames.
+End are 47..49. With the optional dash-attack profile the dash attack maps
+to state 50 (animation 52), entered from a fresh A press during Dash's
+middle/late phases or from Run. File-backed regressions require changed
+down-stick, up-C-stick, roll-stick, horizontal/downward C-stick, shield-grab
+button, air-dodge trigger, tilt attack, smash attack or charge, jab press and
+dash-attack/re-dash press samples to diverge at their first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each

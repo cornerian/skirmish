@@ -22,5 +22,8 @@
   "passive_wall_launch": "passive_wall",
   "escape_cstick": "aerial_input",
   "escape_air_angle": "ftcommon",
-  "smash_cstick": "aerial_input"
+  "smash_cstick": "aerial_input",
+  "dash_catch": "catch",
+  "dash_guard": "shield_guard",
+  "dash_checkinput": "dash"
 }

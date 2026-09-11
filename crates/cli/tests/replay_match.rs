@@ -17,6 +17,8 @@ use std::{fs, process::Command};
 
 #[path = "../../../tests/support/aerial.rs"]
 mod aerial_support;
+#[path = "../../../tests/support/dash.rs"]
+mod dash_support;
 #[path = "../../../tests/support/death.rs"]
 mod death_support;
 #[path = "../../../tests/support/escape_air.rs"]
@@ -1197,6 +1199,84 @@ fn file_backed_jab_combos_match_and_detect_their_first_changed_press_frame() {
         ));
     }
 }
+
+fn dash_replay_data() -> MatchData {
+    dash_support::profile(grab_support::profile(shield_drop_data()))
+}
+
+#[test]
+fn file_backed_dash_attacks_and_late_redash_match_and_detect_their_first_changed_input_frame() {
+    // Hold forward through Dash (dash_run_frame 8) into Run, then press A:
+    // ftCo_AttackDash_CheckInput/SetMv0 fire from Run, entering AttackDash
+    // (Slippi state 50, animation 52).
+    {
+        let mut inputs = vec![IDLE; 16];
+        for input in &mut inputs[0..=9] {
+            input[0].stick = [1.0, 0.0];
+        }
+        inputs[9][0].buttons = BUTTON_A;
+        let recording = Recording::from_script(dash_replay_data(), 47, inputs);
+        assert_eq!(recording.states[8].fighters[0].action, Action::Run);
+        let attack = &recording.states[9].fighters[0];
+        assert_eq!(attack.action, Action::AttackDash);
+        assert_eq!(attack.action_frame, 1);
+        assert_eq!(observation::action_state(attack, Some(2)), Some(50));
+        assert_eq!(observation::animation_index(attack, Some(2)), Some(52));
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        // Removing row 9's press: Run continues instead of entering
+        // AttackDash, so the first Peppi field diverges on that same row.
+        let edited_row: usize = 9;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            let pre = &mut frames.ports[0].leader.pre;
+            pre.buttons.set(edited_row, Some(0));
+            pre.buttons_physical.set(edited_row, Some(0));
+        });
+        assert!(matches!(
+            recording.compare(&changed).outcome,
+            Outcome::Mismatch { frame, checked_frames, .. }
+                if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+        ));
+    }
+
+    // Dash, release to neutral through the early and middle phases (limit
+    // 6.0), then a fresh forward press in the late phase (frame 7) restarts
+    // Dash via ftCo_Dash_CheckInput (dash_from_input = true, action_frame
+    // resets to 1), rather than merely continuing the same Dash instance.
+    {
+        let mut inputs = vec![IDLE; 14];
+        inputs[0][0].stick = [1.0, 0.0];
+        inputs[7][0].stick = [1.0, 0.0];
+        let recording = Recording::from_script(dash_replay_data(), 47, inputs);
+        for row in 1..=6 {
+            assert_eq!(
+                recording.states[row].fighters[0].action,
+                Action::Dash,
+                "row {row}"
+            );
+        }
+        let redashed = &recording.states[7].fighters[0];
+        assert_eq!(redashed.action, Action::Dash);
+        assert_eq!(redashed.action_frame, 1);
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        // Removing row 7's press: the stick stays neutral, so the dash
+        // never restarts and the first Peppi field diverges on that row.
+        let edited_row: usize = 7;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            let pre = &mut frames.ports[0].leader.pre;
+            pre.joystick.x.set(edited_row, Some(0.0));
+        });
+        assert!(matches!(
+            recording.compare(&changed).outcome,
+            Outcome::Mismatch { frame, checked_frames, .. }
+                if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+        ));
+    }
+}
+
 #[test]
 fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [

@@ -11,6 +11,7 @@ use super::{
 };
 use crate::fighter::{
     aerial::stick_angle,
+    dash as dash_math,
     grab::{fresh_down, fresh_up},
     smash as math,
     tilt::{ForwardVariant, forward_variant},
@@ -373,6 +374,61 @@ pub(crate) fn select(
         return Some((Action::AttackLw4, facing));
     }
     None
+}
+
+/// `ftCo_AttackS4_8008C114`: the Dash early-phase forward-smash entry. The
+/// facing-relative stick check has no age window and keeps the current
+/// facing; the C-stick crossing behaves like the ordinary Wait-chain check.
+/// The item-throw branch is not modeled.
+pub(crate) fn select_dash(
+    fighter: &Fighter,
+    data: &FighterData,
+    rules: Option<&Rules>,
+    input: Controller,
+) -> Option<(Action, f32)> {
+    let (rules, parameters, locomotion) =
+        (rules?, data.smashes.as_ref()?, data.locomotion.as_ref()?);
+    let a_pressed = a_pressed(fighter, input);
+    let selected = if dash_math::dash_forward_smash(
+        a_pressed,
+        input.stick[0],
+        fighter.facing,
+        locomotion.dash_threshold,
+    ) {
+        Some((fighter.facing, stick_angle(input.stick)))
+    } else if math::fresh_cstick_smash_x(
+        fighter.previous_input.cstick[0],
+        input.cstick[0],
+        locomotion.dash_threshold,
+    ) {
+        Some((math::stick_sign(input.cstick[0]), stick_angle(input.cstick)))
+    } else {
+        None
+    };
+    let (sign, angle) = selected?;
+    let forward = &parameters.forward;
+    let action = match forward_variant(
+        angle,
+        [
+            rules.forward_high,
+            rules.forward_high_slight,
+            rules.forward_low_slight,
+            rules.forward_low,
+        ],
+        [
+            forward.high.is_some(),
+            forward.high_slight.is_some(),
+            forward.low_slight.is_some(),
+            forward.low.is_some(),
+        ],
+    ) {
+        ForwardVariant::High => Action::AttackS4Hi,
+        ForwardVariant::HighSlight => Action::AttackS4HiS,
+        ForwardVariant::Straight => Action::AttackS4S,
+        ForwardVariant::LowSlight => Action::AttackS4LwS,
+        ForwardVariant::Low => Action::AttackS4Lw,
+    };
+    Some((action, sign))
 }
 
 /// `ftCo_AttackHi4_CheckInputNoD0` from KneeBend: the up smash without its

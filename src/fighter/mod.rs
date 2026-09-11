@@ -7,6 +7,7 @@ pub mod combat;
 pub mod combo;
 mod compat;
 pub mod damage;
+pub mod dash;
 pub mod death;
 pub mod escape;
 pub mod escape_air;

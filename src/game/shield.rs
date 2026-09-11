@@ -400,40 +400,55 @@ pub(crate) fn update_actions(
     if f.grounded
         && (matches!(
             f.action,
-            Action::Wait
-                | Action::Walk
-                | Action::Dash
-                | Action::Run
-                | Action::Turn
-                | Action::Squat
-                | Action::SquatWait
-        ) || super::tilt::interrupt_chain(f, data) == Some(super::tilt::Chain::Wait))
+            Action::Wait | Action::Walk | Action::Turn | Action::Squat | Action::SquatWait
+        )
+            // Dash/Run's own phase-gated shield entry lives entirely in
+            // dash::update_dash_or_run when rules.dash is present (Early
+            // phase never checks shield at all); this ordinary, phase-blind
+            // check only applies to them when that module is absent.
+            || (rules.dash.is_none() && matches!(f.action, Action::Dash | Action::Run))
+            || super::tilt::interrupt_chain(f, data) == Some(super::tilt::Chain::Wait))
         && !super::smash::a_pressed(f, input)
         && super::smash::select(f, data, rules.smash.as_ref(), input, f.facing).is_none()
     {
-        let pressed = input.buttons & !f.previous_input.buttons;
         // Run_IASA and Dash_IASA call ftCo_80091B9C after either shield entry.
         let dash_grab_buffer = super::grab::shield_entry_buffer(f, rules.grab.as_ref());
-        if pressed & (super::BUTTON_L | super::BUTTON_R) != 0
-            && f.locomotion.trigger_age < r.powershield_input_window
-        {
-            start_powershield(f, r, true, input);
-            f.shield.dash_grab_buffer = dash_grab_buffer;
-            return Ok(true);
-        }
-        if !input.shield_held() || f.shield.health == 0.0 {
-            return Ok(false);
-        }
-        f.shield.strength = math::strength(input.shield_pressure(), r.analog_deadzone, 0.0);
-        f.shield.minimum_hold = r.minimum_hold_frames;
-        f.shield.release_latched = false;
-        f.shield.raise_progress = 0.0;
-        clear_powershield(f);
-        enter(f, Action::GuardOn);
-        f.shield.dash_grab_buffer = dash_grab_buffer;
-        return Ok(true);
+        return Ok(enter_from_neutral(f, r, input, dash_grab_buffer));
     }
     Ok(false)
+}
+
+/// `ftCo_80091A4C`/`ftCo_80091AD8`'s shared entry tail: a fresh L/R press
+/// inside the powershield window starts a powershield, otherwise a held
+/// shoulder with remaining shield health raises an ordinary guard.
+/// `dash_grab_buffer` is `ftCo_80091B9C`'s guard `x24` arm, already gated by
+/// the caller (`grab::shield_entry_buffer`); Dash's own middle- and
+/// late-phase dispatch reuses this directly.
+pub(crate) fn enter_from_neutral(
+    f: &mut Fighter,
+    r: &Rules,
+    input: Controller,
+    dash_grab_buffer: f32,
+) -> bool {
+    let pressed = input.buttons & !f.previous_input.buttons;
+    if pressed & (super::BUTTON_L | super::BUTTON_R) != 0
+        && f.locomotion.trigger_age < r.powershield_input_window
+    {
+        start_powershield(f, r, true, input);
+        f.shield.dash_grab_buffer = dash_grab_buffer;
+        return true;
+    }
+    if !input.shield_held() || f.shield.health == 0.0 {
+        return false;
+    }
+    f.shield.strength = math::strength(input.shield_pressure(), r.analog_deadzone, 0.0);
+    f.shield.minimum_hold = r.minimum_hold_frames;
+    f.shield.release_latched = false;
+    f.shield.raise_progress = 0.0;
+    clear_powershield(f);
+    enter(f, Action::GuardOn);
+    f.shield.dash_grab_buffer = dash_grab_buffer;
+    true
 }
 
 fn clear_powershield(f: &mut Fighter) {

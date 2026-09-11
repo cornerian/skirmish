@@ -98,6 +98,9 @@ pub struct State {
     pub turn_has_turned: bool,
     pub turn_smash: bool,
     pub dash_initial_delta: f32,
+    /// `mv.co.dash.x4`: true when this Dash was entered by `try_dash`/a
+    /// late re-dash, false when Turn's smash completion entered it.
+    pub dash_from_input: bool,
     /// Facing captured by `ftCo_TurnRun_Enter` for its physics branch.
     pub run_turn_facing: f32,
     /// The animation event fired and is waiting for velocity to cross x0.01.
@@ -126,6 +129,7 @@ impl Default for State {
             turn_has_turned: false,
             turn_smash: false,
             dash_initial_delta: 0.0,
+            dash_from_input: true,
             run_turn_facing: 0.0,
             run_turn_waiting: false,
             run_brake_frames: 0.0,
@@ -236,7 +240,7 @@ pub fn landed(f: &mut Fighter) {
     f.locomotion.multi_jump_yaw = 0.0;
 }
 
-fn enter(f: &mut Fighter, action: Action) {
+pub(crate) fn enter(f: &mut Fighter, action: Action) {
     if !matches!(action, Action::Squat | Action::SquatWait) {
         f.locomotion.pass_delay = None;
     }
@@ -256,7 +260,12 @@ fn advance_multi_jump_turn(f: &mut Fighter, total: u32) {
     );
 }
 
-fn jump_input(f: &Fighter, p: &Parameters, input: Controller, relaxed: bool) -> Option<JumpInput> {
+pub(crate) fn jump_input(
+    f: &Fighter,
+    p: &Parameters,
+    input: Controller,
+    relaxed: bool,
+) -> Option<JumpInput> {
     let threshold = if relaxed {
         p.relaxed_tap_jump_threshold
     } else {
@@ -281,7 +290,7 @@ pub(crate) fn shield_jump_input(
     })
 }
 
-fn start_dash(f: &mut Fighter, p: &Parameters) {
+fn start_dash(f: &mut Fighter, p: &Parameters, from_input: bool) {
     enter(f, Action::Dash);
     f.locomotion.tilt_x_age = 254;
     let initial = f.facing * p.dash_initial_velocity;
@@ -290,6 +299,7 @@ fn start_dash(f: &mut Fighter, p: &Parameters) {
     } else {
         initial - f.ground_velocity
     };
+    f.locomotion.dash_from_input = from_input;
 }
 
 fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
@@ -299,7 +309,7 @@ fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     f.locomotion.turn_smash = smash;
 }
 
-fn start_run_turn(f: &mut Fighter, frame: u32) {
+pub(crate) fn start_run_turn(f: &mut Fighter, frame: u32) {
     let facing = f.facing;
     enter(f, Action::RunTurn);
     f.action_frame = frame;
@@ -308,14 +318,18 @@ fn start_run_turn(f: &mut Fighter, frame: u32) {
     f.locomotion.turn_has_turned = false;
 }
 
-fn try_dash(f: &mut Fighter, p: &Parameters, input: Controller) -> bool {
+/// `ftCo_Dash_CheckInput`: a fresh dash magnitude inside the shared window
+/// restarts Dash in the same direction (`dash_from_input = true`) or enters
+/// a smash Turn in the opposite one. Reused by Dash's own late-phase re-dash
+/// and, guarded by the caller's direction check, its middle-phase dash-back.
+pub(crate) fn try_dash(f: &mut Fighter, p: &Parameters, input: Controller) -> bool {
     if input.stick[0].abs() < p.dash_threshold || f.locomotion.tilt_x_age >= p.dash_window {
         return false;
     }
     if input.stick[0] * f.facing < 0.0 {
         start_turn(f, p, true);
     } else {
-        start_dash(f, p);
+        start_dash(f, p, true);
     }
     true
 }
@@ -531,7 +545,9 @@ pub(crate) fn update_actions(
                 && f.locomotion.turn_smash
                 && input.stick[0] * facing_after >= p.dash_threshold
             {
-                start_dash(f, p);
+                // ftCo_Turn.c:133: this Dash is entered from Turn's own smash
+                // completion, not ftCo_Dash_CheckInput, so dash.x4 = 0.
+                start_dash(f, p, false);
             }
         }
         Action::SquatWait => {

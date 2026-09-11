@@ -53,6 +53,7 @@ pub fn motion_identity(action: Action, prone: Option<ProneOrientation>, slow_led
         AttackS4Hi | AttackS4HiS | AttackS4S | AttackS4LwS | AttackS4Lw => 9,
         AttackHi4 => 10,
         AttackLw4 => 11,
+        AttackDash => 5,
         AttackAirN | LandingAirN => 12,
         AttackAirF | LandingAirF => 13,
         AttackAirB | LandingAirB => 14,
