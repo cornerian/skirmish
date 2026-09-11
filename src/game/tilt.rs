@@ -203,7 +203,10 @@ fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {
 
 /// The chain an interruptible tilt exposes on this frame, if any.
 pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<Chain> {
-    if super::smash::interruptible(fighter, data) || super::dash::interruptible(fighter, data) {
+    if super::smash::interruptible(fighter, data)
+        || super::dash::interruptible(fighter, data)
+        || super::landing::interruptible(fighter, data)
+    {
         return Some(Chain::Wait);
     }
     if super::jab::owns_action(fighter.action) {

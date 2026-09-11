@@ -114,6 +114,7 @@ fn spawn(
         intangibility: 0,
         body_state: BodyState::default(),
         l_cancel_status: 0,
+        landing_allow_interrupt: false,
         short_hop: false,
         fast_fall: false,
         hit_groups: 0,
@@ -168,6 +169,9 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // mv.co.attackdash.x0 is cleared by doEnter; the AttackDash entry callers
     // (Dash/Run) arm it to x68 immediately after this.
     fighter.dash = dash::State::default();
+    // mv.co.landing.allow_interrupt is set only by the ordinary Landing entry
+    // (`ftCo_Landing_Enter_Basic`), immediately after this reset.
+    fighter.landing_allow_interrupt = false;
     // Fighter_ChangeMotionState keeps the jab timer only for Wait and walks.
     if !jab::keeps_window(action) {
         fighter.jab.window = 0.0;

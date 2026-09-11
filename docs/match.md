@@ -347,7 +347,11 @@ buffered follow-up windows and the rapid jab's entry count, loop and end;
 without it the jab keeps its previous chainless behaviour. The optional
 [dash-attack profile](dash-attack.md) adds the Dash early/middle/late input
 phases and the dash attack itself; without it Dash and Run keep their
-previous behaviour. The optional [neutral-special
+previous behaviour. The optional [landing profile](landing.md) adds an
+interrupt window to the ordinary Landing once `movement.normal_landing_lag`
+elapses, reusing the same Wait chain an interruptible tilt or dash attack
+already exposes; without it Landing keeps its previous chainless behaviour,
+and `LandingFallSpecial` is unaffected either way. The optional [neutral-special
 profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
 history. Directional specials and character-specific special state remain
 unported. Some accepted stick/button

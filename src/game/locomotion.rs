@@ -494,7 +494,13 @@ pub(crate) fn update_actions(
             if try_dash(f, p, input) {
                 return;
             }
-            if input.stick[1] < -p.crouch_enter_threshold {
+            // ftCo_Landing.c:146-147: unlike Wait and Walk, an interruptible
+            // Landing only opens the squat entry on the single frame
+            // `cur_anim_frame < frame_speed_mul + normal_landing_lag`; past
+            // it the chain still reaches Turn and Walk below.
+            let landing_squat_ready =
+                f.action != Action::Landing || super::landing::squat_window(f, data);
+            if landing_squat_ready && input.stick[1] < -p.crouch_enter_threshold {
                 f.locomotion.pass_delay = None;
                 enter(f, Action::Squat);
             } else if input.stick[0] * f.facing <= p.turn_threshold {

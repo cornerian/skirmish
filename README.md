@@ -109,6 +109,11 @@ early, an A-buffered dash attack and shield entry from the middle and late
 phases, and the late re-dash), the shared dash-attack/shield arms of Run's
 own dispatch, and the dash attack itself with its no-A catch buffer and
 TransN-or-friction physics.
+The [landing profile](docs/landing.md) adds an optional interrupt window to
+the ordinary Landing: once past `normal_landing_lag`, it opens the same
+complete Wait chain an interruptible tilt or dash attack already exposes,
+narrowed only by a single first-frame crouch entry; `LandingFallSpecial`
+keeps its own separate, unaffected full lockout.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.

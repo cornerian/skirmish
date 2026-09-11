@@ -283,6 +283,11 @@ pub struct MovementData {
     pub jump_horizontal_max: f32,
     pub jump_momentum_multiplier: f32,
     pub landing_frames: u32,
+    /// `ftCo_DatAttrs.normal_landing_lag` (fp+1F4): the ordinary Landing
+    /// interrupt window floor consulted by `ftCo_Landing_IASA`. `None` keeps
+    /// a chainless Landing that never reaches the Wait chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_landing_lag: Option<f32>,
 }
 
 impl MovementData {

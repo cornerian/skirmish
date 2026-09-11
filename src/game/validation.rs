@@ -501,6 +501,11 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 && fighter.weight > 0.0,
             "invalid fighter attributes",
         )?;
+        require(
+            m.normal_landing_lag
+                .is_none_or(|lag| lag.is_finite() && lag >= 0.0 && lag <= m.landing_frames as f32),
+            "invalid landing interrupt window",
+        )?;
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
             CollisionBox::Fixed { source } => require(

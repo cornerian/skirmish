@@ -1,5 +1,43 @@
 # Local validation provenance
 
+The 2026-09-11 landing-window coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-landing-window-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. `Fighter.landing_allow_interrupt` is set only by the ordinary Landing
+entry and reset to `false` by every other transition, including
+`LandingFallSpecial`, which keeps its own separate `aerial.allow_interrupt`
+full lockout unaffected. Once `MovementData.normal_landing_lag` is supplied
+and `cur_anim_frame` reaches it, `tilt::interrupt_chain` opens the same
+complete Wait chain an interruptible tilt or dash attack pose already
+exposes (grab, shield, special, smash, tilt, jab, jump, dash, turn, walk),
+narrowed only by the crouch entry, which `locomotion::update_actions` gates
+to the single first interruptible frame. Match integration coverage steps a
+short hop into Landing with the fixture's `landing_frames` widened to 6 and
+`normal_landing_lag` set to 3.0: every one of A, L, X, Z, stick down, a fresh
+dash stick and a fresh C-stick is ignored on both frames before the lag; the
+first interruptible frame accepts a jab, a moderate-stick tilt, a catch, a
+fresh shield press, a jump, a fresh dash stick, a fresh C-stick smash and the
+crouch; the second accepts everything again except the crouch; Turn and Walk
+open from an interruptible frame; the animation still ends in Wait without
+input; checkpoints restore every interrupt phase; invalid resources
+(non-finite, negative, above `landing_frames`) are rejected; and omitting the
+resource keeps a chainless Landing where a fresh A press well past where the
+lag would otherwise open the chain still does nothing. `landing_differential`
+traces `ftCo_Landing_IASA`'s complete dispatch order against a Rust mirror of
+the exact pinned control flow (the lag and allow_interrupt gates, every
+attack/movement callee in source order, the frame-gated squat check, turn and
+walk) over generated frame/rate/lag/allow/answer combinations, plus boundary
+cases, and separately compares the entry family's motion/allow/rate
+arithmetic, including `ftCo_LandingFallSpecial_Enter`'s `(0.1 + x2EC) / lag`
+bit-exact. `tests/game_landing.rs` covers the full per-phase dispatch order
+end to end against the Rust implementation. A Peppi-written replay matches a
+short-hop landing followed by a C-stick smash on the first interruptible
+frame and reports a Mismatch at the row where the removed C-stick sample's
+effect first appears.
+
 The 2026-09-11 dash-attack coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-dash-attack-20260911-verified`

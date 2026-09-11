@@ -16,6 +16,7 @@ pub mod escape_air;
 pub mod grab;
 pub mod hitboxes;
 pub mod jab;
+pub mod landing;
 pub mod ledge;
 pub mod locomotion;
 pub mod nudge;
@@ -284,6 +285,10 @@ pub struct Fighter {
     pub body_state: data::BodyState,
     /// Slippi's per-frame landing result: none, successful, unsuccessful.
     pub l_cancel_status: u8,
+    /// `mv.co.landing.allow_interrupt`: set by the ordinary Landing entry
+    /// (`ftCo_Landing_Enter_Basic` passes `true`); every other transition,
+    /// including `LandingFallSpecial`, resets it to `false` in `enter`.
+    pub landing_allow_interrupt: bool,
     pub short_hop: bool,
     pub fast_fall: bool,
     /// Attack hit-group history is checkpointed, not inferred from observations.

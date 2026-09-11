@@ -489,6 +489,8 @@ fn land(
             && !super::aerial::land(f, data)?
         {
             simulation::enter(f, Action::Landing);
+            // ftCo_Landing_Enter_Basic passes allow_interrupt = true.
+            f.landing_allow_interrupt = true;
         }
     }
     events.push(Event::Landed { player });

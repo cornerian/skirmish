@@ -1277,6 +1277,61 @@ fn file_backed_dash_attacks_and_late_redash_match_and_detect_their_first_changed
     }
 }
 
+/// The fixture's `landing_frames` is 2, too short for an interrupt window;
+/// this widens it to 6 and opens `normal_landing_lag` at 3.0, matching
+/// `tests/game_landing.rs`.
+fn landing_replay_data() -> MatchData {
+    let mut data = smash_support::profile(shield_drop_data());
+    for fighter in &mut data.fighters {
+        fighter.movement.landing_frames = 6;
+        fighter.movement.normal_landing_lag = Some(3.0);
+    }
+    data
+}
+
+#[test]
+fn file_backed_short_hop_landing_and_first_interruptible_smash_match() {
+    // X pressed then released selects a short hop; the fighter lands
+    // fifteen steps later (Slippi state 42 while grounded, `ftCo_Landing.c`
+    // ends into Wait at `landing_frames`). Two more neutral steps put
+    // `cur_anim_frame` at `normal_landing_lag` (3.0); the next step's fresh
+    // C-stick opens the Wait chain's smash check on that first interruptible
+    // frame.
+    let mut inputs = vec![IDLE; 22];
+    inputs[0][0].buttons = BUTTON_X;
+    inputs[18][0].cstick = [1.0, 0.0];
+    let recording = Recording::from_script(landing_replay_data(), 47, inputs);
+    for row in 15..=17 {
+        assert_eq!(
+            recording.states[row].fighters[0].action,
+            Action::Landing,
+            "row {row}"
+        );
+        assert_eq!(
+            observation::action_state(&recording.states[row].fighters[0], Some(2)),
+            Some(42)
+        );
+    }
+    let smash = &recording.states[18].fighters[0];
+    assert_eq!(smash.action, Action::AttackS4S);
+    assert_eq!(smash.action_frame, 1);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Removing row 18's C-stick sample: the smash never opens, so Landing
+    // continues (and later ends into Wait) instead, diverging at that row.
+    let edited_row: usize = 18;
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        let pre = &mut frames.ports[0].leader.pre;
+        pre.cstick.x.set(edited_row, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+    ));
+}
+
 #[test]
 fn file_backed_death_flags_cover_disappearance_sleep_and_return_to_play() {
     for (mode, expected_action, delayed) in [
