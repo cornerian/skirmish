@@ -40,6 +40,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         fighter.specials = Some(Specials::Fox {
             neutral: None,
             side: Some(fixture.parameters.clone()),
+            up: None,
             down: None,
         });
     }

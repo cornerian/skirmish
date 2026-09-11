@@ -418,5 +418,10 @@
   "fixture": "tests/oracle/original/entry.c",
   "upstream": "src/melee/ft/ft_0C31.c",
   "sha256": "2ed9c5a6987e4712b81741153718aff4cd0dc6df887f59e03a6a28722fefc5b4"
+},
+{
+  "fixture": "tests/oracle/original/ftfoxspecialhi.c",
+  "upstream": "src/melee/ft/kinds/ftFox/ftfoxspecialhi.c",
+  "sha256": "a641804b45d66c33f3a907bb6e49aac9bb217629204143e7fbd3c780f99b42c2"
  }
 ]

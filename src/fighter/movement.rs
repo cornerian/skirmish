@@ -237,6 +237,24 @@ impl Movement {
         self.self_velocity[1] += acceleration;
         self.clamp_fall_speed(maximum);
     }
+
+    /// `ftCommon_8007CF58`: unlike [`Movement::clamp_air_drift`]'s immediate
+    /// clamp, this eases `self_velocity[0]` toward `drift_max` by `accel`
+    /// (a friction-style step written into `animation_velocity`, applied
+    /// once per frame) whenever it is exceeded, else applies the fighter's
+    /// ordinary aerial friction. Returns whether the over-max branch ran
+    /// (the source's own boolean result, unused by every current caller but
+    /// kept for parity with the translated signature).
+    pub fn drift_clamp(&mut self, drift_max: f32, accel: f32) -> bool {
+        let velocity = self.self_velocity[0];
+        if velocity.abs() > drift_max {
+            self.friction_air(accel);
+            true
+        } else {
+            self.friction_air(self.attributes.aerial_friction);
+            false
+        }
+    }
 }
 
 /// `ftCommon_8007CD6C`. Unlike knockback decay, zero values are unchanged even

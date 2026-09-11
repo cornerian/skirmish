@@ -121,11 +121,20 @@ pub(crate) fn max_out_jumps(fighter: &mut Fighter, data: &FighterData) {
 
 /// Exit a phase's natural in-air completion into `FallSpecial`: an
 /// interruptible free fall with a scaled drift multiplier and every jump
-/// restored.
-pub(crate) fn enter_fall_special(fighter: &mut Fighter, data: &FighterData, mobility: f32) {
+/// restored. `landing_lag` is this call's own per-instance
+/// `ftCo_80096900`/`ftCo_800969D8` argument (`aerial::State::landing_lag`'s
+/// own doc); `None` keeps this move's prior behavior of landing at the
+/// shared `escape_air::Rules`' own rate.
+pub(crate) fn enter_fall_special(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    mobility: f32,
+    landing_lag: Option<f32>,
+) {
     simulation::enter(fighter, Action::FallSpecial);
     fighter.aerial.allow_interrupt = true;
     fighter.aerial.mobility = mobility;
+    fighter.aerial.landing_lag = landing_lag;
     max_out_jumps(fighter, data);
 }
 

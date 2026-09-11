@@ -116,6 +116,13 @@ pub struct State {
     /// stick past the side-special threshold (`ftCo_SpecialS_HasInput`).
     /// Distinct from `attack_b_age`/x67D, which has no stick condition.
     pub side_special_b_age: u8,
+    /// Fighter x686 (`fighter.c:1723-1727`, `ftCo_800D6928`): age of a fresh
+    /// B press with the stick at or past the up-special (vertical) threshold.
+    /// The grounded up-special dispatch (`ftCo_Attack100_CheckInput`) fires
+    /// only on the exact frame this reaches 0; the aerial dispatch
+    /// (`ftCo_SpecialAir_CheckInput`'s Hi branch) checks the fresh press
+    /// directly instead, with no age gate.
+    pub up_special_b_age: u8,
     pub jumps_used: u8,
     pub jump_input: JumpInput,
     pub turn_frames: f32,
@@ -176,6 +183,7 @@ impl Default for State {
             attack_a_age: 255,
             attack_b_age: 255,
             side_special_b_age: 255,
+            up_special_b_age: 255,
             jumps_used: 0,
             jump_input: JumpInput::Buttons,
             turn_frames: 0.0,

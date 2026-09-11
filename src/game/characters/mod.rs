@@ -27,6 +27,8 @@ pub enum Specials {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         side: Option<fox::side::SideSpecial>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        up: Option<fox::up::UpSpecial>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         down: Option<fox::down::DownSpecial>,
     },
 }
@@ -41,6 +43,12 @@ impl Specials {
     pub(crate) fn fox_side(&self) -> Option<&fox::side::SideSpecial> {
         match self {
             Specials::Fox { side, .. } => side.as_ref(),
+        }
+    }
+
+    pub(crate) fn fox_up(&self) -> Option<&fox::up::UpSpecial> {
+        match self {
+            Specials::Fox { up, .. } => up.as_ref(),
         }
     }
 

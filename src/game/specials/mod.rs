@@ -67,8 +67,21 @@ pub(crate) trait SpecialMove {
     }
 
     /// Advance this move's animation-driven transitions (natural phase end).
-    fn update_animation(&self, fighter: &mut Fighter, data: &FighterData) {
-        let _ = (fighter, data);
+    /// `input` is this frame's already-sampled controller state (some
+    /// transitions, like Fox's up-special launch angle, read the stick at
+    /// the moment the source's own Anim callback fires rather than at the
+    /// move's original entry); `on_platform` reports whether the fighter's
+    /// current supporting line is a passable platform rather than solid
+    /// ground (Fox's up special's grounded-launch-vs-leave-ground decision,
+    /// `ftCo_8009A134`).
+    fn update_animation(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        input: Controller,
+        on_platform: bool,
+    ) {
+        let _ = (fighter, data, input, on_platform);
     }
 
     /// A ground-target velocity this move's current pose dictates directly
@@ -110,6 +123,19 @@ pub(crate) trait SpecialMove {
         let _ = fighter;
     }
 
+    /// Re-derive any per-frame state this move's grounded phase keeps
+    /// reading off the *current* floor contact (Fox's up special's own
+    /// `rotateModel`, continuously updated from the floor normal while
+    /// Travel runs along a slope, `ftFx_SpecialHi_Coll`). Called once per
+    /// frame after collision resolution has finished updating
+    /// `fighter.floor_normal`/`fighter.grounded` for this frame -- unlike
+    /// `tick_ground_timers` (called from the physics step, before this
+    /// frame's own collision resolution, so it only ever sees last frame's
+    /// contact), this hook sees the fresh one.
+    fn update_ground_contact(&self, fighter: &mut Fighter) {
+        let _ = fighter;
+    }
+
     /// Convert this move's current phase between its grounded and aerial
     /// variant at the same animation frame, preserving any phase-local
     /// state that would otherwise be reset by a fresh `enter`. Returns
@@ -121,10 +147,28 @@ pub(crate) trait SpecialMove {
 
     /// Handle this move's own landing conversion, when it differs from the
     /// generic ground/air transfer above (a phase that lands directly into
-    /// a shared landing action rather than its own grounded counterpart).
+    /// a shared landing action rather than its own grounded counterpart, or
+    /// needs a data- and geometry-dependent decision the plain conversion
+    /// above cannot make). `on_platform` reports whether the fighter's new
+    /// supporting line is a passable platform (Fox's up special's Travel
+    /// landing bound-eligibility gate, `ftCo_8009A134`/`ftFox_SpecialHi_
+    /// IsBound`). `pre_landing` is a snapshot of `fighter` from just before
+    /// the caller's own generic landing bookkeeping ran (grounded/velocity/
+    /// knockback/jumps/wall-jump state all as they were the instant the
+    /// floor was actually touched) -- a move that declines the landing
+    /// outright (Fox's up special's shallow-floor-angle graze, staying
+    /// airborne) restores from it (`*fighter = pre_landing.clone()`) rather
+    /// than hand-reverting individual fields, then applies whatever it
+    /// still wants changed (facing, its own rotate-model state) on top.
     /// Returns whether this move owned the landing.
-    fn land(&self, fighter: &mut Fighter, data: &FighterData) -> Result<bool, Error> {
-        let _ = (fighter, data);
+    fn land(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        on_platform: bool,
+        pre_landing: &Fighter,
+    ) -> Result<bool, Error> {
+        let _ = (fighter, data, on_platform, pre_landing);
         Ok(false)
     }
 
@@ -139,6 +183,36 @@ pub(crate) trait SpecialMove {
     /// scan, like the other aerial actions.
     fn ledge_catchable(&self, action: Action) -> bool {
         let _ = action;
+        false
+    }
+
+    /// Whether this move's aerial phase wants its own mid-air wall/ceiling
+    /// contact response instead of the ordinary auto-zero-into-wall one
+    /// (Fox's up special's own Travel-air redirect, `ftFx_SpecialAirHi_
+    /// Coll`'s non-ground branch) -- mirrors `damage::can_surface_tech`/
+    /// `can_reflect`'s own role gating the *existing* tech/reflect
+    /// response, just keyed by action alone since this needs no fighter
+    /// state to decide.
+    fn wants_redirect(&self, action: Action) -> bool {
+        let _ = action;
+        false
+    }
+
+    /// Handle a mid-air ceiling/wall contact this move made itself
+    /// eligible for via `wants_redirect` (`ftFx_SpecialAirHi_Coll`'s own
+    /// non-ground branch: ceiling checked first, then whichever wall).
+    /// Each candidate is `Some((contact_normal, line_id))` when that
+    /// surface was actually touched this step. Returns whether this move
+    /// consumed the contact (suppressing the ordinary auto-zero-into-wall
+    /// response this frame, like a successful tech or reflect would).
+    fn air_contact(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        ceiling: Option<([f32; 3], usize)>,
+        wall: Option<([f32; 3], usize)>,
+    ) -> bool {
+        let _ = (fighter, data, ceiling, wall);
         false
     }
 }
@@ -219,9 +293,14 @@ pub(crate) fn update_actions(
     false
 }
 
-pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) {
+pub(crate) fn update_animation(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    input: Controller,
+    on_platform: bool,
+) {
     for mv in characters::moves(data.specials.as_ref()) {
-        mv.update_animation(fighter, data);
+        mv.update_animation(fighter, data, input, on_platform);
     }
 }
 
@@ -257,15 +336,26 @@ pub(crate) fn tick_ground_timers(fighter: &mut Fighter) {
     }
 }
 
+pub(crate) fn update_ground_contact(fighter: &mut Fighter) {
+    for mv in all_moves() {
+        mv.update_ground_contact(fighter);
+    }
+}
+
 pub(crate) fn transfer_ground_air(fighter: &mut Fighter, grounded: bool) -> bool {
     all_moves()
         .iter()
         .any(|mv| mv.transfer_ground_air(fighter, grounded))
 }
 
-pub(crate) fn land(fighter: &mut Fighter, data: &FighterData) -> Result<bool, Error> {
+pub(crate) fn land(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    on_platform: bool,
+    pre_landing: &Fighter,
+) -> Result<bool, Error> {
     for mv in characters::moves(data.specials.as_ref()) {
-        if mv.land(fighter, data)? {
+        if mv.land(fighter, data, on_platform, pre_landing)? {
             return Ok(true);
         }
     }
@@ -278,4 +368,19 @@ pub(crate) fn collision_mode(action: Action) -> Option<Mode> {
 
 pub(crate) fn ledge_catchable(action: Action) -> bool {
     all_moves().iter().any(|mv| mv.ledge_catchable(action))
+}
+
+pub(crate) fn wants_redirect(action: Action) -> bool {
+    all_moves().iter().any(|mv| mv.wants_redirect(action))
+}
+
+pub(crate) fn air_contact(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    ceiling: Option<([f32; 3], usize)>,
+    wall: Option<([f32; 3], usize)>,
+) -> bool {
+    characters::moves(data.specials.as_ref())
+        .iter()
+        .any(|mv| mv.air_contact(fighter, data, ceiling, wall))
 }

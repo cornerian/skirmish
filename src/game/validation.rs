@@ -386,6 +386,23 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (
+            &rules.specials,
+            fighter.specials.as_ref().and_then(|s| s.fox_up()),
+        ) {
+            (Some(rules), Some(parameters)) => {
+                characters::fox::up::validate(rules, parameters, fighter)?;
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "up-special motions require common rules".into(),
+                ));
+            }
+            // Unlike the side special above, the common rules alone do not
+            // require an up-special motion: a match may enable only the
+            // side special's own stick thresholds.
+            (Some(_), None) | (None, None) => {}
+        }
         if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_down()) {
             let Some(specials_rules) = &rules.specials else {
                 return Err(Error::Data(

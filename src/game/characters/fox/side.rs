@@ -38,10 +38,9 @@ pub struct Rules {
     /// `x220`: turn-around threshold against the current facing.
     pub turn_threshold: f32,
     /// `x21C`: aerial up/down special stick threshold, shared with
-    /// `characters::fox::down`'s own aerial entry. Fox's SpecialAirHi stays
-    /// unmodeled; SpecialAirLw (the down special) is modeled and reads this
-    /// same field. Either way, a stick past this threshold must still
-    /// suppress the side branch rather than fire it
+    /// `characters::fox::down`'s own aerial entry and `characters::
+    /// fox::up`'s own grounded/aerial dispatch gate. A stick past this
+    /// threshold must still suppress the side branch rather than fire it
     /// (`ftCo_SpecialAir_CheckInput`, `ftCo_SpecialAir.c:11-56`).
     pub vertical_threshold: f32,
     /// `x1FC` (`struct ftCommonData`, `ft/types.h:181`): the common over-
@@ -346,7 +345,14 @@ impl SpecialMove for Move {
         true
     }
 
-    fn update_animation(&self, fighter: &mut Fighter, data: &FighterData) {
+    fn update_animation(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        input: Controller,
+        on_platform: bool,
+    ) {
+        let _ = (input, on_platform);
         let Some(parameters) = data.specials.as_ref().and_then(|s| s.fox_side()) else {
             return;
         };
@@ -379,7 +385,16 @@ impl SpecialMove for Move {
             Action::SpecialAirSEnd
                 if fighter.action_frame as usize >= parameters.end.air.frames.len() =>
             {
-                helpers::enter_fall_special(fighter, data, parameters.attributes.freefall_mobility);
+                // No per-instance landing lag threaded here: this move's
+                // own FallSpecial exit predates that resource, and this
+                // preserves its already-audited behavior (landing at the
+                // shared `escape_air::Rules`' own rate) unchanged.
+                helpers::enter_fall_special(
+                    fighter,
+                    data,
+                    parameters.attributes.freefall_mobility,
+                    None,
+                );
             }
             _ => {}
         }
@@ -490,7 +505,14 @@ impl SpecialMove for Move {
     /// End air's own landing skips SpecialSEnd entirely and enters
     /// `LandingFallSpecial` at once, sharing the fighter-wide end-frame
     /// resource the ordinary air-dodge landing already models.
-    fn land(&self, fighter: &mut Fighter, data: &FighterData) -> Result<bool, Error> {
+    fn land(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        on_platform: bool,
+        pre_landing: &Fighter,
+    ) -> Result<bool, Error> {
+        let _ = (on_platform, pre_landing);
         if fighter.action != Action::SpecialAirSEnd {
             return Ok(false);
         }

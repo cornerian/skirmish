@@ -51,6 +51,16 @@ pub struct State {
     /// Every currently modeled `FallSpecial` entry but the Fox/Falco side
     /// special's own End phase passes the source's literal `mobility == 1`.
     pub mobility: f32,
+    /// `mv.co.fallspecial.landing_lag`: `ftCo_80096900`/`ftCo_800969D8`'s own
+    /// `landing_lag` argument, stored per `FallSpecial` instance and read
+    /// back by its own eventual landing (`ftCo_FallSpecial_Coll` ->
+    /// `ftCo_LandingFallSpecial_Enter(gobj, ..., fp->mv.co.fallspecial.
+    /// landing_lag)`), exactly like `mobility` above -- not a single
+    /// match-wide constant. `None` (the default, matching every entry that
+    /// does not thread its own value through `helpers::enter_fall_special`)
+    /// keeps this crate's prior behavior of reading `escape_air::Rules`'
+    /// own `landing_lag` instead, at the landing site.
+    pub landing_lag: Option<f32>,
 }
 
 impl Default for State {
@@ -62,6 +72,7 @@ impl Default for State {
             landing_elapsed: 0.0,
             landing_rate: 0.0,
             mobility: 1.0,
+            landing_lag: None,
         }
     }
 }

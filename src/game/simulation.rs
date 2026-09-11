@@ -113,6 +113,7 @@ fn spawn(
         },
         aerial: aerial::State::default(),
         fox_side_special: characters::fox::side::State::default(),
+        fox_up_special: characters::fox::up::State::default(),
         down_special: characters::fox::down::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
@@ -207,6 +208,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // own entry; a mid-phase ground<->air conversion preserves it explicitly
     // around this reset (`specials::transfer_ground_air`).
     fighter.fox_side_special = characters::fox::side::State::default();
+    // Same convention as the side special's own reset above: the up
+    // special's gravity delay, rotate/launch angle and Travel counters are
+    // all freshly assigned by their own phase's entry, with mid-phase
+    // ground<->air conversions preserving them explicitly around this reset
+    // (`specials::transfer_ground_air`, the up special's own `land`).
+    fighter.fox_up_special = characters::fox::up::State::default();
     // Fighter_ChangeMotionState unconditionally clears `fp->mv.fx.SpecialLw`;
     // every internal Reflector transition (`characters::fox::down`) restores
     // the whole-move fields (release_lag/is_release/gravity_delay) it
@@ -453,6 +460,7 @@ pub(crate) fn advance(
                     &mut state.events,
                     (&data.fighters[player], &data.rules, input),
                 )?;
+                specials::update_ground_contact(fighter);
             }
             staling::flush(
                 fighter,
@@ -619,6 +627,12 @@ pub(crate) fn advance(
             &mut state.events,
             (&data.fighters[player], &data.rules, input),
         )?;
+        // After this frame's own collision resolution, so a move's own
+        // per-frame contact state (Fox's up special's `rotateModel`) reads
+        // this frame's fresh `floor_normal`/`grounded`, not last frame's
+        // (unlike `tick_ground_timers`, ticked from `move_fighter` above,
+        // before this call).
+        specials::update_ground_contact(fighter);
         staling::flush(
             fighter,
             &data.fighters[player],
@@ -1197,6 +1211,20 @@ fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, inpu
         } else {
             f.locomotion.side_special_b_age.saturating_add(1)
         };
+    // fighter.c:1723-1727 (`x686`, `ftCo_800D6928`): the up-special age,
+    // shared with the down-special one (x687) in gating on x21C alone rather
+    // than a per-move threshold. A missing `rules.specials` keeps the gate
+    // permanently open, matching the side age's own convention above.
+    let vertical_threshold = rules
+        .specials
+        .as_ref()
+        .map_or(f32::INFINITY, |specials| specials.vertical_threshold);
+    f.locomotion.up_special_b_age =
+        if pressed & BUTTON_B != 0 && input.stick[1] >= vertical_threshold {
+            0
+        } else {
+            f.locomotion.up_special_b_age.saturating_add(1)
+        };
     if pressed & (BUTTON_L | BUTTON_R) != 0 {
         f.locomotion.previous_tech_press_age = f.locomotion.tech_press_age;
         f.locomotion.tech_press_age = 0;
@@ -1253,7 +1281,7 @@ fn update_animation(
         rules.respawn_invincibility_frames,
     );
     entry::update_animation(f, data, rules.entry.as_ref())?;
-    specials::update_animation(f, data);
+    specials::update_animation(f, data, input, collision::on_platform(f, geometry));
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);

@@ -78,7 +78,14 @@ impl SpecialMove for Move {
         false
     }
 
-    fn update_animation(&self, fighter: &mut Fighter, data: &FighterData) {
+    fn update_animation(
+        &self,
+        fighter: &mut Fighter,
+        data: &FighterData,
+        input: Controller,
+        on_platform: bool,
+    ) {
+        let _ = (input, on_platform);
         let Some(parameters) = data.specials.as_ref().and_then(|s| s.neutral()) else {
             return;
         };

@@ -245,9 +245,14 @@ pub(crate) fn land(
             "air-dodge landing requires explicit resources".into(),
         ));
     };
+    // `fp->mv.co.fallspecial.landing_lag`: read before `simulation::enter`
+    // resets `aerial::State` back to its own default (`None`, meaning no
+    // per-instance override was threaded in, so this landing keeps using
+    // the shared `escape_air::Rules`' own rate as before).
+    let landing_lag = fighter.aerial.landing_lag.unwrap_or(rules.landing_lag);
     super::simulation::enter(fighter, Action::LandingFallSpecial);
     fighter.aerial.allow_interrupt = false;
     fighter.aerial.landing_rate =
-        landing_math::landing_animation_rate(parameters.landing_animation_end, rules.landing_lag);
+        landing_math::landing_animation_rate(parameters.landing_animation_end, landing_lag);
     Ok(true)
 }

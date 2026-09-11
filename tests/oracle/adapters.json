@@ -27,5 +27,7 @@
   "dash_guard": "shield_guard",
   "dash_checkinput": "dash",
   "edge_floor": "mpcoll",
-  "air_drift_recovery": "ftcommon"
+  "air_drift_recovery": "ftcommon",
+  "up_special_angle": "lbvector",
+  "up_special_platform": "pass"
 }

@@ -261,7 +261,8 @@ pub(crate) fn resolve(
                 }
                 let response_eligible = !responded
                     && (super::damage::can_surface_tech(f, surface, &rules.damage)
-                        || super::damage::can_reflect(f, surface, &rules.damage));
+                        || super::damage::can_reflect(f, surface, &rules.damage)
+                        || super::specials::wants_redirect(f.action));
                 if response_eligible {
                     let candidate = &mut surface_contacts[usize::from(surface == Surface::Ceiling)];
                     candidate.get_or_insert((surface, normal, line_id));
@@ -385,12 +386,12 @@ pub(crate) fn resolve(
                 f.ground_line = Some(contact.line_id);
                 f.floor_normal = contact.normal;
             }
-            land(f, rules, data, input, events, player)?;
+            land(f, rules, data, input, events, player, geometry)?;
         } else if let Some(projection) = moved_floor {
             f.position[1] += projection.delta;
             f.ground_line = Some(projection.line_id);
             f.floor_normal = projection.normal;
-            land(f, rules, data, input, events, player)?;
+            land(f, rules, data, input, events, player, geometry)?;
         }
         if f.grounded
             && let Some(after_ceiling) = ceiling_position
@@ -398,6 +399,21 @@ pub(crate) fn resolve(
             let after_floor = f.position[1];
             f.ecb
                 .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
+        }
+        if !f.grounded && !responded && super::specials::wants_redirect(f.action) {
+            let [wall, ceiling] = surface_contacts;
+            // `ftFx_SpecialAirHi_Coll`'s own non-ground branch: a single
+            // hook decides both candidates together (ceiling checked
+            // first, then whichever wall, matching the source's own
+            // do-while order internally) rather than this file's own
+            // per-candidate tech/reflect loop below, since only one move
+            // (today) ever wants this and its own angle gate needs both
+            // contacts available at once.
+            let strip_surface =
+                |c: Option<(Surface, [f32; 3], usize)>| c.map(|(_, normal, line)| (normal, line));
+            if super::specials::air_contact(f, data, strip_surface(ceiling), strip_surface(wall)) {
+                responded = true;
+            }
         }
         if !f.grounded && !responded {
             let [wall, ceiling] = surface_contacts;
@@ -594,7 +610,15 @@ fn land(
     input: super::Controller,
     events: &mut Vec<Event>,
     player: usize,
+    geometry: &StageGeometry,
 ) -> Result<(), Error> {
+    // Captured before this ordinary landing bookkeeping runs: a move's own
+    // `land()` hook (Fox's up special's shallow-floor-angle graze) can
+    // restore this snapshot wholesale to decline the landing and continue
+    // airborne, rather than needing to hand-revert every individual field
+    // this function and `locomotion`/`wall_jump::landed` below are about
+    // to touch (grounded, velocity, jumps_used, wall-jump timers, ...).
+    let pre_landing = f.clone();
     f.contacts[0] = f.ground_line;
     f.velocity[1] = 0.0;
     f.knockback = [0.0; 2];
@@ -621,7 +645,7 @@ fn land(
             let pose = simulation::pose(f, data)?;
             super::damage::land(f, data, &pose, &rules.damage, input)?;
         } else if !super::specials::transfer_ground_air(f, true)
-            && !super::specials::land(f, data)?
+            && !super::specials::land(f, data, on_platform(f, geometry), &pre_landing)?
             && !super::escape_air::land(f, data, rules.escape_air.as_ref())?
             && !super::aerial::land(f, data)?
         {

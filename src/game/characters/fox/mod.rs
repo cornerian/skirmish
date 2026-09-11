@@ -9,17 +9,26 @@
 
 pub mod down;
 pub mod side;
+pub mod up;
 
 use crate::game::{Action, specials};
 
 /// Fox's specials, in the same priority the grounded/aerial dispatch chains
-/// check them: the side special ahead of the shared neutral shell, ahead of
-/// the down special (the source's own grounded chain checks SpecialS,
-/// SpecialHi (unmodeled), SpecialN, then SpecialLw in that fixed order;
-/// down.rs's own module doc explains why the aerial dispatcher's different
-/// real order does not require a different Rust iteration order here).
-pub(crate) const MOVES: &[&dyn specials::SpecialMove] =
-    &[&side::MOVE, &specials::neutral::MOVE, &down::MOVE];
+/// check them: the side special first (grounded: `ftCo_Attack100_
+/// CheckInput` is checked after `SpecialS`; aerial: the side branch already
+/// defers to the up special whenever the stick clears the vertical
+/// threshold, so this order reproduces both dispatch priorities), then the
+/// up special, then the shared neutral shell, then the down special (the
+/// source's own grounded chain checks SpecialS, SpecialHi, SpecialN, then
+/// SpecialLw in that fixed order; down.rs's own module doc explains why the
+/// aerial dispatcher's different real order does not require a different
+/// Rust iteration order here).
+pub(crate) const MOVES: &[&dyn specials::SpecialMove] = &[
+    &side::MOVE,
+    &up::MOVE,
+    &specials::neutral::MOVE,
+    &down::MOVE,
+];
 
 /// External Slippi character ids that play Fox's move set. Falco (22)
 /// shares Fox's own source file for these moves but keeps its own
@@ -48,6 +57,17 @@ pub(crate) fn slippi_ids(action: Action) -> Option<(u32, u32)> {
         SpecialAirSStart => (350, 304),
         SpecialAirS => (351, 305),
         SpecialAirSEnd => (352, 306),
+        // `ftFx_MS_SpecialHiHold` follows `ftFx_MS_SpecialAirSEnd` in source
+        // declaration order (353..359, `ftFox/forward.h:64-70`). The
+        // animation indices continue the same unverified -46 extrapolation
+        // as the side special's own; see docs/fox-up-special.md.
+        SpecialHiHold => (353, 307),
+        SpecialHiHoldAir => (354, 308),
+        SpecialHi => (355, 309),
+        SpecialAirHi => (356, 310),
+        SpecialHiLanding => (357, 311),
+        SpecialHiFall => (358, 312),
+        SpecialHiBound => (359, 313),
         // `ftFx_MS_SpecialLwStart` is confirmed `ftCo_MS_Count + 6 + 4`
         // (`ftFox/forward.h:71-80`: it directly follows the side special's
         // own five states in source declaration order), so 360..369 are

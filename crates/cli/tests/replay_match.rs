@@ -31,6 +31,8 @@ mod escape_support;
 mod fox_down_special_support;
 #[path = "../../../tests/support/fox_side_special.rs"]
 mod fox_side_special_support;
+#[path = "../../../tests/support/fox_up_special.rs"]
+mod fox_up_special_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
 #[path = "../../../tests/support/idle.rs"]
@@ -3160,6 +3162,125 @@ fn physical_b_drives_file_backed_fox_air_reflector_through_start_loop_and_end() 
 
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.y.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+/// Self-recorded harness regressions for the up special, like the side
+/// special's own pair above: this proves the recorded trajectory reproduces
+/// bit-exactly through this crate's own replay pipeline, not Melee parity
+/// (`docs/parity.md`). Unlike the side special's one-shot entry press,
+/// this move's grounded-vs-aerial launch decision reads the stick at the
+/// moment Hold's own animation ends (`docs/fox-up-special.md`), so the
+/// directional press is held for several frames here, not just the entry
+/// one.
+#[test]
+fn physical_b_drives_file_backed_fox_ground_firefox_into_travel_and_landing() {
+    // Slippi 353 (SpecialHiHold)/355 (SpecialHi)/357 (SpecialHiLanding);
+    // their animation indices are an unverified extrapolation, exactly
+    // like the side special's own ids (`docs/fox-up-special.md`) -- the
+    // replay round trip below only requires this recording's own
+    // `action_state`/`animation_index` calls to agree with themselves.
+    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 20];
+    // Frame 0's own entry press must stay clear of the side special's own
+    // (checked-first) horizontal threshold, so it is purely vertical; the
+    // held direction from frame 1 on drives the eventual launch decision
+    // and no longer risks the side special's entry, since by then the
+    // fighter is already in one of this move's own actions.
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick = [0.0, 0.9];
+    for input in inputs.iter_mut().take(8).skip(1) {
+        input[0].buttons = BUTTON_B;
+        input[0].stick = [0.9, -0.5];
+    }
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialHiHold
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialHi)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialHiLanding)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press entirely: the fighter stays in Wait instead of
+    // entering SpecialHiHold, so the removed press's effect is visible on
+    // the very first recorded frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.x.set(0, Some(0.0));
+        frames.ports[0].leader.pre.joystick.y.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn physical_b_drives_file_backed_fox_air_firefox_into_fall_special() {
+    // Slippi 354 (SpecialHiHoldAir)/356 (SpecialAirHi)/358 (SpecialHiFall).
+    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 6.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 70];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[1] = 0.9;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialHiHoldAir
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialAirHi)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialHiFall)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::FallSpecial)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press: the fighter free-falls (Fall) instead of
+    // entering SpecialHiHoldAir, diverging from the very first frame.
     let changed = recording.bytes(support::Fixture::default(), |frames| {
         frames.ports[0].leader.pre.buttons.set(0, Some(0));
         frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));

@@ -205,6 +205,26 @@ pub enum Action {
     SpecialAirS,
     /// Slippi 352. `ftFx_SpecialAirSEnd_Enter`.
     SpecialAirSEnd,
+    /// Slippi 353. `ftFx_SpecialHi_Enter`. Grounded Firefox/Firebird charge.
+    SpecialHiHold,
+    /// Slippi 354. `ftFx_SpecialAirHiStart_Enter`. Aerial charge.
+    SpecialHiHoldAir,
+    /// Slippi 355. `ftFx_SpecialAirHi_AirToGround`. Grounded travel.
+    SpecialHi,
+    /// Slippi 356. `ftFx_SpecialAirHi_Enter`. Aerial travel/launch.
+    SpecialAirHi,
+    /// Slippi 357. `ftFx_SpecialHiFall_AirToGround` /
+    /// `ftFx_SpecialHiLanding_GroundToAir` (despite the "GroundToAir" name,
+    /// this enters the *grounded* landing). Entered at frame 13 from Fall's
+    /// own landing, or at frame 0 from Travel's duration end.
+    SpecialHiLanding,
+    /// Slippi 358. `ftFx_SpecialHiLanding_GroundToAir` (despite the name,
+    /// this enters the *aerial* fall). Entered at frame 0 from Travel's
+    /// duration end while airborne.
+    SpecialHiFall,
+    /// Slippi 359. `ftFx_SpecialHiBound_Enter`. Shared grounded/aerial
+    /// rebound off a steep Travel impact.
+    SpecialHiBound,
     /// Slippi 360 (`ftFx_MS_SpecialLwStart`, `ftFox/forward.h:71-80`).
     /// `ftFx_SpecialLw_Enter`.
     SpecialLwStart,
@@ -309,6 +329,7 @@ pub struct Fighter {
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
     pub fox_side_special: characters::fox::side::State,
+    pub fox_up_special: characters::fox::up::State,
     pub down_special: characters::fox::down::State,
     pub tilt: tilt::State,
     pub smash: smash::State,

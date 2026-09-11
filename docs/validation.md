@@ -1,5 +1,212 @@
 # Local validation provenance
 
+The 2026-09-11 Fox up-special coverage batch (Fire Fox/Fire Bird) is
+recorded at:
+
+`/mnt/archive/runs/skirmish-fox-up-special-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace (both without and with the `c-oracle` feature, debug and
+release): 849 passed/0 failed without `c-oracle`, 1166 passed/0 failed with
+it, both green with no failures (counts as of the follow-up round below;
+see that section for what changed). `game::characters::fox::up` (resource,
+dispatch, `src/game/characters/fox/up.rs`) covers `Action::SpecialHiHold/
+SpecialHiHoldAir/SpecialHi/SpecialAirHi/SpecialHiLanding/SpecialHiFall/
+SpecialHiBound` (`docs/fox-up-special.md`), Fox's up special (Fire Fox;
+Falco's Fire Bird shares the code with its own attributes). The core
+implementation, the resource shape, the framework wiring (`SpecialMove::
+update_animation`/`land` gaining `on_platform`, `Movement::drift_clamp`,
+`locomotion::State::up_special_b_age`, the 7 new `Action` variants and
+Slippi ids) predate this batch's own work (a prior session's foundation,
+compiling clean with the pre-existing test suite unchanged); this batch
+adds the oracle, the native and self-recorded regression coverage, and
+fixes four real bugs the new coverage surfaced (below).
+
+Two concrete facts confirmed for this batch: the frame-13 `SpecialHiLanding`
+entry point is specifically Fall's own ordinary ground/ledge touch
+(`ftFx_SpecialHiFall_Coll` -> `ftFx_SpecialHiFall_Enter`), not Travel's own
+landing-bound decision (which enters at frame 0, or Bound); and the
+Slippi ids (353..359) are confirmed directly against `ftFox/forward.h`'s
+own enum order, continuing straight on from the side special's own
+347..352, while the matching animation indices (307..313) remain an
+unverified extrapolation of the same constant -46 offset the side special
+batch already flagged, since the pinned C decomp has no figatree/
+animation-index table for character-specific motion states.
+
+Four real bugs were caught by this batch's own C-oracle differential
+suite while building it (`tests/fox_up_special_differential.rs`), none of
+them present in the prior session's design note, and all fixed in
+`src/game/characters/fox/up.rs`:
+- **The frame-13 gap itself.** `up.rs` had no `land()` arm for
+  `Action::SpecialHiFall` at all, so Fall's own ordinary ground touch fell
+  through to the generic `Action::Landing` instead of `SpecialHiLanding`
+  at frame 13. This is the one item the batch's own brief asked to
+  specifically confirm or refute; it was a real, previously unflagged
+  implementation gap, now fixed with a dedicated regression
+  (`tests/game_fox_up_special.rs::fall_lands_at_frame_13_via_ordinary_ground_touch`).
+- **`angle_xy`'s zero-length guard used `product > 0.0`** where the pinned
+  `lbVector_AngleXY`'s own `if (lena_lenb)` is a non-zero check; the two
+  diverge for a NaN product (a near-zero vector paired with one large
+  enough to overflow the other length to infinity), where `!= 0` reaches
+  `acosf(NaN)` (propagating it) but `> 0.0` would have silently
+  substituted 0.0.
+- **`enter_from_ground_hold`'s own magnitude/angle gates used `>=`** where
+  the pinned `ftFx_SpecialAirHi_AirToGround` writes both as negated
+  less-than (unlike `ftFx_SpecialAirHi_Enter`'s own direct `>=` for the
+  same magnitude check); the two diverge for a NaN operand, reachable
+  through the previous fix.
+- **The aerial launch velocity and the Travel air reverse-acceleration
+  both regrouped `facing_dir * (x74_or_x78 * cosf(angle))`** as
+  `(facing * speed) * cosf(angle)` (left-to-right evaluation); `f32`
+  multiplication is not associative, so this could differ from the
+  source's own grouping by an ULP.
+
+See `docs/fox-up-special.md`'s own "Corrections against the pinned source"
+section for the exact citations and fixes. This entry originally left the
+wall/ceiling mid-Travel redirect, the shallow-floor-angle graze sub-case
+of the landing bound decision, ground Travel's own per-frame
+`rotateModel` re-derivation from the floor normal, and `FallSpecial`'s own
+stored `landing_lag` argument unmodeled; a reviewer correctly flagged
+those four as ordinary gameplay rather than exotic edge cases, and the
+follow-up round below implements and tests all four. What remains
+genuinely unmodeled after the follow-up is only Travel's empty hitboxes,
+the visual model-rotation bone itself (rendering-only), and the
+already-unreachable `x21F8` callback.
+
+`tests/oracle/original/ftfoxspecialhi.c` pins the new source (sha256 in
+`sources.json`); `tests/oracle/ftfoxspecialhi.functions.json` selects 41 of
+its functions (every non-static callback plus its three static/
+static-inline helpers, dropping only its two GFX-only `_CreateChargeGFX`/
+`_CreateLaunchGFX` callbacks, matching the side special's own precedent).
+Two dependencies from other already-pinned files are reused via new
+`adapters.json` aliases rather than re-snapshotted: `up_special_angle` (->
+the existing `lbvector` snapshot, for `lbVector_AngleXY`) and
+`up_special_platform` (-> the existing `pass` snapshot, for
+`ftCo_8009A134`). `tests/oracle/fox_specialhi.c` is the new host adapter;
+its own header documents the capture/script/faithful treatment of every
+dependency, including the two deliberately out-of-scope ones
+(`ft_80084DB0`, Fall's own shared aerial-gravity Phys; `ftCommon_8007CF58`,
+Bound's own air drift clamp in `ftcommon.c`) captured for dispatch only.
+`tests/fox_up_special_differential.rs` (18 tests, 512 proptest cases each
+plus exact boundaries) compares every pinned function; trig-derived
+values use a small ULP/absolute tolerance (`close_bits`) instead of raw
+bit equality, documented in place and in `docs/fox-up-special.md`'s own
+Oracle section, since this crate's own `libm` dependency measurably
+disagrees with this host's system C compiler's `atan2f`/`cosf`/`sinf`/
+`acosf` by a handful of ULPs on some inputs (deliberately, for
+cross-platform replay determinism, not a defect) -- confirmed directly
+against both this host's C compiler and Rust's own `f32` methods.
+`src/game/characters/fox/up.rs` gains 5 unit tests for `angle_xy`/
+`face_stick` (zero vectors, the NaN-product case, general NaN-safety, the
+sign/zero convention). `tests/game_fox_up_special.rs` originally added 19
+integration tests covering grounded and aerial entry, the launch angle's
+two thresholds and the straight-up default, the grounded-vs-declined
+launch decision (along the floor, into the floor, and on a platform),
+Travel's duration and reverse acceleration, the landing bound decision,
+the frame-13 regression, the `FallSpecial` exits, Bound's own
+exit-flag-forced early exit, Slippi ids, a checkpoint round trip and
+invalid resources; the follow-up round below adds 4 more (23 total), see
+that section.
+`crates/cli/tests/replay_match.rs` gains 2 file-backed self-recorded
+regressions (framed as self-consistency evidence, not Melee parity,
+matching `docs/parity.md`): a grounded Fox Fire Fox through
+SpecialHiHold/SpecialHi/SpecialHiLanding and an aerial one through
+SpecialHiHoldAir/SpecialAirHi/SpecialHiFall/FallSpecial, each matching its
+own generated bytes and reporting a `Mismatch` at frame 0 once the entry
+press is removed.
+
+## Follow-up: the four previously-unmodeled items are now implemented
+
+The same 2026-09-11 Fox up-special batch above was revised in a follow-up
+round after review: three (in fact, on closer reading of the pinned
+source, four) of the original "Unmodeled" items are ordinary gameplay
+reachable in normal play, not exotic edge cases, and are implemented and
+tested here instead of being left out. The audit was re-run into the same
+record path (`/mnt/archive/runs/skirmish-fox-up-special-20260911-verified`,
+overwritten), and the existing commit was amended rather than adding a
+second one, so the record and the commit both describe the batch's final
+state.
+
+1. **The mid-Travel wall/ceiling redirect** (`ftFx_SpecialAirHi_Coll`'s
+   non-ground branch). A shallow (grazing) contact with a wall or ceiling
+   -- `lbVector_AngleXY(contact_normal, self_vel) < 90 + x94` degrees --
+   redirects `facing`/`rotateModel` from the current velocity instead of
+   letting the ordinary auto-zero-into-wall collision response kill it;
+   ceiling takes priority over wall when both are hit in the same step.
+   Implemented as `up::bound_angle_gate`/`up::redirect_from_velocity`
+   (shared with the landing bound's own graze case below) and
+   `SpecialMove::wants_redirect`/`air_contact`, wired into
+   `game::collision::resolve()`'s existing `response_eligible`/
+   `surface_contacts` machinery right after the per-step sweep loop, the
+   same place `can_surface_tech`/`can_reflect` already hook in.
+2. **The shallow-floor-angle graze sub-case of the landing bound
+   decision.** The gate above, evaluated against the *pre-landing*
+   velocity (before `collision::land()` zeroes it), can also apply to an
+   ordinary floor touch: a shallow-enough landing grazes and redirects
+   instead of entering `SpecialHiBound`. `SpecialMove::land`/
+   `specials::land` gained a new `pre_landing: &Fighter` parameter (a full
+   snapshot taken in `collision::land()` right before the existing
+   zero/bookkeeping); Fox's up special either enters the bound as before
+   or restores `*fighter = pre_landing.clone()` plus the redirected
+   `facing`/`rotate_model` for the graze case. `fox::side::land` gained
+   the same parameter and ignores it, preserving its already-audited
+   behaviour exactly.
+3. **Ground Travel's own per-frame `rotateModel` re-derivation from the
+   floor normal.** Previously only computed once at aerial-launch time;
+   now re-derived every grounded Travel frame
+   (`up::Move::update_ground_contact`, a new `SpecialMove` hook dispatched
+   from `game::simulation` right after `collision::resolve()` -- not from
+   `tick_ground_timers`, which runs too early in the frame to see the
+   step's fresh `floor_normal`). This matters because an eventual edge
+   drop back into the air phase carries the *last real grounded angle*
+   into the post-`duration_end` reverse acceleration, not a stale
+   aerial-launch angle from possibly several seconds earlier.
+4. **`FallSpecial`'s own `landing_lag` (x90).** `FallSpecial` already
+   entered `Action::LandingFallSpecial` on ground touch (the original
+   round's "unmodeled" framing of this item was inaccurate on that point
+   -- it did not fall through to plain `Landing`); the actual gap was that
+   its landing rate always used the shared/common landing-lag rate rather
+   than this move's own per-instance `x90` value. `helpers::
+   enter_fall_special` gained an `Option<f32>` `landing_lag` parameter
+   (mirroring the existing `mobility: f32` pattern), stored on the new
+   `aerial::State::landing_lag` field; `escape_air::land` now consults it
+   (`unwrap_or(rules.landing_lag)`) instead of unconditionally using the
+   common rate. Only Fox's up special supplies `Some(x90)`; `fox::side`'s
+   own `enter_fall_special` call site passes `None`, preserving its
+   already-audited behaviour exactly.
+
+Native coverage: 4 new tests in `tests/game_fox_up_special.rs` (23 total,
+up from 19) --
+`travel_air_redirect_does_not_zero_velocity_against_a_shallow_wall`/
+`_ceiling` (the redirect's own observable effect: velocity survives a
+wall/ceiling hit that would otherwise be auto-zeroed, since recomputing
+`facing`/`rotateModel` from an unchanged velocity is mathematically a
+no-op and can't itself be asserted on),
+`travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_the_edge`,
+and `fall_special_landing_uses_this_move_s_own_landing_lag_not_the_common_one`
+(numerically distinguishing `6.1 / x90 == 1.525` from `6.1 /
+rules.landing_lag == 0.61`). The pre-existing
+`hold_ground_anim_end_declines_on_a_platform` test's expectation was
+updated to check the floor-derived `rotateModel` formula instead of a
+stale aerial-launch angle, since item 3 makes that the correct observable
+behaviour now.
+
+Oracle coverage: no new pinned functions or host-adapter scripting were
+added for items 1/2 specifically, because the bit-exact angle/gate
+arithmetic they both share (`lbVector_AngleXY` against a contact normal,
+the `90 + x94` threshold, `atan2f`-based `facing`/`rotateModel` recompute)
+was already exercised for ceiling, both walls, and shallow/steep floor
+contacts by the original round's `compare_travel_coll_air` in
+`tests/fox_up_special_differential.rs`, which predates this follow-up and
+already scripts `ftFx_SpecialAirHi_Coll` across all five contact shapes.
+Items 3 and 4 are wiring/dispatch-order and parameter-threading changes
+with no new arithmetic against the pinned source, so they are covered
+natively rather than at the oracle level, consistent with how the rest of
+this batch's framework wiring (`on_platform`, `drift_clamp`) was already
+tested. `tests/fox_up_special_differential.rs` itself is therefore
+unchanged at 18 tests; the workspace-wide count increase (845->849
+without `c-oracle`, 1162->1166 with it) comes entirely from the 4 new
+`tests/game_fox_up_special.rs` tests, run under both configurations.
 The 2026-09-11 match-start (Entry/EntryStart/EntryEnd) coverage batch is
 recorded at:
 
