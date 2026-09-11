@@ -156,6 +156,13 @@ The [run-animation profile](docs/run.md) extends the same tracked float
 frame/rate model to Run's own single figatree, advancing one frame behind
 `SetAnimRate`'s own delay and wrapping at its length; both the Dash-to-Run
 and RunTurn-to-Run transitions always start it at frame 0, rate 1.0.
+The [idle-animation profile](docs/idle.md) covers `Action::Wait`'s own
+cycling: Wait1_0 restarts at its own length with no draw, and once an idle
+table is supplied, reaching a sub-motion's length draws from the match's
+shared RNG and walks a weighted table, re-drawing while a repeated pick is
+neither Wait1_0 nor a fresh pick from it -- shifting every later random
+event in the same frame and match, exactly as Melee's single per-frame RNG
+stream would.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

@@ -356,6 +356,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `walk` | Slow walk kind and frame 0 entering from Wait, a full ramp reaching Middle then Fast with a stable `action_instance.id` and the remapped frame bit-exact against the pure helper, the animation rate's one-frame `SetAnimRate` delay and its zero value while moving against facing, wrapping at the kind's figatree length, Wait-chain exit on a reversed or deadzone stick leaving the walk state untouched, a tilt press preempting the retype check on its own frame, checkpoint replay and invalid/absent resources |
 | `run` | Dash-to-Run entry at frame 0 with `last_rate` 1.0, the first Run frame advancing by exactly one and every later frame matching the pure rate helper bit-exact against the previous frame's velocity/facing, wrapping at the figatree length, checkpoint replay, invalid/absent resources, and a Run-Turn-to-Run reversal confirming `ground_velocity` already agrees with the flipped facing on every observed Run frame (the zero-rate-against-facing branch is not independently reachable this way; it is exercised directly by `run_animation_rate`'s own unit test) |
 | `run_corrections` | A right-facing and a left-facing run-turn reversal each flipping only once ground velocity has crossed past the *entry* facing's own sign (not a fixed resource scale), with the frozen frames holding `action_frame`; the RunBrake freeze holding `action_frame` while fast and resuming once slow with the `frames` countdown still ticking throughout; the freeze speed never reached still ending the brake on the countdown while frozen; the marker absent keeping the pre-batch unfrozen RunBrake behavior; the turn-run lockout blocking both RunTurn and RunBrake entry from Run for exactly its frame count, separately for a reversed and a neutral stick; an ordinary Dash-to-Run entry never setting the lockout; checkpoint replay mid-lockout; and every new field's invalid/unpaired/out-of-range values rejected before a `Match` exists |
+| `idle` | A table-less restart at `wait1_length` leaving the animation at 2 and drawing no RNG; a two-entry table's pick matching the pure helper called directly against a fresh `HsdRng` from the same match seed; a repeated pick from a non-Wait1 current animation re-drawing, with the seed advancing by two draws for that event; the idle draw shifting a same-frame blast-death roll's `Kind` between resource-present and resource-absent runs of an otherwise-identical real hit-driven scenario; checkpoint replay across a pick; invalid resources; and `None` keeping the pre-batch unbounded `action_frame` with the animation index fixed at 2 |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -397,6 +398,19 @@ end decision against the C oracle over 512 proptest cases plus a second
 proptest generating physically realistic (monotonically non-increasing
 magnitude) 12-frame velocity sequences, exact boundaries and every boolean
 combination of the `ftCo_RunBrake_IASA` gate order.
+`idle_differential` compares `fighter::idle::pick` against a new
+`ftwaitanim.c` snapshot (`tests/oracle/original/waitanim.c`,
+`ftCo_8008A698`/`ftCo_8008A6D8`/`inlineA0`/`getAnimID`/`ftCo_8008A7A8`) over
+512 proptest cases (equal-share-weight tables of 1..=5 entries, current
+animations in `{2, 3, 6, 31, 40}`, scripted `HSD_Randi` sequences), plus
+exact boundaries (`max == count` selecting inclusively, a repeated pick
+from a non-exempt current re-drawing in both implementations, a repeated
+pick from Wait1_0/31 never re-drawing, weights summing below 100 asserting
+in the oracle and panicking in `pick`, frames still remaining drawing
+nothing, and an empty table restarting without drawing). The adapter's own
+`HSD_ASSERTREPORT` override `longjmp`s back to the call site rather than
+falling through, reproducing the pinned source's own "never returns"
+contract for a failed table walk.
 Adapters explicitly disable unrelated state/environment branches.
 
 | Required behavior | Integration cases |

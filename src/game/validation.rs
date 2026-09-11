@@ -537,6 +537,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(animation) = &m.run_animation {
             locomotion::validate_run(animation)?;
         }
+        if let Some(idle_animations) = &fighter.idle {
+            idle::validate(idle_animations)?;
+        }
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
             CollisionBox::Fixed { source } => require(

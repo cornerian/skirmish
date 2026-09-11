@@ -16,6 +16,7 @@ pub mod escape;
 pub mod escape_air;
 pub mod grab;
 pub mod hitboxes;
+pub mod idle;
 pub mod jab;
 pub mod landing;
 pub mod ledge;
@@ -249,6 +250,8 @@ pub struct Fighter {
     pub smash: smash::State,
     pub dash: dash::State,
     pub jab: jab::State,
+    /// Read only while `action == Action::Wait`; reset on every Wait entry.
+    pub idle: idle::State,
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,

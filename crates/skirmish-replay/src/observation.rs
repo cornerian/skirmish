@@ -644,7 +644,12 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         4 | 6 | 38 => 29,
         7 => 0,
         8 => 1,
-        12..=14 => 2,
+        // Rebirth/RebirthWait keep the pre-batch constant 2; only Wait (14)
+        // reports the tracked idle animation (optional idle-animation
+        // profile: 2 -- Wait1_0 -- while absent, matching the constant this
+        // replaced).
+        12 | 13 => 2,
+        14 => fighter.idle.animation,
         // WalkSlow/WalkMiddle/WalkFast sub-motions 7/8/9.
         15..=17 => u32::from(state - 8),
         18..=21 => u32::from(state - 8),

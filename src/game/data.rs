@@ -207,6 +207,8 @@ pub struct FighterData {
     pub escape: Option<super::escape::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape_air: Option<super::escape_air::Parameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle: Option<super::idle::IdleAnimations>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,

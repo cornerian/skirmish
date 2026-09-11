@@ -87,6 +87,7 @@ fn spawn(
         smash: smash::State::default(),
         dash: dash::State::default(),
         jab: jab::State::default(),
+        idle: idle::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
         ledge: ledge::State::default(),
@@ -170,6 +171,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // mv.co.attackdash.x0 is cleared by doEnter; the AttackDash entry callers
     // (Dash/Run) arm it to x68 immediately after this.
     fighter.dash = dash::State::default();
+    // Fighter_ChangeMotionState sets fp->anim_id from the destination motion
+    // state's own table entry; every Wait entry's own entry is assumed 2
+    // (Wait1_0, see game::idle::State). idle::State is read only while
+    // Action::Wait is current, so resetting it unconditionally here (like
+    // dash/smash above) is harmless for every other destination.
+    fighter.idle = idle::State::default();
     // mv.co.landing.allow_interrupt is set only by the ordinary Landing entry
     // (`ftCo_Landing_Enter_Basic`), immediately after this reset.
     fighter.landing_allow_interrupt = false;
@@ -386,6 +393,10 @@ pub(crate) fn advance(
     let mut just_turned = [false; 2];
     let mut clank_owns = [false; 2];
     let mut shield_owns = [false; 2];
+    // ftCo_Wait_Anim's HSD_Randi draw runs within the same animation-phase
+    // callback order Melee dispatches in (player order); the seed is handed
+    // off to the blast-zone death draw further below exactly as today.
+    let mut idle_rng = crate::random::HsdRng::new(state.rng_seed);
     for player in 0..2 {
         if !active[player] {
             continue;
@@ -397,6 +408,7 @@ pub(crate) fn advance(
             &geometry,
             player,
             inputs[player],
+            &mut idle_rng,
         )?;
         update_nudge(
             data,
@@ -405,6 +417,7 @@ pub(crate) fn advance(
             player,
         )?;
     }
+    state.rng_seed = idle_rng.seed();
 
     let pair_frozen = grab::update_pairs(data, state, inputs, active)?;
     for player in 0..2 {
@@ -1135,6 +1148,7 @@ fn update_animation(
     geometry: &StageGeometry,
     player: usize,
     input: Controller,
+    idle_rng: &mut crate::random::HsdRng,
 ) -> Result<(bool, bool, bool), Error> {
     let attrs = &data.movement;
     rebirth::update_animation(
@@ -1148,6 +1162,14 @@ fn update_animation(
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
     jab::update_animation(f, data)?;
+    // Read f.action before any of this call's own transitions (the Landing/
+    // JumpSquat match arms below, and every later module's own Action::Wait
+    // entries) so a same-frame entry into Wait is not also animated this
+    // frame -- Melee's own Anim callback for the destination motion state
+    // is not re-invoked within the same frame's callback that produced the
+    // transition, the same ordering `game::locomotion::advance_run_animation`
+    // relies on for Dash/RunTurn-to-Run.
+    idle::update_animation(f, data, idle_rng);
     match f.action {
         Action::Landing if f.action_frame >= attrs.landing_frames => enter(f, Action::Wait),
         Action::JumpSquat

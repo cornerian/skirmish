@@ -161,7 +161,12 @@ before this batch. Run already maps to state 21 (animation 13); with the
 optional [run-animation profile](run.md), its `state_age` likewise reports
 the tracked float Run animation frame (wrapping at the Run figatree's
 length) instead of the integer action frame; without the profile, Run keeps
-the integer frame, as before this batch. Landing already maps to state 42; with the
+the integer frame, as before this batch. Wait already maps to state 14 with
+`state_age` as the integer action frame (unchanged by this batch); with the
+optional [idle-animation profile](idle.md), the reported animation index
+now follows the tracked idle sub-motion (2 while in Wait1_0, otherwise the
+last picked entry) instead of the fixed constant 2; without the profile,
+the index stays 2 as before this batch. Landing already maps to state 42; with the
 optional landing profile it additionally accepts the complete Wait chain
 once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
 interruptible frame can now select a smash straight out of that state.

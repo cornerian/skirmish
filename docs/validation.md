@@ -1,5 +1,101 @@
 # Local validation provenance
 
+The 2026-09-11 idle-animation coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-idle-animations-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and
+release modes. `game::idle` (wiring: the resource, the state, the per-frame
+animation-phase draw, `src/game/idle.rs`) and `fighter::idle` (the pure
+weighted pick and its re-draw gate, `src/fighter/idle.rs`) cover
+`Action::Wait`'s idle-animation cycling (`docs/idle.md`). Two new resources:
+`FighterData.idle: Option<idle::IdleAnimations { wait1_length: f32, entries:
+Vec<IdleEntry { animation: u32, weight: i32, length: f32 }> }>` and
+`Fighter.idle: idle::State { animation: u32, frame: f32 }` (reset to `{ 2,
+0.0 }` on every action transition, unconditionally like `dash::State`/
+`smash::State`, since both fields are read only while `Action::Wait` is
+current). Every Wait frame, once the current sub-motion's own tracked frame
+reaches its length: with an empty (or absent) table, restart with no RNG
+draw; otherwise draw from the match's shared `HsdRng` and walk the weighted
+table (`fighter::idle::pick`), re-drawing while a repeated pick is neither
+Wait1_0 (2) nor a fresh pick from Wait1_0/31. The draw happens in
+`simulation::advance`'s per-player animation-phase loop, in player order,
+which reassigns `state.rng_seed` before the same frame's blast-zone death
+draw reconstructs its own `HsdRng` from it -- so an idle draw always shifts
+a later death draw's position in the shared sequence, exactly as Melee's
+single per-frame RNG stream would. `crates/skirmish-replay/src/
+observation.rs`'s `animation_index` gains a dedicated `14 => fighter.idle.
+animation` arm (previously `12..=14 => 2` covered Rebirth/RebirthWait/Wait
+alike with the same constant; Rebirth/RebirthWait are out of this batch's
+scope and keep the constant). `action_age` needed no change, since Wait was
+already covered by `observe`'s catch-all `action_frame` branch and this
+batch's own `action_frame` reset on every restart/pick keeps that branch
+correct. With the resource absent, `Action::Wait` keeps its pre-batch
+behavior unchanged: `action_frame` grows without bound and the reported
+animation index stays 2.
+
+No contradiction between this batch's implementation and the pinned source
+was found; the pre-existing test suite remains green unchanged. This
+batch's own explicit modeling choices, documented in `docs/idle.md` rather
+than treated as verified source behavior: `ftAnim_IsFramesRemaining`'s real
+joint-based check (`ftanim.c:515-530`) is replaced by a tracked-frame/
+length comparison, not independently reverse-verified against `ftAnim`/
+`lbAnim`'s own bookkeeping (the same caveat the walk/run batches recorded
+for their own frame-length wrap rules); every character's Wait entry is
+assumed to set `fp->anim_id` to 2 (Wait1_0) via `Fighter_ChangeMotionState`'s
+own per-character table lookup (`fighter.c:1220`), since that table itself
+is compiled character data, not part of the decomp source available here.
+Item-holding, the Mewtwo/Fox exception (`ftwaitanim.c:66-69`) and Wait
+script bytecode execution are pre-existing gaps (no `Fighter` item-holding
+state or script-bytecode execution exists anywhere in this codebase) left
+unmodeled, not introduced or silently changed by this batch.
+
+`src/fighter/idle.rs` adds 5 unit tests for `pick`'s boundary selection,
+the Wait1_0/31 exemption, the non-exempt re-draw and the "table falls short
+of `max`" panic. `tests/game_idle.rs` (7 tests, `tests/support/idle.rs`
+supplies an invented two-entry table) covers: a table-less restart at
+`wait1_length` leaving the animation at 2, resetting the tracked frame and
+`action_frame`, and drawing no RNG; a two-entry table's pick matching
+`pick` called directly against a fresh `HsdRng` from the same match seed;
+a repeated pick from a non-Wait1 current animation re-drawing, with the
+seed advancing by two draws for that event; the idle draw shifting a
+same-frame blast-death roll's `Kind` between resource-present and
+resource-absent runs of an otherwise-identical real hit-driven scenario (a
+grounded fighter can never itself exceed a valid `blast.top`, since stage
+validation requires `floor.y < blast.top` strictly, so this reuses `tests/
+support/death.rs`'s own proven hit/knockback shape rather than a synthetic
+position); checkpoints restoring the idle state and seed exactly across a
+pick; invalid resources (non-finite/non-positive `wait1_length` or entry
+fields, weights summing below 100) rejected before a match exists; and
+`None` keeping the pre-batch unbounded integer `action_frame` with the
+animation index fixed at 2. `tests/idle_differential.rs` (8 tests, 512
+proptest cases for the pick comparison) pins `ftCo_8008A698`/
+`ftCo_8008A6D8`/`inlineA0`/`getAnimID`/`ftCo_8008A7A8` from a new
+`waitanim` snapshot of `ftwaitanim.c`; `fighter::idle::pick` is compared
+against the C oracle over equal-share-weight tables of 1..=5 entries,
+current animations in `{2, 3, 6, 31, 40}` and 64-value scripted `HSD_Randi`
+sequences, plus exact boundaries (`max == count` inclusive selection, the
+repeat re-draw in both implementations, Wait1_0/31 never re-drawing,
+weights summing below 100 asserting in the oracle and panicking in `pick`,
+frames still remaining, and an empty table restarting without drawing).
+The oracle adapter's `HSD_ASSERTREPORT` override `longjmp`s back to the
+call site rather than falling through a failed table walk, reproducing the
+pinned source's own "never returns" contract (the real `__assert` it calls
+is `ATTRIBUTE_NORETURN`, and `getAnimID` has no `return` after its own
+`HSD_ASSERTREPORT` call) -- an earlier version of the adapter let execution
+fall through instead, reading an undefined return value that the caller
+then used as an out-of-bounds `fp->x24`/`x28` array index and crashed the
+test binary; this was found and fixed during this batch's own
+implementation, not left as a discrepancy. `crates/cli/tests/
+replay_match.rs`'s `file_backed_idle_fighter_reports_the_picked_animation_
+index_with_a_restarting_age` (1 test) drives an idle fighter with the
+two-entry table, locates the restart/pick row from a trace of the tracked
+idle frame, confirms the reported animation index and restarted
+`action_frame` there, matches its own generated Peppi bytes end to end,
+then corrupts that row's animation-index field and confirms a `Mismatch`
+starting there.
+
 The 2026-09-11 run-corrections batch is recorded at:
 
 `/mnt/archive/runs/skirmish-run-corrections-20260911-verified`

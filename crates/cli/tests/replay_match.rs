@@ -29,6 +29,8 @@ mod escape_air_support;
 mod escape_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
+#[path = "../../../tests/support/idle.rs"]
+mod idle_support;
 #[path = "../../../tests/support/jab.rs"]
 mod jab_support;
 #[path = "../../../tests/support/ledge.rs"]
@@ -2587,6 +2589,73 @@ fn file_backed_dash_into_a_run_reports_state_21_with_float_ages_and_a_reduced_st
         })
         .expect("expected the reduced stick to eventually change the reported age");
     assert_eq!(first_age_divergence, edited_row + 2);
+}
+
+fn idle_replay_data() -> MatchData {
+    let mut data = idle_support::profile(shield_drop_data());
+    data.stage.floor.left = -200.0;
+    data.stage.floor.right = 200.0;
+    data.stage.blast = [-500.0, 500.0, -100.0, 200.0];
+    if let Some(geometry) = &mut data.stage.geometry {
+        geometry.lines[0].start[0] = -200.0;
+        geometry.lines[0].end[0] = 200.0;
+        geometry.joints[0].bounds_min[0] = -200.0;
+        geometry.joints[0].bounds_max[0] = 200.0;
+    }
+    data
+}
+
+#[test]
+fn file_backed_idle_fighter_reports_the_picked_animation_index_with_a_restarting_age() {
+    // Seed 12345's first HSD_Randi(100) draw (max 62) exceeds the two-entry
+    // table's first weight (60), so this seed's first pick lands on the
+    // second entry (animation 3) -- a visible transition away from Wait1_0,
+    // unlike the default 42 used elsewhere (whose first draw stays on
+    // animation 2, see `tests/game_idle.rs`).
+    let seed = 12345;
+    let recording = Recording::from_script(idle_replay_data(), seed, vec![IDLE; 12]);
+    assert_eq!(recording.states[0].fighters[0].action, Action::Wait);
+    for row in 0..2 {
+        let fighter = &recording.states[row].fighters[0];
+        assert_eq!(observation::animation_index(fighter, Some(2)), Some(2));
+    }
+
+    // Find the restart/pick row from a trace of the tracked idle frame,
+    // rather than assuming which row it lands on.
+    let pick_row = (1..recording.states.len())
+        .find(|&row| {
+            recording.states[row].fighters[0].idle.frame == 0.0
+                && recording.states[row - 1].fighters[0].idle.frame > 0.0
+        })
+        .expect("expected a restart/pick within the recorded window");
+    let picked = recording.states[pick_row].fighters[0].idle.animation;
+    assert_eq!(picked, 3, "seed 12345's first draw picks the second entry");
+    assert_eq!(
+        observation::animation_index(&recording.states[pick_row].fighters[0], Some(2)),
+        Some(picked)
+    );
+    // action_age is the restarted action_frame (unchanged by this batch),
+    // observed here as 1: `restart` sets it to 0 within the animation
+    // phase, then simulation::advance's own generic end-of-frame
+    // `action_frame += 1` applies afterward (docs/idle.md).
+    assert_eq!(recording.states[pick_row].fighters[0].action_frame, 1);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // Corrupt the picked row's own animation-index field and confirm the
+    // comparison reports a mismatch starting exactly there.
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        let post = &mut frames.ports[0].leader.post;
+        if let Some(animation) = &mut post.animation_index {
+            animation.set(pick_row, Some(picked + 1));
+        }
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + pick_row as i32 && checked_frames == pick_row as u64
+    ));
 }
 
 fn walk_replay_data() -> MatchData {

@@ -383,5 +383,10 @@
     "fixture": "tests/oracle/original/runbrake.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_RunBrake.c",
     "sha256": "3f03aa8e3c97a48d487a1b10f893e868054bd32796f93e3c9d4cb60301f41928"
+  },
+  {
+    "fixture": "tests/oracle/original/waitanim.c",
+    "upstream": "src/melee/ft/ftwaitanim.c",
+    "sha256": "8d0f5e48e3a4102a9c103912352157721229e2472d741dc065332474f4f42871"
   }
 ]

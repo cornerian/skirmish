@@ -13,6 +13,7 @@ pub mod edge;
 pub mod escape;
 pub mod escape_air;
 pub mod grab;
+pub mod idle;
 pub mod instance;
 pub mod jab;
 pub mod ledge;

@@ -261,6 +261,18 @@ the tracked frame at 0 with rate 1.0, matching the pinned source's own fixed
 `ChangeMotionState` rate argument. Without it, Run keeps a single integer
 `action_frame`, as before this batch.
 
+Optional per-fighter `FighterData.idle` ([idle-animation profile](idle.md))
+covers `Action::Wait`'s animation-phase cycling: every Wait frame, once the
+current sub-motion's own length is reached, restart it (no draw) when the
+table is empty, otherwise draw from the match's shared RNG and walk a
+weighted table, re-drawing while a repeated pick is neither Wait1_0 (2) nor
+a fresh pick from Wait1_0/31. The draw happens in the per-player
+animation-phase loop, in player order, ahead of the same frame's blast-zone
+death draw -- both read and advance the same `state.rng_seed`, so an idle
+draw shifts every later random event in the same frame and match. Without
+it, `Action::Wait` keeps its pre-batch behavior: `action_frame` grows
+without bound and the reported animation index stays 2.
+
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus
