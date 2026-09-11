@@ -42,6 +42,21 @@ pub struct EntryRules {
     pub scale_y: f32,
     /// `x6C8`: post-EntryEnd invincibility, applied only when nonzero.
     pub invincibility_frames: u32,
+    /// The pre-"GO" input lock (`docs/input-lock.md`): every fighter's
+    /// controller is replaced by a neutral `Controller` for this many
+    /// frames from the first simulated frame, independent of action state
+    /// (the replay evidence shows a held stick ignored in ordinary Fall,
+    /// not just during Entry/EntryStart/EntryEnd). Default 84, matching
+    /// Slippi's documented "GO" convention (control at frame -39, 84
+    /// frames after the recording's first frame, -123); not read from any
+    /// pinned constant since the exact decomp gate was not found (see the
+    /// doc's citation). Validated `<= Rules.countdown_frames`.
+    #[serde(default = "default_input_lock_frames")]
+    pub input_lock_frames: u32,
+}
+
+const fn default_input_lock_frames() -> u32 {
+    84
 }
 
 /// `FighterData.entry`. Slippi's `state_age` for EntryStart is the tracked
@@ -98,6 +113,15 @@ pub(crate) fn enter(fighter: &mut Fighter, slot: u32) {
         ..State::default()
     };
     simulation::enter(fighter, Action::Entry);
+    // `ftCo_800C61B0:46`: `fp->x221F_b1 = true`, set immediately after
+    // `Fighter_ChangeMotionState` (whose own unconditional `x221F_b1 = 0`
+    // `simulation::enter` mirrors) -- the Slippi `state_flags.dead` bit
+    // (`crates/skirmish-replay/src/observation.rs`'s `state_flags`) is set
+    // through all of Entry and cleared at the EntryStart transition, which
+    // calls the same `simulation::enter` with nothing to set it back
+    // (confirmed directly against the replay: both ports report this bit
+    // through every Entry frame and clear it from EntryStart on).
+    fighter.death.hidden = true;
 }
 
 /// `ftCo_800C6408:96-119` (position/timer terms only).
@@ -222,3 +246,35 @@ pub(crate) fn move_fighter(fighter: &mut Fighter, rules: Option<&EntryRules>) {
 // same one `ftCommon_8007D7FC` reaches). The grounded variant
 // (`ft_800846B0`, losing the floor) is not separately modeled: no fixture
 // spawns a fighter already grounded into Entry.
+
+#[cfg(test)]
+mod tests {
+    use super::EntryRules;
+
+    /// `docs/input-lock.md`: 84 (Slippi's documented "GO" convention), not
+    /// on disc -- absent from any resource that predates this batch.
+    #[test]
+    fn input_lock_frames_defaults_to_eighty_four_when_absent_from_the_resource() {
+        let json = r#"{
+            "start_frames": 30,
+            "end_frames": 30,
+            "scale_y": 0.0,
+            "invincibility_frames": 0
+        }"#;
+        let rules: EntryRules = serde_json::from_str(json).unwrap();
+        assert_eq!(rules.input_lock_frames, 84);
+    }
+
+    #[test]
+    fn input_lock_frames_round_trips_when_present() {
+        let json = r#"{
+            "start_frames": 30,
+            "end_frames": 30,
+            "scale_y": 0.0,
+            "invincibility_frames": 0,
+            "input_lock_frames": 10
+        }"#;
+        let rules: EntryRules = serde_json::from_str(json).unwrap();
+        assert_eq!(rules.input_lock_frames, 10);
+    }
+}

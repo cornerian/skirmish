@@ -3312,6 +3312,10 @@ fn entry_replay_data() -> MatchData {
         end_frames: 30,
         scale_y: 0.0,
         invincibility_frames: 0,
+        // `countdown_frames` is 0 above (validated `input_lock_frames <=
+        // countdown_frames`); this fixture predates the input lock
+        // (`docs/input-lock.md`) and is unaffected by it.
+        input_lock_frames: 0,
     });
     for fighter in &mut data.fighters {
         fighter.trophy_scale = Some(0.9);

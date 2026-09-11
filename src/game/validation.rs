@@ -116,6 +116,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 && entry.end_frames > 0
                 && entry.end_frames < 1_000_000
                 && entry.invincibility_frames < 1_000_000
+                && entry.input_lock_frames <= rules.countdown_frames
                 && finite([entry.scale_y]),
             "invalid explicit entry (match-start warp-in) rules",
         )?;

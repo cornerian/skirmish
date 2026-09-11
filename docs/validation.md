@@ -1,5 +1,158 @@
 # Local validation provenance
 
+The 2026-09-11 pre-"GO" input lock and countdown-period simulation batch is
+recorded at:
+
+`/mnt/archive/runs/skirmish-input-lock-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, and the
+complete native workspace (both without and with the `c-oracle` feature,
+debug and release): 893 passed/0 failed/19 ignored without `c-oracle`, 1234
+passed/0 failed/19 ignored with it (up from 886/0/19 and 1227/0/19
+immediately before this batch; the 7 new tests -- 2 unit tests in
+`src/game/entry.rs`, 5 integration tests in `tests/game_entry.rs` -- run
+under both configurations, and the pre-existing suite is otherwise
+unchanged). The audit's first attempt hit a release-mode-only failure in
+`fox_side_special_differential::arbitrary_special_air_check_input`
+(unrelated to anything in this diff -- that module was not touched);
+retried clean (5/5 runs passed in isolation, then the full audit passed
+end to end) and separately diagnosed and fixed as its own commit (below).
+
+This batch implements `docs/input-lock.md`: with `rules.entry` present, the
+match now simulates every frame fully from the very first frame (no
+`Phase::Countdown` freeze at all, not just the match-start batch's own
+narrower "run `entry::update_animation` during Countdown" scoping), and
+every fighter's controller is replaced by a neutral `Controller` for the
+first `rules.entry.input_lock_frames` frames (`u32`, serde default 84, new
+field on `game::entry::EntryRules`, validated `<= Rules.countdown_frames`)
+regardless of action state or `Phase`. `rules.entry.is_none()` keeps the
+legacy frozen Countdown byte-for-byte, including every pre-existing fixture
+that asserts frozen positions through it
+(`tests/game_matches.rs::countdown_walk_jump_land_hitlag_respawn_and_second_stock_finish`).
+
+Two changes in `game::simulation::advance` (`src/game/simulation.rs`), both
+gated on `data.rules.entry.is_some()`:
+1. The function now captures `was_countdown` (the phase *before* this
+   frame's own Countdown -> Playing transition) and, when `rules.entry` is
+   `Some`, no longer returns early out of the `Phase::Countdown` branch --
+   it falls through to the complete per-frame pipeline (physics, collision,
+   landing, combat) instead, so the match-start warp-in, the fall into
+   ordinary `Action::Fall`, and any landing all actually run during the
+   pre-"GO" period, matching what the replay shows. `state.remaining_frames`'s
+   decrement and the time-limit finish check are now explicitly gated on
+   `!was_countdown` (previously implicit, since the whole function returned
+   before reaching them): the match clock still only starts once a frame
+   begins already in `Phase::Playing`, `rules.countdown_frames` unchanged.
+2. `inputs` is replaced with two neutral `Controller`s whenever
+   `state.next_frame <= entry.input_lock_frames`, upstream of every other
+   use of `inputs` that frame (dispatch, hitlag sampling, and the
+   `previous_input` bookkeeping all see neutral during the lock).
+
+**The decomp gate was searched for and not found; the design note's own
+fallback (default 84, replay evidence cited, citation left pending) is
+used.** Read in full and confirmed not to gate pad input by frame count:
+`gm/gmvs.c`'s `gm_Scene_Vs_OnFrame` and its `fn_8016CD98`/`fn_8016CFE0`
+neighbors (the VS-mode per-frame dispatch and the `frame_count`/HUD-timer
+advance); `ft/fighter.c`'s `Fighter_Spaghetti_8006AD10` (the per-fighter pad
+copy, unconditionally scheduled at fighter creation with no frame-count or
+phase gate in its body) and its `x221D_b3` double-buffer bit (a pad
+*history* selector, not a suppressor); `gm/gm_1A45.c`'s `gm_801A45E8`
+(pause/camera/HUD bit queries, none frame-count-gated); `sysdolphin/
+baselib/controller.c`'s `HSD_PadMasterStatus`; `pl/player.c`'s
+`Player_80032828` (a pose-array setter, unrelated to input). This is
+consistent with, but distinct from, the match-start batch's own finding
+that Entry/EntryStart/EntryEnd's `_IASA` callbacks are unconditionally
+empty: that fact only explains why input has no effect *during those three
+states*, not this batch's own new replay evidence (`docs/input-lock.md`'s
+frame table: P4 holds the stick through part of ordinary `Fall`, at
+-44..-41, well past EntryEnd, with zero drift), which requires a broader
+gate than an empty `_IASA`. No C-oracle differential was added as a
+consequence: `docs/parity.md`'s three-level framework reserves differential
+coverage for a Rust function that ports a specific pinned decomp function,
+and no decomp function implementing this gate was found to pin one against.
+
+Resource shape: `Rules.entry.input_lock_frames: u32` (serde default 84,
+`game::entry::default_input_lock_frames`), validated
+`entry.input_lock_frames <= rules.countdown_frames` in
+`game::validation::validate`.
+
+`src/game/entry.rs` gains 2 unit tests (`input_lock_frames_defaults_to_
+eighty_four_when_absent_from_the_resource`, `input_lock_frames_round_trips_
+when_present`) confirming the serde default and round trip.
+`tests/game_entry.rs` gains 4 integration tests: `the_match_simulates_
+fully_through_countdown_when_entry_rules_are_present` (the match-start
+sequence itself progresses and reaches ordinary `Fall` while `Phase` is
+still `Countdown`, and the clock/`Phase::Playing` transition still lands
+exactly at `countdown_frames`, unaffected by the shorter input lock);
+`a_held_stick_produces_no_aerial_drift_while_the_input_lock_is_active` (a
+stick held hard toward the fighter's own facing direction produces zero
+`velocity[0]` at every sampled locked frame in ordinary `Fall`, and a
+neutral `previous_input`); `the_first_controlled_frame_acts_on_the_held_
+stick` (the very next step past `input_lock_frames` shows nonzero aerial
+drift and `previous_input` equal to the real controller); and
+`rules_entry_none_keeps_the_legacy_frozen_countdown_unaffected_by_the_lock`
+(a held stick during a `rules.entry.is_none()` Countdown produces no
+position change at all, mirroring `tests/game_matches.rs`'s own frozen-
+position assertion so this batch cannot have silently touched the legacy
+path). `invalid_entry_rules_are_rejected` gains a case for
+`input_lock_frames > countdown_frames`. Two existing struct literals
+(`tests/game_entry.rs::data`, `crates/cli/tests/replay_match.rs::
+entry_replay_data`) needed `input_lock_frames: 0` added since a bare Rust
+struct literal does not apply serde defaults and both fixtures use
+`countdown_frames: 0`; no other pre-existing test changed.
+
+**The `state_flags.dead` bit (`Fighter::x221F_b1`), found via the real-file
+measurement itself.** The published gameplay export gained `rules.shield`
+data mid-batch (a separate, unrelated exporter update); once `shield` was no
+longer masking every other field, the real-file measurement (below) landed
+on `state_flags.dead` -- the match-start sequence's own dead-flag bit, which
+neither this batch nor the match-start batch had modeled. Fixed here, since
+it belongs to the same Entry/EntryStart sequence this batch already covers:
+`ft_0C31.c:46` (`ftCo_800C61B0`) sets `fp->x221F_b1 = true` immediately
+after `Fighter_ChangeMotionState(gobj, ftCo_MS_Entry, ...)`; `fighter.c:1066`
+confirms that same function unconditionally clears `x221F_b1 = 0` on every
+motion change. `game::simulation::enter` (the shared per-transition function
+every `Action` change already funnels through) now unconditionally sets
+`fighter.death.hidden = false` alongside its other unconditional resets --
+`fighter.death.hidden` was already Skirmish's existing runtime bit for this
+exact Slippi flag (`crates/skirmish-replay/src/observation.rs`'s
+`state_flags`: `fighter.death.hidden || matches!(action, Respawn |
+Eliminated)`), previously written only by `death::begin` for blast deaths.
+`game::entry::enter` now sets `fighter.death.hidden = true` immediately
+after its own `simulation::enter(fighter, Action::Entry)` call, mirroring
+the source's "ChangeMotionState, then set the flag back" order exactly.
+`game::death::begin` is reordered (`simulation::enter` first, then the
+`fighter.death = State { ... }` assignment) so the new unconditional reset
+does not clobber its own intentional `hidden` set; nothing between the two
+statements previously read `fighter.death`, so this is behavior-preserving
+for every existing death test. `tests/game_entry.rs` gains
+`the_dead_flag_bit_is_set_through_entry_and_clears_at_entrystart`, pinning
+the bit set at spawn and through every remaining Entry frame, cleared
+starting at EntryStart's first frame, and still cleared through EntryEnd and
+the Fall it exits into -- bringing this batch's own test count to 7 new (2
+unit, 5 integration) instead of 6.
+
+Real-file measurement (`docs/input-lock.md`, `docs/parity.md`): gameplay
+export v2 already ships `rules.entry`/`countdown_frames: 123` and per-
+fighter `trophy_scale`/`entry.start_frames` (no local patch needed, unlike
+v1's match-start measurement). Copying
+`/mnt/archive/datasets/melee/skirmish-gameplay/v2/` to
+`/mnt/shared/tmp/skirmish-gameplay-v2-lock/` and running
+`make-initialization` + `validate-replay --report` against the pinned
+`fox-fd.slp` first reported the first divergent frame as -123, for the same
+pre-existing reason already recorded for the match-start batch: `shield`
+(expected `0x42700000` = 60.0, Skirmish reported `0x00000000`), since that
+copy of export v2 still had no `rules.shield`. Re-copying the export after
+it gained `rules.shield` moved the divergence past `shield`, still at -123,
+to `state_flags.dead` (fixed above); re-running again after that fix moves
+the divergence past it too, still at -123, landing on `position.x` for P4
+(expected `0x42700000` = 60.0, Skirmish reports `0x41a00000` = 20.0) -- a
+stage-spawn coordinate mismatch in the pack's own `stage.spawns` data,
+unrelated to either this batch or match-start (neither reads spawn
+coordinates from anywhere else). Both of this batch's own fields now agree
+with the recording on frame -123, verified independently by the native
+tests above. `fox-fd-baseline.json` is left unmoved (still -123).
+
 The 2026-09-11 grab-escape timer standings/handicap batch is recorded at:
 
 `/mnt/archive/runs/skirmish-grab-escape-20260911-verified`

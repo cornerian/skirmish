@@ -120,6 +120,13 @@ pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
     fighter.di_pending = false;
     fighter.invincibility = 0;
     fighter.intangibility = 0;
+    // `simulation::enter` runs first (and, as of the `state_flags.dead`
+    // batch, unconditionally clears `fighter.death.hidden` itself, mirroring
+    // `Fighter_ChangeMotionState`'s own unconditional `x221F_b1 = 0`); the
+    // `fighter.death` assignment below runs after, so its own `hidden` value
+    // is the one that survives -- the same "ChangeMotionState, then set the
+    // flag back" order `ftCo_800C61B0` uses for Entry (`docs/input-lock.md`).
+    simulation::enter(fighter, action(kind));
     fighter.death = State {
         kind: Some(kind),
         timer: match kind {
@@ -136,7 +143,6 @@ pub(crate) fn begin(fighter: &mut Fighter, kind: Kind, rules: &Rules) {
         hidden: !delayed_disappearance,
         ..State::default()
     };
-    simulation::enter(fighter, action(kind));
 }
 
 pub(crate) fn update(fighter: &mut Fighter, rules: &Rules) -> Update {

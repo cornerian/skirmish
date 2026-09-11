@@ -234,6 +234,14 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.skip_floor = None;
     // Ordinary transitions (Ft_MF_None) reset the scripted collision state.
     fighter.body_state = BodyState::default();
+    // `fighter.c:1066`: `Fighter_ChangeMotionState` unconditionally clears
+    // `Fighter::x221F_b1` (the Slippi `state_flags.dead` bit,
+    // `crates/skirmish-replay/src/observation.rs`'s `state_flags`) on every
+    // motion change. `death::begin` (blast deaths) and `entry::enter`
+    // (`ft_0C31.c:46`'s `ftCo_800C61B0`) each call this function first and
+    // then explicitly set `fighter.death.hidden = true` afterward, matching
+    // the source's own "ChangeMotionState, then set the flag back" order.
+    fighter.death.hidden = false;
     // ftCo_800DEEA8: every motion change clears the smash charge.
     fighter.smash = smash::State::default();
     // mv.co.attackdash.x0 is cleared by doEnter; the AttackDash entry callers
@@ -311,6 +319,20 @@ pub(crate) fn advance(
     state: &mut State,
     inputs: [Controller; 2],
 ) -> Result<(), Error> {
+    // `docs/input-lock.md`: with `rules.entry` present, the match simulates
+    // every frame fully from the first frame (no `Phase::Countdown` freeze);
+    // Phase/`Event::Started` still land on `rules.countdown_frames`, exactly
+    // as before this batch. `rules.entry.is_none()` keeps the legacy frozen
+    // Countdown byte-for-byte (every pre-existing fixture that asserts
+    // frozen positions through Countdown is unaffected).
+    let simulate_through_countdown = data.rules.entry.is_some();
+    // Captured before the phase transition below mutates `state.phase`, so
+    // the match clock (`remaining_frames`) stays frozen through every
+    // Countdown frame -- including this one, when `simulate_through_countdown`
+    // runs the full pipeline instead of returning early -- and only starts
+    // decrementing once a frame begins already in `Phase::Playing`, exactly
+    // matching `docs/input-lock.md`'s "clock starts after countdown_frames".
+    let was_countdown = matches!(state.phase, Phase::Countdown { .. });
     if let Phase::Countdown { remaining } = state.phase {
         state.phase = if remaining == 1 {
             state.events.push(Event::Started);
@@ -320,26 +342,43 @@ pub(crate) fn advance(
                 remaining: remaining - 1,
             }
         };
-        for (player, (fighter, input)) in state.fighters.iter_mut().zip(inputs).enumerate() {
-            // `docs/match-start.md`: the match-start warp-in still progresses
-            // during Phase::Countdown (Melee's own pre-"GO" period genuinely
-            // shows Entry/EntryStart/EntryEnd on screen), scoped to only the
-            // entry-owned fighters so a `rules.entry.is_none()` match is
-            // byte-for-byte unaffected (still fully frozen, as before this
-            // batch). No landing check here: stage geometry/collision are
-            // not set up this early, and every fixture that exercises this
-            // spawns well above any floor.
-            if entry::owns_action(fighter.action) {
-                entry::update_animation(
-                    fighter,
-                    &data.fighters[player],
-                    data.rules.entry.as_ref(),
-                )?;
+        if !simulate_through_countdown {
+            for (player, (fighter, input)) in state.fighters.iter_mut().zip(inputs).enumerate() {
+                // `docs/match-start.md`: the match-start warp-in still
+                // progresses during Phase::Countdown (Melee's own pre-"GO"
+                // period genuinely shows Entry/EntryStart/EntryEnd on
+                // screen), scoped to only the entry-owned fighters so a
+                // `rules.entry.is_none()` match is byte-for-byte unaffected
+                // (still fully frozen, as before this batch). No landing
+                // check here: stage geometry/collision are not set up this
+                // early, and every fixture that exercises this spawns well
+                // above any floor.
+                if entry::owns_action(fighter.action) {
+                    entry::update_animation(
+                        fighter,
+                        &data.fighters[player],
+                        data.rules.entry.as_ref(),
+                    )?;
+                }
+                fighter.previous_input = input;
             }
-            fighter.previous_input = input;
+            return Ok(());
         }
-        return Ok(());
     }
+
+    // `docs/input-lock.md`: the pre-"GO" input lock. Confirmed against the
+    // replay, decomp citation pending (see the doc): a held stick produces
+    // no drift even in ordinary Fall during this window, so the gate is not
+    // scoped to Entry/EntryStart/EntryEnd's own (empty) IASA callbacks --
+    // every fighter's controller is replaced by neutral for the first
+    // `input_lock_frames` frames, upstream of every other use of `inputs`
+    // this frame (dispatch, `previous_input`, hitlag sampling), matching
+    // "simulate every frame fully...each fighter's controller is replaced by
+    // a neutral Controller before input dispatch".
+    let inputs = match &data.rules.entry {
+        Some(entry) if state.next_frame <= entry.input_lock_frames => [Controller::default(); 2],
+        _ => inputs,
+    };
 
     // Slippi's recorder clears these transient fields before their producer
     // callbacks. Contacts and landings later in the frame replace them.
@@ -1009,7 +1048,9 @@ pub(crate) fn advance(
             fighter.last_ground_line = fighter.ground_line;
         }
     }
-    state.remaining_frames -= 1;
+    if !was_countdown {
+        state.remaining_frames -= 1;
+    }
     if state.fighters.iter().any(|f| f.stocks == 0) {
         let winner = match (state.fighters[0].stocks > 0, state.fighters[1].stocks > 0) {
             (true, false) => Some(0),
@@ -1017,7 +1058,7 @@ pub(crate) fn advance(
             _ => None,
         };
         finish(state, winner, FinishReason::Stocks);
-    } else if state.remaining_frames == 0 {
+    } else if !was_countdown && state.remaining_frames == 0 {
         let [a, b] = &state.fighters;
         let order = a
             .stocks

@@ -114,6 +114,43 @@ entry_differential.rs`'s C-oracle comparison, not by this measurement.
 `rules.shield` (or a v2 export that includes it) is a prerequisite for this
 measurement to ever move past -123 at all, independent of match-start.
 
+**Input-lock measurement (2026-09-11, gameplay export v2, uncommitted local
+copy, `docs/input-lock.md`):** gameplay export v2 already ships
+`rules.entry`/`countdown_frames: 123` and per-fighter `trophy_scale`/
+`entry.start_frames` baked in (no local patch needed, unlike v1's match-start
+measurement above). Copying
+`/mnt/archive/datasets/melee/skirmish-gameplay/v2/` to
+`/mnt/shared/tmp/skirmish-gameplay-v2-lock/` and running
+`make-initialization` + `validate-replay --report` against the pinned
+`fox-fd.slp` first reported the first divergent frame as -123, unmoved, for
+the same pre-existing reason recorded above: the differing field was
+`shield` (expected `0x42700000` = 60.0, Skirmish reported `0x00000000`),
+since that copy of v2 still carried no `rules.shield`/per-fighter `shield`
+resource. The published export gained `rules.shield` data mid-batch
+(unrelated to this work); re-copying it and re-running moved the divergence
+past `shield` to **`state_flags.dead`** (Slippi flags byte 4, bit `0x40`,
+`Fighter::x221F_b1`) -- the match-start sequence's own dead-flag bit, set
+through Entry and cleared at EntryStart, which this batch had not yet
+modeled. Fixed (`docs/input-lock.md`'s own entry has the full citation and
+implementation): `game::simulation::enter` now unconditionally clears
+`fighter.death.hidden` (mirroring `Fighter_ChangeMotionState`'s own
+unconditional `x221F_b1 = 0`, `fighter.c:1066`), and `game::entry::enter`
+sets it back to `true` immediately after, mirroring `ftCo_800C61B0`
+(`ft_0C31.c:46`) exactly. Re-running after that fix moves the divergence
+past `state_flags.dead` too, landing on **`position.x`** for **P4**
+(expected `0x42700000` = 60.0, Skirmish reports `0x41a00000` = 20.0) -- a
+stage-spawn coordinate mismatch in the pack's own `stage.spawns` data,
+unrelated to either this batch or the match-start batch (neither reads
+spawn coordinates from anywhere else), left for whoever owns that data
+next. Both of this batch's own fields (and the match-start batch's) now
+agree with the recording on frame -123; verified independently by `tests/
+game_entry.rs`'s native tests (held-stick-produces-no-drift during the
+lock, the first controlled frame acting, the legacy `rules.entry.is_none()`
+freeze unaffected, and the dead-flag bit's Entry/EntryStart transition).
+`fox-fd-baseline.json` is left unmoved (still -123); moving it is a future
+batch's call once `position.x` (or whatever the next-found field is) is
+fixed.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
