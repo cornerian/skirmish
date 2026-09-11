@@ -2,6 +2,7 @@
 
 pub mod action_instance;
 pub mod aerial;
+pub mod characters;
 pub mod clank;
 pub mod combat;
 pub mod combo;
@@ -12,7 +13,6 @@ pub mod death;
 pub mod edge;
 pub mod escape;
 pub mod escape_air;
-pub mod fox_side_special;
 pub mod grab;
 pub mod idle;
 pub mod instance;

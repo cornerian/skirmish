@@ -83,7 +83,7 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
-        fox_side_special: fox_side_special::State::default(),
+        fox_side_special: characters::fox::side::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -153,10 +153,10 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     }
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
-    // mv.fx.SpecialS.gravityDelay is freshly assigned by every phase's own
-    // Enter (x24 at Start, x44 at End); a mid-phase ground<->air conversion
-    // preserves it explicitly around this reset (special::transfer_ground_air).
-    fighter.fox_side_special = fox_side_special::State::default();
+    // The side special's gravity delay is freshly assigned by every phase's
+    // own entry; a mid-phase ground<->air conversion preserves it explicitly
+    // around this reset (`specials::transfer_ground_air`).
+    fighter.fox_side_special = characters::fox::side::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
@@ -1176,8 +1176,7 @@ fn update_animation(
         player,
         rules.respawn_invincibility_frames,
     );
-    special::update_animation(f, data.special.as_ref());
-    fox_side_special::update_animation(f, data);
+    specials::update_animation(f, data);
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
@@ -1298,11 +1297,11 @@ fn update_actions(
         return Ok(());
     }
     let dash_before_special = f.action == Action::Dash;
-    if special::update_actions(f, data, rules, input) {
-        // ftCo_SpecialS_CheckInput is the first check of both ftCo_Dash_IASA
-        // phases; firing from Dash falls through to the shared x54 friction
-        // tail exactly like the transitions dash::update_actions applies it
-        // after, but special::update_actions runs after that module returned.
+    if specials::update_actions(f, data, rules, input) {
+        // A special starting from Dash falls through to the same friction
+        // tail the ordinary dash-to-something-else transition applies,
+        // even though specials::update_actions runs after that module
+        // already returned this frame.
         if dash_before_special && let Some(dash_rules) = rules.dash.as_ref() {
             dash::apply_transition_friction(f, dash_rules);
         }
@@ -1402,12 +1401,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         ..Movement::default()
     };
     if f.grounded {
-        // ftFx_SpecialSStart_Phys/ftFx_SpecialSEnd_Phys: both grounded
-        // phases count the gravity delay down every frame even though
-        // gravity is never applied on the ground, so a mid-Start
-        // ground<->air conversion sees the same countdown the air variant
-        // would have reached (`special::transfer_ground_air` preserves it).
-        fox_side_special::tick_ground_gravity_delay(f);
+        specials::tick_ground_timers(f);
         if f.action == Action::Rebound
             && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
@@ -1418,7 +1412,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             .or_else(|| jab::ground_target_velocity(f, data))
             .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
             .or_else(|| taunt::ground_target_velocity(f, data))
-            .or_else(|| fox_side_special::ground_target_velocity(f, data))
+            .or_else(|| specials::ground_target_velocity(f, data))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.
@@ -1444,10 +1438,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                     animation_speed_multiplier: 1.0,
                 },
             );
-        } else if let Some(friction) = fox_side_special::end_ground_friction(f, data) {
-            // ftFx_SpecialSEnd_Phys: ftCommon_ApplyFrictionGround(x38) then
-            // ftCommon_ApplyGroundMovement, not the fighter's ordinary
-            // ground_friction attribute.
+        } else if let Some(friction) = specials::ground_friction_override(f, data) {
+            // A move's own dedicated ground friction, distinct from the
+            // fighter's ordinary attribute (the side special's End phase).
             movement.friction_ground(friction);
             movement.project_ground();
         } else {
@@ -1471,10 +1464,10 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if fox_side_special::air_physics(f, data, &mut movement) {
-            // SpecialAirSStart/SpecialAirS/SpecialAirSEnd own this frame's
+        if specials::air_physics(f, data, &mut movement) {
+            // A move that owns this action's air phase drives the frame's
             // airborne physics entirely (gravity-delayed fall plus a fixed
-            // air friction, or the Dash phase's unconditional TransN set).
+            // air friction, or a root-motion dash's velocity set).
         } else if let Some(false) = escape_air::skip_decay(f, data) {
             // ftCo_EscapeAir_Phys decays both axes without gravity or drift
             // until the script raises its skip-decay flag.

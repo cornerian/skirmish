@@ -639,23 +639,17 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         }
         AppealSR => 264,
         AppealSL => 265,
-        // The current character-specific resource slice is Fox. Its generic
-        // neutral-special shell retains only the startup family distinction.
-        SpecialN if character == Some(2) => 341,
-        SpecialAirN if character == Some(2) => 344,
-        // ftFox/forward.h: ftFx_MS_SpecialSStart is ftCo_MS_Count + 6;
-        // Start/Dash/End follow it in source declaration order (347..352).
-        // Falco (character 22) shares `ftfoxspecials.c` with its own
-        // attributes, but this profile follows the neutral shell's own
-        // precedent of gating only Fox in the observation layer.
-        SpecialSStart if character == Some(2) => 347,
-        SpecialS if character == Some(2) => 348,
-        SpecialSEnd if character == Some(2) => 349,
-        SpecialAirSStart if character == Some(2) => 350,
-        SpecialAirS if character == Some(2) => 351,
-        SpecialAirSEnd if character == Some(2) => 352,
+        // Every special's state id comes from its character's own registry
+        // entry (`game::characters`), keyed by the recording's external
+        // character id; `None` there (an unregistered character, or a
+        // special this build has no id table for) falls through to the
+        // same "unresolved" result `Eliminated` reports below.
         SpecialN | SpecialAirN | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
-        | SpecialAirS | SpecialAirSEnd | Eliminated => return None,
+        | SpecialAirS | SpecialAirSEnd => {
+            let (state, _animation) = game::characters::slippi_ids(character, fighter.action)?;
+            state as u16
+        }
+        Eliminated => return None,
     })
 }
 
@@ -707,16 +701,14 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         253 => 217,
         254..=260 | 262 => u32::from(state - 35),
         264 | 265 => u32::from(state - 25),
-        341 => 295,
-        344 => 298,
-        // UNVERIFIED: no figatree/animation-index table for the Fox/Falco
-        // character-specific motion states exists in the pinned C decomp
-        // (only DAT-resource data, owned by the separate skirmish-assets
-        // project, would confirm it). Extrapolated from the two confirmed
-        // neutral-special data points above, whose constant -46 offset this
-        // assumes continues unbroken across the six side-special states.
-        // Re-derive against the asset-exported table before trusting these.
-        347..=352 => u32::from(state - 46),
+        // Every character-specific state's animation index comes from the
+        // same registry entry that resolved its state id above; the Fox
+        // side-special indices there are flagged as an unverified
+        // extrapolation, not a confirmed figatree table.
+        341 | 344 | 347..=352 => {
+            let (_state, animation) = game::characters::slippi_ids(character, fighter.action)?;
+            animation
+        }
         _ => return None,
     })
 }

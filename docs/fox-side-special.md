@@ -1,9 +1,10 @@
 # Fox/Falco side special (Illusion/Phantasm)
 
-`skirmish::game::fox_side_special` (resource, dispatch, `src/game/
-fox_side_special.rs`) and `skirmish::fighter::fox_side_special` (pure
-arithmetic: the input gate, the turn check, the entry ground-speed blend,
-`src/fighter/fox_side_special.rs`) cover `Action::SpecialSStart/SpecialS/
+`skirmish::game::characters::fox::side` (resource, dispatch, `src/game/
+characters/fox/side.rs`, implementing the shared `game::specials` framework)
+and `skirmish::fighter::characters::fox` (pure arithmetic: the input gate,
+the turn check, the entry ground-speed blend, `src/fighter/characters/
+fox.rs`) cover `Action::SpecialSStart/SpecialS/
 SpecialSEnd/SpecialAirSStart/SpecialAirS/SpecialAirSEnd`. Pinned decomp rev
 `0bac93a5`. Sources: `src/melee/ft/kinds/ftFox/ftfoxspecials.c` (Start
 88-246, the aerial Start entry 108-129, the dash pair 261-465, End
@@ -48,7 +49,7 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   per-surface lookup) -- **not** a fixed `1.0`. This port has no modeled
   per-surface friction-material table (only a single `rules.clank.
   surface_friction_multiplier` scalar exists, unrelated to floor
-  material), so `fighter::fox_side_special::entry_ground_velocity`
+  material), so `fighter::characters::fox::entry_ground_velocity`
   implements the ordinary-terrain case (multiplier `1.0`) only. This is a
   known simplification, not a silent rewrite of the source: it is exact
   on every ordinary floor and wrong only on a floor whose material
@@ -67,13 +68,14 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   in every grounded chain that also reaches the neutral special (Wait,
   Walk, both Dash/Run phases, Squat/SquatWait/SquatRv, Turn, Landing, the
   interruptible attack chains, the taunt's own interruptible frames).
-  This port already computes that exact `ground`/`air` eligibility once,
-  in `special::update_actions`, for the neutral shell; this batch calls
-  `fox_side_special::update_actions` first with the same booleans, ahead
-  of the neutral branch, matching the source's own before-this-special-
-  after ordering. The `special::update_actions` -> `dash::apply_
-  transition_friction` interaction documented for the neutral shell
-  (`docs/specials.md`) is unchanged: it still fires whenever *either*
+  This port computes that exact `ground`/`air` eligibility once, in
+  `game::specials`'s shared dispatch, and hands it to every registered move
+  in priority order; Fox's registry (`characters::fox::MOVES`) lists this
+  move's own `update_actions` ahead of the shared neutral shell, matching
+  the source's own before-this-special-after ordering. The `specials::
+  update_actions` -> `dash::apply_transition_friction` interaction
+  documented for the neutral shell (`docs/specials.md`) is unchanged: it
+  still fires whenever *either*
   special enters from Dash.
 
 ## Fox/Falco phases (`ftfoxspecials.c`)
@@ -87,7 +89,8 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   frame it is nonzero, *even on the ground*, where the value is never
   read again (`ftFx_SpecialSStart_Phys` ticks it unconditionally, exactly
   like the air variant -- this is not a no-op skipped by this port;
-  `fox_side_special::tick_ground_gravity_delay` mirrors it, since a
+  this move's own `tick_ground_timers` (calling the shared `specials::
+  helpers::tick_ground_delay`) mirrors it, since a
   mid-Start ground<->air conversion must see the same countdown the air
   variant would have reached). Ground: ordinary ground friction
   (`ft_80084F3C`, the fighter's plain `ground_friction` attribute -- no
@@ -99,10 +102,12 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   CheckGroundAndLedge` true -> air-to-ground at the current frame
   (`ftCommon_AirToGroundStateChange`), else `ftCliffCommon_80081298`
   (ledge catch, reusing the ledge module's own check like the aerial
-  attacks). `special::transfer_ground_air` gained the Start pair; it
-  snapshots and restores `fox_side_special.gravity_delay` around the
-  generic `enter()` call the same way it already preserves `action_frame`,
-  since `enter()` otherwise resets all per-move state including this one.
+  attacks). This move's `transfer_ground_air` (the `SpecialMove` phase hook
+  `game::specials` dispatches through) handles the Start pair; it snapshots
+  and restores `fox_side_special.gravity_delay` around the shared
+  `specials::helpers::transfer_frame` call the same way that helper already
+  preserves `action_frame`, since `enter()` otherwise resets all per-move
+  state including this one.
 - **`SpecialS`/`SpecialAirS`** (the dash): `ftFx_SpecialS_Enter`/`ftFx_
   SpecialAirS_Enter` -> `ftFox_SpecialS_SetVars` (ghost bookkeeping only,
   unmodeled). **Anim**: end of poses enters the End phase; the ghost item
@@ -124,7 +129,7 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   `Dash.air_trans_n: Vec<[f32; 2]>` model this per pose. **Coll**: same
   shape as Start, with `ftFx_MF_SpecialSDash_Coll` and an explicit
   `cmd_vars[2] = 0` reset on either conversion direction (unmodeled, ghost
-  bookkeeping only). `special::transfer_ground_air` also gained this pair.
+  bookkeeping only). This move's `transfer_ground_air` also handles this pair.
 - **`SpecialSEnd`/`SpecialAirSEnd`**: `ftFx_SpecialSEnd_Enter`/`ftFx_
   SpecialAirSEnd_Enter` -> `ftFox_SpecialSEnd_SetVars`: ground `gr_vel =
   x34 * facing`; air `self_vel = (x3C * facing, 0)`; both set
@@ -149,20 +154,22 @@ Enter`:103-113), `ftCo_FallSpecial.c` (`ftCo_80096900`/`inline0`:20-59),
   - Ground `ft_800827A0` (mode-2 clamp, `edge::mode_for_action`) false ->
     **`ftCo_Fall_Enter`** (ordinary Fall), not SpecialAirSEnd. This
     port's existing generic ground-to-air fallback (`collision::land`'s
-    sibling site: `!special::transfer_ground_air(f, false) && ... {
+    sibling site: `!specials::transfer_ground_air(f, false) && ... {
     simulation::enter(f, Action::Fall) }`) already produces this for
-    free, since `SpecialSEnd` deliberately has no arm in `transfer_
-    ground_air`.
+    free, since `SpecialSEnd` deliberately has no arm in this move's own
+    `transfer_ground_air`.
   - Air `ft_CheckGroundAndLedge` true -> **`ftCo_LandingFallSpecial_
     Enter(gobj, false, x50)`** directly (`ftCo_Landing.c:103-113`: enters
     `LandingFallSpecial` with rate `(0.1 + x2EC) / x50`, `x2EC` being the
     same fighter-wide special-landing end frame `escape_air::Parameters.
     landing_animation_end` already models), **not** SpecialSEnd.
-    `fox_side_special::land` implements this, hooked into `collision::
-    land` alongside (and before) `escape_air::land`, reusing `fighter::
-    aerial::landing_animation_rate` -- the exact formula `ftCo_Landing.c`
-    itself uses, confirmed by reading it, not assumed from the EscapeAir
-    comment alone. Else `ftCliffCommon_80081298` (ledge catch).
+    This move's own `land` phase hook implements this, called through
+    `collision::land`'s shared `specials::land` alongside (and before)
+    `escape_air::land`, via the shared `specials::helpers::
+    enter_landing_fall_special` (reusing `fighter::aerial::
+    landing_animation_rate` -- the exact formula `ftCo_Landing.c` itself
+    uses, confirmed by reading it, not assumed from the EscapeAir comment
+    alone). Else `ftCliffCommon_80081298` (ledge catch).
 
 ## Ghost item (`itfoxillusion.c`, `it_3F2F.c:360-390`)
 
@@ -181,29 +188,31 @@ stay entirely unmodeled.
 
 ## Resource and state shape
 
-- `Rules.specials: Option<fox_side_special::Rules { side_stick_threshold
+- `Rules.specials: Option<characters::fox::side::Rules { side_stick_threshold
   (x218), turn_threshold (x220), vertical_threshold (x21C) }>` -- shared
   match rules, paired with each fighter's own resource, like `rules.dash`/
   `rules.tilt`.
-- `FighterData.side_special: Option<fox_side_special::SideSpecial {
+- `FighterData.specials: Option<characters::Specials>`, an enum tagged by
+  character; Fox's variant is `Specials::Fox { neutral: Option<specials::
+  neutral::Parameters>, side: Option<characters::fox::side::SideSpecial {
   ground_speed_retention (co_attrs.specials_ground_speed_retention),
   start: { ground: Attack, air: Attack }, dash: { ground: Attack,
   ground_trans_n: Vec<Option<f32>>, air: Attack, air_trans_n: Vec<[f32;
   2]> }, end: { ground: Attack, air: Attack }, attributes: {
   gravity_delay, entry_speed_div, start_air_friction, start_fall_accel,
   ground_end_speed, end_ground_friction, air_end_speed, end_air_friction,
-  end_gravity_delay, end_fall_accel, freefall_mobility, landing_lag } }>`.
+  end_gravity_delay, end_fall_accel, freefall_mobility, landing_lag } }> }`.
   `Attack`/`AttackFrame` is the same sampled pose-plus-hitboxes shape jabs
   and aerials use; every phase here supplies an empty hitbox list per
   frame (Start and End have none in the source, and the Dash's own hit is
   the ghost's, which is unmodeled). Landing shares `escape_air::
-  Parameters.landing_animation_end`; supplying `side_special` without
+  Parameters.landing_animation_end`; supplying the `side` entry without
   `escape_air` is rejected.
-- `Fighter.fox_side_special: fox_side_special::State { gravity_delay: f32
-  }` -- the only persistent per-fighter state needed (`mv.fx.SpecialS.
+- `Fighter.fox_side_special: characters::fox::side::State { gravity_delay:
+  f32 }` -- the only persistent per-fighter state needed (`mv.fx.SpecialS.
   gravityDelay`; every other `mv.fx.SpecialS` field is ghost bookkeeping
   and stays unmodeled). Reset by `simulation::enter` like every other
-  per-move state, and explicitly preserved by `special::transfer_ground_
+  per-move state, and explicitly preserved by `specials::transfer_ground_
   air` around a mid-Start conversion.
 - `aerial::State` gained `mobility: f32` (default `1.0`): `mv.co.
   fallspecial.mobility` is `air_drift_max * mobility`; every previously
@@ -243,7 +252,7 @@ stay entirely unmodeled.
 
 ## Tests
 
-`src/fighter/fox_side_special.rs` unit-tests `has_input`'s press-and-
+`src/fighter/characters/fox.rs` unit-tests `has_input`'s press-and-
 threshold conjunction, `should_turn`'s strict comparison and `entry_
 ground_velocity`'s blend arithmetic.
 
@@ -275,7 +284,7 @@ increment timing (confirmed directly against a debug trace, not assumed)
 - **`doEnter`'s friction multiplier is not `1.0`** in the source (`ft_
   GetGroundFrictionMultiplier`, a per-floor-material lookup this codebase
   does not model); this port fixes it at the ordinary-terrain value.
-  Flagged above and in `fighter::fox_side_special::entry_ground_velocity`.
+  Flagged above and in `fighter::characters::fox::entry_ground_velocity`.
 - **The End phase's ground/air conversions are not symmetric** with
   Start/Dash (ground leaving the floor enters ordinary Fall; air landing
   enters `LandingFallSpecial` directly, bypassing SpecialSEnd/SpecialAirSEnd
@@ -286,7 +295,8 @@ increment timing (confirmed directly against a debug trace, not assumed)
   even though gravity is never read on the ground; an earlier draft of
   this implementation only ticked it in the air, which would have desynced
   the counter across a mid-Start ground<->air conversion. Fixed
-  (`fox_side_special::tick_ground_gravity_delay`) and covered by the
+  (this move's `tick_ground_timers`, via the shared `specials::helpers::
+  tick_ground_delay`) and covered by the
   ground<->air conversion test above.
 - The ghost item, its ring buffer, `cmd_vars[2]`, rumble suppression
   (`Ft_MF_SkipRumble`) and every GFX/effect call are unmodeled (see
@@ -333,7 +343,7 @@ oracle does not model); every ghost/GFX call is a no-op.
 proptest cases plus boundaries, in both debug and release: the common
 grounded/aerial entry dispatch (`ftCo_SpecialS_HasInput`/`CheckInput`/
 `doEnter`, `ftCo_SpecialAir_CheckInput`'s four-way table priority) against
-`fighter::fox_side_special`'s pure functions; every phase's Enter/Phys
+`fighter::characters::fox`'s pure functions; every phase's Enter/Phys
 speed and gravity-delay arithmetic against `fighter::movement::Movement`'s
 existing `friction_ground`/`friction_air`/`fall`; the Dash phase's TransN
 velocities; the B-press IASA shortening; and the Start/Dash/End Coll

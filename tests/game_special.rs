@@ -6,8 +6,21 @@ mod conformance;
 mod special_resources;
 
 use skirmish::game::{
-    Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_Z, Controller, Event, Match, data::MatchData,
+    Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_Z, Controller, Event, Match,
+    characters::Specials,
+    data::{FighterData, MatchData},
+    specials::neutral::Parameters,
 };
+
+/// Mutable access to a fighter's neutral-special resource in test setup.
+fn neutral_mut(fighter: &mut FighterData) -> &mut Parameters {
+    let Some(Specials::Fox { neutral, .. }) = fighter.specials.as_mut() else {
+        panic!("test fixture is missing its neutral-special resource");
+    };
+    neutral
+        .as_mut()
+        .expect("test fixture is missing its neutral-special resource")
+}
 
 const IDLE: [Controller; 2] = [Controller {
     buttons: 0,
@@ -108,7 +121,7 @@ fn grounded_special_uses_sampled_bones_and_the_shared_damage_pipeline() {
 fn aerial_special_keeps_air_physics_and_landing_preserves_the_animation_frame() {
     let mut resource = data();
     for fighter in &mut resource.fighters {
-        let parameters = fighter.special.as_mut().unwrap();
+        let parameters = neutral_mut(fighter);
         while parameters.air.frames.len() < 24 {
             parameters
                 .air
@@ -169,21 +182,15 @@ fn checkpoint_replays_special_contact_and_completion_exactly() {
 #[test]
 fn malformed_special_resources_are_rejected() {
     let mut bad = data();
-    bad.fighters[0].special.as_mut().unwrap().neutral_thresholds[0] = 0.0;
+    neutral_mut(&mut bad.fighters[0]).neutral_thresholds[0] = 0.0;
     assert!(Match::new(bad, 0).is_err());
 
     let mut bad = data();
-    bad.fighters[0].special.as_mut().unwrap().air.frames.pop();
+    neutral_mut(&mut bad.fighters[0]).air.frames.pop();
     assert!(Match::new(bad, 0).is_err());
 
     let mut bad = data();
-    bad.fighters[0]
-        .special
-        .as_mut()
-        .unwrap()
-        .ground
-        .frames
-        .clear();
-    bad.fighters[0].special.as_mut().unwrap().air.frames.clear();
+    neutral_mut(&mut bad.fighters[0]).ground.frames.clear();
+    neutral_mut(&mut bad.fighters[0]).air.frames.clear();
     assert!(Match::new(bad, 0).is_err());
 }

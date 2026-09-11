@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod aerial;
+pub mod characters;
 pub mod clank;
 mod collision;
 mod combat_history;
@@ -14,7 +15,6 @@ pub mod death;
 pub mod edge;
 pub mod escape;
 pub mod escape_air;
-pub mod fox_side_special;
 pub mod grab;
 pub mod hitboxes;
 pub mod idle;
@@ -27,7 +27,7 @@ pub mod rebirth;
 pub mod shield;
 mod simulation;
 pub mod smash;
-pub mod special;
+pub mod specials;
 pub mod stage_motion;
 pub mod staling;
 pub mod taunt;
@@ -277,7 +277,7 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
-    pub fox_side_special: fox_side_special::State,
+    pub fox_side_special: characters::fox::side::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,

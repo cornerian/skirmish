@@ -53,6 +53,21 @@ engine until its exact behavior is shown to agree. Rendering and audio consume
 read-only state/events. They may be disabled without changing simulation state
 or RNG consumption. The CLI and C oracles are tooling, outside these libraries.
 
+Special ("B") moves are the one gameplay area with a per-character-move file
+count that grows with the roster (25 characters, several specials each), so
+they get their own sub-layout: `game::specials` (`mod.rs`'s shared dispatch --
+the grounded/aerial entry-eligibility chains and the `SpecialMove` trait every
+move implements once for its own phase hooks -- plus `helpers.rs`'s reusable
+phase behaviours and `neutral.rs`'s shared neutral-B shell) and
+`game::characters` (a registry keyed by external character id, exposing each
+character's own moves to the shared dispatcher and to the observation layer's
+Slippi id table; `fighter::characters` holds the matching pure per-character
+arithmetic). A new move touches exactly three places: its own file (next to
+its character's other moves), one line adding it to that character's registry
+entry, and its state/animation ids in the observation table. `simulation`,
+`collision`, `edge` and `ledge` call only the shared `game::specials` entry
+points, never a specific character's module.
+
 The eventual RL interface should expose reset, one-frame step, observation,
 termination, checkpoint and restore. Keep reward definitions in the training
 adapter so shaping choices do not alter game rules. A frame's best move depends

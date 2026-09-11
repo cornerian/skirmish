@@ -23,10 +23,9 @@
 //! such tail (`ftCo_Run_IASA` has none), even though its own IASA reaches
 //! `ftCo_800DE9D8` at the same relative position as Dash's `block_42`
 //! (modeled here by the same shared call, gated on `f.action == Action::Dash`
-//! for the friction). A neutral special entered from Dash also falls through
-//! to it (`ftCo_SpecialS_CheckInput` is the first check of both the early and
-//! middle phases); `simulation::update_actions` applies it there, since
-//! `special::update_actions` runs after this module.
+//! for the friction). A special entered from Dash also falls through to it;
+//! `simulation::update_actions` applies it there, since
+//! `specials::update_actions` runs after this module.
 use super::{
     Action, Controller, Error, Fighter,
     data::{Attack, FighterData, Rules as MatchRules},

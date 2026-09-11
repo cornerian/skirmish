@@ -341,9 +341,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
-        match (&rules.specials, &fighter.side_special) {
+        match (
+            &rules.specials,
+            fighter.specials.as_ref().and_then(|s| s.fox_side()),
+        ) {
             (Some(rules), Some(parameters)) => {
-                fox_side_special::validate(rules, parameters, fighter)?;
+                characters::fox::side::validate(rules, parameters, fighter)?;
                 if fighter.escape_air.is_none() {
                     return Err(Error::Data(
                         "side-special landing shares the common air-dodge landing resources".into(),
@@ -643,7 +646,8 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 )?;
             }
         }
-        if let Some(p) = &fighter.special {
+        let neutral_special = fighter.specials.as_ref().and_then(|s| s.neutral());
+        if let Some(p) = neutral_special {
             require(
                 p.neutral_thresholds
                     .into_iter()
@@ -660,7 +664,11 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
             )
             .chain(fighter.ledge.iter().map(|p| &p.attack.attack))
-            .chain(fighter.special.iter().flat_map(|p| [&p.ground, &p.air]))
+            .chain(
+                neutral_special
+                    .into_iter()
+                    .flat_map(|p| [&p.ground, &p.air]),
+            )
             .chain(
                 fighter
                     .knockdown

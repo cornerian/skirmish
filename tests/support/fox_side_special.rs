@@ -1,9 +1,12 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
 use skirmish::game::{
+    characters::{
+        Specials,
+        fox::side::{Rules, SideSpecial},
+    },
     data::MatchData,
     escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
-    fox_side_special::{Rules, SideSpecial},
 };
 
 #[derive(serde::Deserialize)]
@@ -34,7 +37,10 @@ pub fn profile(mut data: MatchData) -> MatchData {
         serde_json::from_str(include_str!("../fixtures/game/fox-side-special.json")).unwrap();
     data.rules.specials = Some(fixture.rules);
     for fighter in &mut data.fighters {
-        fighter.side_special = Some(fixture.parameters.clone());
+        fighter.specials = Some(Specials::Fox {
+            neutral: None,
+            side: Some(fixture.parameters.clone()),
+        });
     }
     data
 }

@@ -15,7 +15,19 @@ mod conformance;
 #[path = "support/fox_side_special.rs"]
 mod side_special_resources;
 
-use skirmish::game::{Action, BUTTON_B, Controller, Match, data::MatchData};
+use skirmish::game::{Action, BUTTON_B, Controller, Match, characters::Specials, data::MatchData};
+
+/// Mutable access to a fighter's side-special resource in test setup, since
+/// `Specials` is tagged by character and only Fox's variant carries one.
+fn side_special_mut(
+    fighter: &mut skirmish::game::data::FighterData,
+) -> &mut skirmish::game::characters::fox::side::SideSpecial {
+    let Some(Specials::Fox { side, .. }) = fighter.specials.as_mut() else {
+        panic!("test fixture is missing its side-special resource");
+    };
+    side.as_mut()
+        .expect("test fixture is missing its side-special resource")
+}
 
 const IDLE: [Controller; 2] = [Controller {
     buttons: 0,
@@ -56,7 +68,7 @@ fn approx(a: f32, b: f32) {
 #[test]
 fn none_keeps_b_and_side_inert() {
     let mut plain = conformance::data();
-    plain.fighters[0].side_special = None;
+    plain.fighters[0].specials = None;
     plain.rules.specials = None;
     let mut game = Match::new(plain, 0).unwrap();
     // B has no consumer without the resource; the stick still drives
@@ -357,28 +369,18 @@ fn every_phase_survives_a_checkpoint_round_trip() {
 #[test]
 fn invalid_side_special_resources_are_rejected() {
     let mut resource = data();
-    resource.fighters[0]
-        .side_special
-        .as_mut()
-        .unwrap()
-        .ground_speed_retention = 1.5;
+    side_special_mut(&mut resource.fighters[0]).ground_speed_retention = 1.5;
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    resource.fighters[0]
-        .side_special
-        .as_mut()
-        .unwrap()
+    side_special_mut(&mut resource.fighters[0])
         .dash
         .ground_trans_n
         .pop();
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    resource.fighters[0]
-        .side_special
-        .as_mut()
-        .unwrap()
+    side_special_mut(&mut resource.fighters[0])
         .attributes
         .entry_speed_div = 0.0;
     assert!(Match::new(resource, 0).is_err());

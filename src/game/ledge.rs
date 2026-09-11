@@ -707,13 +707,7 @@ fn catchable(action: Action) -> bool {
             | Action::AttackAirB
             | Action::AttackAirHi
             | Action::AttackAirLw
-            // ftFx_SpecialAirSStart_Coll / ftFx_SpecialAirS_Coll /
-            // ftFx_SpecialAirSEnd_Coll each check `ft_CheckGroundAndLedge`
-            // then `ftCliffCommon_80081298`, exactly like the aerial attacks.
-            | Action::SpecialAirSStart
-            | Action::SpecialAirS
-            | Action::SpecialAirSEnd
-    )
+    ) || super::specials::ledge_catchable(action)
 }
 
 fn endpoint(line: &stage::Line, side: Side) -> [f32; 2] {

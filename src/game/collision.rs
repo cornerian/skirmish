@@ -299,7 +299,7 @@ pub(crate) fn resolve(
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
             if !super::grab::transfer_capture_family(f, true)
-                && !super::special::transfer_ground_air(f, false)
+                && !super::specials::transfer_ground_air(f, false)
                 && !matches!(
                     f.action,
                     Action::Damage
@@ -595,8 +595,8 @@ fn land(
         ) {
             let pose = simulation::pose(f, data)?;
             super::damage::land(f, data, &pose, &rules.damage, input)?;
-        } else if !super::special::transfer_ground_air(f, true)
-            && !super::fox_side_special::land(f, data)?
+        } else if !super::specials::transfer_ground_air(f, true)
+            && !super::specials::land(f, data)?
             && !super::escape_air::land(f, data, rules.escape_air.as_ref())?
             && !super::aerial::land(f, data)?
         {

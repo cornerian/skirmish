@@ -1,5 +1,90 @@
 # Local validation provenance
 
+The 2026-09-11 specials-framework refactor batch is recorded at:
+
+`/mnt/archive/runs/skirmish-specials-framework-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace (both without and with the `c-oracle` feature) and the
+`fox_side_special_differential` release build, all green with unchanged
+test counts against the pre-refactor baseline recorded at the start of this
+batch: 809 passed/0 failed workspace-wide without `c-oracle`, 1108 passed/0
+failed with it (both counts identical before and after). This is a
+behaviour-preserving modularity refactor, not a new-coverage batch: no
+`Action` variant, resource field semantics, or per-frame arithmetic changed
+meaning; only module boundaries, type paths and one resource field's shape
+did (below). Where a test's own field access or import path no longer
+compiled after the rename, the test was updated to the new path with no
+change to what it asserts; no test's expected values, scenario or assertion
+changed.
+
+`src/game/special.rs` (the neutral-special shell) and `src/game/
+fox_side_special.rs` (Fox/Falco's side special, `docs/fox-side-special.md`)
+are replaced by a shared framework so that a queued future special (Fox has
+three more; 25 more characters follow) touches only its own file, its
+character's registry entry, and the observation id table -- never
+`simulation`, `collision`, `edge`, `ledge` or another move's file.
+`src/game/specials/mod.rs` holds the `SpecialMove` trait (the phase hooks:
+`owns`, `attack`, `update_actions`, `update_animation`,
+`ground_target_velocity`, `ground_friction_override`, `air_physics`,
+`tick_ground_timers`, `transfer_ground_air`, `land`, `collision_mode`,
+`ledge_catchable`) and the one shared dispatcher -- the grounded/aerial
+entry-eligibility chains previously duplicated between the neutral shell
+and the side special -- that calls every registered move in priority order.
+`src/game/specials/helpers.rs` holds the phase behaviours reused across
+moves (gravity-delayed fall, pose-driven ground/air velocity, frame-
+preserving ground/air conversion, the `FallSpecial`/landing-fall-special
+exits, restoring every jump, the ordinary Wait/Fall exit) so a future move
+does not re-derive them. `src/game/specials/neutral.rs` re-expresses the
+former `special.rs` shell as a `SpecialMove` impl with no behaviour change.
+`src/game/characters/mod.rs` is the registry: `Specials` (the per-character,
+per-move resource enum replacing the old flat `FighterData.special`/
+`side_special` fields -- see below), `moves()` (a fighter's own enabled
+moves in dispatch order) and `slippi_ids()` (the observation layer's single
+entry point for a character's state/animation ids).
+`src/game/characters/fox/{mod.rs,side.rs}` hold Fox's registry entry
+(`MOVES = [side, neutral]`, matching the source's own before-neutral
+ordering) and the former `fox_side_special.rs` content re-expressed as a
+`SpecialMove` impl, with its dispatch/physics logic now calling the shared
+helpers above instead of a local copy. `src/fighter/characters/fox.rs`
+(moved from `src/fighter/fox_side_special.rs`, unit tests included) holds
+the unchanged pure arithmetic (`has_input`, `should_turn`,
+`entry_ground_velocity`). `simulation.rs`, `collision.rs`, `edge.rs` and
+`ledge.rs` now call only the shared `specials::` entry points
+(`update_animation`, `update_actions`, `ground_target_velocity`,
+`ground_friction_override`, `air_physics`, `tick_ground_timers`,
+`transfer_ground_air`, `land`, `collision_mode`, `ledge_catchable`) instead
+of matching per-move `Action` variants or calling a specific move's module
+directly.
+
+Resource shape: `FighterData.special: Option<special::Parameters>` and
+`FighterData.side_special: Option<fox_side_special::SideSpecial>` are
+replaced by `FighterData.specials: Option<characters::Specials>`, an enum
+tagged by character (`#[serde(tag = "character")]`); today's only variant,
+`Specials::Fox { neutral: Option<specials::neutral::Parameters>, side:
+Option<characters::fox::side::SideSpecial> }`, round-trips the exact same
+JSON shape as before, just nested one level deeper under `"character":
+"Fox"`. `Rules.specials` keeps its name and shared-rules role, retyped from
+`fox_side_special::Rules` to `characters::fox::side::Rules`.
+`Fighter.fox_side_special: characters::fox::side::State` keeps its field
+name (deliberately not folded into a per-character enum like the resource
+side, since it is the only piece of runtime specials state Fox needs today
+and a rename would only have touched test call sites for no behavioural
+reason); its type is retargeted to the moved module. `tests/support/
+special.rs`, `tests/support/fox_side_special.rs`, `tests/game_special.rs`
+and `tests/game_fox_side_special.rs` are updated to the new field/type
+paths; `tests/fox_side_special_differential.rs` and `crates/skirmish-replay/
+src/observation.rs` are updated to the new import paths. No fixture's JSON
+content changed (`tests/fixtures/game/fox-side-special.json` deserializes
+through the same `SideSpecial`/`Rules` shape it always did, via the test
+support module's own wrapper struct, independent of `FighterData`'s field
+layout).
+
+`docs/architecture.md` records the new module layout and the "touches only
+its own file, its registry entry and the id table" rule for new moves;
+`docs/specials.md` and `docs/fox-side-special.md` are updated to the new
+paths with no behavioural claim changed.
+
 The 2026-09-11 real-replay comparison tooling batch is recorded at:
 
 `/mnt/archive/runs/skirmish-real-parity-tooling-20260911-verified`

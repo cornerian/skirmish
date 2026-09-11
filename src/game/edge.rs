@@ -84,16 +84,16 @@ pub(crate) fn owns_action(action: Action) -> bool {
 /// 1 (no teeter states to enter) degrades to mode 0.
 pub(crate) fn mode_for_action(action: Action, edge_rules_present: bool) -> math::Mode {
     use Action::*;
+    if let Some(mode) = super::specials::collision_mode(action) {
+        return mode;
+    }
     match action {
         Jab | Attack12 | Attack13 | Attack100Start | Attack100Loop | Attack100End | AttackS3Hi
         | AttackS3HiS | AttackS3S | AttackS3LwS | AttackS3Lw | AttackHi3 | AttackLw3
         | AttackS4Hi | AttackS4HiS | AttackS4S | AttackS4LwS | AttackS4Lw | AttackHi4
         | AttackLw4 | AttackDash | EscapeF | EscapeB | EscapeN | CatchCut | Catch | CatchDash
         | DownAttack | PassiveStandF | PassiveStandB | CliffClimb | RunTurn | Ottotto
-        | OttottoWait | AppealSR | AppealSL
-        // ft_800827A0 (`ftFx_SpecialSEnd_Coll`): mode 2, clamp. The Start
-        // phase's `ft_80082708` is plain (the unmatched default below).
-        | SpecialSEnd => math::Mode::Clamp,
+        | OttottoWait | AppealSR | AppealSL => math::Mode::Clamp,
         Wait | Walk | Landing | RunBrake => {
             if edge_rules_present {
                 math::Mode::Teeter

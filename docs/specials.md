@@ -1,9 +1,14 @@
 # Neutral specials
 
-`fighters[].special` supplies paired ground and air physics animations for a
-fighter's neutral special. Each animation is the same sampled `Attack` resource
-used by jabs, aerials and ledge attacks: every frame owns a complete bone pose
-and up to four bone-attached hitboxes. The pair must have equal frame counts so
+`game::specials::neutral` (framework wiring, `src/game/specials/neutral.rs`)
+implements the shared shell described below; `game::specials` (`src/game/
+specials/mod.rs`) owns the dispatch every move -- this one and Fox's side
+special -- shares. `fighters[].specials`' `neutral` entry (a per-character
+`Specials` variant, `game::characters::Specials`) supplies paired ground and
+air physics animations for a fighter's neutral special. Each animation is the
+same sampled `Attack` resource used by jabs, aerials and ledge attacks: every
+frame owns a complete bone pose and up to four bone-attached hitboxes. The
+pair must have equal frame counts so
 terrain conversion can retain the current animation frame.
 
 A fresh physical B press selects the action only when both main-stick axes are
@@ -39,8 +44,13 @@ separate work. Omitting the profile leaves B accepted but without an action.
 
 # Fox/Falco side special (Illusion/Phantasm)
 
-`fighters[].side_special` and `rules.specials` cover Fox's (and, by shared
-code, Falco's) side special: `SpecialSStart/SpecialS/SpecialSEnd` on the
+`game::characters::fox::side` (`src/game/characters/fox/side.rs`) implements
+this move against the same `game::specials` framework the neutral shell
+above uses; the pure arithmetic lives in `fighter::characters::fox`
+(`src/fighter/characters/fox.rs`). `fighters[].specials`' `side` entry (the
+same per-character `Specials::Fox` variant the neutral entry above shares)
+and `rules.specials` cover Fox's (and, by shared code, Falco's) side
+special: `SpecialSStart/SpecialS/SpecialSEnd` on the
 ground, `SpecialAirSStart/SpecialAirS/SpecialAirSEnd` in the air. It checks
 its own fresh-B-plus-stick-threshold input ahead of the neutral branch
 above, in every chain that reaches it (`ftCo_SpecialS_CheckInput` is the
