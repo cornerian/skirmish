@@ -351,6 +351,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `hurtbox_eligibility` | Damage/grab state filtering, grabbable flag, later-entry scan, legacy defaults and matrix-aware grabs |
 | `hurtbox_states` | Frame-sampled damage/grab eligibility, base inheritance, explicit override, invalid partial samples and checkpoint replay |
 | `positional_angle` | Angle-362 matrix contact, three launch quadrants, vertical tie, validation and checkpoint replay |
+| `jump_variants` | Forward/backward short and full hops with the exact threshold boundary, a backward double jump independent of its preceding ground jump, `jump_backward` clearing on landing/aerial attack/air dodge, `fall_aerial` true only after a double jump's own animation end and false after an aerial attack's own end or on entering an air dodge, checkpoint replay through all three flagged phases, `None` keeping every jump forward and invalid-threshold rejection |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order

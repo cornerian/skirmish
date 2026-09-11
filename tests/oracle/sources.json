@@ -353,5 +353,10 @@
     "fixture": "tests/oracle/original/landing.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Landing.c",
     "sha256": "b0617103339bbc8e57a3fe5e7968a8424aa9044d4ef678cbfbb0ab2970222984"
+  },
+  {
+    "fixture": "tests/oracle/original/jump.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
+    "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
   }
 ]

@@ -807,6 +807,113 @@ fn file_backed_shield_grabs_match_and_detect_their_first_changed_button_frame() 
     }
 }
 
+fn jump_direction_data() -> MatchData {
+    let mut data = shield_drop_data();
+    for fighter in &mut data.fighters {
+        fighter.locomotion.as_mut().unwrap().jump_backward_threshold = Some(0.3);
+    }
+    data
+}
+
+#[test]
+fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_frame() {
+    // Fighter 0 full hops from the platform floor at X=0 (button held rows
+    // 0..1, so short_hop stays false); fighter 1 idles. `jump_backward_threshold`
+    // is 0.3, an invented fixture value: `ftCo_Jump_Enter`'s own direction test
+    // runs at the ground jump's launch frame (row 2, where JumpSquat's
+    // `jump_startup_frames` of 2 expires) and at the aerial jump's own launch
+    // frame; both use that frame's own stick sample.
+    let data = jump_direction_data();
+    struct Case {
+        name: &'static str,
+        stick_x: f32,
+        double_jump_row: usize,
+        checks: &'static [(usize, Action, u16, u32)],
+    }
+    let cases = [
+        Case {
+            name: "backward short hop into a backward double jump into the aerial fall",
+            stick_x: -1.0,
+            // A fresh press one frame after the ground jump launches, while
+            // still ascending.
+            double_jump_row: 3,
+            checks: &[
+                (2, Action::Jump, 26, 17),
+                (3, Action::JumpAerial, 28, 19),
+                // JumpAerial's own animation end (entry row 3 plus the
+                // fixture's `air_jump_animation_frames` of 20) reports the
+                // aerial fall regardless of direction.
+                (23, Action::Fall, 32, 23),
+            ],
+        },
+        Case {
+            name: "forward short hop reaching the ordinary apex fall, then a forward double jump",
+            stick_x: 1.0,
+            // A fresh press after the full hop's own vertical velocity
+            // (2.4) has decayed under the fixture's gravity (0.2) past zero,
+            // so this double jump launches from Fall, not Jump.
+            double_jump_row: 16,
+            checks: &[
+                (2, Action::Jump, 25, 16),
+                (15, Action::Fall, 29, 20),
+                (16, Action::JumpAerial, 27, 18),
+            ],
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 30];
+        inputs[0][0].buttons = BUTTON_X;
+        inputs[1][0].buttons = BUTTON_X;
+        inputs[2][0].stick[0] = case.stick_x;
+        inputs[case.double_jump_row][0].buttons = BUTTON_X;
+        inputs[case.double_jump_row][0].stick[0] = case.stick_x;
+        let recording = Recording::from_script(data.clone(), 51, inputs);
+        for &(row, action, state, animation) in case.checks {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "{} row {row}", case.name);
+            assert_eq!(
+                observation::action_state(fighter, Some(2)),
+                Some(state),
+                "{} row {row}",
+                case.name
+            );
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation),
+                "{} row {row}",
+                case.name
+            );
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        // Flipping the ground jump launch frame's own stick sample flips its
+        // reported direction, so the mismatch appears there first.
+        let row = 2;
+        let flipped = -case.stick_x;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            frames.ports[0]
+                .leader
+                .pre
+                .joystick
+                .x
+                .set(row, Some(flipped));
+        });
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames,
+                    ..
+                } if frame == FIRST + row as i32 && checked_frames == row as u64
+            ),
+            "{}",
+            case.name
+        );
+    }
+}
+
 #[test]
 fn file_backed_air_dodges_match_and_detect_their_first_changed_trigger_frame() {
     // Fighter 0 full hops from the platform floor at X=0 and air dodges.
@@ -835,7 +942,7 @@ fn file_backed_air_dodges_match_and_detect_their_first_changed_trigger_frame() {
             stick: [0.0, 0.0],
             checks: &[
                 (4, Action::EscapeAir, 236, 44),
-                (12, Action::FallSpecial, 31, 22),
+                (12, Action::FallSpecial, 35, 26),
             ],
             intangible_row: Some(7),
         },

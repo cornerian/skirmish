@@ -285,7 +285,10 @@ and action-dispatch gaps.
 coefficients, animation/event durations, crouch/turn timing, aerial jump data
 and platform-drop parameters. No authentic common-data values are implied. With
 that data, the scheduler supports Dash/Run/TurnRun/RunBrake, standing Turn,
-Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. The
+Squat/SquatWait/SquatRv, tap jumps, ordinary second jumps and Pass. An optional
+`jump_backward_threshold` reports a backward ground or aerial jump (and, once
+an aerial jump's own animation ends, the aerial variant of Fall) through their
+own Slippi identities; see [state parity](state-parity.md). The
 optional [dash-attack profile](dash-attack.md) adds Dash's own
 early/middle/late input phases (a dash-specific forward smash and forward
 roll, a dash attack with its own no-A catch buffer, and phase-gated shield

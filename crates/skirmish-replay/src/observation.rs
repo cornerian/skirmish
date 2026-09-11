@@ -433,10 +433,37 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         Run => 21,
         RunBrake => 23,
         JumpSquat => 24,
-        Jump => 25,
-        JumpAerial => 27,
-        Fall => 29,
-        FallSpecial => 31,
+        // JumpB/JumpAerialB and FallAerial share JumpF/JumpAerialF/Fall's
+        // callbacks and differ only in the reported motion id
+        // (`ftmotionstates.c:421-430`, `443-452`); Skirmish keeps a single
+        // Jump/JumpAerial/Fall action and distinguishes them by the launch's
+        // own recorded flag.
+        Jump => {
+            if fighter.locomotion.jump_backward {
+                26
+            } else {
+                25
+            }
+        }
+        JumpAerial => {
+            if fighter.locomotion.jump_backward {
+                28
+            } else {
+                27
+            }
+        }
+        Fall => {
+            if fighter.locomotion.fall_aerial {
+                32
+            } else {
+                29
+            }
+        }
+        // FallSpecialF/B are animation-only blends (`ftCo_Fall_Anim_Inner`
+        // swaps the blend skeleton's figatree via `ftAnim_8006EDD0`, which
+        // never writes `fp->anim_id`), so they are not Slippi-visible and
+        // stay unmodeled; FallSpecial always reports its F id.
+        FallSpecial => 35,
         DamageFall => 38,
         Squat => 39,
         SquatWait => 40,
@@ -598,10 +625,9 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         12..=14 => 2,
         15 => 7,
         18..=21 => u32::from(state - 8),
-        23..=25 => u32::from(state - 9),
-        27 => 18,
-        29 => 20,
-        31 => 22,
+        // RunBrake..Fall (23..29) and FallAerial/FallSpecial (32, 35) share
+        // one contiguous sub-motion block (`ftCo_Submotion`, forward.h:649+).
+        23..=29 | 32 | 35 => u32::from(state - 9),
         39 | 40 => u32::from(state - 9),
         41..=43 => u32::from(state - 7),
         44..=64 => u32::from(state + 2),
@@ -1228,7 +1254,7 @@ mod tests {
             (game::Action::Attack100Loop, 48, 50),
             (game::Action::Attack100End, 49, 51),
             (game::Action::AttackDash, 50, 52),
-            (game::Action::FallSpecial, 31, 22),
+            (game::Action::FallSpecial, 35, 26),
             (game::Action::LandingFallSpecial, 43, 36),
             (game::Action::PassiveWallJump, 203, 203),
             (game::Action::ThrowLw, 222, 250),
@@ -1243,6 +1269,27 @@ mod tests {
                 "{action:?}"
             );
         }
+
+        fighter.action = game::Action::Jump;
+        fighter.locomotion.jump_backward = false;
+        assert_eq!(action_state(&fighter, Some(2)), Some(25));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(16));
+        fighter.locomotion.jump_backward = true;
+        assert_eq!(action_state(&fighter, Some(2)), Some(26));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(17));
+        fighter.action = game::Action::JumpAerial;
+        assert_eq!(action_state(&fighter, Some(2)), Some(28));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(19));
+        fighter.locomotion.jump_backward = false;
+        assert_eq!(action_state(&fighter, Some(2)), Some(27));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(18));
+        fighter.action = game::Action::Fall;
+        fighter.locomotion.fall_aerial = true;
+        assert_eq!(action_state(&fighter, Some(2)), Some(32));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(23));
+        fighter.locomotion.fall_aerial = false;
+        assert_eq!(action_state(&fighter, Some(2)), Some(29));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(20));
 
         fighter.action = game::Action::Damage;
         fighter.damage_motion = Some(skirmish::fighter::damage::DamageMotion::Ground {

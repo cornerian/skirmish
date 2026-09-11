@@ -172,6 +172,14 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // mv.co.landing.allow_interrupt is set only by the ordinary Landing entry
     // (`ftCo_Landing_Enter_Basic`), immediately after this reset.
     fighter.landing_allow_interrupt = false;
+    // jump_backward and fall_aerial distinguish JumpF/JumpB, JumpAerialF/B
+    // and the aerial-jump variant of Fall for Slippi's reported motion id;
+    // the source keeps no such field on Fighter, since it stores the chosen
+    // state id directly. Set immediately after this reset by the
+    // ground/aerial jump launch and by JumpAerial's own animation-end Fall
+    // entry, respectively.
+    fighter.locomotion.jump_backward = false;
+    fighter.locomotion.fall_aerial = false;
     // Fighter_ChangeMotionState keeps the jab timer only for Wait and walks.
     if !jab::keeps_window(action) {
         fighter.jab.window = 0.0;

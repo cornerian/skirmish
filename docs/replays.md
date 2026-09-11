@@ -137,9 +137,13 @@ processed C-stick channel and preserve release-based short hops. Grounded rolls
 and spot dodges accept fresh main-stick or held C-stick samples and map to
 Slippi states 233..235 with animation indices 42, 43 and 41. Shield grabs accept
 physical A with a held shoulder or physical Z, and the late-dash buffer yields
-CatchDash. Air dodges map to state 236 (animation 44) with FallSpecial 31 (22)
+CatchDash. Air dodges map to state 236 (animation 44) with FallSpecial 35 (26)
 and LandingFallSpecial 43 (36). Tilts map to states 51..57 with animation
 indices 53..59, and a catch now follows physical Z or A with a held shoulder.
+With the optional `jump_backward_threshold`, a backward ground or aerial jump
+maps to state 26 (animation 17) or 28 (animation 19) instead of the ordinary
+25/16 and 27/18, and an aerial jump's own animation end maps Fall to state 32
+(animation 23) instead of the ordinary 29/20; see [state parity](state-parity.md).
 Smashes map to states 58..64 with animation indices 60..66; a held A freezes
 the reported action frame while charging. With the optional jab-combo
 profile the jab family maps to states 44..49 (animation indices 46..51):

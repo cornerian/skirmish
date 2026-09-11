@@ -41,6 +41,11 @@ pub struct Parameters {
     pub relaxed_tap_jump_threshold: f32,
     pub tap_jump_release_threshold: f32,
     pub tap_jump_window: u8,
+    /// `ftCommonData.x78`: the ground/aerial jump direction deadzone. `None`
+    /// keeps every jump JumpF/JumpAerialF, matching data that never modeled
+    /// the backward variants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_backward_threshold: Option<f32>,
     pub max_jumps: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_jump: Option<MultiJump>,
@@ -110,6 +115,15 @@ pub struct State {
     /// Root-joint turn state from `ft_800CB6EC`; yaw affects bone physics.
     pub multi_jump_turn_remaining: i32,
     pub multi_jump_yaw: f32,
+    /// Distinguishes JumpB/JumpAerialB from JumpF/JumpAerialF for Slippi's
+    /// reported motion id; the source keeps no such field on `Fighter`, since
+    /// it stores the chosen state id directly. Set by the ground/aerial jump
+    /// launch, cleared by every other `simulation::enter`.
+    pub jump_backward: bool,
+    /// Distinguishes the aerial-jump variant of Fall (`ftCo_FallAerial_Enter`)
+    /// from an ordinary Fall entry. Set only when `JumpAerial`'s own
+    /// animation end enters Fall, cleared by every other `simulation::enter`.
+    pub fall_aerial: bool,
 }
 
 impl Default for State {
@@ -136,6 +150,8 @@ impl Default for State {
             pass_delay: None,
             multi_jump_turn_remaining: 0,
             multi_jump_yaw: 0.0,
+            jump_backward: false,
+            fall_aerial: false,
         }
     }
 }
@@ -194,6 +210,8 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
             .all(|n| (1..254).contains(&n))
         || p.pass_delay.fract() != 0.0
         || p.crouch_release_threshold > p.crouch_enter_threshold
+        || p.jump_backward_threshold
+            .is_some_and(|threshold| !threshold.is_finite() || threshold < 0.0)
     {
         return Err(Error::Data("invalid ordinary locomotion parameters".into()));
     }
@@ -334,7 +352,7 @@ pub(crate) fn try_dash(f: &mut Fighter, p: &Parameters, input: Controller) -> bo
     true
 }
 
-fn ground_jump(f: &mut Fighter, data: &FighterData, input: Controller) {
+fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters, input: Controller) {
     let a = &data.movement;
     let v = math::jump_velocity(
         [f.velocity[0], f.velocity[1], 0.0],
@@ -358,7 +376,13 @@ fn ground_jump(f: &mut Fighter, data: &FighterData, input: Controller) {
     f.ecb.bottom_locked = true;
     f.locomotion.jumps_used = 1;
     f.locomotion.tilt_y_age = 254;
+    // ftCo_Jump.c:157-161: the direction test runs at the launch frame's
+    // current stick, before the motion change.
+    let backward = p
+        .jump_backward_threshold
+        .is_some_and(|threshold| math::jump_backward(input.stick[0], f.facing, threshold));
     enter(f, Action::Jump);
+    f.locomotion.jump_backward = backward;
 }
 
 pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Controller) -> bool {
@@ -374,7 +398,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
     // change a ground jump's stored short-hop choice.
     match f.action {
         Action::JumpSquat if f.action_frame >= data.movement.jump_startup_frames => {
-            ground_jump(f, data, input)
+            ground_jump(f, data, p, input)
         }
         Action::Dash if f.action_frame >= p.dash_animation_frames => enter(f, Action::Wait),
         Action::RunBrake => {
@@ -427,10 +451,14 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
                     .get(index)
                     .is_some_and(|length| f.action_frame >= *length)
                 {
+                    // ftCo_JumpAerial_Anim (ftCo_JumpAerial.c:272-277) ends
+                    // into ftCo_FallAerial_Enter, not the ordinary Fall.
                     enter(f, Action::Fall);
+                    f.locomotion.fall_aerial = true;
                 }
             } else if f.action_frame >= p.air_jump_animation_frames {
-                enter(f, Action::Fall)
+                enter(f, Action::Fall);
+                f.locomotion.fall_aerial = true;
             }
         }
         Action::Pass if f.action_frame >= p.pass_animation_frames => enter(f, Action::Fall),
@@ -602,7 +630,13 @@ pub(crate) fn try_aerial_jump(f: &mut Fighter, data: &FighterData, input: Contro
         f.fast_fall = false;
         f.locomotion.jumps_used += 1;
         f.locomotion.tilt_y_age = 254;
+        // ftCo_JumpAerial_Enter_Basic (ftCo_JumpAerial.c:169-171): the
+        // direction test runs at the launch frame's current stick/facing.
+        let backward = p
+            .jump_backward_threshold
+            .is_some_and(|threshold| math::jump_backward(input.stick[0], f.facing, threshold));
         enter(f, Action::JumpAerial);
+        f.locomotion.jump_backward = backward;
         return true;
     };
     let requested = if f.locomotion.jumps_used == 1 {
@@ -629,7 +663,14 @@ pub(crate) fn try_aerial_jump(f: &mut Fighter, data: &FighterData, input: Contro
     ];
     f.fast_fall = false;
     f.locomotion.jumps_used += 1;
+    // ftCo_JumpAerial_Enter_Basic (ftCo_JumpAerial.c:169-171): the direction
+    // test runs at the launch frame's facing, before this multijump's own
+    // root-bone turn can flip it below.
+    let backward = p
+        .jump_backward_threshold
+        .is_some_and(|threshold| math::jump_backward(input.stick[0], f.facing, threshold));
     enter(f, Action::JumpAerial);
+    f.locomotion.jump_backward = backward;
     f.locomotion.multi_jump_turn_remaining =
         if input.stick[0] * f.facing < -multi.backward_turn_threshold {
             multi.turn_frames as i32

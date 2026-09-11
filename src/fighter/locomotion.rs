@@ -82,6 +82,18 @@ pub fn cstick_jump(stick_y: f32, threshold: f32) -> bool {
     stick_y >= threshold
 }
 
+/// Ground/aerial jump direction test shared by `ftCo_Jump_Enter`
+/// (`ftCo_Jump.c:157-161`) and `ftCo_JumpAerial_Enter_Basic`
+/// (`ftCo_JumpAerial.c:169-171`, `190-192`): `true` selects the backward
+/// motion (JumpB/JumpAerialB). The source picks forward with a strict `>`,
+/// so this is its exact negation, not an independent `<=`; the two differ
+/// for NaN, where every comparison is false and the source's ternary falls
+/// to its `false` branch (backward).
+#[allow(clippy::neg_cmp_op_on_partial_ord)] // The negation, not `<=`, preserves NaN.
+pub fn jump_backward(stick_x: f32, facing: f32, threshold: f32) -> bool {
+    !(stick_x * facing > -threshold)
+}
+
 /// Walking coefficients, including the environment query result used by the
 /// original ground projection. No character or material defaults are assumed.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -181,6 +193,20 @@ mod tests {
             jump_velocity([-9.0, 100.0, 9.0], -1.0, true, 0.5, &attributes),
             [-1.0, 1.0, 0.0]
         );
+    }
+
+    #[test]
+    fn jump_backward_treats_equality_and_nan_as_backward() {
+        assert!(!jump_backward(-0.29, 1.0, 0.3));
+        assert!(jump_backward(-0.3, 1.0, 0.3));
+        assert!(jump_backward(-0.31, 1.0, 0.3));
+        // Facing negates the effective stick direction: -1 * -1 = 1 > -0.3.
+        assert!(!jump_backward(-1.0, -1.0, 0.3));
+        // 0.31 * -1 = -0.31, past the boundary the other way: backward,
+        // even though the raw stick alone (with facing +1.0) would be forward.
+        assert!(jump_backward(0.31, -1.0, 0.3));
+        assert!(jump_backward(f32::NAN, 1.0, 0.3));
+        assert!(jump_backward(1.0, 1.0, f32::NAN));
     }
 
     #[test]

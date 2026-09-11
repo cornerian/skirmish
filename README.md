@@ -114,6 +114,10 @@ the ordinary Landing: once past `normal_landing_lag`, it opens the same
 complete Wait chain an interruptible tilt or dash attack already exposes,
 narrowed only by a single first-frame crouch entry; `LandingFallSpecial`
 keeps its own separate, unaffected full lockout.
+The [state-parity profile](docs/state-parity.md) corrects FallSpecial's
+reported Slippi state and animation (35/26, not FallB's 31/22) and adds an
+optional backward ground/aerial jump direction and the aerial-jump variant of
+Fall, each reported through their own dedicated Slippi ids.
 The [damage-floor profile](docs/damage-floor.md) adds neutral and directional
 techs plus missed-tech rolls, standing and get-up attacks with sampled root
 motion and bones.

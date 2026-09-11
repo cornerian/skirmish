@@ -1,5 +1,38 @@
 # Local validation provenance
 
+The 2026-09-11 state-parity coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-state-parity-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. `observation::action_state` and `animation_index` now map FallSpecial
+to 35/26 instead of 31/22, which were FallB's numbers; FallF/FallB and
+FallSpecialF/FallSpecialB stay unmodeled, since `ftCo_Fall_Anim_Inner` swaps
+their blend skeleton through `ftAnim_8006EDD0` without writing `fp->anim_id`.
+An optional `locomotion::Parameters.jump_backward_threshold` (`ftCommonData.
+x78`) reports a backward ground or aerial jump through its own Slippi id
+(26/17, 28/19 instead of the ordinary 25/16, 27/18), selected by the exact
+stick/facing test `ftCo_Jump_Enter` and `ftCo_JumpAerial_Enter_Basic` run at
+their own launch frame, with equality on the threshold selecting backward;
+`None` keeps every jump forward. An aerial jump's own animation end now
+reports the aerial variant of Fall (32/23) instead of the ordinary 29/20;
+every other Fall entry (an aerial attack's own end, walking off a platform, a
+ledge drop) is unaffected. `tests/game_jump_variants.rs` covers forward and
+backward short/full hops including the exact threshold boundary, a backward
+double jump independent of its preceding ground jump, both new flags clearing
+on every other transition, checkpoint replay through all three flagged
+phases, `None` and invalid-threshold rejection. `tests/jump_differential.rs`
+compares the pure `fighter::locomotion::jump_backward` predicate against
+`ftCo_Jump_Enter` pinned in `tests/oracle/original/jump.c` over proptest (512
+cases, including NaN and infinities) plus the exact equality and adjacent
+boundaries. Peppi-written replays match a backward short hop into a backward
+double jump into the aerial fall (26/17, 28/19, 32/23) and a parallel forward
+run reaching the ordinary apex fall before its own forward double jump
+(25/16, 29/20, 27/18), and report a Mismatch at the ground-jump launch row
+where a flipped stick sample first flips the reported direction; the
+air-dodge replay's FallSpecial row now asserts 35/26.
+
 The 2026-09-11 landing-window coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-landing-window-20260911-verified`
@@ -200,8 +233,10 @@ before aerial attacks and double jumps, restores checkpoints in every phase and
 rejects invalid resources. The complete trigger, launch, decay and
 platform-landing bodies are compared with pinned C. Peppi-written replays
 match a landing dodge and a FallSpecial continuation, report Slippi states
-236/31/43 with animation indices 44/22/36 and the scripted hurtbox byte, and
-detect a removed trigger press at its first affected frame.
+236/31/43 with animation indices 44/22/36 [FallSpecial's 31/22 were FallB's
+numbers; corrected to 35/26 by the 2026-09-11 state-parity batch] and the
+scripted hurtbox byte, and detect a removed trigger press at its first
+affected frame.
 
 The 2026-09-10 shield-grab coverage batch is recorded at:
 
