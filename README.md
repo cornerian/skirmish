@@ -152,6 +152,10 @@ WalkMiddle/WalkFast by ground velocity, each with its own Slippi id, sub-
 motion and animation rate; a velocity crossing re-enters Walk mid-stride
 with the animation frame remapped proportionally into the new kind's
 figatree length, without changing the reported action-instance id.
+The [run-animation profile](docs/run.md) extends the same tracked float
+frame/rate model to Run's own single figatree, advancing one frame behind
+`SetAnimRate`'s own delay and wrapping at its length; both the Dash-to-Run
+and RunTurn-to-Run transitions always start it at frame 0, rate 1.0.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

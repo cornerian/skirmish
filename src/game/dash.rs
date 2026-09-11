@@ -347,7 +347,7 @@ fn update_dash_or_run(
     }
     if f.action == Action::Dash {
         if f.action_frame >= p.dash_run_frame && input.stick[0] * f.facing >= p.run_threshold {
-            super::locomotion::enter(f, Action::Run);
+            super::locomotion::enter_run(f);
             return Ok(true);
         }
         return Ok(false);

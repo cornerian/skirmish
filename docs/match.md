@@ -250,6 +250,17 @@ action-instance id is unaffected, since Walk and Dash share motion identity
 102. Without it, Walk stays a single state with an integer `action_frame`, as
 before this batch.
 
+Optional per-fighter `MovementData.run_animation` (Slippi 21, animation 13,
+unchanged by this batch) extends the same float-frame/rate model to Run:
+a tracked frame and rate advance one frame behind `SetAnimRate`'s own delay
+and wrap at the Run figatree's length, computed from `|ground_velocity|`
+against a single supplied scaling constant rather than Walk's three
+kind-indexed thresholds -- Run has no kind to select, so no `Rules` pairing
+is needed. Both the Dash-to-Run and RunTurn-to-Run transitions always start
+the tracked frame at 0 with rate 1.0, matching the pinned source's own fixed
+`ChangeMotionState` rate argument. Without it, Run keeps a single integer
+`action_frame`, as before this batch.
+
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus

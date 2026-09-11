@@ -74,6 +74,44 @@ pub fn walk_animation_rate(
     }
 }
 
+/// `ftCo_Run_Anim`'s animation-rate selection (`ftCo_Run.c:76-99`), called
+/// every Run frame. `x4`/`friction_multiplier` model `fp->mv.co.run.x4`
+/// (the ground velocity recorded by `ftCo_Run_Enter_Full` at Run entry) and
+/// `ft_GetGroundFrictionMultiplier`; this codebase's own caller always
+/// supplies `friction_multiplier = 1.0` (stage friction multiplier treated
+/// as 1, unmodeled), which always selects the `ground_velocity` branch, so
+/// `x4` is otherwise unused -- the same modeling choice `walk_animation_rate`
+/// makes for `x0`. `ftAnim_SetAnimRate` applies to the caller's *next*
+/// animation update, not this one; the caller is responsible for storing
+/// the result and advancing the animation frame by the previous frame's
+/// rate, exactly as the walk batch's `game::locomotion::advance_walk_animation`
+/// does for `advance_run_animation`.
+///
+/// Identical branch shape and order to `walk_animation_rate` (same
+/// friction-multiplier gate, the same `v * facing <= 0.0` zero-rate test,
+/// the same `v.abs() / scaling` otherwise) -- Run just has a single
+/// figatree/scaling constant rather than three kind-indexed ones, so this
+/// is its own function instead of a call into `walk_animation_rate` with a
+/// fabricated `rates` array and an unused `kind` axis.
+pub fn run_animation_rate(
+    ground_velocity: f32,
+    facing: f32,
+    x4: f32,
+    scaling: f32,
+    friction_multiplier: f32,
+) -> f32 {
+    let v = if friction_multiplier < 1.0 {
+        x4
+    } else {
+        ground_velocity
+    };
+    if v * facing <= 0.0 {
+        0.0
+    } else {
+        v.abs() / scaling
+    }
+}
+
 /// `ftWalkCommon_800DFEC8`'s start-frame remap when the walk kind changes
 /// mid-walk: `init_animFrame / len` truncated to an `s32` quotient, then
 /// `frame - len * quotient` (a truncating remainder, not `fmod`), then
@@ -399,6 +437,19 @@ mod tests {
             walk_animation_rate(-4.0, 1.0, WalkKind::Slow, [4.0, 8.0, 12.0], -2.0, 0.5),
             0.0
         );
+    }
+
+    #[test]
+    fn run_animation_rate_is_zero_when_moving_against_facing_and_prefers_stored_x4_below_full_friction()
+     {
+        assert_eq!(run_animation_rate(2.0, -1.0, 2.0, 4.0, 1.0), 0.0);
+        assert_eq!(run_animation_rate(0.0, 1.0, 2.0, 4.0, 1.0), 0.0);
+        assert_eq!(run_animation_rate(4.0, 1.0, 2.0, 4.0, 1.0), 1.0);
+        assert_eq!(run_animation_rate(-4.0, -1.0, 2.0, 4.0, 1.0), 1.0);
+        assert_eq!(run_animation_rate(2.0, 1.0, 8.0, 4.0, 1.0), 0.5);
+        // Below full friction, the stored x4 stands in for gr_vel, including its sign.
+        assert_eq!(run_animation_rate(-4.0, 1.0, 2.0, 4.0, 0.5), 0.5);
+        assert_eq!(run_animation_rate(-4.0, 1.0, -2.0, 4.0, 0.5), 0.0);
     }
 
     #[test]

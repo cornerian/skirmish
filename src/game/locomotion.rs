@@ -129,6 +129,9 @@ pub struct State {
     /// (kept at its default otherwise, which reports Slippi 15/animation 7
     /// unconditionally, matching the pre-batch behavior).
     pub walk: WalkState,
+    /// `mv.co.run`'s float animation frame, tracked only while
+    /// `MovementData.run_animation` is supplied. See `RunState`.
+    pub run: RunState,
 }
 
 impl Default for State {
@@ -158,6 +161,7 @@ impl Default for State {
             jump_backward: false,
             fall_aerial: false,
             walk: WalkState::default(),
+            run: RunState::default(),
         }
     }
 }
@@ -216,6 +220,63 @@ pub struct WalkState {
     pub frame: f32,
     /// `ftAnim_SetAnimRate` takes effect on the *next* animation update:
     /// this is the rate computed on the previous Walk animation frame,
+    /// applied to advance `frame` on this one.
+    pub last_rate: f32,
+}
+
+/// The Run figatree's frame count and `run_animation_scaling`
+/// (`types.h:698`, `co_attrs+0x2C`). Unlike Walk's three cached figatree
+/// lengths (`fp->x2DC/x2E0/x2E4`, `fighter.c:838-840`), the source has no
+/// dedicated `Fighter` field caching the single Run figatree's length --
+/// `Fighter_Create_Inline2` (`fighter.c:829-841`) only caches sub-motions
+/// 7/8/9/0x23/0x25 (Walk kinds, Landing, GuardOn), none of which is Run --
+/// so `length` here is supplied resource data standing in for a runtime
+/// animation-length query, the same convention this codebase already uses
+/// for other per-motion frame counts (`dash_animation_frames`,
+/// `run_brake_animation_frames`, ...). Absent keeps the pre-batch integer
+/// `action_frame` and rate 1.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunAnimation {
+    pub length: f32,
+    pub scaling: f32,
+}
+
+pub fn validate_run(animation: &RunAnimation) -> Result<(), Error> {
+    let valid = animation.length.is_finite()
+        && animation.length > 0.0
+        && animation.length <= 1_000_000.0
+        && animation.scaling.is_finite()
+        && animation.scaling > 0.0
+        && animation.scaling <= 1_000_000.0;
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::Data(
+            "invalid run animation length or scaling".into(),
+        ))
+    }
+}
+
+/// `mv.co.run`'s float animation-frame bookkeeping, tracked only while
+/// `MovementData.run_animation` is supplied (kept at its default otherwise,
+/// which reports Slippi state 21/animation 13 unconditionally with an
+/// integer `action_frame`, matching the pre-batch behavior). `run.x0` (the
+/// turn-run lockout countdown, `ftCo_Run.c:72,96-98`) and `run.x4` (the
+/// low-friction-stage velocity, `ftCo_Run.c:73,83-87`, dead in this
+/// codebase -- see `run_animation_rate`) are not part of this state: no
+/// existing Rust code models the `run.x0` IASA lockout gate
+/// (`ftCo_Run_IASA`, `ftCo_Run.c:125-126`) either, only `run.x0`'s
+/// *absence* of effect (RunTurn is reachable from Run unconditionally in
+/// `game::locomotion::update_actions`'s `Action::Run` arm); this batch's
+/// resource/state shape does not add it, so it is reported as a pre-existing
+/// gap rather than silently introduced here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunState {
+    pub frame: f32,
+    /// `ftAnim_SetAnimRate` takes effect on the *next* animation update:
+    /// this is the rate computed on the previous Run animation frame,
     /// applied to advance `frame` on this one.
     pub last_rate: f32,
 }
@@ -486,7 +547,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
             }
             if f.locomotion.turn_has_turned && f.action_frame >= p.run_turn_animation_frames {
                 if input.stick[0] * f.facing >= p.run_threshold {
-                    enter(f, Action::Run);
+                    enter_run(f);
                 } else {
                     enter(f, Action::Wait);
                 }
@@ -535,9 +596,50 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
                 advance_walk_animation(f, animation);
             }
         }
+        // ftCo_Run_Anim (ftCo_Run.c:76-99): advance by the rate computed on
+        // the previous frame (SetAnimRate's one-frame delay), wrap at the
+        // Run figatree's length, then store this frame's rate for the next
+        // call. Same wrap rule as Walk's own animation phase.
+        Action::Run => {
+            if let Some(animation) = &data.movement.run_animation {
+                advance_run_animation(f, animation);
+            }
+        }
         _ => {}
     }
     just_turned
+}
+
+/// `ftCo_Run_Enter_Full` (`ftCo_Run.c:66-74`) with `anim_start = 0.0`, the
+/// value both of this codebase's reachable Run entries use: Dash's own
+/// `ftCo_Dash_IASA` transition (`fn_800CA5F0`, arg0 = 0.0) and RunTurn's own
+/// Anim-phase re-entry (`fn_800CA644`, arg0 = `x430`) both call
+/// `ftCo_Run_Enter`, which always supplies `anim_start = 0.0F`,
+/// `anim_speed = 1.0F` to `Enter_Full` -- only `fn_800CA698`
+/// (`ftCo_RunDirect.c`, a distinct, unreached motion state in this
+/// codebase) calls `Enter_Full` directly with `fp->cur_anim_frame`/
+/// `fp->frame_speed_mul`, and is not modeled. `last_rate` is initialized to
+/// 1.0 (`Fighter_ChangeMotionState`'s own `rate = 1` argument), applied on
+/// the first Run animation update, exactly as the walk batch modeled
+/// Walk's own entry rate.
+pub(crate) fn enter_run(f: &mut Fighter) {
+    enter(f, Action::Run);
+    f.locomotion.run = RunState {
+        frame: 0.0,
+        last_rate: 1.0,
+    };
+}
+
+fn advance_run_animation(f: &mut Fighter, animation: &RunAnimation) {
+    f.locomotion.run.frame += f.locomotion.run.last_rate;
+    while f.locomotion.run.frame >= animation.length {
+        f.locomotion.run.frame -= animation.length;
+    }
+    // x4/friction_multiplier: this codebase's own caller always treats the
+    // stage friction multiplier as 1 (unmodeled), which always selects the
+    // ground_velocity branch; x4 is unused here (see run_animation_rate).
+    f.locomotion.run.last_rate =
+        math::run_animation_rate(f.ground_velocity, f.facing, 0.0, animation.scaling, 1.0);
 }
 
 fn advance_walk_animation(f: &mut Fighter, animation: &WalkAnimation) {
@@ -721,7 +823,7 @@ pub(crate) fn update_actions(
             if f.action_frame >= p.dash_run_frame
                 && input.stick[0] * f.facing >= p.run_threshold =>
         {
-            enter(f, Action::Run)
+            enter_run(f)
         }
         Action::Run => {
             if input.stick[0] * f.facing <= p.turn_threshold {

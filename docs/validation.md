@@ -1,5 +1,92 @@
 # Local validation provenance
 
+The 2026-09-11 run-animation-rate coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-run-animation-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. `game::locomotion`/`fighter::locomotion` extend the walk batch's float
+animation-frame model (`docs/walk.md`) to `Action::Run` (`docs/run.md`) with
+one new resource, `MovementData.run_animation: Option<RunAnimation { length,
+scaling }>` (the Run figatree's frame count and `run_animation_scaling`,
+`types.h:698`) -- unlike Walk, not paired with any `Rules` entry, since Run
+has no kind-selection thresholds. `game::locomotion::State.run: RunState
+{ frame, last_rate }` tracks a float animation frame that advances one frame
+behind `ftAnim_SetAnimRate`'s own delay and wraps at the Run figatree's
+length; both of this codebase's reachable Run entries (Dash-to-Run and
+RunTurn-to-Run, via the new `game::locomotion::enter_run`) always start it at
+frame 0.0 with `last_rate` 1.0, matching the pinned source's fixed
+`ChangeMotionState` rate argument. Slippi's `action_state`/`animation_index`
+for Run were already correct (21/13, unchanged); `action_age` now publishes
+the tracked float frame instead of the integer `action_frame` while the
+resource is present. With the resource absent, Run keeps its pre-batch
+behavior unchanged: state 21 with an integer `action_frame` published as
+`state_age`, rate 1 always.
+
+Two discrepancies against the pinned source were found and reported rather
+than silently fixed (both out of this batch's scope, the Run animation-
+frame/rate layer only; documented in full in `docs/run.md`): RunBrake's own
+velocity-gated marker freeze (`cmd_vars[1]`/`x42C`, `ftCo_RunBrake.c:49-77`)
+is not modeled anywhere in this codebase, contrary to an earlier design
+draft's assumption that it was -- only the unrelated `mv.co.runbrake.frames`
+countdown exists; and `game::locomotion`'s existing RunTurn flip check
+(`update_animation`'s `Action::RunTurn` arm) multiplies by a fixed
+`Parameters::run_turn_velocity_scale` resource constant instead of the
+per-entry facing the pinned source actually uses (`ftCo_TurnRun.c:67`,
+`facing_at_entry * gr_vel <= 0.01F`, sourced from `ftCo_TurnRun_Enter`'s own
+`turnrun.accel_mul = facing_dir`) -- `game::locomotion::start_run_turn`
+already captures that exact per-entry value as `run_turn_facing` for the
+physics branch, but the flip check does not use it. Both are pre-existing
+gaps in already-audited code, left unchanged per this batch's "verify, don't
+silently change" instruction. Separately, `run.x0` (the turn-run lockout
+countdown gating `ftCo_Run_IASA`'s RunTurn/RunBrake entry, `ftCo_Run.c:
+125-126`) remains unmodeled, as it was before this batch -- outside this
+batch's resource/state shape, which covers only the animation-frame/rate
+layer.
+
+This batch's own explicit modeling choices, documented in `docs/run.md`
+rather than treated as verified source behavior: `last_rate` is initialized
+to 1.0 at Run entry (mirroring `Fighter_ChangeMotionState`'s own `rate = 1`
+argument, the same choice the walk batch made for Walk), and the `frame >=
+length` wrap rule (not independently reverse-verified against `ftAnim`/
+`lbAnim`'s own loop bookkeeping, the same caveat the walk batch recorded).
+`run_animation_rate` is not a call into the existing `walk_animation_rate`
+(identical branch shape/order, but Run has a single figatree/scaling
+constant rather than three kind-indexed ones, so a shared call would need a
+fabricated `rates` array and an unused kind axis); this is noted rather than
+treated as an unexplained duplication.
+
+`src/fighter/locomotion.rs` adds 1 unit test for the pure `run_animation_rate`
+zero-rate/facing/`x4`-branch selection, mirroring `walk_animation_rate`'s own
+test. `tests/game_run.rs` (7 tests) covers: a Dash-to-Run transition entering
+at frame 0.0 with `last_rate` 1.0; the first Run frame afterward advancing by
+exactly 1.0 and every later frame matching the pure helper bit-exactly
+against the previous frame's velocity/facing; wrapping at the figatree
+length; checkpoints; invalid resources; `None` keeping the pre-batch integer
+frame through a real Dash-to-Run transition; and a Run-to-RunTurn-to-Run
+reversal confirming `ground_velocity` already agrees with the flipped facing
+on every observed Run frame, documenting (not asserting) that the zero-rate-
+against-facing branch is not independently reachable through an actual Run
+frame in this codebase. `tests/run_differential.rs` (4 tests, 512 proptest
+cases for the rate comparison) pins `ftCo_Run_Enter`/`_Full`/`_Anim` from a
+new `run` snapshot of `ftCo_Run.c`; `run_animation_rate` is compared over the
+full binary32 domain including NaN, plus exact boundaries (velocity exactly
+0, negative velocity, velocity negative with facing also negative, scaling
+as small as `f32::MIN_POSITIVE`/`1e-30`, the friction-multiplier branch, and
+the `run.x0` countdown at several values); the oracle's own `run.x0`
+countdown and `ftCo_Run_Enter`'s literal field assignments are checked
+directly against the source lines, since no Rust helper models them.
+`crates/cli/tests/replay_match.rs`'s
+`file_backed_dash_into_a_run_reports_state_21_with_float_ages_and_a_reduced_
+stick_mismatch` (1 test) drives a dash into a run, confirms every Run row
+reports state 21/animation 13 with the tracked float frame, matches its own
+generated Peppi bytes end to end, then reduces a stick sample well into the
+ramp and confirms a `Mismatch` starting at that row -- and separately
+confirms, by re-simulating with the same edited input directly, that the
+reported age itself only starts to differ two rows later (Anim precedes the
+ground-movement physics that reacts to the edited stick).
+
 The 2026-09-11 walk-speed variants coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-walk-speeds-20260911-verified`

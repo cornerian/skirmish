@@ -298,6 +298,12 @@ pub struct MovementData {
     /// 15) with an integer `action_frame`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walk_animation: Option<super::locomotion::WalkAnimation>,
+    /// Unlike `walk_animation`, not paired with any `Rules` entry: Run has
+    /// no kind-selection thresholds, just a figatree length and animation
+    /// scaling. Absent keeps Run's pre-batch integer `action_frame` and
+    /// rate 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_animation: Option<super::locomotion::RunAnimation>,
 }
 
 impl MovementData {

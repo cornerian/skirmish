@@ -157,7 +157,11 @@ optional [walk-speed profile](walk.md), Walk maps to state 15/16/17 by its
 current Slow/Middle/Fast kind (animation indices 7/8/9), and `state_age`
 reports the tracked float animation frame instead of the integer action
 frame; without the profile, Walk stays state 15 with the integer frame, as
-before this batch. Landing already maps to state 42; with the
+before this batch. Run already maps to state 21 (animation 13); with the
+optional [run-animation profile](run.md), its `state_age` likewise reports
+the tracked float Run animation frame (wrapping at the Run figatree's
+length) instead of the integer action frame; without the profile, Run keeps
+the integer frame, as before this batch. Landing already maps to state 42; with the
 optional landing profile it additionally accepts the complete Wait chain
 once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
 interruptible frame can now select a smash straight out of that state.
@@ -173,7 +177,7 @@ mapped actor:
 | Replay field | Native observation | Comparison |
 | --- | --- | --- |
 | `state` | Common action-state mapping | Exact `u16` |
-| `state_age` | Action frame, or Walk's tracked float animation frame when the optional walk-speed profile is present | Exact `f32` bits |
+| `state_age` | Action frame, or Walk's/Run's tracked float animation frame when the optional walk-speed/run-animation profile is present | Exact `f32` bits |
 | `position.x`, `position.y` | Fighter position | Exact `f32` bits |
 | `direction` | Fighter facing | Exact `f32` bits |
 | `percent` | Damage percent | Exact `f32` bits |

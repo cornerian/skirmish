@@ -33,6 +33,8 @@ mod grab_support;
 mod jab_support;
 #[path = "../../../tests/support/ledge.rs"]
 mod ledge_support;
+#[path = "../../../tests/support/run.rs"]
+mod run_support;
 #[path = "../../../tests/support/smash.rs"]
 mod smash_support;
 #[path = "../../../tests/support/special.rs"]
@@ -218,9 +220,10 @@ impl Recording {
                             "the synthetic recording uses only mapped common action states",
                         )),
                     );
-                    // Slippi's state_age for Walk is fp->cur_anim_frame, a
-                    // float animation frame; without walk_animation, Walk
-                    // keeps the pre-batch integer action_frame.
+                    // Slippi's state_age for Walk/Run is fp->cur_anim_frame,
+                    // a float animation frame; without walk_animation/
+                    // run_animation, Walk/Run keep the pre-batch integer
+                    // action_frame.
                     let action_age = if fighter.action == Action::Walk
                         && self.initialization.data.fighters[player]
                             .movement
@@ -228,6 +231,13 @@ impl Recording {
                             .is_some()
                     {
                         fighter.locomotion.walk.frame
+                    } else if fighter.action == Action::Run
+                        && self.initialization.data.fighters[player]
+                            .movement
+                            .run_animation
+                            .is_some()
+                    {
+                        fighter.locomotion.run.frame
                     } else {
                         fighter.action_frame as f32
                     };
@@ -2488,6 +2498,95 @@ fn file_backed_teeter_walk_then_jump_matches_and_detects_the_first_outward_stick
         Outcome::Mismatch { frame, checked_frames, .. }
             if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
     ));
+}
+
+fn run_replay_data() -> MatchData {
+    let mut data = run_support::profile(shield_drop_data());
+    data.stage.floor.left = -200.0;
+    data.stage.floor.right = 200.0;
+    data.stage.blast = [-500.0, 500.0, -100.0, 200.0];
+    if let Some(geometry) = &mut data.stage.geometry {
+        geometry.lines[0].start[0] = -200.0;
+        geometry.lines[0].end[0] = 200.0;
+        geometry.joints[0].bounds_min[0] = -200.0;
+        geometry.joints[0].bounds_max[0] = 200.0;
+    }
+    data
+}
+
+#[test]
+fn file_backed_dash_into_a_run_reports_state_21_with_float_ages_and_a_reduced_stick_mismatch() {
+    let mut inputs = vec![IDLE; 40];
+    for input in &mut inputs {
+        input[0].stick = [1.0, 0.0];
+    }
+    let recording = Recording::from_script(run_replay_data(), 47, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::Dash);
+
+    let run_row = recording
+        .states
+        .iter()
+        .position(|state| state.fighters[0].action == Action::Run)
+        .expect("expected the dash ramp to reach Run");
+    assert_eq!(
+        recording.states[run_row].fighters[0].locomotion.run.frame,
+        0.0
+    );
+    for row in run_row..recording.states.len() {
+        let fighter = &recording.states[row].fighters[0];
+        if fighter.action != Action::Run {
+            break;
+        }
+        assert_eq!(observation::action_state(fighter, Some(2)), Some(21));
+        assert_eq!(observation::animation_index(fighter, Some(2)), Some(13));
+    }
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // Unlike Walk's mid-walk retype (which recomputes the reported kind/
+    // frame from the *current* frame's velocity within the same frame,
+    // `game::locomotion::retype_walk`), Run's reported age
+    // (`locomotion.run.frame`) is always the *previous* frame's stored
+    // rate, applied before this frame's own `ground_velocity` is read
+    // (`advance_run_animation`); Anim precedes the ground-movement physics
+    // that reacts to the stick, so a stick edited at row `r` first changes
+    // `ground_velocity` at the *end* of row `r`. This codebase's own
+    // comparison already reports a mismatch starting at row `r`
+    // (ground_velocity/position are compared fields too, and already
+    // differ there), but the reported *age* itself is one frame further
+    // removed still: row `r + 1`'s Anim call is the first to read the
+    // changed velocity into a new `last_rate`, so `run.frame` itself only
+    // starts to differ from row `r + 2` onward. Edit well into the ramp
+    // (row `run_row + 5`, past the one-frame entry transient) and confirm
+    // both: the mismatch is reported starting at that row, and the
+    // recorded age's own first divergence is exactly two rows later.
+    let edited_row = run_row + 5;
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        let pre = &mut frames.ports[0].leader.pre;
+        pre.joystick.x.set(edited_row, Some(0.75));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+    ));
+
+    let edited_recording = Recording::from_script(run_replay_data(), 47, {
+        let mut edited_inputs = recording.inputs.clone();
+        edited_inputs[edited_row][0].stick[0] = 0.75;
+        edited_inputs
+    });
+    let first_age_divergence = (0..recording.states.len())
+        .find(|&row| {
+            recording.states[row].fighters[0].locomotion.run.frame
+                != edited_recording.states[row].fighters[0]
+                    .locomotion
+                    .run
+                    .frame
+        })
+        .expect("expected the reduced stick to eventually change the reported age");
+    assert_eq!(first_age_divergence, edited_row + 2);
 }
 
 fn walk_replay_data() -> MatchData {

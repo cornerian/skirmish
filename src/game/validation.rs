@@ -534,6 +534,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 .is_none_or(|lag| lag.is_finite() && lag >= 0.0 && lag <= m.landing_frames as f32),
             "invalid landing interrupt window",
         )?;
+        if let Some(animation) = &m.run_animation {
+            locomotion::validate_run(animation)?;
+        }
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
             CollisionBox::Fixed { source } => require(

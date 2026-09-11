@@ -313,14 +313,19 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 .locomotion
                 .as_ref()
                 .map_or(2, |parameters| parameters.max_jumps);
-            // Slippi's state_age for Walk is fp->cur_anim_frame, a float
-            // animation frame that restarts on each Slow/Middle/Fast
-            // retype; without walk_animation, Walk keeps the pre-batch
+            // Slippi's state_age for Walk/Run is fp->cur_anim_frame, a float
+            // animation frame (Walk's restarts on each Slow/Middle/Fast
+            // retype, Run's wraps at the Run figatree's length); without
+            // walk_animation/run_animation, Walk/Run keep the pre-batch
             // integer action_frame.
             let action_age = if fighter.action == game::Action::Walk
                 && fighter_data.movement.walk_animation.is_some()
             {
                 fighter.locomotion.walk.frame
+            } else if fighter.action == game::Action::Run
+                && fighter_data.movement.run_animation.is_some()
+            {
+                fighter.locomotion.run.frame
             } else {
                 fighter.action_frame as f32
             };
