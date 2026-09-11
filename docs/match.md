@@ -240,6 +240,16 @@ full Wait input chain plus their own walk-away threshold and exit-to-Wait
 distance. Without it, mode-2 (always-clamp) actions still clamp at a floor
 end instead of falling off it; only the teeter degrades to plain fall-off.
 
+Optional [`rules.walk`](walk.md) and per-fighter `MovementData.walk_animation`
+subdivide Walk into WalkSlow/WalkMiddle/WalkFast by `|ground_velocity|`
+(Slippi 15/16/17, animations 7/8/9), tracking a float animation frame and
+rate that advance one frame behind `SetAnimRate`'s own delay and wrap at the
+selected kind's figatree length. A velocity crossing re-enters Walk mid-walk
+with the frame remapped proportionally into the new kind's length; the
+action-instance id is unaffected, since Walk and Dash share motion identity
+102. Without it, Walk stays a single state with an integer `action_frame`, as
+before this batch.
+
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus

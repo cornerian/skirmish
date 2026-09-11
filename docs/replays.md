@@ -152,7 +152,12 @@ End are 47..49. With the optional dash-attack profile the dash attack maps
 to state 50 (animation 52), entered from a fresh A press during Dash's
 middle/late phases or from Run. With the optional edge/teeter profile,
 Ottotto and OttottoWait map to states 245/246 (animation indices 210/211),
-entered when a facing/stick-admissible walk crosses a floor end. Landing already maps to state 42; with the
+entered when a facing/stick-admissible walk crosses a floor end. With the
+optional [walk-speed profile](walk.md), Walk maps to state 15/16/17 by its
+current Slow/Middle/Fast kind (animation indices 7/8/9), and `state_age`
+reports the tracked float animation frame instead of the integer action
+frame; without the profile, Walk stays state 15 with the integer frame, as
+before this batch. Landing already maps to state 42; with the
 optional landing profile it additionally accepts the complete Wait chain
 once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
 interruptible frame can now select a smash straight out of that state.
@@ -168,7 +173,7 @@ mapped actor:
 | Replay field | Native observation | Comparison |
 | --- | --- | --- |
 | `state` | Common action-state mapping | Exact `u16` |
-| `state_age` | Action frame | Exact `f32` bits |
+| `state_age` | Action frame, or Walk's tracked float animation frame when the optional walk-speed profile is present | Exact `f32` bits |
 | `position.x`, `position.y` | Fighter position | Exact `f32` bits |
 | `direction` | Fighter facing | Exact `f32` bits |
 | `percent` | Damage percent | Exact `f32` bits |
@@ -204,9 +209,11 @@ change produces a character mismatch. Action-instance retention covers the
 implemented common motion families and Fox neutral-special startup. Luigi and
 held-item metadata branches in the original callback remain outside the native
 fighter model. Animation-index mapping covers the same resolved common actions
-and Fox startup states. Refactored Walk and directional jump actions use their
+and Fox startup states. Refactored directional jump actions use their
 canonical first animation, and the original randomized Wait animation changes
-are not scheduled yet. RNG, collision-line
+are not scheduled yet; Walk does too unless the optional walk-speed profile
+is present, in which case its animation follows the tracked Slow/Middle/Fast
+kind instead. RNG, collision-line
 geometry, the offscreen and follower state-flag bits, items and stage state are
 not compared. Reflect and powershield bits follow the independent GuardReflect
 timers, including their active-at-zero boundary. Shield-touch follows the

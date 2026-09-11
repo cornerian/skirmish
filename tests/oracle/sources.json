@@ -368,5 +368,10 @@
     "fixture": "tests/oracle/original/walk.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Walk.c",
     "sha256": "922999974fddc2bd07042e31ea332ce17e8a24a08d8d6d37e2267adc4d13ab0a"
+  },
+  {
+    "fixture": "tests/oracle/original/walkcommon.c",
+    "upstream": "src/melee/ft/ftwalkcommon.c",
+    "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
   }
 ]

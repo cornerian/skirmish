@@ -41,6 +41,8 @@ mod special_support;
 mod support;
 #[path = "../../../tests/support/tilt.rs"]
 mod tilt_support;
+#[path = "../../../tests/support/walk.rs"]
+mod walk_support;
 
 const FIRST: i32 = -123;
 const PORTS: [Port; 2] = [Port::P1, Port::P3];
@@ -216,10 +218,20 @@ impl Recording {
                             "the synthetic recording uses only mapped common action states",
                         )),
                     );
-                    post.state_age
-                        .as_mut()
-                        .unwrap()
-                        .set(row, Some(fighter.action_frame as f32));
+                    // Slippi's state_age for Walk is fp->cur_anim_frame, a
+                    // float animation frame; without walk_animation, Walk
+                    // keeps the pre-batch integer action_frame.
+                    let action_age = if fighter.action == Action::Walk
+                        && self.initialization.data.fighters[player]
+                            .movement
+                            .walk_animation
+                            .is_some()
+                    {
+                        fighter.locomotion.walk.frame
+                    } else {
+                        fighter.action_frame as f32
+                    };
+                    post.state_age.as_mut().unwrap().set(row, Some(action_age));
                     post.position.x.set(row, Some(fighter.position[0]));
                     post.position.y.set(row, Some(fighter.position[1]));
                     post.direction.set(row, Some(fighter.facing));
@@ -2470,6 +2482,85 @@ fn file_backed_teeter_walk_then_jump_matches_and_detects_the_first_outward_stick
     let changed = recording.bytes(support::Fixture::default(), move |frames| {
         let pre = &mut frames.ports[0].leader.pre;
         pre.joystick.x.set(edited_row, Some(0.75));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+    ));
+}
+
+fn walk_replay_data() -> MatchData {
+    let mut data = walk_support::profile(shield_drop_data());
+    data.stage.floor.left = -200.0;
+    data.stage.floor.right = 200.0;
+    data.stage.blast = [-500.0, 500.0, -100.0, 200.0];
+    if let Some(geometry) = &mut data.stage.geometry {
+        geometry.lines[0].start[0] = -200.0;
+        geometry.lines[0].end[0] = 200.0;
+        geometry.joints[0].bounds_min[0] = -200.0;
+        geometry.joints[0].bounds_max[0] = 200.0;
+    }
+    data
+}
+
+#[test]
+fn file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_stick_mismatch() {
+    let mut inputs = vec![IDLE; 40];
+    for input in &mut inputs {
+        input[0].stick = [0.75, 0.0];
+    }
+    let recording = Recording::from_script(walk_replay_data(), 47, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::Walk);
+
+    let mut kind_changes = vec![];
+    let mut previous = skirmish::game::locomotion::WalkKind::Slow;
+    for (row, state) in recording.states.iter().enumerate() {
+        let fighter = &state.fighters[0];
+        assert_eq!(fighter.action, Action::Walk, "row {row}");
+        let kind = fighter.locomotion.walk.kind;
+        if kind != previous {
+            kind_changes.push((row, kind));
+            previous = kind;
+        }
+        let expected_state = 15
+            + match kind {
+                skirmish::game::locomotion::WalkKind::Slow => 0,
+                skirmish::game::locomotion::WalkKind::Middle => 1,
+                skirmish::game::locomotion::WalkKind::Fast => 2,
+            };
+        assert_eq!(
+            observation::action_state(fighter, Some(2)),
+            Some(expected_state)
+        );
+        assert_eq!(
+            observation::animation_index(fighter, Some(2)),
+            Some(expected_state as u32 - 8)
+        );
+    }
+    assert_eq!(
+        kind_changes
+            .iter()
+            .map(|(_, kind)| *kind)
+            .collect::<Vec<_>>(),
+        [
+            skirmish::game::locomotion::WalkKind::Middle,
+            skirmish::game::locomotion::WalkKind::Fast,
+        ],
+        "expected the ramp to reach Middle then Fast: {kind_changes:?}"
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // The first retype row (Slow -> Middle): pushing that row's stick down
+    // to a magnitude that still walks but can no longer sustain the
+    // velocity driving the retype changes the reported kind starting
+    // exactly there, diverging from the recorded (unedited) expectation.
+    let edited_row = kind_changes[0].0;
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        let pre = &mut frames.ports[0].leader.pre;
+        pre.joystick.x.set(edited_row, Some(0.21));
     });
     assert!(matches!(
         recording.compare(&changed).outcome,

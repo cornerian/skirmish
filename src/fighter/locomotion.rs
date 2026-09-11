@@ -8,6 +8,87 @@
 //! the caller; it does not perform a platform lookup or integrate ground velocity.
 
 use super::Movement;
+use serde::{Deserialize, Serialize};
+
+/// `FtWalkType` (`forward.h`): Slow/Middle/Fast walk animation variants,
+/// selected by `ftWalkCommon_GetWalkType`/`..._800DFBF8_fake` from
+/// `|gr_vel|`. Ordering matches the source enum (0/1/2), used both to index
+/// the three-element length/rate arrays and as the Slippi 15/16/17 offset.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WalkKind {
+    #[default]
+    Slow,
+    Middle,
+    Fast,
+}
+
+/// `ftWalkCommon_GetWalkType`/`..._800DFBF8_fake` (identical bodies; the
+/// static inline duplicate is not separately extracted for the C oracle,
+/// see `tests/oracle/walkcommon.c`). `accel_mul` is always 1 from this
+/// codebase's own caller (metal/scale/item multipliers unmodeled), kept as
+/// a parameter for oracle parity.
+pub fn walk_kind(
+    ground_velocity: f32,
+    accel_mul: f32,
+    middle_threshold: f32,
+    fast_threshold: f32,
+    walk_max_velocity: f32,
+) -> WalkKind {
+    let walk_velocity = ground_velocity.abs();
+    if walk_velocity >= accel_mul * (fast_threshold * walk_max_velocity) {
+        WalkKind::Fast
+    } else if walk_velocity >= accel_mul * (middle_threshold * walk_max_velocity) {
+        WalkKind::Middle
+    } else {
+        WalkKind::Slow
+    }
+}
+
+/// `ftWalkCommon_800DFDDC`'s animation-rate selection, called every Walk
+/// frame. `x0`/`friction_multiplier` model `fp->mv.co.walk.x0` and
+/// `ft_GetGroundFrictionMultiplier`; this codebase's own caller always
+/// supplies `friction_multiplier = 1.0` (stage friction multiplier treated
+/// as 1, unmodeled), which always selects the `ground_velocity` branch, so
+/// `x0` is otherwise unused. `ftAnim_SetAnimRate` applies to the caller's
+/// *next* animation update, not this one; the caller is responsible for
+/// storing the result and advancing the animation frame by the
+/// previous frame's rate.
+pub fn walk_animation_rate(
+    ground_velocity: f32,
+    facing: f32,
+    kind: WalkKind,
+    rates: [f32; 3],
+    x0: f32,
+    friction_multiplier: f32,
+) -> f32 {
+    let v = if friction_multiplier < 1.0 {
+        x0
+    } else {
+        ground_velocity
+    };
+    if v * facing <= 0.0 {
+        0.0
+    } else {
+        v.abs() / rates[kind as usize]
+    }
+}
+
+/// `ftWalkCommon_800DFEC8`'s start-frame remap when the walk kind changes
+/// mid-walk: `init_animFrame / len` truncated to an `s32` quotient, then
+/// `frame - len * quotient` (a truncating remainder, not `fmod`), then
+/// `len_new * (adjusted / len)` truncated to `s32` again before being
+/// passed as the new motion's start frame. Matches C's truncate-toward-zero
+/// float-to-int cast for the finite, positive `cur_frame`/lengths this is
+/// ever called with in this codebase (validated figatree lengths and a
+/// live, non-negative `cur_anim_frame`); unlike `walk_kind`/
+/// `walk_animation_rate`, this is not claimed NaN- or infinity-safe, since
+/// C's cast is undefined there and Rust's `as i32` saturates instead.
+pub fn walk_retype_frame(cur_frame: f32, cur_length: f32, new_length: f32) -> i32 {
+    let quotient = (cur_frame / cur_length) as i32;
+    let adjusted = cur_frame - cur_length * quotient as f32;
+    (new_length * (adjusted / cur_length)) as i32
+}
 
 // Keep the source literal: the C oracle uses this exact single-precision
 // degrees-to-radians factor.
@@ -270,6 +351,67 @@ mod tests {
         assert_eq!(movement.ground_acceleration, 0.1);
         assert_eq!(movement.self_velocity, [1.6, 1.2, 0.0]);
         assert_eq!(movement.ground_velocity, 2.0);
+    }
+
+    #[test]
+    fn walk_kind_thresholds_are_inclusive_and_scale_by_accel_mul() {
+        assert_eq!(walk_kind(0.0, 1.0, 0.4, 0.8, 10.0), WalkKind::Slow);
+        assert_eq!(walk_kind(3.999, 1.0, 0.4, 0.8, 10.0), WalkKind::Slow);
+        assert_eq!(walk_kind(4.0, 1.0, 0.4, 0.8, 10.0), WalkKind::Middle);
+        assert_eq!(walk_kind(7.999, 1.0, 0.4, 0.8, 10.0), WalkKind::Middle);
+        assert_eq!(walk_kind(8.0, 1.0, 0.4, 0.8, 10.0), WalkKind::Fast);
+        // Negative velocity uses the magnitude.
+        assert_eq!(walk_kind(-8.0, 1.0, 0.4, 0.8, 10.0), WalkKind::Fast);
+        // accel_mul scales both thresholds.
+        assert_eq!(walk_kind(4.0, 2.0, 0.4, 0.8, 10.0), WalkKind::Slow);
+        assert_eq!(walk_kind(8.0, 2.0, 0.4, 0.8, 10.0), WalkKind::Middle);
+    }
+
+    #[test]
+    fn walk_animation_rate_is_zero_when_moving_against_facing_and_prefers_stored_x0_below_full_friction()
+     {
+        assert_eq!(
+            walk_animation_rate(2.0, -1.0, WalkKind::Slow, [4.0, 8.0, 12.0], 2.0, 1.0),
+            0.0
+        );
+        assert_eq!(
+            walk_animation_rate(0.0, 1.0, WalkKind::Slow, [4.0, 8.0, 12.0], 2.0, 1.0),
+            0.0
+        );
+        assert_eq!(
+            walk_animation_rate(4.0, 1.0, WalkKind::Slow, [4.0, 8.0, 12.0], 2.0, 1.0),
+            1.0
+        );
+        assert_eq!(
+            walk_animation_rate(4.0, 1.0, WalkKind::Middle, [4.0, 8.0, 12.0], 2.0, 1.0),
+            0.5
+        );
+        assert_eq!(
+            walk_animation_rate(4.0, 1.0, WalkKind::Fast, [4.0, 8.0, 12.0], 2.0, 1.0),
+            4.0 / 12.0
+        );
+        // Below full friction, the stored x0 stands in for gr_vel, including its sign.
+        assert_eq!(
+            walk_animation_rate(-4.0, 1.0, WalkKind::Slow, [4.0, 8.0, 12.0], 2.0, 0.5),
+            0.5
+        );
+        assert_eq!(
+            walk_animation_rate(-4.0, 1.0, WalkKind::Slow, [4.0, 8.0, 12.0], -2.0, 0.5),
+            0.0
+        );
+    }
+
+    #[test]
+    fn walk_retype_frame_truncates_the_source_quotient_and_remap_toward_zero() {
+        // Exactly at the length: quotient 1, remainder 0, remapped 0.
+        assert_eq!(walk_retype_frame(10.0, 10.0, 14.0), 0);
+        // Halfway through a 10-frame walk remaps to halfway through 14.
+        assert_eq!(walk_retype_frame(5.0, 10.0, 14.0), 7);
+        // Truncation, not rounding: 3/10 of 14 is 4.2, truncated to 4.
+        assert_eq!(walk_retype_frame(3.0, 10.0, 14.0), 4);
+        // A non-integer current frame still truncates the quotient first.
+        assert_eq!(walk_retype_frame(9.9, 10.0, 14.0), 13);
+        assert_eq!(walk_retype_frame(0.0, 10.0, 14.0), 0);
     }
 
     #[test]

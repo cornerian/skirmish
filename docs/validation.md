@@ -1,5 +1,78 @@
 # Local validation provenance
 
+The 2026-09-11 walk-speed variants coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-walk-speeds-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. `game::locomotion`/`fighter::locomotion` subdivide `Action::Walk` into
+WalkSlow/WalkMiddle/WalkFast (`docs/walk.md`) by `|ground_velocity|` against
+two new resources: `MovementData.walk_animation` (the three figatree lengths
+and animation-rate divisors) and `Rules.walk` (the middle/fast selection
+thresholds), paired the same way as the edge/teeter and escape/escape-air
+resources. `game::locomotion::State.walk: WalkState { kind, frame, last_rate
+}` tracks the current kind and a float animation frame that advances one
+frame behind `ftAnim_SetAnimRate`'s own delay and wraps at the current kind's
+figatree length; a velocity crossing re-enters Walk (a genuine
+`ChangeMotionState`, so `action_instance.id` is unaffected since Walk and
+Dash already share motion identity 102) with the frame remapped
+proportionally into the new kind's length, reproducing the source's
+truncating quotient/remainder/remap chain exactly
+(`fighter::locomotion::walk_retype_frame`). Slippi's `action_state` now
+reports 15/16/17 by kind with animation indices 7/8/9, and `action_age`
+publishes the tracked float frame instead of the integer `action_frame`
+while the resource is present; `action_frame` itself is kept for Walk's own
+internal bookkeeping. With either resource absent, Walk keeps its pre-batch
+behavior unchanged: a single state (15/7) with an integer `action_frame`
+published as `state_age`.
+
+No discrepancy against the pinned source was found; the existing walk
+physics (`getWalkAccel`/`ftWalkCommon_800E0060`, already audited by an
+earlier batch) is unchanged. This batch's own explicit modeling choices,
+documented in `docs/walk.md` rather than treated as verified source
+behavior: `last_rate` is initialized to 1.0 at Walk entry (mirroring
+`Fighter_ChangeMotionState`'s own `rate = 1` argument, not independently
+confirmed against the animation system's own sub-frame scheduling), and the
+`frame >= length` wrap rule (not independently reverse-verified against
+`ftAnim`/`lbAnim`'s own loop bookkeeping).
+
+`src/fighter/locomotion.rs` adds 3 unit tests for the pure `walk_kind`
+threshold/sign arithmetic, `walk_animation_rate`'s zero-rate/`x0`-branch
+selection and `walk_retype_frame`'s truncating remap chain.
+`tests/game_walk.rs` (9 tests) covers: Slow/frame-0 entry from Wait;
+a full-stick ramp (kept below the dash-magnitude threshold throughout)
+reaching Middle then Fast with a stable `action_instance.id` and every
+remapped frame bit-exact against the pure helper; the animation rate's
+one-frame delay and its zero value while moving against facing, checked
+bit-exactly across a whole ramp; wrapping at the Slow kind's length; Wait-
+chain exit on a reversed or below-threshold stick, with Walk's own Anim-
+phase advance for that exit frame still accounted for; a tilt press
+preempting the retype check on its own frame; checkpoints; invalid
+resources; and `None` keeping the pre-batch behavior.
+`tests/walkcommon_differential.rs` (5 tests, 512 proptest cases each for the
+type/rate/retype helpers) pins `ftWalkCommon_GetWalkType`,
+`ftWalkCommon_800DFC70`, `ftWalkCommon_800DFCA4`, `ftWalkCommon_800DFDDC` and
+`ftWalkCommon_800DFEC8` from a new `walkcommon` snapshot of `ftwalkcommon.c`
+(distinct from the existing `ftwalk` adapter, which pins the same upstream
+file's unrelated walk-physics functions), mapping the `static inline`
+`..._800DFBF8_fake` duplicate to the pinned, non-static
+`ftWalkCommon_GetWalkType` in the adapter. `walk_kind`/`walk_animation_rate`
+are compared over the full binary32 domain including NaN; `walk_retype_frame`
+is scoped to the finite, positive frame/length domain this codebase ever
+calls it with (C's float-to-`s32` truncation is undefined outside it, unlike
+Rust's saturating cast), with a fixed threshold/velocity table that
+deterministically reaches every `(cur_kind, new_kind)` pair including the
+same-kind no-op. `crates/skirmish-replay/src/observation.rs`'s existing
+common-action/animation-id table test adds direct Middle/Fast kind coverage
+(16/8, 17/9). `crates/cli/tests/replay_match.rs`'s
+`file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_
+stick_mismatch` walks a full ramp, confirms every recorded row's reported
+state/animation matches its current kind and that the ramp reaches Middle
+then Fast, matches its own generated Peppi bytes (including the float
+`state_age`), then reduces the first retype row's stick sample and confirms
+a `Mismatch` starting at that exact row.
+
 The 2026-09-11 floor-end collision modes and edge-teeter coverage batch is
 recorded at:
 

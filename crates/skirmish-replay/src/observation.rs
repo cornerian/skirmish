@@ -308,14 +308,26 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
     Observation {
         fighters: std::array::from_fn(|index| {
             let fighter = &game.state().fighters[index];
-            let max_jumps = game.data().fighters[index]
+            let fighter_data = &game.data().fighters[index];
+            let max_jumps = fighter_data
                 .locomotion
                 .as_ref()
                 .map_or(2, |parameters| parameters.max_jumps);
+            // Slippi's state_age for Walk is fp->cur_anim_frame, a float
+            // animation frame that restarts on each Slow/Middle/Fast
+            // retype; without walk_animation, Walk keeps the pre-batch
+            // integer action_frame.
+            let action_age = if fighter.action == game::Action::Walk
+                && fighter_data.movement.walk_animation.is_some()
+            {
+                fighter.locomotion.walk.frame
+            } else {
+                fighter.action_frame as f32
+            };
             FighterObservation {
                 port: ports[index],
                 action_state: action_state(fighter, Some(characters[index])),
-                action_age: fighter.action_frame as f32,
+                action_age,
                 position: fighter.position,
                 direction: fighter.facing,
                 percent: fighter.percent,
@@ -426,7 +438,10 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         Rebirth => 12,
         RebirthWait => 13,
         Wait => 14,
-        Walk => 15,
+        // 15/16/17 by walk kind (Slow/Middle/Fast); stays 15 whenever
+        // MovementData.walk_animation is absent, since the kind is then
+        // never advanced away from its default (Slow).
+        Walk => 15 + fighter.locomotion.walk.kind as u16,
         Turn => 18,
         RunTurn => 19,
         Dash => 20,
@@ -625,7 +640,8 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         7 => 0,
         8 => 1,
         12..=14 => 2,
-        15 => 7,
+        // WalkSlow/WalkMiddle/WalkFast sub-motions 7/8/9.
+        15..=17 => u32::from(state - 8),
         18..=21 => u32::from(state - 8),
         // RunBrake..Fall (23..29) and FallAerial/FallSpecial (32, 35) share
         // one contiguous sub-motion block (`ftCo_Submotion`, forward.h:649+).
@@ -1273,6 +1289,15 @@ mod tests {
                 "{action:?}"
             );
         }
+
+        fighter.action = game::Action::Walk;
+        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Middle;
+        assert_eq!(action_state(&fighter, Some(2)), Some(16));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(8));
+        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Fast;
+        assert_eq!(action_state(&fighter, Some(2)), Some(17));
+        assert_eq!(animation_index(&fighter, Some(2)), Some(9));
+        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Slow;
 
         fighter.action = game::Action::Jump;
         fighter.locomotion.jump_backward = false;

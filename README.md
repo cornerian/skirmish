@@ -147,6 +147,11 @@ no-physics `Ottotto`/`OttottoWait` states with the full Wait input chain and
 their own walk-away threshold and exit-to-Wait distance, and corrects the
 shield-escape profile's rolls and spot dodge to clamp at a floor end instead
 of falling off it.
+The [walk-speed profile](docs/walk.md) subdivides Walk into WalkSlow/
+WalkMiddle/WalkFast by ground velocity, each with its own Slippi id, sub-
+motion and animation rate; a velocity crossing re-enters Walk mid-stride
+with the animation frame remapped proportionally into the new kind's
+figatree length, without changing the reported action-instance id.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

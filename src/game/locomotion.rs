@@ -124,6 +124,11 @@ pub struct State {
     /// from an ordinary Fall entry. Set only when `JumpAerial`'s own
     /// animation end enters Fall, cleared by every other `simulation::enter`.
     pub fall_aerial: bool,
+    /// `mv.co.walk`: the current walk animation kind and float animation
+    /// frame, tracked only while `MovementData.walk_animation` is supplied
+    /// (kept at its default otherwise, which reports Slippi 15/animation 7
+    /// unconditionally, matching the pre-batch behavior).
+    pub walk: WalkState,
 }
 
 impl Default for State {
@@ -152,8 +157,67 @@ impl Default for State {
             multi_jump_yaw: 0.0,
             jump_backward: false,
             fall_aerial: false,
+            walk: WalkState::default(),
         }
     }
+}
+
+/// `fp->x2DC/x2E0/x2E4` (`Fighter_Create_Inline2`, `fighter.c:838-840`): the
+/// WalkSlow/WalkMiddle/WalkFast figatrees' frame counts, and
+/// `slow_walk_max`/`mid_walk_point`/`fast_walk_min` (`types.h:690-692`):
+/// the matching per-kind animation-rate divisors. Paired with `Rules.walk`;
+/// absent keeps the pre-batch single Walk with an integer `action_frame`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WalkAnimation {
+    pub lengths: [f32; 3],
+    pub rates: [f32; 3],
+}
+
+/// `walk_middle_animation_stick_threshold`/`walk_fast_stick_threshold`
+/// (`types.h:64-65`): fractions of `walk_max_velocity` that select the
+/// Middle/Fast walk kind. Paired with `MovementData.walk_animation`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WalkRules {
+    pub middle_threshold: f32,
+    pub fast_threshold: f32,
+}
+
+pub fn validate_walk(animation: &WalkAnimation, rules: &WalkRules) -> Result<(), Error> {
+    let valid = animation
+        .lengths
+        .iter()
+        .all(|x| x.is_finite() && *x > 0.0 && *x <= 1_000_000.0)
+        && animation
+            .rates
+            .iter()
+            .all(|x| x.is_finite() && *x > 0.0 && *x <= 1_000_000.0)
+        && rules.middle_threshold.is_finite()
+        && rules.fast_threshold.is_finite()
+        && (0.0..=1_000_000.0).contains(&rules.middle_threshold)
+        && (0.0..=1_000_000.0).contains(&rules.fast_threshold)
+        && rules.middle_threshold <= rules.fast_threshold;
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::Data(
+            "invalid walk animation lengths/rates or middle/fast thresholds".into(),
+        ))
+    }
+}
+
+pub use math::WalkKind;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WalkState {
+    pub kind: WalkKind,
+    pub frame: f32,
+    /// `ftAnim_SetAnimRate` takes effect on the *next* animation update:
+    /// this is the rate computed on the previous Walk animation frame,
+    /// applied to advance `frame` on this one.
+    pub last_rate: f32,
 }
 
 pub fn validate(p: &Parameters) -> Result<(), Error> {
@@ -462,9 +526,93 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
             }
         }
         Action::Pass if f.action_frame >= p.pass_animation_frames => enter(f, Action::Fall),
+        // ftCo_Walk_Anim (ftWalkCommon_800DFDDC): advance by the rate
+        // computed on the previous frame (SetAnimRate's one-frame delay),
+        // wrap at the current kind's figatree length, then store this
+        // frame's rate for the next call.
+        Action::Walk => {
+            if let Some(animation) = &data.movement.walk_animation {
+                advance_walk_animation(f, animation);
+            }
+        }
         _ => {}
     }
     just_turned
+}
+
+fn advance_walk_animation(f: &mut Fighter, animation: &WalkAnimation) {
+    let length = animation.lengths[f.locomotion.walk.kind as usize];
+    f.locomotion.walk.frame += f.locomotion.walk.last_rate;
+    while f.locomotion.walk.frame >= length {
+        f.locomotion.walk.frame -= length;
+    }
+    // x0/friction_multiplier: this codebase's own caller always treats the
+    // stage friction multiplier as 1 (unmodeled), which always selects the
+    // `ground_velocity` branch; x0 is unused here (see `walk_animation_rate`).
+    f.locomotion.walk.last_rate = math::walk_animation_rate(
+        f.ground_velocity,
+        f.facing,
+        f.locomotion.walk.kind,
+        animation.rates,
+        0.0,
+        1.0,
+    );
+}
+
+/// `ftCo_Walk_Enter`/`ftWalkCommon_800DFCA4` with `accel_mul = 1`: compute
+/// the walk kind from `|ground_velocity|` and (re-)enter Walk at
+/// `start_frame`. Used both by a fresh Wait/tilt -> Walk transition
+/// (`start_frame = 0`) and by `retype_walk`'s mid-walk re-entry.
+fn enter_walk(
+    f: &mut Fighter,
+    data: &FighterData,
+    walk_rules: Option<&WalkRules>,
+    start_frame: f32,
+) {
+    let kind = match (data.movement.walk_animation.as_ref(), walk_rules) {
+        (Some(_), Some(rules)) => math::walk_kind(
+            f.ground_velocity,
+            1.0,
+            rules.middle_threshold,
+            rules.fast_threshold,
+            data.movement.walk_max_velocity,
+        ),
+        _ => WalkKind::default(),
+    };
+    enter(f, Action::Walk);
+    f.locomotion.walk = WalkState {
+        kind,
+        frame: start_frame,
+        last_rate: 1.0,
+    };
+}
+
+/// `ftWalkCommon_800DFEC8`, called at the end of every Walk IASA once the
+/// earlier chain (catch/specials/smashes/tilts/jab/shield/taunt/jump/dash/
+/// squat/the Wait-exit check) has not already returned: recompute the walk
+/// kind from the current `ground_velocity`; if it differs from the stored
+/// kind, re-enter Walk (a real `ChangeMotionState`, so `action_instance.id`
+/// is unaffected -- Walk/Dash share motion identity 102) with the source's
+/// truncating start-frame remap.
+fn retype_walk(f: &mut Fighter, data: &FighterData, animation: &WalkAnimation, rules: &WalkRules) {
+    let new_kind = math::walk_kind(
+        f.ground_velocity,
+        1.0,
+        rules.middle_threshold,
+        rules.fast_threshold,
+        data.movement.walk_max_velocity,
+    );
+    if new_kind == f.locomotion.walk.kind {
+        return;
+    }
+    let current_length = animation.lengths[f.locomotion.walk.kind as usize];
+    let new_length = animation.lengths[new_kind as usize];
+    let start_frame =
+        math::walk_retype_frame(f.locomotion.walk.frame, current_length, new_length) as f32;
+    // ground_velocity is unchanged within this frame, so enter_walk's own
+    // fresh GetWalkType call (matching ftCo_Walk_Enter's real re-entry)
+    // reproduces new_kind exactly.
+    enter_walk(f, data, Some(rules), start_frame);
 }
 
 pub(crate) fn update_actions(
@@ -472,6 +620,7 @@ pub(crate) fn update_actions(
     data: &FighterData,
     attack_rules: (Option<&super::tilt::Rules>, Option<&super::smash::Rules>),
     edge_rules: Option<&super::edge::Rules>,
+    walk_rules: Option<&WalkRules>,
     input: Controller,
     just_turned: bool,
 ) {
@@ -558,7 +707,11 @@ pub(crate) fn update_actions(
                     }))
             {
                 if f.action != Action::Walk {
-                    enter(f, Action::Walk);
+                    enter_walk(f, data, walk_rules, 0.0);
+                } else if let (Some(animation), Some(rules)) =
+                    (data.movement.walk_animation.as_ref(), walk_rules)
+                {
+                    retype_walk(f, data, animation, rules);
                 }
             } else if f.action == Action::Walk {
                 enter(f, Action::Wait);

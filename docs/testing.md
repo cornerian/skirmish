@@ -353,6 +353,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `positional_angle` | Angle-362 matrix contact, three launch quadrants, vertical tie, validation and checkpoint replay |
 | `jump_variants` | Forward/backward short and full hops with the exact threshold boundary, a backward double jump independent of its preceding ground jump, `jump_backward` clearing on landing/aerial attack/air dodge, `fall_aerial` true only after a double jump's own animation end and false after an aerial attack's own end or on entering an air dodge, checkpoint replay through all three flagged phases, `None` keeping every jump forward and invalid-threshold rejection |
 | `edges` | Attacks (smash root motion, a root-motion dash attack) and a roll reaching a floor end clamping and staying grounded, walking into an admissible teeter entering Ottotto with zero velocity then OttottoWait, an outward stick at exactly the 0.75 limit and a fighter facing away both falling instead, Dash/Run past an end falling as before, every Wait-chain dispatcher reachable from Ottotto (catch, smash, shield, jump, dash, turn), the teeter walk-away threshold, checkpoint replay in both teeter phases, invalid `rules.edge`/`fighter.teeter` combinations and `rules.edge = None` keeping Wait falling while a smash still clamps |
+| `walk` | Slow walk kind and frame 0 entering from Wait, a full ramp reaching Middle then Fast with a stable `action_instance.id` and the remapped frame bit-exact against the pure helper, the animation rate's one-frame `SetAnimRate` delay and its zero value while moving against facing, wrapping at the kind's figatree length, Wait-chain exit on a reversed or deadzone stick leaving the walk state untouched, a tilt press preempting the retype check on its own frame, checkpoint replay and invalid/absent resources |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -361,6 +362,12 @@ and unported character/state branches still need independent validation.
 stick-age branch and displacement callbacks with pinned original C.
 `locomotion_differential` compares the multijump root turn, including arbitrary
 integer state and binary32 facing/yaw, with its complete pinned C callback.
+`walkcommon_differential` compares the walk-kind selection, the animation-rate
+selection and the retype start-frame remap against a new `ftwalkcommon.c`
+snapshot (`tests/oracle/original/walkcommon.c`, distinct from the existing
+`ftwalk` adapter, which pins the unrelated `getWalkAccel`/
+`ftWalkCommon_800E0060`), over generated inputs plus exact threshold/negative-
+velocity/frame-at-length boundaries.
 Adapters explicitly disable unrelated state/environment branches.
 
 | Required behavior | Integration cases |

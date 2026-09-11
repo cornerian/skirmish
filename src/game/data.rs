@@ -120,6 +120,8 @@ pub struct Rules {
     pub dash: Option<super::dash::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge: Option<super::edge::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk: Option<super::locomotion::WalkRules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -292,6 +294,10 @@ pub struct MovementData {
     /// a chainless Landing that never reaches the Wait chain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub normal_landing_lag: Option<f32>,
+    /// Paired with `Rules.walk`. Absent keeps a single Walk state (Slippi
+    /// 15) with an integer `action_frame`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_animation: Option<super::locomotion::WalkAnimation>,
 }
 
 impl MovementData {

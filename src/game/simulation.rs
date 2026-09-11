@@ -1284,6 +1284,7 @@ fn update_actions(
             data,
             (rules.tilt.as_ref(), rules.smash.as_ref()),
             rules.edge.as_ref(),
+            rules.walk.as_ref(),
             input,
             just_turned,
         );

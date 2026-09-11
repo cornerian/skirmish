@@ -365,6 +365,22 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.walk, &fighter.movement.walk_animation) {
+            (Some(walk_rules), Some(animation)) => {
+                locomotion::validate_walk(animation, walk_rules)?;
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "walk rules require walk animation data for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "walk animation data requires common walk rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         if let Some(parameters) = &fighter.locomotion {
             locomotion::validate(parameters)?;
             require(
