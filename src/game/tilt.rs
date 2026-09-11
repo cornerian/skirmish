@@ -200,6 +200,9 @@ fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {
 
 /// The chain an interruptible tilt exposes on this frame, if any.
 pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<Chain> {
+    if super::smash::interruptible(fighter, data) {
+        return Some(Chain::Wait);
+    }
     if !fighter.grounded || !owns_action(fighter.action) {
         return None;
     }
@@ -246,7 +249,7 @@ fn attacks(
     down_allowed: bool,
 ) -> Option<Action> {
     let parameters = data.tilts.as_ref()?;
-    let pressed = input.buttons & !fighter.previous_input.buttons & super::BUTTON_A != 0;
+    let pressed = super::smash::a_pressed(fighter, input);
     if !pressed {
         return None;
     }
@@ -312,13 +315,14 @@ fn attacks(
 pub(crate) fn update_ground_attacks(
     fighter: &mut Fighter,
     data: &FighterData,
-    rules: Option<&Rules>,
+    (rules, smash_rules): (Option<&Rules>, Option<&super::smash::Rules>),
     input: Controller,
 ) -> bool {
     if !attack_state(fighter, data) {
         return false;
     }
-    let pressed = input.buttons & !fighter.previous_input.buttons & super::BUTTON_A != 0;
+    // Fighter_procInput folds physical Z into the logical A press.
+    let pressed = super::smash::a_pressed(fighter, input);
     // Turn_IASA evaluates the whole chain with the post-turn facing.
     let facing = if fighter.action == Action::Turn && !fighter.locomotion.turn_has_turned {
         -fighter.facing
@@ -326,6 +330,15 @@ pub(crate) fn update_ground_attacks(
         fighter.facing
     };
     let chain = interrupt_chain(fighter, data);
+    // Smashes precede every tilt in the Wait chain and in the down tilt's
+    // interruptible block; up and down smashes keep the chain facing.
+    if (fighter.action != Action::AttackLw3 || chain.is_some())
+        && let Some((action, facing)) =
+            super::smash::select(fighter, data, smash_rules, input, facing)
+    {
+        super::smash::start(fighter, data, action, facing);
+        return true;
+    }
     if fighter.action == Action::AttackLw3 {
         // ftCo_AttackLw3_IASA: forward and up tilts, checkPadA, then the down
         // tilt itself and the jab.

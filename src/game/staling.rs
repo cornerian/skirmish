@@ -122,28 +122,36 @@ pub(crate) fn hit(state: &State, base_damage: u32, rules: Option<&Rules>) -> Res
     })
 }
 
+/// `ftColl_8007ABD0`: `scale` is the smash-charge conversion applied to the
+/// stored damage before its integer count and stale multiplier.
 pub(crate) fn sample(
     state: &mut State,
     frame: Option<&AttackFrame>,
     rules: Option<&Rules>,
+    scale: impl Fn(f32) -> f32,
 ) -> Result<(), Error> {
     let mut next = [None; 4];
     if let Some(frame) = frame {
         for (slot, hit) in frame.hitboxes.iter().enumerate() {
+            let scaled = scale(hit.damage as f32);
+            if !scaled.is_finite() || scaled < 0.0 {
+                return Err(Error::NonFinite);
+            }
+            let base_damage = scaled as u32;
             let old = state.hits[slot];
             let cached = old.filter(|old| {
                 old.identity == state.identity
                     && old.group == hit.group
-                    && old.base_damage == hit.damage
+                    && old.base_damage == base_damage
             });
             next[slot] = Some(cached.unwrap_or_else(|| Hit {
                 identity: state.identity,
                 group: hit.group,
-                base_damage: hit.damage,
-                damage: rules.map_or(hit.damage as f32, |rules| {
+                base_damage,
+                damage: rules.map_or(scaled, |rules| {
                     state
                         .queue
-                        .damage(i32::from(state.identity.move_id), hit.damage as f32, rules)
+                        .damage(i32::from(state.identity.move_id), scaled, rules)
                 }),
             }));
             if next[slot].is_some_and(|hit| !hit.damage.is_finite() || hit.damage < 0.0) {

@@ -83,6 +83,7 @@ fn spawn(
         },
         aerial: aerial::State::default(),
         tilt: tilt::State::default(),
+        smash: smash::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
         ledge: ledge::State::default(),
@@ -160,6 +161,8 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.skip_floor = None;
     // Ordinary transitions (Ft_MF_None) reset the scripted collision state.
     fighter.body_state = BodyState::default();
+    // ftCo_800DEEA8: every motion change clears the smash charge.
+    fighter.smash = smash::State::default();
     // An attack's contact history lasts through its active frames and hitlag.
     fighter.hit_groups = 0;
     fighter.hitboxes = [hitboxes::Track::default(); 4];
@@ -568,7 +571,21 @@ pub(crate) fn advance(
             None
         };
         swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
-        staling::sample(&mut fighter.staling, frame, data.rules.staling.as_ref())?;
+        let charge = fighter.smash;
+        staling::sample(
+            &mut fighter.staling,
+            frame,
+            data.rules.staling.as_ref(),
+            |damage| {
+                crate::fighter::smash::charge_damage(
+                    damage,
+                    charge.charge,
+                    charge.frames,
+                    charge.hold_frames,
+                    charge.damage_multiplier,
+                )
+            },
+        )?;
         if data.rules.clank.is_some() {
             clank::sample(&mut fighter.clank, frame);
         }
@@ -843,6 +860,7 @@ pub(crate) fn advance(
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
                 if !grab::advance_action_frame(fighter, throw_release)
                     && !locomotion::hold_action_frame(fighter)
+                    && !smash::charging(fighter)
                 {
                     fighter.action_frame = fighter.action_frame.saturating_add(1);
                 }
@@ -1146,6 +1164,7 @@ fn update_animation(
     escape::update_animation(f, data)?;
     escape_air::update_animation(f, data, rules.escape_air.as_ref())?;
     tilt::update_animation(f, data)?;
+    smash::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1168,6 +1187,8 @@ fn update_actions(
     clank_owns: bool,
     shield_owns: bool,
 ) -> Result<(), Error> {
+    // ftCo_800DF0D0 precedes every input callback.
+    smash::update_charge_input(f, input);
     if rebirth::update_actions(
         f,
         rules.rebirth.as_ref(),
@@ -1191,7 +1212,10 @@ fn update_actions(
     // Uninterruptible tilt frames own dispatch; interruptible ones expose
     // their source chains below. ftCo_AttackLw3_IASA still runs checkPadA.
     if tilt::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
-        tilt::update_ground_attacks(f, data, rules.tilt.as_ref(), input);
+        tilt::update_ground_attacks(f, data, (rules.tilt.as_ref(), rules.smash.as_ref()), input);
+        return Ok(());
+    }
+    if smash::owns_action(f.action) && tilt::interrupt_chain(f, data).is_none() {
         return Ok(());
     }
     if clank_owns {
@@ -1214,7 +1238,13 @@ fn update_actions(
         return Ok(());
     }
     if data.locomotion.is_some() {
-        locomotion::update_actions(f, data, rules.tilt.as_ref(), input, just_turned);
+        locomotion::update_actions(
+            f,
+            data,
+            (rules.tilt.as_ref(), rules.smash.as_ref()),
+            input,
+            just_turned,
+        );
         return Ok(());
     }
     let pressed = input.buttons & !f.previous_input.buttons;
@@ -1258,6 +1288,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             // Rebound's first physics callback retains projected self velocity.
         } else if let Some(target) = damage::ground_recovery_velocity(f, data)
             .or_else(|| escape::ground_target_velocity(f, data))
+            .or_else(|| smash::ground_target_velocity(f, data))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.

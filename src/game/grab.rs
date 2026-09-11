@@ -651,9 +651,9 @@ pub(crate) fn update_actions(
                 }
                 Some(Action::Catch)
             }
-            Action::Wait | Action::Walk | Action::Squat | Action::SquatWait | Action::SquatRv => {
-                Some(Action::Catch)
-            }
+            // ftCo_Catch_CheckInput runs from Wait, Walk, Squat and KneeBend;
+            // SquatWait and SquatRv chains never reach it.
+            Action::Wait | Action::Walk | Action::Squat | Action::JumpSquat => Some(Action::Catch),
             _ if super::tilt::interrupt_chain(fighter, data) == Some(super::tilt::Chain::Wait) => {
                 Some(Action::Catch)
             }

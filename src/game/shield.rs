@@ -408,7 +408,8 @@ pub(crate) fn update_actions(
                 | Action::Squat
                 | Action::SquatWait
         ) || super::tilt::interrupt_chain(f, data) == Some(super::tilt::Chain::Wait))
-        && input.buttons & !f.previous_input.buttons & super::BUTTON_A == 0
+        && !super::smash::a_pressed(f, input)
+        && super::smash::select(f, data, rules.smash.as_ref(), input, f.facing).is_none()
     {
         let pressed = input.buttons & !f.previous_input.buttons;
         // Run_IASA and Dash_IASA call ftCo_80091B9C after either shield entry.

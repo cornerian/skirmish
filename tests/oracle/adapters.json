@@ -21,5 +21,6 @@
   "capture_alignment": "capture_pulled",
   "passive_wall_launch": "passive_wall",
   "escape_cstick": "aerial_input",
-  "escape_air_angle": "ftcommon"
+  "escape_air_angle": "ftcommon",
+  "smash_cstick": "aerial_input"
 }

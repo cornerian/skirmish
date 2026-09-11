@@ -428,7 +428,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
 pub(crate) fn update_actions(
     f: &mut Fighter,
     data: &FighterData,
-    tilt_rules: Option<&super::tilt::Rules>,
+    attack_rules: (Option<&super::tilt::Rules>, Option<&super::smash::Rules>),
     input: Controller,
     just_turned: bool,
 ) {
@@ -451,7 +451,7 @@ pub(crate) fn update_actions(
                 | Action::SquatRv
         ) || interruptible_tilt);
     if grounded_action {
-        if super::tilt::update_ground_attacks(f, data, tilt_rules, input) {
+        if super::tilt::update_ground_attacks(f, data, attack_rules, input) {
             return;
         }
         if let Some(source) = jump_input(
@@ -543,6 +543,11 @@ pub(crate) fn update_actions(
             }
         }
         Action::JumpSquat => {
+            // ftCo_KneeBend_IASA: the windowless up smash precedes the
+            // short-hop sample (the catch check ran earlier in the frame).
+            if super::smash::jump_squat_up_smash(f, data, attack_rules.1, input) {
+                return;
+            }
             f.short_hop |= match f.locomotion.jump_input {
                 JumpInput::Buttons => input.buttons & (BUTTON_X | BUTTON_Y) == 0,
                 JumpInput::Stick => input.stick[1] < p.tap_jump_release_threshold,

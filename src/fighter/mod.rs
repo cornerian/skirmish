@@ -18,6 +18,7 @@ pub mod movement;
 pub mod nudge;
 pub mod rebirth;
 pub mod shield;
+pub mod smash;
 pub mod special;
 pub mod stale;
 pub mod tilt;

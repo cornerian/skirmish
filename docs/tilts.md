@@ -11,13 +11,15 @@ down tilt only, the script's repeat flag. Optional forward variants stand in
 for the source's figatree availability checks. Locomotion parameters are
 required for the input chains. Smashes, dash attacks, item branches, the
 Landing interrupt window and the Game & Watch down-tilt override are not
-modeled.
+modeled. The [smash profile](smashes.md) adds the smashes that precede these
+tilts in every chain.
 
 The implementation preserves these examined source branches:
 
 - Wait, Walk, Turn, Squat, SquatWait and SquatRv chains check the forward tilt,
-  up tilt, down tilt and then the jab, after catches and before shields, jumps,
-  dashes, turns and walks. Turn evaluates the chain with its post-turn facing.
+  up tilt, down tilt and then the jab, after catches and smashes and before
+  shields, jumps, dashes, turns and walks. Turn evaluates the chain with its
+  post-turn facing. Physical Z reads as the logical A press.
 - `ftCo_AttackS3_CheckInput` needs a fresh A press, facing-relative stick X at
   or beyond `x98` and `ftCo_GetLStickAngle` (`atan2f(y, |x|)`) strictly inside
   `x20_radians`; `decideAngle` picks High above `x9C`, HighSlight above `xA0`,
@@ -43,10 +45,11 @@ The implementation preserves these examined source branches:
   attack instance after the ordinary `ft_800890D0` identity change and
   allocate two action instances with identity 0 before the ordinary
   motion-change accounting.
-- `ftCo_Catch_CheckInput` from the same states now accepts a fresh logical A
-  press with the logical shoulder held (physical Z or A with a shoulder), and
-  `ftCo_800D8A38` does the same from Dash and Run; SquatWait and SquatRv join
-  the catch states.
+- `ftCo_Catch_CheckInput` from Wait, Walk, Squat and KneeBend accepts a fresh
+  logical A press with the logical shoulder held (physical Z or A with a
+  shoulder), and `ftCo_800D8A38` does the same from Dash and Run. SquatWait
+  and SquatRv chains have no catch check, so Z there is the logical A press
+  of the attack chain.
 
 Tilts map to Slippi states 51..57 with animation indices 53..59. The buffered
 repeat flag, stale identities and action instances survive checkpoints.

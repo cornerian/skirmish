@@ -820,6 +820,13 @@ pub(crate) fn apply_hit(
             "combat rules produced negative knockback".into(),
         ));
     }
+    // ftCo_Damage_CalcKnockback scales a charging victim before armor.
+    let knockback = match &data.rules.smash {
+        Some(smash) if super::smash::charging(target) => {
+            knockback * smash.charging_knockback_multiplier
+        }
+        _ => knockback,
+    };
     let knockback = data.fighters[victim]
         .armor
         .as_ref()

@@ -1,5 +1,33 @@
 # Local validation provenance
 
+The 2026-09-10 smash coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-smashes-20260910-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. Match integration coverage selects every forward-smash angle variant
+with the stick-sign facing and availability fallbacks, enforces the strict
+dash-stick window, orders up and down smashes before tilts with inclusive
+thresholds and float windows, enters from fresh C-stick crossings without a
+button (also over a same-frame shield press), keeps Turn's post-turn facing,
+reaches the smashes from SquatWait and Walk, jump-cancels the windowless up
+smash and the grab from JumpSquat, leaves a released press unarmed, freezes the
+charge pose while A is held until release or the hold limit, scales released
+damage (including a fractional value with its truncated stale count), scales a
+charging victim's knockback before armor, applies TransN root motion in both
+facings with a frozen charge pose, opens the Wait chain only on flagged
+samples, re-enters from a released and re-crossed C-stick, reads Z as the
+logical A press from the down tilt, restores checkpoints in every charge phase
+and rejects invalid resources. The complete input predicates, the forward
+entry with `decideFighter`/`doEnter`, the windowless KneeBend variant, the
+fresh C-stick predicates and the charge lifecycle are compared with pinned C.
+Peppi-written replays match a charged forward smash, a C-stick down smash and
+an up smash, report Slippi states 58..64 with animation indices 60..66 and the
+frozen action frame, and detect a removed press, an early release or a removed
+C-stick sample at its first affected frame. The tilt batch's SquatWait/SquatRv
+catch was corrected: `ftCo_Catch_CheckInput` is not in those chains.
+
 The 2026-09-10 tilt coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-tilts-20260910-verified`

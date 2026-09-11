@@ -273,6 +273,45 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.smash, &fighter.smashes) {
+            (Some(smash_rules), Some(parameters)) => {
+                smash::validate(smash_rules, parameters, fighter, rules.staling.is_some())?;
+                require(
+                    rules.knockback.maximum
+                        * smash_rules.charging_knockback_multiplier.max(1.0)
+                        * rules.hitstun_scale
+                        < 1_000_000.0,
+                    "charging knockback multiplier exceeds the supported hitstun range",
+                )?;
+                for (attack, _) in smash::attacks(parameters) {
+                    let multiplier = attack
+                        .charge
+                        .map_or(1.0, |charge| charge.damage_multiplier.max(1.0));
+                    for hit in attack
+                        .attack
+                        .frames
+                        .iter()
+                        .flat_map(|frame| &frame.hitboxes)
+                    {
+                        require(
+                            hit.damage as f32 * multiplier * rules.hitlag.damage_scale
+                                + rules.hitlag.base
+                                < 1_000_000.0,
+                            "charged smash hitlag exceeds the supported counter range",
+                        )?;
+                    }
+                }
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "smash rules require attacks for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("smash attacks require common rules".into()));
+            }
+            (None, None) => {}
+        }
         match (&rules.escape_air, &fighter.escape_air) {
             (Some(rules), Some(parameters)) => escape_air::validate(rules, parameters, fighter)?,
             (Some(_), None) => {
@@ -547,6 +586,12 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .knockdown
                     .iter()
                     .flat_map(|p| [&p.face_up.attack, &p.face_down.attack]),
+            )
+            .chain(
+                fighter
+                    .smashes
+                    .iter()
+                    .flat_map(|p| smash::attacks(p).map(|(attack, _)| &attack.attack)),
             )
             .chain(fighter.tilts.iter().flat_map(|p| {
                 [

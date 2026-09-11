@@ -317,13 +317,15 @@ fn a_with_a_held_shoulder_grabs_from_the_wait_family_like_z() {
             Action::Catch
         );
     }
+    // ftCo_SquatWait_IASA never reaches the catch check: Z is the logical A
+    // press and the held stick selects the down tilt instead.
     let mut crouched = Match::new(data(), 42).unwrap();
     for _ in 0..7 {
         step(&mut crouched, input(0, [0.0, -1.0]));
     }
     assert_eq!(
         step(&mut crouched, input(BUTTON_Z, [0.0, -1.0])).fighters[0].action,
-        Action::Catch
+        Action::AttackLw3
     );
     let mut running = Match::new(data(), 42).unwrap();
     for _ in 0..9 {

@@ -20,6 +20,7 @@ pub mod nudge;
 pub mod rebirth;
 pub mod shield;
 mod simulation;
+pub mod smash;
 pub mod special;
 pub mod stage_motion;
 pub mod staling;
@@ -112,6 +113,13 @@ pub enum Action {
     AttackS3Lw,
     AttackHi3,
     AttackLw3,
+    AttackS4Hi,
+    AttackS4HiS,
+    AttackS4S,
+    AttackS4LwS,
+    AttackS4Lw,
+    AttackHi4,
+    AttackLw4,
     Catch,
     CatchDash,
     CatchPull,
@@ -220,6 +228,7 @@ pub struct Fighter {
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
     pub tilt: tilt::State,
+    pub smash: smash::State,
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,

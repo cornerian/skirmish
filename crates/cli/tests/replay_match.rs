@@ -27,6 +27,8 @@ mod escape_support;
 mod grab_support;
 #[path = "../../../tests/support/ledge.rs"]
 mod ledge_support;
+#[path = "../../../tests/support/smash.rs"]
+mod smash_support;
 #[path = "../../../tests/support/special.rs"]
 mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
@@ -977,6 +979,110 @@ fn file_backed_tilts_match_and_detect_their_first_changed_attack_frame() {
                     checked_frames: 0,
                     ..
                 }
+            ),
+            "{}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn file_backed_smashes_match_and_detect_their_first_changed_input_frame() {
+    let data = smash_support::profile(tilt_support::profile(shield_drop_data()));
+    struct Case {
+        name: &'static str,
+        buttons: u16,
+        stick: [f32; 2],
+        cstick: [f32; 2],
+        held_rows: usize,
+        checks: &'static [(usize, Action, u16, u32, u32)],
+        changed_row: usize,
+    }
+    let cases = [
+        Case {
+            // A held through row 5: the pose-2 command charges for three
+            // frames and the release resumes the animation on row 6.
+            name: "charged forward smash",
+            buttons: BUTTON_A,
+            stick: [1.0, 0.0],
+            cstick: [0.0, 0.0],
+            held_rows: 6,
+            checks: &[
+                (0, Action::AttackS4S, 60, 62, 1),
+                (2, Action::AttackS4S, 60, 62, 2),
+                (5, Action::AttackS4S, 60, 62, 2),
+                (6, Action::AttackS4S, 60, 62, 3),
+                (14, Action::Wait, 14, 2, 1),
+            ],
+            changed_row: 3,
+        },
+        Case {
+            name: "C-stick down smash",
+            buttons: 0,
+            stick: [0.0, 0.0],
+            cstick: [0.0, -1.0],
+            held_rows: 1,
+            checks: &[
+                (0, Action::AttackLw4, 64, 66, 1),
+                (8, Action::Wait, 14, 2, 1),
+            ],
+            changed_row: 0,
+        },
+        Case {
+            name: "up smash",
+            buttons: BUTTON_A,
+            stick: [0.0, 1.0],
+            cstick: [0.0, 0.0],
+            held_rows: 1,
+            checks: &[
+                (0, Action::AttackHi4, 63, 65, 1),
+                (9, Action::Wait, 14, 2, 1),
+            ],
+            changed_row: 0,
+        },
+    ];
+    for case in cases {
+        let mut inputs = vec![IDLE; 16];
+        inputs[0][0].buttons = case.buttons;
+        inputs[0][0].stick = case.stick;
+        inputs[0][0].cstick = case.cstick;
+        for row in inputs.iter_mut().take(case.held_rows).skip(1) {
+            row[0].buttons = case.buttons;
+        }
+        let recording = Recording::from_script(data.clone(), 47, inputs);
+        for &(row, action, state, animation, action_frame) in case.checks {
+            let fighter = &recording.states[row].fighters[0];
+            assert_eq!(fighter.action, action, "{} row {row}", case.name);
+            assert_eq!(
+                fighter.action_frame, action_frame,
+                "{} row {row}",
+                case.name
+            );
+            assert_eq!(observation::action_state(fighter, Some(2)), Some(state));
+            assert_eq!(
+                observation::animation_index(fighter, Some(2)),
+                Some(animation)
+            );
+        }
+
+        let bytes = recording.bytes(support::Fixture::default(), |_| {});
+        matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+        let row = case.changed_row;
+        let changed = recording.bytes(support::Fixture::default(), move |frames| {
+            let pre = &mut frames.ports[0].leader.pre;
+            pre.buttons.set(row, Some(0));
+            pre.buttons_physical.set(row, Some(0));
+            pre.cstick.x.set(row, Some(0.0));
+            pre.cstick.y.set(row, Some(0.0));
+        });
+        assert!(
+            matches!(
+                recording.compare(&changed).outcome,
+                Outcome::Mismatch {
+                    frame,
+                    checked_frames,
+                    ..
+                } if frame == FIRST + row as i32 && checked_frames == row as u64
             ),
             "{}",
             case.name

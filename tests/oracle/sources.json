@@ -308,5 +308,25 @@
     "fixture": "tests/oracle/original/attack_lw3.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw3.c",
     "sha256": "bc2a3450b48af01ebfbf13eb52bc64849d99d4826793fb7c178678695caa01df"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_s4.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS4.c",
+    "sha256": "155e2cd8b703ff24d427ba42807ae464927502f01a3ed53c2ee0d2df754fd913"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_hi4.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi4.c",
+    "sha256": "b6b15f38befea0d2303d20240f9538e6a9fc72d1ea263f008ba11b23ec57ceed"
+  },
+  {
+    "fixture": "tests/oracle/original/attack_lw4.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw4.c",
+    "sha256": "669a1d1248df474794868ccdaae7b432f7cf5d5b8b1df921a5f615c1ba2ce7d9"
+  },
+  {
+    "fixture": "tests/oracle/original/smash_charge.c",
+    "upstream": "src/melee/ft/ft_0DF0.c",
+    "sha256": "38836511908f55b2c5860ff30174374b980abf9e99869b151ad9b1c48d72673e"
   }
 ]
