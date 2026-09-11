@@ -3,5 +3,5 @@
   "checked_frames": 0,
   "export_version": "v1",
   "updated": "2026-09-11",
-  "note": "Placeholder baseline: -123 is the replay's own first checked frame, so it is the worst possible result and any real comparison against the fox-fd gameplay export passes the ratchet trivially. The gameplay export does not exist yet (see docs/gameplay-export.md); once it is published and SKIRMISH_GAMEPLAY_DATA/fox-fd/match-data.json exists in CI, the reviewer should replace this file with the run's actual first_divergent_frame (or null once the full match matches) so later regressions are caught."
+  "note": "Measured on 2026-09-11 with the published v1 gameplay export (sha256 eb51826f...). The very first post-frame (-123) already diverges: P1's action_state is 0x0142 (Entry, the match-start warp-in) in the replay while Skirmish starts in 0x001d (Fall). Match start (Entry/EntryStart, the countdown) is the first parity batch; move this value forward as batches land so later regressions are caught."
 }

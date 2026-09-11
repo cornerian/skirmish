@@ -36,7 +36,7 @@ jobs:
               sys.exit(0)
 
           url = (
-              "https://huggingface.co/datasets/maxtretikov/skirmish-datapacks/resolve/main/"
+              "https://huggingface.co/datasets/cornerian/skirmish-datapacks/resolve/main/"
               f"gameplay/{lock['version']}/{lock['file']}"
           )
           dest = Path(os.environ["RUNNER_TEMP"]) / lock["file"]

@@ -142,7 +142,7 @@ baseline), neither committed.
 `.github/workflows/system-tests.yml` (renamed from "System tests (Slippi file
 parity)" to "System tests (Slippi replays)") adds a step, gated on `secrets.
 HF_TOKEN` being set, that downloads `gameplay/<version>/<file>` from
-`https://huggingface.co/datasets/maxtretikov/skirmish-datapacks`, verifies its
+`https://huggingface.co/datasets/cornerian/skirmish-datapacks`, verifies its
 sha256/size against `tests/fixtures/slippi/parity/gameplay-export.lock.json`,
 extracts it and exports `SKIRMISH_GAMEPLAY_DATA`; the step prints a notice and
 skips while the lock's `sha256` is still the committed placeholder

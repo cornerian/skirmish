@@ -13,7 +13,7 @@ time.
 
 The reviewer runs this once against the real export
 (`/mnt/archive/datasets/melee/skirmish-gameplay/<version>/`), uploads the
-resulting tarball to `https://huggingface.co/datasets/maxtretikov/skirmish-datapacks`
+resulting tarball to `https://huggingface.co/datasets/cornerian/skirmish-datapacks`
 under `gameplay/<version>/<file>`, and pastes the printed JSON over
 `tests/fixtures/slippi/parity/gameplay-export.lock.json`'s placeholder
 (`"sha256": "pending"`), which is what tells `system-tests.yml` to stop

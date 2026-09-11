@@ -66,10 +66,19 @@ than what this one recording happens to exercise; agreement beyond the
 selected observation fields (`docs/replays.md`'s `fighter-post-v11` policy
 excludes RNG, collision-line geometry, items and more); or agreement once the
 first divergence is reached — the report's `checked_frames` is a matched
-*prefix*, not a summary of the whole file. It is also gated on real data that
-does not exist yet: until the gameplay export is published and
-`SKIRMISH_GAMEPLAY_DATA` is set (see `docs/gameplay-export.md`), this test
-skips and the ratchet cannot move. A skip is not evidence of anything.
+*prefix*, not a summary of the whole file. It is also gated on real data:
+without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
+skips, and a skip is not evidence of anything.
+
+**Current measurement (2026-09-11, gameplay export v1, private dataset
+`cornerian/skirmish-datapacks`, pinned by
+`tests/fixtures/slippi/parity/gameplay-export.lock.json`):** the first
+divergent frame is -123, the recording's first post-frame. Port P1's action
+state there is 0x0142 (Entry, the match-start warp-in) while Skirmish
+begins in 0x001d (Fall): match start is not modeled, so no frame has been
+matched yet. The export also models only Fox's jab as an attack; every other
+sub-action is absent from the data. The baseline file records this number
+and must move forward as batches land.
 
 ## Practical consequence
 
