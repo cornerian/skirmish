@@ -57,7 +57,10 @@ pub(crate) fn update_actions(fighter: &mut Fighter, data: &FighterData, input: C
                 | Action::Squat
                 | Action::SquatWait
                 | Action::SquatRv
-        ) || super::tilt::interrupt_chain(fighter, data) == Some(super::tilt::Chain::Wait));
+        ) || matches!(
+            super::tilt::interrupt_chain(fighter, data),
+            Some(super::tilt::Chain::Wait) | Some(super::tilt::Chain::Taunt)
+        ));
     let air = !fighter.grounded
         && (super::damage::wall_tech_interruptible(fighter)
             || super::damage::damage_air_interruptible(fighter)

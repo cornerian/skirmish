@@ -87,6 +87,10 @@ pub(crate) enum Chain {
     /// `ftCo_Attack11_IASA` / `ftCo_Attack12_IASA`: smashes and tilts, the
     /// rapid and follow-up checks, then jump, dash, squat, turn and walk.
     Jab,
+    /// `ftCo_AppealS_IASA`: `ftCo_Wait_IASA`'s specials/catch/attacks/spot-
+    /// dodge/shield segment exactly, without its jump/dash/squat/turn/walk
+    /// tail.
+    Taunt,
 }
 
 pub(crate) fn validate(
@@ -217,6 +221,9 @@ pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<C
     }
     if super::jab::owns_action(fighter.action) {
         return super::jab::interrupt_chain(fighter, data);
+    }
+    if super::taunt::owns_action(fighter.action) {
+        return super::taunt::interrupt_chain(fighter, data);
     }
     if !fighter.grounded || !owns_action(fighter.action) {
         return None;

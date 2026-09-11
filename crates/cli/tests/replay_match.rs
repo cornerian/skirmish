@@ -43,6 +43,8 @@ mod smash_support;
 mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
+#[path = "../../../tests/support/taunt.rs"]
+mod taunt_support;
 #[path = "../../../tests/support/tilt.rs"]
 mod tilt_support;
 #[path = "../../../tests/support/walk.rs"]
@@ -2735,4 +2737,138 @@ fn file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_stic
         Outcome::Mismatch { frame, checked_frames, .. }
             if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
     ));
+}
+
+fn taunt_replay_data() -> MatchData {
+    let mut data: MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    data.rules.countdown_frames = 0;
+    data.rules.time_limit_frames = 9_999;
+    data.stage.floor.left = -100.0;
+    data.stage.floor.right = 100.0;
+    data.stage.blast = [-200.0, 200.0, -200.0, 200.0];
+    data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
+    taunt_support::profile(data)
+}
+
+#[test]
+fn file_backed_dpad_up_taunt_from_wait_reports_264_239_and_detects_its_removal() {
+    let mut inputs = vec![IDLE; 6];
+    inputs[0][0].buttons = skirmish::game::BUTTON_DPAD_UP;
+    let recording = Recording::from_script(taunt_replay_data(), 42, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::AppealSR);
+    assert_eq!(
+        observation::action_state(&recording.states[0].fighters[0], Some(2)),
+        Some(264)
+    );
+    assert_eq!(
+        observation::animation_index(&recording.states[0].fighters[0], Some(2)),
+        Some(239)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // Removing the D-pad-up press leaves fighter 0 in Wait: the comparison
+    // diverges starting at the very frame the press's effect first appears.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn file_backed_dpad_up_taunt_facing_left_reports_265_240_and_detects_its_removal() {
+    // Fighter 1 faces -X by default, and the shared taunt fixture supplies
+    // a left motion.
+    let mut inputs = vec![IDLE; 6];
+    inputs[0][1].buttons = skirmish::game::BUTTON_DPAD_UP;
+    let recording = Recording::from_script(taunt_replay_data(), 42, inputs);
+    assert_eq!(recording.states[0].fighters[1].action, Action::AppealSL);
+    assert_eq!(
+        observation::action_state(&recording.states[0].fighters[1], Some(2)),
+        Some(265)
+    );
+    assert_eq!(
+        observation::animation_index(&recording.states[0].fighters[1], Some(2)),
+        Some(240)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[1].leader.pre.buttons.set(0, Some(0));
+        frames.ports[1].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn file_backed_wait_chain_spot_dodge_reports_235_on_the_l_press_frame() {
+    // ftCo_Wait.c:58 precedes the ordinary shield check: a held shoulder
+    // with the stick already down dodges on the very press frame, without a
+    // GuardOn frame in between (`docs/shield.md`).
+    let mut data = escape_support::profile(taunt_replay_data());
+    for fighter in &mut data.fighters {
+        fighter.locomotion = Some(
+            serde_json::from_str(include_str!("../../../tests/fixtures/game/locomotion.json"))
+                .unwrap(),
+        );
+    }
+    let mut inputs = vec![IDLE; 5];
+    inputs[0][0].buttons = BUTTON_L;
+    inputs[0][0].stick = [0.0, -1.0];
+    let recording = Recording::from_script(data, 42, inputs);
+    assert_eq!(recording.states[0].fighters[0].action, Action::EscapeN);
+    assert_eq!(
+        observation::action_state(&recording.states[0].fighters[0], Some(2)),
+        Some(235)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // Removing the L press leaves fighter 0 in Wait (the stick alone never
+    // dodges), diverging starting at the press frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_replay_containing_an_inert_dpad_down_press_still_imports() {
+    let mut inputs = vec![IDLE; 4];
+    inputs[0][0].buttons = skirmish::game::BUTTON_DPAD_DOWN;
+    let recording = Recording::from_script(taunt_replay_data(), 42, inputs);
+    // Every D-pad bit except up is inert: fighter 0 stays in Wait.
+    assert_eq!(recording.states[0].fighters[0].action, Action::Wait);
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
 }

@@ -6,9 +6,10 @@
 #include <stdint.h>
 
 typedef uint8_t u8;
+typedef uint32_t u32;
 typedef int FtMotionId;
 typedef struct { float x, y; } Vec2;
-typedef struct { Vec2 lstick[1]; Vec2 cstick[1]; } FighterInput;
+typedef struct { Vec2 lstick[1]; Vec2 cstick[1]; u32 held_buttons[1]; } FighterInput;
 typedef struct Fighter {
     FighterInput input;
     float facing_dir;
@@ -21,6 +22,8 @@ typedef struct { float x314; int x318; float x31C; int x320; int x324; } ftCommo
 /* Runtime/platform.h definition, including signed-zero behavior. */
 #define ABS(x) ((x) < 0 ? -(x) : (x))
 enum { ftCo_MS_EscapeF = 233, ftCo_MS_EscapeB = 234, ftCo_MS_EscapeN = 235 };
+/* controller.h: HSD_PAD_L = 1 << 6, HSD_PAD_R = 1 << 5. */
+#define HSD_PAD_LR ((1 << 6) | (1 << 5))
 
 static _Thread_local ftCommonData common;
 static _Thread_local ftCommonData* p_ftCommonData;
@@ -94,6 +97,30 @@ int oracle_escape_spot_dodge(float stick_y, uint8_t tilt_y_age, float cstick_y,
     Fighter_GObj gobj = { &fighter };
     entered_motion = 0;
     int result = ftCo_8009980C(&gobj);
+    *motion = entered_motion;
+    return result;
+}
+
+/* Complete ftCo_80099794 (the Wait/AppealS-chain-only spot dodge: a held
+ * logical shoulder AND inlineB0's fresh downward main stick, unlike
+ * ftCo_8009980C's inlineB0-OR-C-stick gate above): returns the predicate
+ * result and whether EscapeN was entered. `held` scripts
+ * `input.held_buttons[0] & HSD_PAD_LR`. */
+int oracle_wait_spot_dodge(int held, float stick_y, uint8_t tilt_y_age, float threshold,
+                           int window, int* motion)
+{
+    common = (ftCommonData) { .x314 = threshold, .x318 = window };
+    p_ftCommonData = &common;
+    Fighter fighter = {
+        .input = {
+            .lstick = {{ 0, stick_y }},
+            .held_buttons = { held ? (uint32_t) HSD_PAD_LR : 0 },
+        },
+        .x671_timer_lstick_tilt_y = tilt_y_age,
+    };
+    Fighter_GObj gobj = { &fighter };
+    entered_motion = 0;
+    int result = ftCo_80099794(&gobj);
     *motion = entered_motion;
     return result;
 }

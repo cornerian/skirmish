@@ -220,6 +220,38 @@ pub(crate) fn try_spot_dodge(
     Ok(true)
 }
 
+/// `ftCo_80099794`/`inlineB0`: in the Wait and AppealS chains only (`ftCo_
+/// Wait.c:58` precedes the ordinary shield check `ftCo_80091A4C` at line 59;
+/// `ftCo_AppealS_IASA` checks it at the same relative position), a held
+/// logical shoulder together with a fresh downward main stick (age inside
+/// the `x318` window) enters EscapeN directly -- unlike `try_spot_dodge`
+/// above (`ftCo_8009980C`), the held C-stick alternative (`ftCo_800DF8E8`)
+/// is not part of this check, and the shoulder must be held rather than the
+/// stick predicate alone being sufficient. Walk's chain has no
+/// `ftCo_80099794` call, so this must not be reached from Walk.
+pub(crate) fn try_wait_chain_spot_dodge(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: Option<&Rules>,
+    input: Controller,
+) -> Result<bool, Error> {
+    let (Some(rules), Some(_)) = (rules, data.escape.as_ref()) else {
+        return Ok(false);
+    };
+    if !input.shield_held()
+        || !math::main_stick_spot_dodge(
+            input.stick[1],
+            fighter.locomotion.tilt_y_age,
+            rules.spot_dodge_stick_threshold,
+            rules.spot_dodge_window,
+        )
+    {
+        return Ok(false);
+    }
+    start(fighter, data, Action::EscapeN)?;
+    Ok(true)
+}
+
 /// `ftCo_80099264`: a held shoulder starts the forward roll directly
 /// (`ftCo_800992A8(EscapeF, false)`), skipping the ordinary stick-based
 /// selection in `try_roll`. Dash's early phase only.

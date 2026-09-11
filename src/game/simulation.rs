@@ -1204,6 +1204,7 @@ fn update_animation(
     tilt::update_animation(f, data)?;
     smash::update_animation(f, data)?;
     dash::update_animation(f, data)?;
+    taunt::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
     let just_turned = locomotion::update_animation(f, data, input);
@@ -1290,7 +1291,41 @@ fn update_actions(
     if grab::update_actions(f, data, rules.grab.as_ref(), input) {
         return Ok(());
     }
+    // ftCo_Wait.c:58 precedes the ordinary shield check ftCo_80091A4C at
+    // line 59; ftCo_AppealS_IASA reaches ftCo_80099794 at the same relative
+    // position. In both chains only (Walk's chain has no ftCo_80099794 call),
+    // a held shoulder with a fresh downward main stick enters EscapeN
+    // directly, before this frame ever raises GuardOn.
+    if (f.action == Action::Wait || tilt::interrupt_chain(f, data) == Some(tilt::Chain::Taunt))
+        && escape::try_wait_chain_spot_dodge(f, data, rules.escape.as_ref(), input)?
+    {
+        return Ok(());
+    }
     if shield::update_actions(f, data, rules, input, shield_owns)? {
+        return Ok(());
+    }
+    // ftCo_800DE9D8, checked after the shield entry and before the jump
+    // dispatch in every chain that lists it (Wait, Walk, Squat, SquatWait,
+    // SquatRv, Turn, Landing, Ottotto/OttottoWait, AttackS4's interruptible
+    // chain and the down tilt's interruptible block; Run and Dash reach it
+    // from dash::update_dash_or_run's own block_42 instead, before this
+    // point is ever reached for them).
+    if f.grounded
+        && (matches!(
+            f.action,
+            Action::Wait
+                | Action::Walk
+                | Action::Squat
+                | Action::SquatWait
+                | Action::SquatRv
+                | Action::Turn
+        ) || edge::owns_action(f.action)
+            || matches!(
+                tilt::interrupt_chain(f, data),
+                Some(tilt::Chain::Wait) | Some(tilt::Chain::DownTilt)
+            ))
+        && taunt::try_taunt(f, data, input)?
+    {
         return Ok(());
     }
     // Every airborne chain checks ftCo_80099A58 before aerial attacks and jumps.
@@ -1356,6 +1391,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             .or_else(|| smash::ground_target_velocity(f, data))
             .or_else(|| jab::ground_target_velocity(f, data))
             .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
+            .or_else(|| taunt::ground_target_velocity(f, data))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.
@@ -1514,6 +1550,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else if let Some(pose) = escape_air::pose(fighter, data) {
         pose
     } else if let Some(pose) = edge::pose(fighter, data) {
+        pose
+    } else if let Some(pose) = taunt::pose(fighter, data) {
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?

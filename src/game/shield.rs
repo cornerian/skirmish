@@ -407,7 +407,12 @@ pub(crate) fn update_actions(
             // phase never checks shield at all); this ordinary, phase-blind
             // check only applies to them when that module is absent.
             || (rules.dash.is_none() && matches!(f.action, Action::Dash | Action::Run))
-            || super::tilt::interrupt_chain(f, data) == Some(super::tilt::Chain::Wait))
+            // ftCo_AppealS_IASA reaches ftCo_80091A4C too (see taunt.rs);
+            // Chain::DownTilt's own real chain has no shield check.
+            || matches!(
+                super::tilt::interrupt_chain(f, data),
+                Some(super::tilt::Chain::Wait) | Some(super::tilt::Chain::Taunt)
+            ))
         && !super::smash::a_pressed(f, input)
         && super::smash::select(f, data, rules.smash.as_ref(), input, f.facing).is_none()
     {

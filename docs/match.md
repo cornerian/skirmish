@@ -273,6 +273,25 @@ draw shifts every later random event in the same frame and match. Without
 it, `Action::Wait` keeps its pre-batch behavior: `action_frame` grows
 without bound and the reported animation index stays 2.
 
+Optional per-fighter `FighterData.taunt` ([taunt profile](taunt.md)) adds
+`Action::AppealSR`/`AppealSL`: a fresh D-pad-up press starts it from Wait,
+Walk, Squat, SquatWait, SquatRv, Turn, Landing, Run, Ottotto/OttottoWait,
+AttackS4's interruptible frames, the down tilt's interruptible frames and
+Dash's own block_42 check (falling through into Dash's `x54` friction tail
+the same way a fall-through transition already does; the identical check
+reached from Run applies no such tail). AppealSL fires when facing left and
+a left motion is supplied, else AppealSR; `allow_interrupt` starts false
+and is governed by the supplied pose flags from then on, exposing specials,
+catch, smashes, tilts, jab, the Wait-chain spot dodge and shield -- never
+jump, dash, squat, turn or walk. Root motion applies when a pose supplies
+it, otherwise ordinary ground friction; collision uses the mode-2 clamp.
+The same batch adds the D-pad bits to `Controller`/the replay importer
+(only up has an effect) and corrects the Wait (and AppealS) input chain: a
+held shoulder with the main stick already pointed down inside its fresh-
+input window dodges into EscapeN on that exact frame, instead of first
+raising GuardOn and only dodging a frame later once already in a guard
+state (`docs/shield.md`).
+
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus

@@ -388,5 +388,10 @@
     "fixture": "tests/oracle/original/waitanim.c",
     "upstream": "src/melee/ft/ftwaitanim.c",
     "sha256": "8d0f5e48e3a4102a9c103912352157721229e2472d741dc065332474f4f42871"
+  },
+  {
+    "fixture": "tests/oracle/original/appeal.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AppealS.c",
+    "sha256": "7e8153323fd2a45d0c16fd3fe5841ff88548a93df2d68bc4948ee952bd196841"
   }
 ]

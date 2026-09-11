@@ -29,6 +29,7 @@ pub mod smash;
 pub mod special;
 pub mod stage_motion;
 pub mod staling;
+pub mod taunt;
 pub mod tilt;
 mod validation;
 pub mod wall_jump;
@@ -46,6 +47,16 @@ pub const BUTTON_L: u16 = 0x40;
 pub const BUTTON_R: u16 = 0x20;
 pub const BUTTON_X: u16 = 0x400;
 pub const BUTTON_Y: u16 = 0x800;
+/// `sysdolphin/baselib/controller.h:13`: `HSD_PAD_DPADLEFT = 1 << 0`.
+pub const BUTTON_DPAD_LEFT: u16 = 0x1;
+/// `controller.h:14`: `HSD_PAD_DPADRIGHT = 1 << 1`.
+pub const BUTTON_DPAD_RIGHT: u16 = 0x2;
+/// `controller.h:15`: `HSD_PAD_DPADDOWN = 1 << 2`.
+pub const BUTTON_DPAD_DOWN: u16 = 0x4;
+/// `controller.h:16`: `HSD_PAD_DPADUP = 1 << 3`. The only D-pad bit with an
+/// observable effect (`ftCo_800DE9B8`'s taunt press); left/right/down are
+/// accepted as inert input everywhere they are read.
+pub const BUTTON_DPAD_UP: u16 = 0x8;
 
 /// Normalized fighter inputs. Raw PAD calibration remains in `input`.
 /// Sticks and trigger are processed game inputs; PAD calibration is separate.
@@ -93,6 +104,10 @@ pub enum Action {
     Ottotto,
     /// Slippi 246, animation 211. `ftCo_Ottotto.c`.
     OttottoWait,
+    /// Slippi 264, animation 239. `ftCo_AppealS.c`.
+    AppealSR,
+    /// Slippi 265, animation 240. `ftCo_AppealS.c`.
+    AppealSL,
     JumpSquat,
     Jump,
     JumpAerial,

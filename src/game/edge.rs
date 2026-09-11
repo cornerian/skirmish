@@ -90,7 +90,7 @@ pub(crate) fn mode_for_action(action: Action, edge_rules_present: bool) -> math:
         | AttackS4Hi | AttackS4HiS | AttackS4S | AttackS4LwS | AttackS4Lw | AttackHi4
         | AttackLw4 | AttackDash | EscapeF | EscapeB | EscapeN | CatchCut | Catch | CatchDash
         | DownAttack | PassiveStandF | PassiveStandB | CliffClimb | RunTurn | Ottotto
-        | OttottoWait => math::Mode::Clamp,
+        | OttottoWait | AppealSR | AppealSL => math::Mode::Clamp,
         Wait | Walk | Landing | RunBrake => {
             if edge_rules_present {
                 math::Mode::Teeter

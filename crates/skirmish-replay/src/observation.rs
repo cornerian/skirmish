@@ -77,13 +77,23 @@ pub fn fields(version: slippi::Version) -> Vec<&'static str> {
 
 pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger; physical A/B/X/Y/Z/L/R; derived stick/trigger flags allowed; no replay state or RNG overrides";
 
+// The D-pad bits (0x1/0x2/0x4/0x8) occupy the same low nibble in both
+// Slippi's physical and processed button words as native `HSD_Pad`
+// (`sysdolphin/baselib/controller.h:13-16`), so accepting them here covers
+// both `pre.buttons_physical` and `pre.buttons` below. Only D-pad up has an
+// observable effect (`game::taunt`); left/right/down are accepted as inert
+// input so replays containing them still import.
 const BUTTONS: u16 = game::BUTTON_A
     | game::BUTTON_B
     | game::BUTTON_X
     | game::BUTTON_Y
     | game::BUTTON_Z
     | game::BUTTON_L
-    | game::BUTTON_R;
+    | game::BUTTON_R
+    | game::BUTTON_DPAD_LEFT
+    | game::BUTTON_DPAD_RIGHT
+    | game::BUTTON_DPAD_DOWN
+    | game::BUTTON_DPAD_UP;
 // HSD_PadADConvert in the pinned controller.c derives these four flags from the
 // main stick. C-stick directions occupy bits 20..23. Logical LR is represented
 // by native digital buttons or processed analog pressure, not silently dropped.
@@ -627,6 +637,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
                 262
             }
         }
+        AppealSR => 264,
+        AppealSL => 265,
         // The current character-specific resource slice is Fox. Its generic
         // neutral-special shell retains only the startup family distinction.
         SpecialN if character == Some(2) => 341,
@@ -682,6 +694,7 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         252 => 216,
         253 => 217,
         254..=260 | 262 => u32::from(state - 35),
+        264 | 265 => u32::from(state - 25),
         341 => 295,
         344 => 298,
         _ => return None,
@@ -1052,12 +1065,14 @@ mod tests {
 
     #[test]
     fn unsupported_inputs_and_actor_sets_are_errors() {
-        for flag in [0x1, 0x80, 0x1000] {
+        // 0x1/0x2/0x4/0x8 (the D-pad bits) are no longer unsupported: see
+        // `dpad_bits_are_accepted_and_only_up_has_an_effect` below.
+        for flag in [0x80, 0x1000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons_physical = flag;
             assert!(controllers(&frame, PORTS).is_err());
         }
-        for flag in [0x1, 0x1000, 0x0100_0000, 0x8000_0000] {
+        for flag in [0x1000, 0x0100_0000, 0x8000_0000] {
             let mut frame = frame();
             frame.actors[0].pre.buttons = flag;
             assert!(controllers(&frame, PORTS).is_err());
@@ -1087,6 +1102,24 @@ mod tests {
         let mut follower = frame();
         follower.actors[1].follower = true;
         assert!(expected(&follower, PORTS).is_err());
+    }
+
+    #[test]
+    fn dpad_bits_are_accepted_and_only_up_has_an_effect() {
+        for flag in [
+            game::BUTTON_DPAD_LEFT,
+            game::BUTTON_DPAD_RIGHT,
+            game::BUTTON_DPAD_DOWN,
+            game::BUTTON_DPAD_UP,
+        ] {
+            let mut frame = frame();
+            frame.actors[0].pre.buttons_physical = flag;
+            frame.actors[0].pre.buttons = u32::from(flag);
+            let controllers = controllers(&frame, PORTS).expect("D-pad bits are accepted");
+            // frame.actors is [P1, P3] but PORTS is [P3, P1], so actors[0]
+            // (P1, the one this test modifies) lands at controllers[1].
+            assert_eq!(controllers[1].buttons, flag);
+        }
     }
 
     #[test]

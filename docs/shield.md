@@ -83,6 +83,19 @@ The implementation preserves these examined source branches:
   enters Fall. The animation callbacks return to Wait after the last supplied sample;
   the roll also clears ground velocity. The unread `x324` copy, the item-throw
   IASA, and the Samus/Yoshi entry branches are not modeled.
+- `ftCo_80099794` (`ftCo_Wait.c:58`, and `ftCo_AppealS_IASA` at the same
+  relative position, [taunt profile](taunt.md)) checks a *different*
+  predicate than the `ftCo_8009980C` guard-IASA spot dodge above, and
+  BEFORE either chain's own shield-entry check: a held logical shoulder
+  AND `inlineB0` (the fresh-downward-main-stick half of the guard
+  predicate, `x314`/`x318`) together enter EscapeN directly, with no
+  C-stick alternative. So pressing a shoulder while the main stick is
+  already down (fresh, inside the window) dodges from Wait or an
+  interruptible AppealS pose on that exact frame, without ever raising
+  GuardOn first; Walk's chain has no `ftCo_80099794` call, so the same
+  input from Walk still raises GuardOn as usual. `game::escape::
+  try_wait_chain_spot_dodge` implements this, called from
+  `simulation::update_actions` ahead of `shield::update_actions`.
 - Escape samples carry the scripted fighter-wide `Fighter::x1988` collision
   state (`body_state`). Intangible or invincible samples reject hits and grabs
   for that frame only; ordinary transitions reset the state, and Slippi's

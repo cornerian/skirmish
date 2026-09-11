@@ -9,21 +9,24 @@
 //! never reached for a frame this module already handled. They remain the
 //! exact behaviour when `rules.dash` is `None`, and are also reached
 //! (redundantly but harmlessly, over the same unchanged input) whenever this
-//! module finds nothing to do, exactly as `ftCo_Dash_IASA`'s own `block_42`
-//! does nothing observable in that case (a taunt, unmodeled here, is the
-//! only way past it without returning).
+//! module finds nothing to do.
 //!
 //! `ftCo_Dash_IASA`'s `x54` friction tail runs whenever a phase branch falls
 //! out of its `if`/`else` instead of returning: the early forward smash, the
 //! early roll, the middle dash-back Turn, the middle shield entry, the late
 //! re-dash/Turn and the late shield entry all fall through to it (`transition_friction`,
-//! applied immediately after each in [`update_dash_or_run`]); the catch,
-//! AttackDash entry, the jump-squat entry, the run transition and "nothing
-//! fired" all `return` instead and never reach it. Run has no such tail
-//! (`ftCo_Run_IASA` has none). A neutral special entered from Dash also
-//! falls through to it (`ftCo_SpecialS_CheckInput` is the first check of
-//! both the early and middle phases); `simulation::update_actions` applies
-//! it there, since `special::update_actions` runs before this module.
+//! applied immediately after each in [`update_dash_or_run`]); `block_42`'s own
+//! taunt (`ftCo_800DE9D8`, see [`taunt`](super::taunt)) is the only way past
+//! it without an early return, so a taunt fired from Dash falls through to it
+//! too; the catch, AttackDash entry, the jump-squat entry, the run transition
+//! and "nothing fired" all `return` instead and never reach it. Run has no
+//! such tail (`ftCo_Run_IASA` has none), even though its own IASA reaches
+//! `ftCo_800DE9D8` at the same relative position as Dash's `block_42`
+//! (modeled here by the same shared call, gated on `f.action == Action::Dash`
+//! for the friction). A neutral special entered from Dash also falls through
+//! to it (`ftCo_SpecialS_CheckInput` is the first check of both the early and
+//! middle phases); `simulation::update_actions` applies it there, since
+//! `special::update_actions` runs after this module.
 use super::{
     Action, Controller, Error, Fighter,
     data::{Attack, FighterData, Rules as MatchRules},
@@ -331,14 +334,25 @@ fn update_dash_or_run(
         }
     }
 
-    // block_42: the shared jump dispatch (fn_800CAF78), then Dash's run
-    // transition or Run's turn/brake logic (cmd_vars[0], the script's run
-    // flag set by the animation's set-cmd-var command, `ftaction.c:462`,
-    // modeled here by `dash_run_frame`, then fn_800CA5F0). The taunt check
-    // ahead of this block (`ftCo_800DE9D8`, D-pad up) is the pinned source's
-    // only way to fall through this block into the friction tail instead of
-    // returning; it is unmodeled and never fires, so jump, the run
-    // transition and "nothing fired" all end this frame without it.
+    // block_42: `ftCo_800DE9D8` (D-pad up), the pinned source's only way to
+    // fall through this block into the friction tail instead of returning
+    // (`ftCo_Dash.c`'s `block_42` literally reads `if (!ftCo_800DE9D8(gobj))
+    // { ...return...} ` -- taunt success falls through to the shared x54
+    // friction application below instead of any of the early returns), then
+    // the shared jump dispatch (fn_800CAF78), then Dash's run transition or
+    // Run's turn/brake logic (cmd_vars[0], the script's run flag set by the
+    // animation's set-cmd-var command, `ftaction.c:462`, modeled here by
+    // `dash_run_frame`, then fn_800CA5F0). `ftCo_Run_IASA` reaches
+    // `ftCo_800DE9D8` at the same relative position (right before its own
+    // `fn_800CAF78` jump check) but has no friction tail of its own, so only
+    // a taunt fired while `f.action == Action::Dash` applies it.
+    let taunt_from_dash = f.action == Action::Dash;
+    if super::taunt::try_taunt(f, data, input)? {
+        if taunt_from_dash {
+            apply_transition_friction(f, dash_rules);
+        }
+        return Ok(true);
+    }
     if let Some(source) = super::locomotion::jump_input(f, p, input, true) {
         f.short_hop = false;
         f.locomotion.jump_input = source;

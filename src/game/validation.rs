@@ -540,6 +540,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(idle_animations) = &fighter.idle {
             idle::validate(idle_animations)?;
         }
+        if let Some(taunt) = &fighter.taunt {
+            taunt::validate(taunt, fighter)?;
+        }
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
             CollisionBox::Fixed { source } => require(
@@ -774,7 +777,17 @@ fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
 pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
     for (player, input) in input.iter().enumerate() {
         if input.buttons
-            & !(BUTTON_A | BUTTON_B | BUTTON_Z | BUTTON_X | BUTTON_Y | BUTTON_L | BUTTON_R)
+            & !(BUTTON_A
+                | BUTTON_B
+                | BUTTON_Z
+                | BUTTON_X
+                | BUTTON_Y
+                | BUTTON_L
+                | BUTTON_R
+                | BUTTON_DPAD_LEFT
+                | BUTTON_DPAD_RIGHT
+                | BUTTON_DPAD_DOWN
+                | BUTTON_DPAD_UP)
             != 0
             || input
                 .stick

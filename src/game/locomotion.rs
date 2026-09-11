@@ -807,7 +807,11 @@ pub(crate) fn update_actions(
     let Some(p) = data.locomotion.as_ref() else {
         return;
     };
-    let interruptible_tilt = super::tilt::interrupt_chain(f, data).is_some();
+    let chain = super::tilt::interrupt_chain(f, data);
+    let interruptible_tilt = chain.is_some();
+    // ftCo_AppealS_IASA has no jump/dash/squat/turn/walk checks at all
+    // (see taunt.rs); it still reaches the shared attack dispatch below.
+    let taunt_chain = chain == Some(super::tilt::Chain::Taunt);
     let grounded_action = f.grounded
         && (matches!(
             f.action,
@@ -826,15 +830,17 @@ pub(crate) fn update_actions(
         if super::tilt::update_ground_attacks(f, data, attack_rules, input) {
             return;
         }
-        if let Some(source) = jump_input(
-            f,
-            p,
-            input,
-            matches!(
-                f.action,
-                Action::Dash | Action::Run | Action::RunTurn | Action::RunBrake
-            ),
-        ) {
+        if !taunt_chain
+            && let Some(source) = jump_input(
+                f,
+                p,
+                input,
+                matches!(
+                    f.action,
+                    Action::Dash | Action::Run | Action::RunTurn | Action::RunBrake
+                ),
+            )
+        {
             f.short_hop = false;
             f.locomotion.jump_input = source;
             enter(f, Action::JumpSquat);
@@ -857,8 +863,11 @@ pub(crate) fn update_actions(
     }
     match f.action {
         // Interruptible tilts hand their frame to the same dash, squat, turn
-        // and walk checks as Wait.
-        action if matches!(action, Action::Wait | Action::Walk) || interruptible_tilt => {
+        // and walk checks as Wait; taunt's own chain has none of these.
+        action
+            if (matches!(action, Action::Wait | Action::Walk) || interruptible_tilt)
+                && !taunt_chain =>
+        {
             if try_dash(f, p, input) {
                 return;
             }

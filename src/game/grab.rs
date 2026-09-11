@@ -654,7 +654,12 @@ pub(crate) fn update_actions(
             // ftCo_Catch_CheckInput runs from Wait, Walk, Squat and KneeBend;
             // SquatWait and SquatRv chains never reach it.
             Action::Wait | Action::Walk | Action::Squat | Action::JumpSquat => Some(Action::Catch),
-            _ if super::tilt::interrupt_chain(fighter, data) == Some(super::tilt::Chain::Wait) => {
+            // ftCo_AppealS_IASA reaches ftCo_Catch_CheckInput too.
+            _ if matches!(
+                super::tilt::interrupt_chain(fighter, data),
+                Some(super::tilt::Chain::Wait) | Some(super::tilt::Chain::Taunt)
+            ) =>
+            {
                 Some(Action::Catch)
             }
             _ => None,

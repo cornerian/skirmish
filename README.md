@@ -163,6 +163,16 @@ shared RNG and walks a weighted table, re-drawing while a repeated pick is
 neither Wait1_0 nor a fresh pick from it -- shifting every later random
 event in the same frame and match, exactly as Melee's single per-frame RNG
 stream would.
+The [taunt profile](docs/taunt.md) adds AppealSR/AppealSL (a fresh D-pad-up
+press, AppealSL when facing left and a left motion is supplied), reachable
+from Wait, Walk, Squat, SquatWait, SquatRv, Turn, Landing, Run, Ottotto/
+OttottoWait, AttackS4's and the down tilt's interruptible frames, and
+Dash's own friction-tail check; its own interruptible frames expose
+specials, catch, smashes, tilts, jab, the Wait-chain spot dodge and shield,
+but no jump, dash, squat, turn or walk. The same batch corrects Wait (and
+AppealS) so a held shoulder with the stick already pointed down dodges
+immediately instead of raising a shield first; every D-pad bit is now
+accepted on import, though only up has an effect.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

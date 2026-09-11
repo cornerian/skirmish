@@ -126,7 +126,11 @@ match. Peppi preserves
 Nana/follower data, but this adapter rejects followers. Processed joystick X/Y
 supplies normalized main-stick input; processed C-stick and analog trigger
 values pass through without recalibration. Physical button bits supply
-A/B/X/Y/Z/L/R.
+A/B/X/Y/Z/L/R and the four D-pad directions (left/right/down/up, the same
+low nibble Slippi's physical and processed button words share with native
+`HSD_Pad`); only D-pad up has an observable effect (the [taunt
+profile](taunt.md)), so a replay containing a left/right/down D-pad press
+now imports instead of being rejected.
 Derived main-stick, C-stick and logical-trigger flags are accepted; a logical
 trigger flag without analog pressure or digital L/R is rejected. Other buttons
 remain unsupported. Raw stick and physical analog samples remain preserved by
@@ -169,11 +173,15 @@ last picked entry) instead of the fixed constant 2; without the profile,
 the index stays 2 as before this batch. Landing already maps to state 42; with the
 optional landing profile it additionally accepts the complete Wait chain
 once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
-interruptible frame can now select a smash straight out of that state.
+interruptible frame can now select a smash straight out of that state. With
+the optional [taunt profile](taunt.md), a fresh physical D-pad-up press maps
+to state 264 (animation 239, AppealSR) or 265 (animation 240, AppealSL);
+without the profile the press is accepted as input but has no effect.
 File-backed regressions require changed down-stick, up-C-stick, roll-stick,
 horizontal/downward C-stick, shield-grab button, air-dodge trigger, tilt
-attack, smash attack or charge, jab press, dash-attack/re-dash press and
-landing interrupt-window samples to diverge at their first affected frames.
+attack, smash attack or charge, jab press, dash-attack/re-dash press,
+landing interrupt-window and D-pad-up taunt samples to diverge at their
+first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each
