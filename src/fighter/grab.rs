@@ -90,6 +90,37 @@ pub fn capture_alignment(
     (position, lifted)
 }
 
+/// `ftCo_800DA824`: the real grab-escape capture timer, driven by a live
+/// match's standing and handicap rather than the flattened
+/// `EscapeRules::timer_base` path (`docs/grab-escape-timer.md`). `base`,
+/// `handicap_scale`, `handicap_max`, `rank_scale`, `rank_max` and
+/// `percent_scale` are the six `ftCommonData` constants (`x354`, `x358`,
+/// `x35C`, `x360`, `x364`, `x368`); keep this exact f32 evaluation order:
+/// `slot = standing + 1`; `value = rank_max - slot`; `value = rank_scale *
+/// value`; `temp = handicap_max - handicap`; `temp = handicap_scale * temp +
+/// base`; `temp += value`; `return percent * percent_scale + temp`.
+#[allow(clippy::too_many_arguments)]
+pub fn escape_timer(
+    base: f32,
+    handicap_scale: f32,
+    handicap_max: f32,
+    rank_scale: f32,
+    rank_max: f32,
+    percent_scale: f32,
+    percent: f32,
+    standing: u8,
+    handicap: u8,
+) -> f32 {
+    let slot = standing as f32 + 1.0;
+    let value = rank_max - slot;
+    let value = rank_scale * value;
+    let handicap = handicap as f32;
+    let temp = handicap_max - handicap;
+    let temp = handicap_scale * temp + base;
+    let temp = temp + value;
+    percent * percent_scale + temp
+}
+
 /// A main-stick horizontal threshold crossing has priority over vertical throws.
 pub fn fresh_horizontal(current: f32, previous: f32, threshold: f32) -> bool {
     (previous < threshold && current >= threshold)
@@ -192,6 +223,50 @@ mod tests {
         assert!(dash_shield_grab(true, &mut negative));
         assert!(!dash_shield_grab(false, &mut negative));
         assert_eq!(negative, -1.5);
+    }
+
+    #[test]
+    fn escape_timer_at_the_real_fox_constants_and_replay_settings_matches_the_flattened_value() {
+        // Fox's real `ftCommonData` constants (`x354..x368`), extracted to
+        // `/mnt/archive/datasets/melee/skirmish-gameplay/v2/rules.json`'s
+        // `grab.escape_formula`: base 30.0, handicap_scale 8.0, handicap_max
+        // 9.0, rank_scale 15.0, rank_max 4.0, percent_scale 1.6.
+        let (base, handicap_scale, handicap_max, rank_scale, rank_max, percent_scale) =
+            (30.0, 8.0, 9.0, 15.0, 4.0, 1.6);
+        // The parity replay's settings: handicap rule off (9), best
+        // standing (0). Derivation, in the source's own order: `slot =
+        // standing + 1 = 1.0`; `value = rank_scale * (rank_max - slot) =
+        // 15.0 * (4.0 - 1.0) = 45.0`; `temp = handicap_scale * (handicap_max
+        // - handicap) + base = 8.0 * (9.0 - 9.0) + 30.0 = 30.0`; `temp +=
+        // value = 75.0`; at percent 0, the timer is exactly `temp`.
+        let at_zero_percent = escape_timer(
+            base,
+            handicap_scale,
+            handicap_max,
+            rank_scale,
+            rank_max,
+            percent_scale,
+            0.0,
+            0,
+            9,
+        );
+        assert_eq!(at_zero_percent, 75.0);
+        // This is exactly the flattened `timer_base` the same exporter
+        // wrote for Fox (`docs/grab-escape-timer.md`), and `percent_scale`
+        // is exactly the flattened `timer_percent_scale`, so the two paths
+        // agree at these settings for every percent, not only zero.
+        let at_forty_percent = escape_timer(
+            base,
+            handicap_scale,
+            handicap_max,
+            rank_scale,
+            rank_max,
+            percent_scale,
+            40.0,
+            0,
+            9,
+        );
+        assert_eq!(at_forty_percent, 75.0 + 40.0 * 1.6);
     }
 
     #[test]

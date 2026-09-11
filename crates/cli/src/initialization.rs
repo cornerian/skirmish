@@ -133,7 +133,7 @@ fn stage_external_id(name: &str) -> Option<u16> {
 /// function requires the replay's first selected frame to already be -123
 /// and refuses otherwise, rather than silently misaligning the checkpoint.
 pub fn build(
-    data: MatchData,
+    mut data: MatchData,
     replay: &Replay,
     seed_override: Option<u32>,
 ) -> Result<Initialization> {
@@ -199,6 +199,20 @@ pub fn build(
             player.stocks
         );
     }
+
+    // Peppi decodes `GameStart.players[_].handicap` unconditionally (it is
+    // not gated by Slippi version, unlike e.g. `netplay`), and the source
+    // pins every slot to 9 whenever the handicap rule is off
+    // (`docs/grab-escape-timer.md`), so this is always a real value, not a
+    // placeholder that needs a presence check.
+    data.players = Some([
+        skirmish::game::data::PlayerSettings {
+            handicap: players[0].handicap,
+        },
+        skirmish::game::data::PlayerSettings {
+            handicap: players[1].handicap,
+        },
+    ]);
 
     let seed = seed_override.unwrap_or(start.random_seed);
 

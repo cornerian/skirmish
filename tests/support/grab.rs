@@ -21,6 +21,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
             mash_penalty: 10.0,
             stick_threshold: 0.7,
             release_speed: 0.4,
+            formula: None,
         },
     });
     for fighter in &mut data.fighters {

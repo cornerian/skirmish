@@ -6,7 +6,7 @@
 
 use super::{
     Action, Controller, Error, Event, Fighter, State as MatchState,
-    data::{Bone, Capsule, FighterData, Hitbox, MatchData},
+    data::{Bone, Capsule, FighterData, Hitbox, MatchData, PlayerSettings},
     simulation,
 };
 use crate::{
@@ -56,6 +56,34 @@ pub struct EscapeRules {
     pub mash_penalty: f32,
     pub stick_threshold: f32,
     pub release_speed: f32,
+    /// The real `ftCo_800DA824` common-data constants. When present, the
+    /// capture timer is computed from standing and handicap instead of the
+    /// flattened `timer_base`/`timer_percent_scale` path above (which stays
+    /// for existing fixtures that do not carry a real match's standings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula: Option<EscapeFormula>,
+}
+
+/// `ftCo_800DA824`'s six `ftCommonData` inputs (`ft/types.h:266-271`), named
+/// by the field they scale rather than by offset. Shared by the Leadead
+/// (`ftCo_800C7590.c:44-52`, `ftCo_800C78B0.c:46-54`) and DamageBind
+/// (`ftCo_DamageBind.c:40-46`) readers, not modeled yet
+/// (`docs/grab-escape-timer.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EscapeFormula {
+    /// `x354`: constant base term.
+    pub base: f32,
+    /// `x358`: multiplies `handicap_max - handicap`.
+    pub handicap_scale: f32,
+    /// `x35C`: handicap this player would need to contribute nothing.
+    pub handicap_max: f32,
+    /// `x360`: multiplies `rank_max - (standing + 1)`.
+    pub rank_scale: f32,
+    /// `x364`: standing this player would need to contribute nothing.
+    pub rank_max: f32,
+    /// `x368`: multiplies `percent`.
+    pub percent_scale: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -229,6 +257,29 @@ pub(crate) fn validate(
             .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
     {
         return Err(Error::Data("invalid explicit grab parameters".into()));
+    }
+    if let Some(formula) = &rules.escape.formula {
+        let worst_handicap_term =
+            formula.base + formula.handicap_scale.abs() * formula.handicap_max.abs();
+        let worst_rank_term = formula.rank_scale.abs() * formula.rank_max.abs();
+        let worst_percent_term = 999.0 * formula.percent_scale.abs();
+        if ![
+            formula.base,
+            formula.handicap_scale,
+            formula.handicap_max,
+            formula.rank_scale,
+            formula.rank_max,
+            formula.percent_scale,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+            || !(0.0..1_000_000.0).contains(&formula.base)
+            || !(0.0..1_000.0).contains(&formula.percent_scale)
+            || worst_handicap_term.abs() + worst_rank_term.abs() + worst_percent_term.abs()
+                >= 1_000_000.0
+        {
+            return Err(Error::Data("invalid grab-escape formula".into()));
+        }
     }
     for catch in [&parameters.catch, &parameters.catch_dash] {
         validate_catch(catch, fighter)?;
@@ -420,6 +471,84 @@ fn capture_pulled_action(grounded: bool) -> Action {
     } else {
         Action::CapturePulledHi
     }
+}
+
+/// The `ftCo_800DA824` capture timer: the source's exact f32 evaluation
+/// order (`slot = standing + 1`; `value = rank_max - slot`; `value =
+/// rank_scale * value`; `temp = handicap_max - handicap`; `temp =
+/// handicap_scale * temp + base`; `temp += value`; `return percent *
+/// percent_scale + temp`) when `escape.formula` is present, otherwise the
+/// legacy flattened `timer_base + percent * timer_percent_scale` path kept
+/// for fixtures that predate the real formula.
+fn capture_timer(data: &MatchData, state: &MatchState, victim: usize, escape: &EscapeRules) -> f32 {
+    let percent = state.fighters[victim].percent;
+    match &escape.formula {
+        Some(formula) => {
+            let stocks = [state.fighters[0].stocks, state.fighters[1].stocks];
+            input::escape_timer(
+                formula.base,
+                formula.handicap_scale,
+                formula.handicap_max,
+                formula.rank_scale,
+                formula.rank_max,
+                formula.percent_scale,
+                percent,
+                standing(stocks, state.next_frame, victim),
+                handicap(data.players.as_ref(), victim),
+            )
+        }
+        None => escape.timer_base + percent * escape.timer_percent_scale,
+    }
+}
+
+/// Live per-frame standing (`gm_8016C5C0`'s `x58[slot].x5`, refreshed by
+/// `gm_80166378` and ranked by `fn_80165AC0`): the count of opponents whose
+/// `fn_8016588C` score is *strictly* greater than `player`'s own, so 0 is
+/// best and ties (equal score) share the same standing, since the ranking
+/// loop only increments on a strictly-greater comparison. Two-player only
+/// for now (`docs/grab-escape-timer.md`), but iterates `stocks` so a third
+/// slot only needs the array size (and the loop bound below) to change.
+///
+/// Skirmish only models Stock-kind matches (`MatchData.rules.stocks`), so
+/// this reproduces `fn_8016588C`'s `MatchKind_Stock` branch only: score is
+/// the fighter's remaining stocks, or (once eliminated) a deeply negative
+/// sentinel offset by survival time so a longer-lived loser still ranks
+/// above an earlier one. `Player_GetFalls`/KOs feed the *other* match kinds
+/// (Time, Coin, Bonus) and a match's own end-of-match `score` field, not the
+/// Stock branch used here; contrary to a first reading of the source
+/// comments, `percent` does not enter this ranking at all for stock
+/// matches — only `stocks`, this simulator's match-ending condition, so the
+/// elimination branch is unreachable from a live grab (noted in
+/// `docs/grab-escape-timer.md`).
+pub(crate) fn standing(stocks: [u8; 2], frame: u32, player: usize) -> u8 {
+    let score = |index: usize| -> i32 {
+        let stocks = stocks[index];
+        if stocks != 0 {
+            i32::from(stocks)
+        } else {
+            // `fn_8016588C`'s elimination fallback: `frame_count / 60 +
+            // 0xFF000001` (sign-extended to -16_777_215), clamped by
+            // `fn_8016588C_clamp` to +/-(2^24 - 1).
+            const SENTINEL: i64 = -16_777_215;
+            const LIMIT: i64 = (1 << 24) - 1;
+            let v = SENTINEL + i64::from(frame) / 60;
+            v.clamp(-LIMIT, LIMIT) as i32
+        }
+    };
+    let own = score(player);
+    stocks
+        .iter()
+        .enumerate()
+        .filter(|&(index, _)| index != player && score(index) > own)
+        .count() as u8
+}
+
+/// `Player_GetHandicap` (`pl/player.c:855-870`) via
+/// `MatchData.players`; the handicap rule is off whenever `players` is
+/// absent, which the source pins to 9 for every slot (`mn/mncharsel.c:4290`,
+/// `gm/gm_1601.c:3502`, `gm/gmmain_lib.c:833`).
+pub(crate) fn handicap(players: Option<&[PlayerSettings; 2]>, player: usize) -> u8 {
+    players.map_or(9, |players| players[player].handicap)
 }
 
 fn capture_wait_action(action: Action) -> Option<Action> {
@@ -1036,8 +1165,7 @@ pub(crate) fn scan(
             let escape = &data.rules.grab.as_ref().unwrap().escape;
             state.fighters[holder].grab.victim = Some(victim);
             state.fighters[victim].grab.captor = Some(holder);
-            state.fighters[victim].grab.escape_timer =
-                escape.timer_base + state.fighters[victim].percent * escape.timer_percent_scale;
+            state.fighters[victim].grab.escape_timer = capture_timer(data, state, victim, escape);
             state.fighters[victim].grab.mash = input::MashState::default();
             state.fighters[victim].facing = state.fighters[holder].facing;
             state.fighters[victim].velocity = [0.0; 2];
@@ -1278,4 +1406,40 @@ fn throw_for_action(throws: &Throws, action: Action) -> Option<&Throw> {
 
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn equal_stocks_tie_at_standing_zero_regardless_of_percent() {
+        // `fn_80165AC0` only increments a strictly-lesser score's opponent
+        // count, so an equal score (here, equal stocks; the Stock-match
+        // branch of `fn_8016588C` never reads percent) leaves both players
+        // at standing 0.
+        assert_eq!(standing([4, 4], 0, 0), 0);
+        assert_eq!(standing([4, 4], 0, 1), 0);
+        assert_eq!(standing([1, 1], 12_345, 0), 0);
+    }
+
+    #[test]
+    fn fewer_stocks_ranks_strictly_worse() {
+        assert_eq!(standing([4, 3], 0, 0), 0, "more stocks is standing 0");
+        assert_eq!(standing([4, 3], 0, 1), 1, "fewer stocks is standing 1");
+        assert_eq!(standing([1, 4], 0, 0), 1);
+        assert_eq!(standing([1, 4], 0, 1), 0);
+    }
+
+    #[test]
+    fn handicap_defaults_to_nine_when_the_rule_is_off() {
+        assert_eq!(handicap(None, 0), 9);
+        assert_eq!(handicap(None, 1), 9);
+        let players = [
+            PlayerSettings { handicap: 3 },
+            PlayerSettings { handicap: 7 },
+        ];
+        assert_eq!(handicap(Some(&players), 0), 3);
+        assert_eq!(handicap(Some(&players), 1), 7);
+    }
 }

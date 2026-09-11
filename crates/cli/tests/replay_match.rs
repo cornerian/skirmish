@@ -3368,3 +3368,131 @@ fn file_backed_match_start_reports_322_323_324_then_fall_and_detects_a_state_id_
     // exit transition itself was recorded, not asserted further here.
     let _ = fall_row;
 }
+
+#[test]
+fn physical_z_drives_file_backed_grab_capture_at_differing_stocks_with_the_real_formula() {
+    use skirmish::game::grab::EscapeFormula;
+
+    // Fox's real `ftCommonData` constants (`x354..x368`), extracted to
+    // `/mnt/archive/datasets/melee/skirmish-gameplay/v2/rules.json`'s
+    // `grab.escape_formula`: base 30.0, handicap_scale 8.0, handicap_max
+    // 9.0, rank_scale 15.0, rank_max 4.0, percent_scale 1.6. At handicap 9
+    // (handicap rule off) and standing 0 (`slot = 1`), `ftCo_800DA824`
+    // reduces to `8.0 * (9.0 - 9.0) + 30.0 + 15.0 * (4.0 - 1.0) = 75.0`,
+    // matching the flattened `timer_base` this same exporter wrote
+    // (`docs/grab-escape-timer.md`). This test exercises standing != 0.
+    let formula = EscapeFormula {
+        base: 30.0,
+        handicap_scale: 8.0,
+        handicap_max: 9.0,
+        rank_scale: 15.0,
+        rank_max: 4.0,
+        percent_scale: 1.6,
+    };
+
+    let mut data =
+        grab_support::profile(death_support::profile(aerial_support::conformance::data()));
+    data.rules.stocks = 3;
+    data.rules.countdown_frames = 0;
+    data.rules.respawn_frames = 2;
+    data.stage.spawns = [[-0.5, 0.0], [0.5, 0.0]];
+    data.stage.floor.left = -50.0;
+    data.stage.floor.right = 50.0;
+    data.stage.blast = [-80.0, 80.0, -40.0, 5.0];
+    data.rules.knockback_decay = 0.0;
+    data.rules.knockback_speed = 1.0;
+    data.rules.hitlag.base = 0.0;
+    data.rules.hitlag.damage_scale = 0.0;
+    data.rules.grab.as_mut().unwrap().escape.formula = Some(formula);
+    let death = data.rules.death.as_mut().unwrap();
+    death.force_normal_top[1] = true;
+    death.screen_chance_percent = 0;
+    for fighter in &mut data.fighters {
+        fighter.movement.gravity = 0.0;
+        for frame in &mut fighter.jab.frames {
+            for hit in &mut frame.hitboxes {
+                hit.angle_degrees = 90.0;
+                hit.growth = 0;
+                hit.base = 2;
+            }
+        }
+    }
+
+    // Fighter 0 jabs fighter 1 straight up into the top blast zone (frame
+    // 0), costing fighter 1 a stock while fighter 0 keeps all three; once
+    // fighter 1 returns to active play, fighter 0 grabs it (frame 60), so
+    // the two fighters now hold different live stock counts at the grab.
+    let mut inputs = vec![IDLE; 70];
+    inputs[0][0].buttons = BUTTON_A;
+    inputs[60][0].buttons = BUTTON_Z;
+    let recording = Recording::from_script(data, 23, inputs);
+
+    let knocked_out = recording
+        .states
+        .iter()
+        .find_map(|state| {
+            state.events.iter().find_map(|event| match event {
+                Event::Knockout { player: 1, stocks } => Some(*stocks),
+                _ => None,
+            })
+        })
+        .expect("script must knock out fighter 1 once");
+    assert_eq!(knocked_out, 2, "fighter 1 must lose exactly one stock");
+
+    let grabbed = recording
+        .states
+        .iter()
+        .position(|state| {
+            state.events.iter().any(|event| {
+                matches!(
+                    event,
+                    Event::Grabbed {
+                        holder: 0,
+                        victim: 1
+                    }
+                )
+            })
+        })
+        .expect("fighter 0 must grab fighter 1 after the respawn cycle");
+    let victim = &recording.states[grabbed].fighters[1];
+    assert_eq!(
+        recording.states[grabbed].fighters[0].stocks, 3,
+        "the holder must still hold every stock"
+    );
+    assert_eq!(
+        victim.stocks, 2,
+        "the victim must be down exactly one stock"
+    );
+    // Fighter 1's score (2 stocks) is strictly less than fighter 0's (3),
+    // so fighter 1's standing is 1 (one opponent scores strictly higher),
+    // not the tied 0 both fighters would hold at equal stocks.
+    let expected = skirmish::fighter::grab::escape_timer(
+        formula.base,
+        formula.handicap_scale,
+        formula.handicap_max,
+        formula.rank_scale,
+        formula.rank_max,
+        formula.percent_scale,
+        victim.percent,
+        1,
+        9,
+    );
+    assert_eq!(victim.grab.escape_timer, expected);
+    // The tied-standing value both fighters would have held at equal
+    // stocks is different, confirming the timer really tracks standing.
+    let equal_standing = skirmish::fighter::grab::escape_timer(
+        formula.base,
+        formula.handicap_scale,
+        formula.handicap_max,
+        formula.rank_scale,
+        formula.rank_max,
+        formula.percent_scale,
+        victim.percent,
+        0,
+        9,
+    );
+    assert_ne!(victim.grab.escape_timer, equal_standing);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+}

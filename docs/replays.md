@@ -166,6 +166,12 @@ It reads the replay's `GameStart` once:
   for which it is genuinely absent; `--seed` exists for a hypothetical future
   format without the field, and for deliberately reproducing a match under a
   different seed.
+- **Handicap**: each occupied port's `GameStart.players[_].handicap` fills
+  `match-data.json`'s `players[_].handicap` (`docs/grab-escape-timer.md`).
+  Peppi 2.1.2 decodes this field unconditionally, so it is always a real
+  recorded value (9 whenever the handicap rule itself is off, which is the
+  case for every replay this importer currently exercises), not a
+  placeholder needing a presence check.
 - **`next_frame` and `warmup`**: `next_frame` is the timeline's first selected
   frame ID. `warmup` is always `[]`: the native `Match::new` checkpoint
   already corresponds to Melee's own pre-game state, which is also where

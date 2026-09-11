@@ -1,5 +1,46 @@
 # Local validation provenance
 
+The 2026-09-11 grab-escape timer standings/handicap batch is recorded at:
+
+`/mnt/archive/runs/skirmish-grab-escape-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, and the
+complete native workspace in debug (without and with the `c-oracle`
+feature) and release (with `c-oracle`) modes, plus `git diff --check`: all
+six steps exited 0 — `fmt` and `diff` (no output either way), `clippy`
+(`-D warnings`, all features), `native` 891 passed/19 ignored, `c-oracle`
+1234 passed/19 ignored, `release` 1234 passed/19 ignored (same counts as
+debug `c-oracle`, as expected for a release rebuild of the same suite).
+
+This batch models `ftCo_800DA824`, the real grab-escape capture timer,
+replacing the flattened `timer_base + percent * timer_percent_scale`
+constant with the source's own standings- and handicap-driven formula
+(`docs/grab-escape-timer.md`). `Rules.grab.escape` gained
+`formula: Option<EscapeFormula>` (the six `ftCommonData` constants,
+`x354..x368`), used in place of the legacy fields when present;
+`MatchData` gained `players: Option<[PlayerSettings; 2]>` (per-player
+handicap, default 9); `crates/cli/src/initialization.rs::build` fills it
+from the replay's `GameStart.players[_].handicap` (always present in
+peppi 2.1.2). The standing helper reproduces `gm_80166378`/`fn_80165AC0`'s
+ranking (count of opponents with a strictly greater score; ties share
+standing 0) for the Stock-match branch of `fn_8016588C` specifically,
+since Skirmish only models stock matches — a correction against this
+batch's own design note, which read as if `percent` participated in the
+tie rule; it does not for Stock matches (`docs/grab-escape-timer.md`'s
+"Implemented" section has the full citation trail).
+
+New coverage: a bit-exact C-oracle differential for `ftCo_800DA824`
+across arbitrary constants, percent, handicap 1..9 and standing 0..3
+(`tests/escape_formula_differential.rs`, reusing the existing
+`ftCo_CapturePulled.c` snapshot via a new `adapters.json` alias); unit
+tests for standing ordering/ties and the handicap default
+(`src/game/grab.rs`); a unit test deriving the real Fox constants'
+75.0 replay-settings value from the formula itself, not a hardcoded
+literal (`src/fighter/grab.rs`); and a self-recorded replay regression
+where a fighter is knocked down one stock and then grabbed, asserting its
+`escape_timer` matches the standing-1 formula value and differs from the
+tied-standing-0 value (`crates/cli/tests/replay_match.rs`).
+
 The 2026-09-11 Fox up-special coverage batch (Fire Fox/Fire Bird) is
 recorded at:
 

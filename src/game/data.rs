@@ -16,6 +16,27 @@ pub struct MatchData {
     pub stage: Stage,
     pub fighters: [FighterData; 2],
     pub rules: Rules,
+    /// Per-player match settings (`Player_GetHandicap`,
+    /// `docs/grab-escape-timer.md`), indexed like `fighters`. `None` keeps
+    /// every player at the handicap-off default of 9, matching every
+    /// fixture that predates this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<[PlayerSettings; 2]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlayerSettings {
+    /// `Player_GetHandicap`/`Player_SetHandicap` (`pl/player.c:855-870`):
+    /// 1..=9, where 9 is both the maximum slider value and the value every
+    /// slot holds whenever the handicap rule itself is off
+    /// (`mn/mncharsel.c:4290`, `gm/gm_1601.c:3502`, `gm/gmmain_lib.c:833`).
+    #[serde(default = "default_handicap")]
+    pub handicap: u8,
+}
+
+fn default_handicap() -> u8 {
+    9
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

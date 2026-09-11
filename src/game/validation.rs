@@ -148,6 +148,14 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             && rules.respawn_invincibility_frames < 1_000_000,
         "invalid match durations/stocks",
     )?;
+    if let Some(players) = &data.players {
+        require(
+            players
+                .iter()
+                .all(|player| (1..=9).contains(&player.handicap)),
+            "invalid player handicap",
+        )?;
+    }
     require(
         nonnegative([
             rules.friction_above_walk,
