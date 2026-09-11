@@ -30,8 +30,17 @@ typedef struct {
 typedef struct {
     float x1FC;
 } ftCommonData;
-static ftCommonData ftCommonData_;
-static ftCommonData* p_ftCommonData = &ftCommonData_;
+/* Thread-local: `oracle_air_drift_recovery` writes `x1FC` on every call,
+ * and libtest runs `arbitrary_air_drift_recovery` and
+ * `arbitrary_air_drift_recovery_full_range` (this file's two callers)
+ * concurrently by default. A plain (non-thread-local) global here let one
+ * property test's `x1fc` bleed into the other's concurrent
+ * `ftCommon_8007CF58` call -- the same cross-thread aliasing
+ * `ftfoxspeciallw.c`'s own copy of this state had (see that file's note).
+ * `p_ftCommonData` is a macro rather than a plain pointer so it resolves
+ * per-thread instead of freezing to whichever thread ran static init. */
+static _Thread_local ftCommonData ftCommonData_;
+#define p_ftCommonData (&ftCommonData_)
 
 #define ABS(x) ((x) < 0 ? -(x) : (x))
 

@@ -426,6 +426,54 @@ fn air_phys_crosses_the_drift_maximum_in_both_directions() {
 }
 
 #[test]
+fn air_phys_regressions_from_the_intermittent_c_oracle_race() {
+    // Recorded `arbitrary_air_phys`/`arbitrary_air_phys_full_range` shrinks
+    // that used to fail intermittently under the default (multi-threaded)
+    // test runner: `oracle_down_phys` (`tests/oracle/ftfoxspeciallw.c`) and
+    // `oracle_air_drift_recovery` (`tests/oracle/air_drift_recovery.c`)
+    // each wrote their `over_drift_step`/`x1FC` into a plain `static`
+    // `FtCommonData`/`ftCommonData_` instead of a thread-local one, so two
+    // property tests running concurrently on separate libtest threads
+    // could stomp each other's over-drift-maximum constant mid-call. These
+    // two inputs reproduced the corruption reliably before both adapters'
+    // shared state was made `_Thread_local`; they are pinned here so a
+    // regression in either adapter (or a real drift-arithmetic regression)
+    // is caught even by a single-threaded run.
+    compare_phys(
+        4,
+        false,
+        3,
+        0.0,
+        f32::from_bits(3285111566),
+        f32::from_bits(1975770722),
+        0.6142752,
+        4.556739,
+        0.0,
+        0.0,
+        0.11867521,
+        0.13757226,
+        0.14780048,
+        1.0,
+    );
+    compare_phys(
+        2,
+        false,
+        0,
+        0.0,
+        -5.3244376,
+        f32::from_bits(4193090201),
+        0.5247091,
+        4.2143326,
+        0.0,
+        0.0,
+        0.028189184,
+        0.41315266,
+        0.26699626,
+        1.0,
+    );
+}
+
+#[test]
 fn start_anim_only_sets_release_from_input_no_transition() {
     for ground in [true, false] {
         let (mut msid, mut lag, mut release, mut turn, mut cmd0, mut reflecting, mut hits) =

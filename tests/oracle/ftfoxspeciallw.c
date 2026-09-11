@@ -195,8 +195,21 @@ typedef struct {
      * common over-drift-maximum deceleration step. */
     float x1FC;
 } FtCommonData;
-static FtCommonData ftCommonData_ = { 1.0f, 0.0f };
-static FtCommonData* p_ftCommonData = &ftCommonData_;
+/* Thread-local, like every other piece of mutable state this adapter owns
+ * (see the header's note): `oracle_down_phys` writes `x1FC`/
+ * `friction_when_above_walk_speed` on every call from whichever proptest
+ * property-test thread is currently running, and libtest runs the several
+ * `#[test]` functions in this file concurrently by default. A plain
+ * (non-thread-local) global here let one thread's `over_drift_step` bleed
+ * into another thread's concurrent `ftCommon_8007CF58` call, producing the
+ * intermittent `self_vel_x` mismatches this test used to show under the
+ * default parallel test runner (reproduced reliably; gone under
+ * `--test-threads=1`). `p_ftCommonData` is now a macro instead of a plain
+ * pointer: a real pointer captured at static-init time would only ever
+ * resolve to the initializing thread's TLS instance, silently
+ * reintroducing the same cross-thread aliasing for every other thread. */
+static _Thread_local FtCommonData ftCommonData_ = { 1.0f, 0.0f };
+#define p_ftCommonData (&ftCommonData_)
 
 /* ---- FAITHFUL: verbatim arithmetic from the pinned source, duplicated
  * from `fox_specials.c`'s own copy of the same upstream file rather than
