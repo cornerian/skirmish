@@ -198,6 +198,30 @@ pub enum Action {
     SpecialAirS,
     /// Slippi 352. `ftFx_SpecialAirSEnd_Enter`.
     SpecialAirSEnd,
+    /// Slippi 360 (`ftFx_MS_SpecialLwStart`, `ftFox/forward.h:71-80`).
+    /// `ftFx_SpecialLw_Enter`.
+    SpecialLwStart,
+    /// Slippi 361. `ftFx_SpecialLwLoop_Enter`.
+    SpecialLw,
+    /// Slippi 362. Reachable only through `ftFx_SpecialLwHit_Enter`'s
+    /// projectile-reflect callback, unmodeled since Skirmish has no
+    /// projectiles; kept reachable through tests only (`docs/fox-down-
+    /// special.md`).
+    SpecialLwHit,
+    /// Slippi 363. `ftFx_SpecialLwEnd_Enter`.
+    SpecialLwEnd,
+    /// Slippi 364. `ftFx_SpecialLwTurn_Check`.
+    SpecialLwTurn,
+    /// Slippi 365. `ftFx_SpecialAirLw_Enter`.
+    SpecialAirLwStart,
+    /// Slippi 366. `ftFx_SpecialAirLwLoop_Enter`.
+    SpecialAirLw,
+    /// Slippi 367. See `SpecialLwHit`: test-only.
+    SpecialAirLwHit,
+    /// Slippi 368. `ftFx_SpecialAirLwEnd_Enter`.
+    SpecialAirLwEnd,
+    /// Slippi 369. `ftFx_SpecialLwTurn_Check`'s aerial branch.
+    SpecialAirLwTurn,
     AttackAirN,
     AttackAirF,
     AttackAirB,
@@ -278,6 +302,7 @@ pub struct Fighter {
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
     pub fox_side_special: characters::fox::side::State,
+    pub down_special: characters::fox::down::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,

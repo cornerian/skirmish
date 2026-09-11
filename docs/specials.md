@@ -38,9 +38,9 @@ conformance scenarios now run normally.
 
 This profile provides the shared neutral-B action shell. Authentic character
 callbacks still need character-specific resources and state for projectiles,
-charge storage, reflectors, capture, transformation, RNG use and other effects.
-Up and down specials and direct special-to-special interrupt rules remain
-separate work. Omitting the profile leaves B accepted but without an action.
+charge storage, capture, transformation, RNG use and other effects. Up
+specials and direct special-to-special interrupt rules remain separate
+work. Omitting the profile leaves B accepted but without an action.
 
 # Fox/Falco side special (Illusion/Phantasm)
 
@@ -63,3 +63,25 @@ speed End pose set that returns to Wait on the ground or exits into
 See `docs/fox-side-special.md` for the complete per-phase citation, the
 resolved ghost-item hitbox question and the deviations found from this
 batch's own design note while implementing it.
+
+# Fox/Falco down special (Reflector)
+
+`game::characters::fox::down` (`src/game/characters/fox/down.rs`)
+implements this move against the same framework, checked after the side
+special and the neutral shell above (the source's own grounded chain
+checks SpecialS, SpecialHi (unmodeled), SpecialN, then SpecialLw in that
+fixed order). `fighters[].specials`' `down` entry covers a five-phase
+Start/Loop/Turn/Hit/End state machine: `SpecialLwStart/SpecialLw/
+SpecialLwTurn/SpecialLwHit/SpecialLwEnd` on the ground,
+`SpecialAirLwStart/SpecialAirLw/SpecialAirLwTurn/SpecialAirLwHit/
+SpecialAirLwEnd` in the air. Holding B keeps the Loop pose active; a
+release only exits once a fixed release-lag countdown (started at Start
+entry, ticking every frame from Loop onward) has also elapsed. Loop's own
+IASA reverses into Turn on a stick past the ordinary standing-turn
+threshold (an immediate facing flip, unlike the visual-only model
+rotation), else jump-cancels on the ground or aerial-jumps in the air; a
+platform drop from Start or Loop keeps the move, converting straight to
+the aerial variant. The Hit phase exists only for a projectile reflect
+Skirmish has no projectiles to trigger, so it is reachable through tests
+only. See `docs/fox-down-special.md` for the complete per-phase citation
+and what remains unmodeled.

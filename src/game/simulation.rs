@@ -84,6 +84,7 @@ fn spawn(
         },
         aerial: aerial::State::default(),
         fox_side_special: characters::fox::side::State::default(),
+        down_special: characters::fox::down::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -157,6 +158,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // own entry; a mid-phase ground<->air conversion preserves it explicitly
     // around this reset (`specials::transfer_ground_air`).
     fighter.fox_side_special = characters::fox::side::State::default();
+    // Fighter_ChangeMotionState unconditionally clears `fp->mv.fx.SpecialLw`;
+    // every internal Reflector transition (`characters::fox::down`) restores
+    // the whole-move fields (release_lag/is_release/gravity_delay) it
+    // preserves across phase changes explicitly around this reset, the same
+    // pattern as `fox_side_special` above.
+    fighter.down_special = characters::fox::down::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
@@ -458,6 +465,8 @@ pub(crate) fn advance(
             shield_owns[player],
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
+        } else {
+            characters::fox::down::platform_drop(fighter, &data.fighters[player], &geometry, input);
         }
     }
     grab::synchronize_actions(data, state)?;
@@ -1464,7 +1473,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if specials::air_physics(f, data, &mut movement) {
+        if specials::air_physics(f, data, rules, &mut movement) {
             // A move that owns this action's air phase drives the frame's
             // airborne physics entirely (gravity-delayed fall plus a fixed
             // air friction, or a root-motion dash's velocity set).

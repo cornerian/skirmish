@@ -244,7 +244,13 @@ ground or 350..352 in the air (animation indices 301..306 are an
 unverified extrapolation, see that profile's own doc); the ground End
 returns to Wait's own state 14, and the air End's own natural completion
 exits into `FallSpecial`'s existing state 35, landing into the existing
-`LandingFallSpecial` state 43.
+`LandingFallSpecial` state 43. With the optional [Fox down-special
+profile](fox-down-special.md), a fresh physical B press past the down
+threshold maps to states 360..369 (Start/Loop/Hit/End/Turn on the ground,
+then the same five in the air; animation indices are the same kind of
+unverified extrapolation, see that profile's own doc); both the ground
+and air End's own natural completion return to Wait's state 14 or
+`Fall`'s existing state 29, unlike the side special's own air End.
 File-backed regressions require changed down-stick, up-C-stick, roll-stick,
 horizontal/downward C-stick, shield-grab button, air-dodge trigger, tilt
 attack, smash attack or charge, jab press, dash-attack/re-dash press,

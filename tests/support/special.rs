@@ -13,6 +13,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 air: fighter.jab.clone(),
             }),
             side: None,
+            down: None,
         });
     }
     data

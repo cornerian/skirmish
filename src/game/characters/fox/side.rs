@@ -27,7 +27,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Common side-special stick rules (`ftCommonData`), paired with each
+/// Common `ftCommonData` fields this move family shares, paired with each
 /// fighter's own `SideSpecial::ground_speed_retention`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,11 +37,22 @@ pub struct Rules {
     pub side_stick_threshold: f32,
     /// `x220`: turn-around threshold against the current facing.
     pub turn_threshold: f32,
-    /// `x21C`: aerial up/down special stick threshold. Fox has
-    /// SpecialAirHi/SpecialAirLw; both stay unmodeled, so a stick past this
-    /// threshold must still suppress the side branch rather than fire it
+    /// `x21C`: aerial up/down special stick threshold, shared with
+    /// `characters::fox::down`'s own aerial entry. Fox's SpecialAirHi stays
+    /// unmodeled; SpecialAirLw (the down special) is modeled and reads this
+    /// same field. Either way, a stick past this threshold must still
+    /// suppress the side branch rather than fire it
     /// (`ftCo_SpecialAir_CheckInput`, `ftCo_SpecialAir.c:11-56`).
     pub vertical_threshold: f32,
+    /// `x1FC` (`struct ftCommonData`, `ft/types.h:181`): the common over-
+    /// drift-maximum deceleration step `ftCommon_8007CF58`/`ftCommon_
+    /// 8007D050` (`ftcommon.c:283-330`) use to bring `self_vel.x` back
+    /// toward a drift maximum once already past it. Read by
+    /// `characters::fox::down`'s own air phases through `specials::
+    /// helpers::drift_or_friction_air`; unused by the side special itself
+    /// (its own air phases apply a fixed custom friction, never this
+    /// common drift function).
+    pub air_drift_recovery_step: f32,
 }
 
 pub(crate) fn validate_rules(rules: &Rules) -> Result<(), Error> {
@@ -52,6 +63,8 @@ pub(crate) fn validate_rules(rules: &Rules) -> Result<(), Error> {
         || rules.turn_threshold < 0.0
         || !finite(rules.vertical_threshold)
         || rules.vertical_threshold < 0.0
+        || !finite(rules.air_drift_recovery_step)
+        || rules.air_drift_recovery_step < 0.0
     {
         return Err(Error::Data("invalid side-special stick rules".into()));
     }
@@ -401,8 +414,10 @@ impl SpecialMove for Move {
         &self,
         fighter: &mut Fighter,
         data: &FighterData,
+        rules: &MatchRules,
         movement: &mut Movement,
     ) -> bool {
+        let _ = rules;
         let Some(parameters) = data.specials.as_ref().and_then(|s| s.fox_side()) else {
             return false;
         };

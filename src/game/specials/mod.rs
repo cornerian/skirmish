@@ -88,13 +88,17 @@ pub(crate) trait SpecialMove {
     /// Drive this move's airborne physics for the frame. `true` means this
     /// move owns the frame's airborne physics entirely (the caller's
     /// ordinary fast-fall/drift/damage-lock chain must not also run).
+    /// `rules` is the match-wide configuration (stick thresholds and other
+    /// shared common data, like `update_actions`'s own `rules` argument),
+    /// separate from this fighter's own `data`.
     fn air_physics(
         &self,
         fighter: &mut Fighter,
         data: &FighterData,
+        rules: &Rules,
         movement: &mut Movement,
     ) -> bool {
-        let _ = (fighter, data, movement);
+        let _ = (fighter, data, rules, movement);
         false
     }
 
@@ -236,10 +240,11 @@ pub(crate) fn ground_friction_override(fighter: &Fighter, data: &FighterData) ->
 pub(crate) fn air_physics(
     fighter: &mut Fighter,
     data: &FighterData,
+    rules: &Rules,
     movement: &mut Movement,
 ) -> bool {
     for mv in characters::moves(data.specials.as_ref()) {
-        if mv.air_physics(fighter, data, movement) {
+        if mv.air_physics(fighter, data, rules, movement) {
             return true;
         }
     }

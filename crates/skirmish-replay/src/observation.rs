@@ -645,7 +645,9 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         // special this build has no id table for) falls through to the
         // same "unresolved" result `Eliminated` reports below.
         SpecialN | SpecialAirN | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
-        | SpecialAirS | SpecialAirSEnd => {
+        | SpecialAirS | SpecialAirSEnd | SpecialLwStart | SpecialLw | SpecialLwHit
+        | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart | SpecialAirLw | SpecialAirLwHit
+        | SpecialAirLwEnd | SpecialAirLwTurn => {
             let (state, _animation) = game::characters::slippi_ids(character, fighter.action)?;
             state as u16
         }
@@ -705,7 +707,7 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         // same registry entry that resolved its state id above; the Fox
         // side-special indices there are flagged as an unverified
         // extrapolation, not a confirmed figatree table.
-        341 | 344 | 347..=352 => {
+        341 | 344 | 347..=352 | 360..=369 => {
             let (_state, animation) = game::characters::slippi_ids(character, fighter.action)?;
             animation
         }

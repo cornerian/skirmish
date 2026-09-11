@@ -408,5 +408,10 @@
   "fixture": "tests/oracle/original/special_air.c",
   "upstream": "src/melee/ft/kinds/ftCommon/ftCo_SpecialAir.c",
   "sha256": "ce96d1baba09e5f1be4b4a0b66a9b381e576d7f83af2a89f896df8432e9d5b53"
+ },
+ {
+  "fixture": "tests/oracle/original/ftfoxspeciallw.c",
+  "upstream": "src/melee/ft/kinds/ftFox/ftfoxspeciallw.c",
+  "sha256": "d522d617e608fa5f2c425181a2d797e5095db474df63fc98ecadc50e581335a1"
  }
 ]

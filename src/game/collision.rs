@@ -34,6 +34,25 @@ pub(crate) fn begin_pass(
     geometry: &StageGeometry,
     velocity_y: f32,
 ) -> bool {
+    begin_pass_as(f, data, geometry, velocity_y, Action::Pass, false)
+}
+
+/// The same geometric/state portion as [`begin_pass`], generalized for a
+/// caller-supplied destination and an optional frame-preserving entry
+/// (`ftCo_8009A184`, `ftCo_Pass.c:76+`: identical to `ftCo_8009A228` except
+/// the destination motion state and start frame are caller-supplied instead
+/// of always the generic `ftCo_MS_Pass` at frame 0 -- Fox/Falco's Reflector
+/// platform drop uses this to keep its own Start/Loop phase, converting
+/// straight to the aerial variant at the current frame instead of routing
+/// through the shared `Pass` action).
+pub(crate) fn begin_pass_as(
+    f: &mut Fighter,
+    data: &FighterData,
+    geometry: &StageGeometry,
+    velocity_y: f32,
+    destination: Action,
+    keep_frame: bool,
+) -> bool {
     if !on_platform(f, geometry) {
         return false;
     }
@@ -49,7 +68,13 @@ pub(crate) fn begin_pass(
     f.grounded = false;
     f.ground_line = None;
     f.contacts[0] = None;
-    simulation::enter(f, Action::Pass);
+    if keep_frame {
+        let frame = f.action_frame;
+        simulation::enter(f, destination);
+        f.action_frame = frame;
+    } else {
+        simulation::enter(f, destination);
+    }
     f.skip_floor = support;
     // ftCommon_8007D5D4 locks the old ECB bottom for ten map callbacks.
     f.ecb_lock = 10;

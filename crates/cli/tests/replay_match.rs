@@ -27,6 +27,8 @@ mod edge_support;
 mod escape_air_support;
 #[path = "../../../tests/support/escape.rs"]
 mod escape_support;
+#[path = "../../../tests/support/fox_down_special.rs"]
+mod fox_down_special_support;
 #[path = "../../../tests/support/fox_side_special.rs"]
 mod fox_side_special_support;
 #[path = "../../../tests/support/grab.rs"]
@@ -3047,6 +3049,113 @@ fn physical_b_drives_file_backed_fox_air_illusion_into_landing_fall_special() {
         frames.ports[0].leader.pre.buttons.set(0, Some(0));
         frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
         frames.ports[0].leader.pre.joystick.x.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn physical_b_drives_file_backed_fox_ground_reflector_through_start_loop_and_end() {
+    // Slippi 360 (SpecialLwStart)/361 (SpecialLwLoop)/363 (SpecialLwEnd);
+    // 362 (SpecialLwHit) is unreachable in play (no projectiles to reflect,
+    // see docs/fox-down-special.md) and is not exercised here. Animation
+    // indices are the same kind of unverified extrapolation the side
+    // special's own ids are; this replay only requires this recording's
+    // own action_state/animation_index calls to agree with themselves,
+    // which they do regardless of that open question.
+    let mut data = fox_down_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 60];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[1] = -0.8;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialLwStart
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialLw)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialLwEnd)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press entirely: the fighter stays in Wait instead of
+    // entering SpecialLwStart, so the removed press's effect is visible on
+    // the very first recorded frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.y.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn physical_b_drives_file_backed_fox_air_reflector_through_start_loop_and_end() {
+    // Unlike the side special's own air End (which exits into FallSpecial),
+    // the down special's End -- ground or air -- exits through the shared
+    // Wait/Fall dispatch (`ftCommon_8007D92C`); Fall (Slippi's own
+    // established mapping) is the expected terminal action here.
+    let mut data = fox_down_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 6.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 60];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[1] = -0.6;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialAirLwStart
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialAirLw)
+    );
+    // The fixture's slow fall (gravity_delay/fall_accel) may land the
+    // fighter before releaseLag elapses, converting to the grounded End
+    // instead (ground<->air conversions preserve the frame and release
+    // state, exercised separately by the native test suite); either End
+    // variant confirms the release-lag exit fired.
+    assert!(recording.states.iter().any(|s| matches!(
+        s.fighters[0].action,
+        Action::SpecialAirLwEnd | Action::SpecialLwEnd
+    )));
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| matches!(s.fighters[0].action, Action::Fall | Action::Wait))
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.y.set(0, Some(0.0));
     });
     assert!(matches!(
         recording.compare(&changed).outcome,

@@ -7,13 +7,19 @@
 //! its state/animation ids to [`slippi_ids`]. Nothing outside this file
 //! needs to change.
 
+pub mod down;
 pub mod side;
 
 use crate::game::{Action, specials};
 
 /// Fox's specials, in the same priority the grounded/aerial dispatch chains
-/// check them: the side special ahead of the shared neutral shell.
-pub(crate) const MOVES: &[&dyn specials::SpecialMove] = &[&side::MOVE, &specials::neutral::MOVE];
+/// check them: the side special ahead of the shared neutral shell, ahead of
+/// the down special (the source's own grounded chain checks SpecialS,
+/// SpecialHi (unmodeled), SpecialN, then SpecialLw in that fixed order;
+/// down.rs's own module doc explains why the aerial dispatcher's different
+/// real order does not require a different Rust iteration order here).
+pub(crate) const MOVES: &[&dyn specials::SpecialMove] =
+    &[&side::MOVE, &specials::neutral::MOVE, &down::MOVE];
 
 /// External Slippi character ids that play Fox's move set. Falco (22)
 /// shares Fox's own source file for these moves but keeps its own
@@ -42,6 +48,26 @@ pub(crate) fn slippi_ids(action: Action) -> Option<(u32, u32)> {
         SpecialAirSStart => (350, 304),
         SpecialAirS => (351, 305),
         SpecialAirSEnd => (352, 306),
+        // `ftFx_MS_SpecialLwStart` is confirmed `ftCo_MS_Count + 6 + 4`
+        // (`ftFox/forward.h:71-80`: it directly follows the side special's
+        // own five states in source declaration order), so 360..369 are
+        // exact, not extrapolated. Their animation indices reuse the same
+        // unverified -46 offset from the state id the side special's own
+        // two confirmed data points established (see the module doc there);
+        // `ftFx_SM_SpecialLwTurn`/`SpecialAirLwTurn` have no entry of their
+        // own in forward.h's SM_ list (only Start/Loop/Hit/End do), so Turn
+        // reuses Loop's own animation index, consistent with Turn being a
+        // brief interruption of the Loop cycle rather than a separate asset.
+        SpecialLwStart => (360, 314),
+        SpecialLw => (361, 315),
+        SpecialLwHit => (362, 316),
+        SpecialLwEnd => (363, 317),
+        SpecialLwTurn => (364, 315),
+        SpecialAirLwStart => (365, 319),
+        SpecialAirLw => (366, 320),
+        SpecialAirLwHit => (367, 321),
+        SpecialAirLwEnd => (368, 322),
+        SpecialAirLwTurn => (369, 320),
         _ => return None,
     })
 }

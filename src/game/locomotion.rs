@@ -1196,4 +1196,5 @@ pub fn ground_motion(
 pub(crate) fn hold_action_frame(f: &Fighter) -> bool {
     (f.action == Action::RunTurn && f.locomotion.run_turn_waiting)
         || (f.action == Action::RunBrake && f.locomotion.run_brake_frozen)
+        || (matches!(f.action, Action::SpecialLw | Action::SpecialAirLw) && f.down_special.looping)
 }

@@ -28,6 +28,50 @@ pub(crate) fn gravity_delayed_fall(
     movement.friction_air(air_friction);
 }
 
+/// `ftCommon_8007CF58` (`ftcommon.c:283-306`): the ordinary aerial drift a
+/// phase with no custom air friction of its own uses -- decelerate toward
+/// `movement.attributes.air_drift_max` using the common over-drift step
+/// (`Rules.specials.air_drift_recovery_step`, `ftCommonData.x1FC`) once
+/// already past it, else apply the fighter's ordinary aerial friction
+/// toward zero. Matches the source's own bool result (true: was over the
+/// maximum); no caller in this codebase currently reads it.
+pub(crate) fn drift_or_friction_air(movement: &mut Movement, over_drift_step: f32) -> bool {
+    let velocity = movement.self_velocity[0];
+    let drift_max = movement.attributes.air_drift_max;
+    if velocity.abs() > drift_max {
+        let mut accel = over_drift_step;
+        if accel.abs() >= velocity.abs() {
+            accel = -velocity;
+        } else if velocity > 0.0 {
+            accel = -accel;
+        }
+        movement.animation_velocity[0] = accel;
+        true
+    } else {
+        movement.friction_air_basic();
+        false
+    }
+}
+
+/// The gravity-delay countdown then fall exactly like [`gravity_delayed_fall`],
+/// followed by the common drift-or-friction call above instead of a fixed
+/// custom friction coefficient (`ftFox_SpecialLw_InlinePhys`'s pattern,
+/// shared by every Reflector air phase).
+pub(crate) fn gravity_delayed_fall_with_drift(
+    delay: &mut f32,
+    movement: &mut Movement,
+    fall_accel: f32,
+    terminal_velocity: f32,
+    over_drift_step: f32,
+) {
+    if *delay > 0.0 {
+        *delay -= 1.0;
+    } else {
+        movement.fall(fall_accel, terminal_velocity);
+    }
+    drift_or_friction_air(movement, over_drift_step);
+}
+
 /// The ground-side half of the same countdown: some phases keep ticking it
 /// down while grounded even though gravity is never read there, so that a
 /// mid-phase ground/air conversion observes the same countdown the air

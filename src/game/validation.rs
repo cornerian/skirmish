@@ -353,6 +353,16 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     ));
                 }
             }
+            // `rules.specials` is shared common data (`x218`/`x220`/`x21C`)
+            // also read by the down special's own aerial entry
+            // (`vertical_threshold`), so a fighter with only a down-special
+            // resource and no side-special one is not an error here.
+            (Some(_), None)
+                if fighter
+                    .specials
+                    .as_ref()
+                    .and_then(|s| s.fox_down())
+                    .is_some() => {}
             (Some(_), None) => {
                 return Err(Error::Data(
                     "side-special rules require a motion for every fighter".into(),
@@ -364,6 +374,19 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 ));
             }
             (None, None) => {}
+        }
+        if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_down()) {
+            let Some(specials_rules) = &rules.specials else {
+                return Err(Error::Data(
+                    "down-special motions require common specials rules".into(),
+                ));
+            };
+            characters::fox::down::validate(specials_rules, parameters, fighter)?;
+            if fighter.locomotion.is_none() {
+                return Err(Error::Data(
+                    "down-special mid-move turn/jump-cancel/platform-drop share the common locomotion resources".into(),
+                ));
+            }
         }
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,

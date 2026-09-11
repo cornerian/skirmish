@@ -2,7 +2,8 @@
   "rules": {
     "side_stick_threshold": 0.3,
     "turn_threshold": 0.1,
-    "vertical_threshold": 0.6
+    "vertical_threshold": 0.6,
+    "air_drift_recovery_step": 0.02
   },
   "parameters": {
     "ground_speed_retention": 0.3,

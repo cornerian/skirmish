@@ -26,5 +26,6 @@
   "dash_catch": "catch",
   "dash_guard": "shield_guard",
   "dash_checkinput": "dash",
-  "edge_floor": "mpcoll"
+  "edge_floor": "mpcoll",
+  "air_drift_recovery": "ftcommon"
 }

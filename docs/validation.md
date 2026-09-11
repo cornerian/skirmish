@@ -1,5 +1,74 @@
 # Local validation provenance
 
+The 2026-09-11 Fox/Falco down special (Reflector) batch is recorded at:
+
+`/mnt/archive/runs/skirmish-fox-down-special-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace (both without and with the `c-oracle` feature) and a
+`c-oracle` release build, all green: 837 passed/0 failed workspace-wide
+without `c-oracle`, 1153 passed/0 failed with it (previously 809/1108,
+i.e. this batch adds 28 native tests -- 15 in `tests/game_fox_down_special.
+rs`, 2 self-recorded replay regressions in `crates/cli/tests/replay_match.
+rs`, 1 pure-math unit test in `src/fighter/characters/fox.rs` -- plus 17
+C-oracle differential tests in `tests/fox_down_special_differential.rs`
+(six of them `proptest` cases run 256 times each, covering `ftCommon_
+8007CF58`'s over-drift-maximum branch both through the air Phys wrapper
+and through its own standalone extraction, `air_drift_recovery`).
+
+Fox/Falco's down special (Reflector, `docs/fox-down-special.md`) is
+implemented as `src/game/characters/fox/down.rs`: the five-phase Start/
+Loop/Turn/Hit/End state machine (Slippi 360..369), the ground-fourth/air-
+directional fresh entry, the mid-move turn (reusing `locomotion::
+Parameters::turn_threshold`, distinct from the side special's own entry-
+turn `x220`), the ground jump cancel and aerial jump (reusing the existing
+`locomotion::jump_input`/`try_aerial_jump`), the platform drop (a new
+`collision::begin_pass_as`, generalizing `begin_pass` to a caller-supplied
+destination and frame-preserving entry), every phase's ground/air
+conversion, and the `reflecting` bit (piggybacked on the existing
+`fighter.shield.reflecting` field, since the source stores both the
+powershield's and this move's reflect state in the same bit). A decomp
+fact that contradicted the side-special-derived assumption: none of this
+move's five *grounded* Phys callbacks touch `gravityDelay` (only the air
+ones do), so `down.rs` has no `tick_ground_timers` override. Loop's
+genuinely indefinite `Ft_MF_KeepGfx` duration surfaced a pre-existing
+engine limitation (a fixed-length pose resource with no wrap/hold
+mechanism for an unboundedly-held action); fixed by extending the existing
+`locomotion::hold_action_frame` (already used by RunTurn/RunBrake) with a
+`down_special.looping` flag. The Hit phase (reachable in the source only
+through the unmodeled projectile-reflect callback) is fully implemented
+and exercised by the C-oracle differential tests and a native wiring
+check, but unreachable through ordinary play; the reflect bubble's own
+geometry has no effect in this engine, only the `reflecting` bit is
+observable; `xA0_FOX_REFLECTOR_UNK1` is never read anywhere this batch
+cites. `ftCommon_8007CF58` (the common aerial drift/over-drift-maximum-
+recovery function every air phase's Phys calls) is fully modeled, both
+branches, as `game::specials::helpers::drift_or_friction_air`/
+`gravity_delayed_fall_with_drift`: Fox's `air_drift_max` sits below his run
+speed, so a jump out of a run, or `Fall` from the side special's own air
+End, can carry an aerial Reflector's entry velocity above the maximum even
+after the `xA8` division, making the over-drift branch genuinely
+reachable. Its common step coefficient (`ftCommonData.x1FC`) is exposed as
+a new `characters::fox::side::Rules::air_drift_recovery_step` field (the
+same shared `ftCommonData` struct as `x218`/`x21C`/`x220`), read by the
+down special even though the side special's own air phases never touch it.
+`tests/oracle/original/ftfoxspeciallw.c` pins the whole decomp file
+(`ftfoxspeciallw.functions.json` extracts all 72 of its own function
+definitions -- every non-static callback plus every `static`/`static
+inline` helper); its own necessarily-duplicated copy of `ftCommon_8007CF58`
+(cross-file, so it cannot literally be extracted into this adapter, see
+that file's own header) is independently pinned verbatim by a new small
+adapter, `tests/oracle/air_drift_recovery.c` (aliased to "ftcommon",
+extracting the real function from the same pinned `ftcommon.c` snapshot),
+whose own differential tests compare it bit-exactly against both branches.
+See `docs/fox-down-special.md`'s "C-oracle coverage" section for exactly
+what the differential suite compares. `src/game/validation.rs`'s existing
+side-special/`rules.specials` pairing check is relaxed: `rules.specials`
+(`characters::fox::side::Rules`) is shared common data the down special's
+own aerial entry also reads (`vertical_threshold`, `air_drift_recovery_
+step`), so a fighter with only a down-special resource and no side-special
+one is no longer an error.
+
 The 2026-09-11 specials-framework refactor batch is recorded at:
 
 `/mnt/archive/runs/skirmish-specials-framework-20260911-verified`

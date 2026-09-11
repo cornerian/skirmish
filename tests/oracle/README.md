@@ -208,3 +208,45 @@ overrides are disabled by construction (kind stays 0, `item_gobj` stays
 reproduces the jab-timer reset rule at `fighter.c:1143`. Native match tests
 own the second/third jab and rapid-jab resources, script-driven hitboxes and
 root motion, and checkpoint replay.
+
+`ftfoxspeciallw` selects all 72 function definitions `ftfoxspeciallw.c`
+itself declares -- every non-static callback plus every `static`/`static
+inline` helper -- effectively the whole file minus its three GFX-only
+`Create*GFX` accessory callbacks (hand-written no-ops instead, since
+nothing this oracle calls ever invokes them). `Fighter_ChangeMotionState`,
+`ftColl_CreateReflectHit` and the two `ftCommon_8007D92C` destinations are
+captured; `ftAnim_IsFramesRemaining`, `ft_80082708`, `ft_80081D0C`,
+`ftCo_80099F1C`, `ftCo_800C97A8`, `ftCo_Jump_CheckInput` and
+`ftCo_800CB870` are scripted, each with its own call counter so the
+RETURN_IF-style short-circuit order in the Loop IASA chain is verifiable,
+not just its net effect. `ftCommon_Fall`, `ftCommon_ApplyFrictionGround`,
+`ft_80084F3C`, the ground/air state-change helpers and `ftCommon_
+ClampAirDrift` are duplicated verbatim from `fox_specials.c`'s own copy of
+the same upstream `ftcommon.c`/`ft_084E.c` (not linked against it, since
+nothing in this build guarantees two independently hand-written adapter
+structs share field offsets). `ftCommon_8007CF58` (the common aerial
+drift/over-drift-maximum-recovery function every air Phys callback calls,
+not itself part of `ftfoxspeciallw.c`) is reproduced complete, both
+branches, applied directly to `self_vel.x` like `ftCommon_ApplyFrictionAir`
+above (same no-separate-animation-channel simplification) -- see the
+`air_drift_recovery` adapter below for the independent, genuinely
+extracted pinning of this same function. Differential tests cover Enter,
+every phase's air Phys arithmetic (including cases with `self_vel.x` past
+`air_drift_max`, exercising the over-drift branch), the per-frame Anim
+bookkeeping and exit conditions for Start/Loop/Turn/Hit, End's Wait/Fall
+dispatch, the Loop IASA short-circuit order, the shared End-vs-Loop
+`hit_check` decision, the platform drop's reflect-hit side effect, and
+every phase's ground/air conversion. Native match tests own the full state
+machine end to end and the two self-recorded replay regressions.
+
+`air_drift_recovery` (aliased to "ftcommon") selects the complete
+`ftCommon_8007CF58` from the pinned `ftcommon.c` snapshot, with a minimal
+host `Fighter`/`ftCo_DatAttrs` exposing only the four fields the function
+itself reads or writes (`self_vel.x`, `x74_anim_vel.x`, `co_attrs.
+aerial_friction`, `co_attrs.air_drift_max`) plus a thread-local
+`ftCommonData.x1FC`. This is the function `ftfoxspeciallw`'s own adapter
+necessarily duplicates rather than links against (see that adapter's own
+note on why); differential tests compare both its bool result and its
+`x74_anim_vel.x` output bit-exactly across arbitrary inputs on both sides
+of `air_drift_max`, proving the hand-duplicated copy faithful to the
+pinned source.

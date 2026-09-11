@@ -331,14 +331,24 @@ match. The [neutral-special profile](specials.md) records the exact source input
 boundary and the character-specific effects and directional specials that are
 still pending.
 
-Optional [`fighters[].side_special`](fox-side-special.md) adds Fox's (and, by
-shared code, Falco's) side special: a Start pose set, a TransN-driven root-
-motion dash shortenable by a second B press, and a fixed-speed End pose set
-that returns to Wait on the ground or exits into `FallSpecial` with a scaled
-air-drift mobility and landing lag in the air. Its own input check runs ahead
-of the neutral-special branch in every chain that reaches it, matching the
-source's own ordering. Up and down specials and every other character's
-special kit remain unported.
+Optional [`fighters[].specials`'s `side` entry](fox-side-special.md) adds
+Fox's (and, by shared code, Falco's) side special: a Start pose set, a
+TransN-driven root-motion dash shortenable by a second B press, and a
+fixed-speed End pose set that returns to Wait on the ground or exits into
+`FallSpecial` with a scaled air-drift mobility and landing lag in the air.
+Its own input check runs ahead of the neutral-special branch in every
+chain that reaches it, matching the source's own ordering.
+
+Optional [`fighters[].specials`'s `down` entry](fox-down-special.md) adds
+Fox's (and, by shared code, Falco's) down special (Reflector): a five-phase
+Start/Loop/Turn/Hit/End state machine, holding B to keep the Loop pose
+active past a release-lag countdown, a mid-move turn, ground jump cancel
+and aerial jump, a platform drop that keeps the move, and every phase's
+ground/air conversion. Its own input check runs after the side special and
+the neutral shell, matching the source's own ordering; the Hit phase
+(entered only by a projectile reflect) is unreachable without Skirmish's
+unmodeled projectiles. Up specials and every other character's special kit
+remain unported.
 
 Optional [`rules.rebirth`](rebirth.md) replaces the compatibility grounded
 respawn with an airborne entry, exact remaining-frame travel to a supplied

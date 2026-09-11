@@ -16,6 +16,16 @@ pub fn should_turn(stick_x: f32, facing: f32, turn_threshold: f32) -> bool {
     stick_x * facing < -turn_threshold
 }
 
+/// `ftCo_800C97A8` (`ftCo_Turn.c:28-36`): the ordinary standing-turn
+/// predicate, reused verbatim by Fox/Falco's Reflector Loop/Turn IASA
+/// (`ftFx_SpecialLwTurn_Check`) mid-move. `turn_threshold` is the same
+/// (already negative) common-data value as ordinary standing Turn's own
+/// `locomotion::Parameters::turn_threshold`, not side special's own `x220`
+/// entry-turn threshold above.
+pub fn should_turn_mid_move(stick_x: f32, facing: f32, turn_threshold: f32) -> bool {
+    stick_x * facing <= turn_threshold
+}
+
 /// `doEnter` (`ftCo_SpecialS.c:41-49`): blend ground velocity toward zero by
 /// the ground-speed-retention fraction. The source additionally scales this
 /// by `ft_GetGroundFrictionMultiplier(fp)` (`ft_081B.c:1235-1240`), the
@@ -45,6 +55,18 @@ mod tests {
         assert!(should_turn(-1.0, 1.0, 0.5));
         assert!(!should_turn(-0.5, 1.0, 0.5));
         assert!(!should_turn(1.0, 1.0, 0.5));
+    }
+
+    #[test]
+    fn should_turn_mid_move_uses_the_inclusive_source_comparison() {
+        // facing 1.0, turn_threshold -0.3 (already negative, matching
+        // locomotion::Parameters::turn_threshold's own validated range).
+        assert!(should_turn_mid_move(-0.5, 1.0, -0.3));
+        // Exactly at the boundary still turns (source uses `<=`, unlike
+        // should_turn's strict `<`).
+        assert!(should_turn_mid_move(-0.3, 1.0, -0.3));
+        assert!(!should_turn_mid_move(-0.2, 1.0, -0.3));
+        assert!(!should_turn_mid_move(0.5, 1.0, -0.3));
     }
 
     #[test]
