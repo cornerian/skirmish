@@ -120,6 +120,16 @@ fn the_replay_verified_frame_table_is_reproduced_for_slots_zero_and_three() {
     let state = run(&mut game, 15);
     assert_eq!(state.fighters[0].action, Action::Fall);
     assert!(!state.fighters[0].grounded);
+    // `fox-fd.slp` reports P1's `state_age` as 0.0 on this exact frame, not
+    // 1.0 (`docs/parity.md`'s entry for this batch, `docs/validation.md`):
+    // EntryEnd's own exit (`ftCommon_8007D92C`) enters Fall through the
+    // ordinary `simulation::enter`, and Melee's `cur_anim_frame` lands
+    // synchronously on the destination's `anim_start` (`fighter.c:1224`,
+    // `Fighter_ChangeMotionState`) with no further per-frame advance this
+    // same frame, unlike the shared `action_frame += 1` tail this codebase
+    // runs unconditionally every frame.
+    let observe = |game: &Match| observation::observe(game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observe(&game).fighters[0].action_age, 0.0);
 }
 
 #[test]

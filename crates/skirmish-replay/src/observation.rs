@@ -345,25 +345,60 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 // `simulation::enter` resets `action_frame` to 0 on the
                 // transition frame, but the shared per-frame tail already
                 // increments it once more before this same frame's state is
-                // externally observed (the same reason Walk/Run/idle track
-                // their own dedicated float frame instead of reusing
-                // `action_frame` directly for age reporting); subtracting 1
-                // recovers the replay-verified 0-based count
-                // (`docs/match-start.md`'s frame table). Slippi's state_age
-                // here is the tracked *animation* frame (the character's own
-                // EntryStart figatree), not the 30-frame action duration: it
-                // advances 0..`entry.start_frames - 1` then holds there for
-                // the rest of EntryStart, confirmed directly against
-                // `fox-fd.slp` (Fox holds at 10, an 11-frame figatree);
-                // when `fighter_data.entry` is
-                // absent, the age is left uncapped (today's approximation).
+                // externally observed (the general rule below); Slippi's
+                // state_age here is additionally the tracked *animation*
+                // frame (the character's own EntryStart figatree), not the
+                // 30-frame action duration: it advances 0..`entry.
+                // start_frames - 1` then holds there for the rest of
+                // EntryStart, confirmed directly against `fox-fd.slp` (Fox
+                // holds at 10, an 11-frame figatree); when `fighter_data.
+                // entry` is absent, the age is left uncapped (today's
+                // approximation).
                 let age = fighter.action_frame - 1;
                 match fighter_data.entry {
                     Some(animation) => age.min(animation.start_frames - 1) as f32,
                     None => age as f32,
                 }
-            } else {
+            } else if fighter.action == game::Action::Dash {
+                // `ftCo_Dash_Enter` (`ftCo_Dash.c:48-63`) calls `ftAnim_
+                // 8006EBA4(gobj)` immediately after `Fighter_
+                // ChangeMotionState`, an extra animation advance most
+                // `_Enter`s don't make (confirmed directly against
+                // `ftCo_Fall_Enter`/`ftCo_Landing_Enter`/`ftCo_Run_
+                // Enter_Full`/`ftCo_KneeBend_Enter`, none of which call
+                // `ftAnim_8006EBA4` themselves): `state_age` reads 1, not
+                // 0, on Dash's own entry frame -- confirmed directly
+                // against `fox-fd.slp` (P1 enters Dash at frame -37
+                // already reporting `state_age = 1.0`) -- so unlike the
+                // general rule below, `action_frame` needs no adjustment
+                // here.
                 fighter.action_frame as f32
+            } else {
+                // `Fighter_ChangeMotionState` (`fighter.c:933-1230`)
+                // synchronously lands `cur_anim_frame` on the destination
+                // motion's own `anim_start` (typically 0) via its internal
+                // `ftAnim_8006E9B4` call (`fighter.c:1224`, `:1274`/
+                // `:1298`) at the moment of transition; the generic
+                // per-frame animation advance (`Fighter_Spaghetti_
+                // 8006AD10`'s unconditional `ftAnim_8006EBA4(gobj)` at
+                // `fighter.c:1684`) runs once per frame *before* that
+                // frame's own `anim_cb`/command dispatch, so it only ever
+                // advances whichever action was already current before any
+                // transition this same frame triggers -- a fighter that
+                // changes (or restarts) action this frame gets no further
+                // advance until *next* frame's own call. `simulation::
+                // advance`'s shared, unconditional end-of-frame
+                // `action_frame += 1` does not know this, so the reported
+                // `action_frame` is always one frame ahead of Melee's own
+                // `cur_anim_frame`; subtracting 1 here recovers the
+                // replay-verified 0-based count on the transition frame and
+                // the correct count on every frame after it (confirmed
+                // directly against `fox-fd.slp`: P1 Fall at -59, Landing at
+                // -49, Run at -13 and KneeBend at -7 all report age 0 on
+                // their own transition frame, then count up normally).
+                // `Action::Dash` (above) is the one exception this codebase
+                // has found so far; a future divergence may surface others.
+                fighter.action_frame.saturating_sub(1) as f32
             };
             FighterObservation {
                 port: ports[index],

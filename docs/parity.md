@@ -72,15 +72,24 @@ skips, and a skip is not evidence of anything.
 
 **Current measurement (2026-09-11, gameplay export v2, private dataset
 `cornerian/skirmish-datapacks`, pinned by
-`tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 64 frames
-match (-123 through -60: the Entry warp-in of both ports, the input lock
-and the dead flag), and the first divergent frame is -59, where P1 leaves
-EntryEnd for Fall. Skirmish reports the new action's age as 1 on that
-frame while the recording reports 0. The v2 pack carries Fox's
+`tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 72 frames
+match (-123 through -52: the Entry warp-in of both ports, the input lock,
+the dead flag, and P1's EntryEnd->Fall handoff at -59 with the corrected
+0-based `state_age`), and the first divergent frame is -51, where the
+recording restarts Fall (age resets 7->0, state stays 29) for two more
+frames before Landing begins at -49, while Skirmish transitions straight
+to Landing at -51. This is a new, separate divergence (`action_state`, not
+`action_age`) that this batch did not diagnose. The v2 pack carries Fox's
 locomotion, idle, escapes, air dodge, grab, dash attack, tilts, smashes,
 jab combo, aerials, shield, ledge and nudge profiles plus the match rules;
 the remaining profiles are being exported. The baseline file records this
 number and must move forward as divergences are fixed.
+
+Previously (before the `state_age`/`action_age` transition-frame fix,
+`docs/validation.md`): 64 frames matched (-123 through -60), and the first
+divergent frame was -59, where P1 leaves EntryEnd for Fall: Skirmish
+reported the new action's age as 1 on that frame while the recording
+reported 0.
 
 ## Practical consequence
 

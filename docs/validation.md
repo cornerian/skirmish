@@ -1,5 +1,89 @@
 # Local validation provenance
 
+The 2026-09-11 `state_age`/`action_age` transition-frame fix (the real-replay
+parity loop, `docs/parity.md`) validates formatting, strict all-target/
+all-feature Clippy and the complete native workspace test suite (`cargo test
+--locked --workspace`): 899 passed/0 failed/19 ignored (up from 898/0/19
+immediately before this fix; 1 new integration test in `tests/game_dash.rs`,
+plus a new pinned assertion added to an existing test in
+`tests/game_entry.rs`, and the harness-local `action_age` duplicate in
+`crates/cli/tests/replay_match.rs` updated to match). The full archived
+audit (`python3 /mnt/archive/runs/skirmish-ecb-response-20260909/
+validation.py`) is deferred to the end of this loop, per its own convention
+of covering the loop's cumulative work in one pass rather than per fix.
+
+Real-replay measurement (`docs/parity.md`): against both the published
+snapshot (`/mnt/archive/datasets/melee/skirmish-gameplay/v2-snapshot-
+20260911/`) and the live pack (`/mnt/archive/datasets/melee/skirmish-
+gameplay/v2/`), `fox-fd.slp`'s first divergent frame moved from -59 (64
+frames matched) to -51 (72 frames matched); `tests/fixtures/slippi/parity/
+fox-fd-baseline.json` is updated accordingly.
+
+**The bug**: `crates/skirmish-replay/src/observation.rs`'s `observe`
+reported a freshly-entered (or restarted) action's `state_age` as 1 on its
+own transition frame, for every action except the ones (`Action::
+EntryStart`, and the constant-`-1` `Entry`/`EntryEnd`) already special-cased
+by the match-start batch. `fox-fd.slp` shows this is wrong for the general
+case: P1's EntryEnd->Fall handoff at frame -59 reports `state_age = 0` in
+the recording, not 1 (`docs/match-start.md`'s frame table).
+
+**The decomp mechanism** (`Fighter_ChangeMotionState`, `fighter.c:933-1230`):
+a fresh `_Enter`'s call to `ChangeMotionState` synchronously lands `fp->
+cur_anim_frame` on the destination motion's own `anim_start` (typically
+`0.0f`) via its own internal `ftAnim_8006E9B4` call (`fighter.c:1224`,
+`:1274`/`:1298`) before returning. The generic per-frame animation advance
+(`Fighter_Spaghetti_8006AD10`'s unconditional `ftAnim_8006EBA4(gobj)` at
+`fighter.c:1684`) runs once per frame *before* that frame's own `anim_cb`
+(and any input-driven command dispatch), so it only ever advances whichever
+action was already current before any transition this same frame triggers.
+A fighter that changes (or restarts) action this frame therefore gets no
+further advance until *next* frame's own call. Confirmed directly against
+`fox-fd.slp` for four independent transitions this codebase already
+implements: P1 Fall at -59, Landing at -49, Run at -13 and KneeBend at -7
+all report `state_age = 0` on their own transition frame, then count up
+normally (0, 1, 2, ...) on every frame after.
+
+Skirmish's `simulation::advance` instead runs a single, unconditional,
+shared end-of-frame `action_frame += 1` for every fighter every frame
+(`src/game/simulation.rs`), one frame after `simulation::enter` already
+reset `action_frame` to 0 -- so the reported `action_frame` is always one
+frame ahead of Melee's own `cur_anim_frame`. Changing this shared tail
+itself (tried first, reverted) would have been wrong: `action_frame` is
+also this codebase's internal elapsed-frame counter, read directly by
+dozens of unrelated duration gates throughout `src/game/*.rs` (for example
+`src/game/simulation.rs`'s own `!(f.action == Action::Jump && f.action_frame
+== 0)` gravity-skip-on-launch check); suppressing the tail's own increment
+on the entry frame would silently shift every one of those gates by a
+frame for the rest of the action's lifetime, a much larger and unverified
+change than this fix's actual scope. The correct level is the observation
+boundary, exactly where the match-start batch's own `EntryStart`-specific
+`action_frame - 1` hack already lived: `observation::observe`'s default
+branch now reports `action_frame.saturating_sub(1)` for every action.
+
+**The one verified exception**: `Action::Dash`. `ftCo_Dash_Enter`
+(`ftCo_Dash.c:48-63`) calls `ftAnim_8006EBA4(gobj)` a second, explicit time
+immediately after `Fighter_ChangeMotionState` returns -- an extra advance
+`ftCo_Fall_Enter`/`ftCo_Landing_Enter`/`ftCo_Run_Enter_Full`/`ftCo_
+KneeBend_Enter` (read in full) do not make. `fox-fd.slp` confirms this
+directly: P1 enters Dash from a fresh stick press at frame -37 and already
+reports `state_age = 1.0` on that same frame. `observation::observe` keeps
+`action_frame` unadjusted for `Action::Dash` specifically; every other
+already-implemented action was checked against this replay only for the
+four transitions above; a future divergence may surface another exception
+this batch did not find.
+
+**Tests added**: `tests/game_entry.rs`'s existing `the_replay_verified_
+frame_table_is_reproduced_for_slots_zero_and_three` gained a pinned
+`action_age == 0.0` assertion on the frame P1 exits EntryEnd into Fall
+(the exact recording value, frame -59). `tests/game_dash.rs`'s new
+`entering_dash_from_a_fresh_press_reports_the_replay_verified_age_of_one`
+pins Dash's own `action_age == 1.0` on its entry frame. No C-oracle
+differential was added: this fix ports a control-flow/sequencing fact (when
+in the frame the increment happens), not a specific pinned function's
+arithmetic, so there is no bit-exactness edge case to pin against a
+compiled original function (the same reasoning `docs/validation.md`'s
+input-lock entry already used for a different gap).
+
 The 2026-09-11 pre-"GO" input lock and countdown-period simulation batch is
 recorded at:
 

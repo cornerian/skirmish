@@ -17,6 +17,7 @@ use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State,
     dash::Rules as DashRules, data::MatchData, grab::ShieldGrabRules, shield,
 };
+use skirmish_replay::{observation, slippi::Port};
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
@@ -97,6 +98,22 @@ fn hold_neutral(game: &mut Match, frames: u32) -> State {
         assert_eq!(state.fighters[0].action, Action::Dash);
     }
     state
+}
+
+/// `fox-fd.slp` reports P1's `state_age` as 1.0 on the exact frame Dash is
+/// entered from a fresh stick press (frame -37), not 0.0 like an ordinary
+/// entry (`docs/parity.md`'s entry for this batch, `docs/validation.md`):
+/// `ftCo_Dash_Enter` (`ftCo_Dash.c:48-63`) calls `ftAnim_8006EBA4(gobj)`
+/// immediately after `Fighter_ChangeMotionState`, an extra explicit
+/// animation advance most `_Enter`s (confirmed absent from `ftCo_Fall_
+/// Enter`/`ftCo_Landing_Enter`/`ftCo_Run_Enter_Full`/`ftCo_KneeBend_Enter`)
+/// don't make.
+#[test]
+fn entering_dash_from_a_fresh_press_reports_the_replay_verified_age_of_one() {
+    let mut game = Match::new(data(), 42).unwrap();
+    enter_dash(&mut game);
+    let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observed.fighters[0].action_age, 1.0);
 }
 
 #[test]
