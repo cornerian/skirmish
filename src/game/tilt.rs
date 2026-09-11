@@ -209,6 +209,12 @@ pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<C
     {
         return Some(Chain::Wait);
     }
+    if super::edge::owns_action(fighter.action) {
+        // ftCo_Ottotto_IASA / ftCo_OttottoWait_IASA: the same chain Wait
+        // exposes (catch, smashes, tilts, jab, shield, jump, dash, squat,
+        // turn); the walk-only override lives in locomotion's own gate.
+        return Some(Chain::Wait);
+    }
     if super::jab::owns_action(fighter.action) {
         return super::jab::interrupt_chain(fighter, data);
     }

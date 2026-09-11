@@ -25,5 +25,6 @@
   "smash_cstick": "aerial_input",
   "dash_catch": "catch",
   "dash_guard": "shield_guard",
-  "dash_checkinput": "dash"
+  "dash_checkinput": "dash",
+  "edge_floor": "mpcoll"
 }

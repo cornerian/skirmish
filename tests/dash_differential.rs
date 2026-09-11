@@ -131,6 +131,21 @@ fn compare_wait_chain_exposure(catch_fires: bool, allow_interrupt: bool) {
     assert_eq!(wait_opened != 0, !catch_fires && allow_interrupt);
 }
 
+/// NaN payload propagation through arithmetic is unspecified, so two NaN
+/// results are equivalent for parity purposes even when their bit patterns
+/// differ; a non-NaN result must still match exactly.
+fn same_bits(label: &str, actual: f32, expected: f32) {
+    if expected.is_nan() {
+        assert!(actual.is_nan(), "{label}: {actual:?} != {expected:?}");
+    } else {
+        assert_eq!(
+            actual.to_bits(),
+            expected.to_bits(),
+            "{label}: {actual:?} != {expected:?}"
+        );
+    }
+}
+
 fn compare_apply_friction(gr_vel: f32, amount: f32) {
     let actual = apply_friction(gr_vel, amount);
     let mut state = [0.0_f32; 23];
@@ -139,10 +154,10 @@ fn compare_apply_friction(gr_vel: f32, amount: f32) {
     // SAFETY: the adapter owns all C state; `state` is a live 23-element array.
     unsafe { oracle_physics_step(state.as_mut_ptr(), 0, args.as_ptr()) };
     let expected = state[6] + state[7];
-    assert_eq!(
-        actual.to_bits(),
-        expected.to_bits(),
-        "gr_vel {gr_vel} amount {amount}"
+    same_bits(
+        &format!("gr_vel {gr_vel} amount {amount}"),
+        actual,
+        expected,
     );
 }
 

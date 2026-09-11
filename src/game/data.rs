@@ -118,6 +118,8 @@ pub struct Rules {
     pub smash: Option<super::smash::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dash: Option<super::dash::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge: Option<super::edge::Rules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -218,6 +220,8 @@ pub struct FighterData {
     pub jab_combo: Option<super::jab::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dash_attack: Option<super::dash::DashAttack>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teeter: Option<super::edge::Teeter>,
 }
 
 impl FighterData {

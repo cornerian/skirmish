@@ -38,7 +38,14 @@ fn compare_dash_shield_grab(pressed: u32, buffer: f32) {
         unsafe { oracle_dash_shield_grab(pressed, buffer, &mut expected_buffer, &mut motion) };
     assert_eq!(actual, expected != 0);
     assert_eq!(motion, if actual { 214 } else { 0 });
-    assert_eq!(actual_buffer.to_bits(), expected_buffer.to_bits());
+    // NaN payload propagation through the buffer's `-= 1.0` arithmetic is
+    // unspecified, so two NaN results are equivalent for parity purposes
+    // even when their bit patterns differ.
+    if expected_buffer.is_nan() {
+        assert!(actual_buffer.is_nan());
+    } else {
+        assert_eq!(actual_buffer.to_bits(), expected_buffer.to_bits());
+    }
 }
 
 proptest! {

@@ -140,6 +140,13 @@ motion and configured action timing.
 The [ordinary wall-jump profile](docs/wall-jumps.md) adds moving-wall-relative
 arming, strict away-input timing, repeated-height decay and complete sampled
 physics poses without rendering.
+The [floor-end and edge-teeter profile](docs/edges.md) derives one of three
+grounded floor-end collision modes (plain fall-off, always-clamp, or a
+facing/stick-gated teeter) from the fighter's action, adds the zero-velocity,
+no-physics `Ottotto`/`OttottoWait` states with the full Wait input chain and
+their own walk-away threshold and exit-to-Wait distance, and corrects the
+shield-escape profile's rolls and spot dodge to clamp at a floor end instead
+of falling off it.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

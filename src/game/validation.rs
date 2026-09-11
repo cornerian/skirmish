@@ -353,6 +353,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.edge, &fighter.teeter) {
+            (Some(edge_rules), Some(teeter)) => edge::validate(edge_rules, teeter, fighter)?,
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "edge rules require teeter poses for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data("teeter poses require common edge rules".into()));
+            }
+            (None, None) => {}
+        }
         if let Some(parameters) = &fighter.locomotion {
             locomotion::validate(parameters)?;
             require(

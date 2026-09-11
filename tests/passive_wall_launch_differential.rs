@@ -22,6 +22,23 @@ unsafe extern "C" {
     ) -> OracleVelocity;
 }
 
+/// NaN payload propagation through arithmetic is unspecified (IEEE 754
+/// leaves which input NaN's payload survives, if any, up to the
+/// implementation), so two NaN results are equivalent for parity purposes
+/// even when their bit patterns differ; a non-NaN result must still match
+/// exactly.
+fn same_bits(label: &str, actual: u32, expected: u32) {
+    let (a, e) = (f32::from_bits(actual), f32::from_bits(expected));
+    if e.is_nan() {
+        assert!(
+            a.is_nan(),
+            "{label}: {a:?} ({actual:#x}) != {e:?} ({expected:#x})"
+        );
+    } else {
+        assert_eq!(actual, expected, "{label}");
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(768))]
     #[test]
@@ -37,8 +54,8 @@ proptest! {
             )
         };
         let rust = launch_velocity(values[0], values[1], values[2], values[3], used, exponent);
-        prop_assert_eq!(rust[0].to_bits(), c.x_bits);
-        prop_assert_eq!(rust[1].to_bits(), c.y_bits);
+        same_bits("x", rust[0].to_bits(), c.x_bits);
+        same_bits("y", rust[1].to_bits(), c.y_bits);
     }
 }
 

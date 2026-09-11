@@ -76,8 +76,11 @@ The implementation preserves these examined source branches:
   frozen, and `x221D_b5` disables overlap nudges against the evading fighter. `ftCo_Escape_Phys` runs `ft_80085030`, converting each
   sample's TransN delta into the exact ground velocity before ordinary friction
   would apply, while `ftCo_EscapeN_Phys` keeps ordinary friction. Both
-  collision callbacks use the ordinary ground path, so leaving the floor enters
-  Fall. The animation callbacks return to Wait after the last supplied sample;
+  collision callbacks are `ft_80084104` (mode 2, always clamp,
+  `mpColl_8004A45C_Floor`): a roll or spot dodge reaching a floor end stops
+  exactly there instead of falling off (`docs/edges.md`, "Ground collision
+  modes"), correcting this entry's earlier claim that leaving the floor
+  enters Fall. The animation callbacks return to Wait after the last supplied sample;
   the roll also clears ground velocity. The unread `x324` copy, the item-throw
   IASA, and the Samus/Yoshi entry branches are not modeled.
 - Escape samples carry the scripted fighter-wide `Fighter::x1988` collision

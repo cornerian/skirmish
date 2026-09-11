@@ -74,6 +74,7 @@ fn spawn(
         skip_floor: None,
         floor_normal: [0.0, 1.0, 0.0],
         contacts: [None; 4],
+        edge_contact: None,
         ecb: ecb::State::default(),
         ecb_lock: 0,
         locomotion: locomotion::State::default(),
@@ -1175,6 +1176,7 @@ fn update_animation(
         _ => {}
     }
     damage::update_animation(f, data, &rules.damage, input);
+    edge::update_animation(f, data)?;
     escape::update_animation(f, data)?;
     escape_air::update_animation(f, data, rules.escape_air.as_ref())?;
     tilt::update_animation(f, data)?;
@@ -1281,6 +1283,7 @@ fn update_actions(
             f,
             data,
             (rules.tilt.as_ref(), rules.smash.as_ref()),
+            rules.edge.as_ref(),
             input,
             just_turned,
         );
@@ -1338,6 +1341,9 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             movement.project_ground();
         } else if locomotion::ground_motion(f, data, &mut movement, input) {
             // Explicit locomotion parameters supply dash/run acceleration.
+        } else if edge::owns_action(f.action) {
+            // ftCo_Ottotto_Phys / ftCo_OttottoWait_Phys: empty. No friction,
+            // no movement; velocity was already zeroed on Ottotto's entry.
         } else if f.action == Action::Walk {
             movement_math::walk(
                 &mut movement,
@@ -1484,6 +1490,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if let Some(pose) = escape_air::pose(fighter, data) {
         pose
+    } else if let Some(pose) = edge::pose(fighter, data) {
+        pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
     } else if data
@@ -1549,6 +1557,16 @@ pub(crate) fn hurtbox_state(
         .get(index)
         .ok_or_else(|| Error::Physics("hurtbox index is outside supplied resources".into()))?
         .state;
+    if let Some(states) = edge::hurtbox_frame(fighter, data) {
+        return if states.is_empty() {
+            Ok(base)
+        } else {
+            states
+                .get(index)
+                .copied()
+                .ok_or_else(|| Error::Physics("incomplete teeter hurtbox state sample".into()))
+        };
+    }
     let Some(_) = data.attack(fighter.action, fighter.prone, fighter.ledge.slow) else {
         return Ok(base);
     };

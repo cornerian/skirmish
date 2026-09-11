@@ -150,7 +150,9 @@ profile the jab family maps to states 44..49 (animation indices 46..51):
 Jab, Attack12 and Attack13 are 44..46, and the rapid jab's Start, Loop and
 End are 47..49. With the optional dash-attack profile the dash attack maps
 to state 50 (animation 52), entered from a fresh A press during Dash's
-middle/late phases or from Run. Landing already maps to state 42; with the
+middle/late phases or from Run. With the optional edge/teeter profile,
+Ottotto and OttottoWait map to states 245/246 (animation indices 210/211),
+entered when a facing/stick-admissible walk crosses a floor end. Landing already maps to state 42; with the
 optional landing profile it additionally accepts the complete Wait chain
 once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
 interruptible frame can now select a smash straight out of that state.

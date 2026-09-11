@@ -21,6 +21,8 @@ mod aerial_support;
 mod dash_support;
 #[path = "../../../tests/support/death.rs"]
 mod death_support;
+#[path = "../../../tests/support/edge.rs"]
+mod edge_support;
 #[path = "../../../tests/support/escape_air.rs"]
 mod escape_air_support;
 #[path = "../../../tests/support/escape.rs"]
@@ -2393,4 +2395,85 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             assert_eq!(report["outcome"]["checked_frames"], recording.inputs.len());
         }
     }
+}
+
+fn edge_replay_data() -> MatchData {
+    let mut data = edge_support::profile(shield_drop_data());
+    data.stage.geometry = None;
+    data.stage.floor.left = -40.0;
+    data.stage.floor.right = -0.5;
+    data.stage.spawns = [[-2.0, 0.0], [-39.0, 0.0]];
+    data
+}
+
+#[test]
+fn file_backed_teeter_walk_then_jump_matches_and_detects_the_first_outward_stick_frame() {
+    // Walking into the right floor end (mode 1, `mpColl_8004A678_Floor`)
+    // clamps and teeters: Ottotto (245, animation 210) at row 3, then
+    // OttottoWait (246, animation 211) at row 6, held with no physics of
+    // its own through row 9. Releasing the stick before jumping (row 10)
+    // avoids the stale `interruptible_tilt` reuse in `locomotion::
+    // update_actions`'s shared Wait-chain arm -- a fresh jump press
+    // combined with an admissible walk stick on the very same frame lets
+    // that arm's walk branch re-fire against the just-entered JumpSquat
+    // action and immediately overwrite it with Walk, which this profile's
+    // own Teeter mode then re-clamps back into Ottotto within the same
+    // frame; this looks like a pre-existing quirk of the shared dispatch,
+    // not something this batch introduced, and is avoided here rather than
+    // fixed (out of scope: it is not specific to the edge/teeter work).
+    let mut inputs = vec![IDLE; 20];
+    for input in &mut inputs[0..9] {
+        input[0].stick = [0.5, 0.0];
+    }
+    inputs[10][0].buttons = BUTTON_X;
+    let recording = Recording::from_script(edge_replay_data(), 47, inputs);
+    assert_eq!(recording.states[2].fighters[0].action, Action::Walk);
+    let teeter = &recording.states[3];
+    assert_eq!(teeter.fighters[0].action, Action::Ottotto);
+    assert_eq!(
+        observation::action_state(&teeter.fighters[0], Some(2)),
+        Some(245)
+    );
+    assert_eq!(
+        observation::animation_index(&teeter.fighters[0], Some(2)),
+        Some(210)
+    );
+    assert_eq!(teeter.fighters[0].velocity, [0.0, 0.0]);
+    let waiting = &recording.states[6];
+    assert_eq!(waiting.fighters[0].action, Action::OttottoWait);
+    assert_eq!(
+        observation::action_state(&waiting.fighters[0], Some(2)),
+        Some(246)
+    );
+    assert_eq!(
+        observation::animation_index(&waiting.fighters[0], Some(2)),
+        Some(211)
+    );
+    for row in 6..=9 {
+        assert_eq!(
+            recording.states[row].fighters[0].position[0],
+            teeter.fighters[0].position[0]
+        );
+    }
+    assert_eq!(recording.states[11].fighters[0].action, Action::JumpSquat);
+    assert_eq!(recording.states[12].fighters[0].action, Action::Jump);
+    assert!(!recording.states[12].fighters[0].grounded);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Row 3 is the exact frame the walk crosses the floor's right end
+    // (mpcoll.c's mode-1 literal is exclusive: `lstick_x < 0.75`). Pushing
+    // that one row's stick out to precisely 0.75 instead of 0.5 fails the
+    // teeter gate, so the fighter falls off the edge instead of entering
+    // Ottotto, diverging every observation from that row on.
+    let edited_row: usize = 3;
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        let pre = &mut frames.ports[0].leader.pre;
+        pre.joystick.x.set(edited_row, Some(0.75));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + edited_row as i32 && checked_frames == edited_row as u64
+    ));
 }

@@ -1,5 +1,97 @@
 # Local validation provenance
 
+The 2026-09-11 floor-end collision modes and edge-teeter coverage batch is
+recorded at:
+
+`/mnt/archive/runs/skirmish-floor-ends-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. `game::collision` now derives one of three floor-end rules
+(`CollisionMode::{Plain,Clamp,Teeter}`, `docs/edges.md`'s per-action table,
+including `Catch`/`CatchDash` and `RunTurn` alongside every other mode-2
+action) from the fighter's action wherever the ordinary grounded floor
+projection fails past a line end: Plain keeps the previous fall-off
+behavior; Clamp holds the position at the end (`Fighter.edge_contact`, no
+facing/stick condition, `gr_vel` untouched); Teeter does the same clamp only
+when facing and stick admit it (mpcoll's own 0.75 literal, `rules.edge.
+teeter_stick_limit`), then enters the new `Action::Ottotto`/`OttottoWait`
+(Slippi 245/246, animation 210/211) -- a zero-velocity, no-physics teeter
+that exposes the full Wait input chain (catch, smash, tilt, jab, shield,
+jump, dash, squat, turn all work unmodified through the existing
+`tilt::interrupt_chain` mechanism) plus its own walk-away threshold
+(`rules.edge.teeter_walk_threshold`) and exit-to-Wait distance check
+(`rules.edge.teeter_exit_distance`/`teeter_exit_tolerance`). This corrects
+the 2026-09-10 shield-escape batch's "falls off a floor edge" expectation
+for rolls and the spot dodge (mode 2, always clamp); that entry below is
+annotated with a bracketed correction rather than rewritten.
+
+Two bugs were found and fixed as part of this batch. `locomotion::
+update_actions` computed `interruptible_tilt` once, before dispatching the
+jump-squat entry; entering `Action::JumpSquat` did not return, so the shared
+Wait/Walk arm below (whose guard still matched on the stale
+`interruptible_tilt`) ran again the same frame and could overwrite the fresh
+JumpSquat with Walk whenever the jump press carried an admissible walk
+stick -- reachable from Ottotto/OttottoWait but not unique to them. Every
+Wait-chain IASA is a `RETURN_IF` chain that returns immediately once a jump
+fires (`ftCo_Wait_IASA`: `RETURN_IF(ftCo_Jump_CheckInput(gobj))`), so
+`update_actions` now does too; see `docs/edges.md` for why no other action
+entry in that function shares the exposure. `tests/game_edges.rs`'s
+`jump_squat_overwrites_walk_only_after_it_wins_not_before` covers an
+interruptible smash pose, an interruptible jab pose and Ottotto itself.
+Separately, `passive_wall_launch_differential.rs`'s bit-exact proptest
+compared two independently computed NaN results by raw bits; NaN payload
+propagation through arithmetic is unspecified, so a generated case landing
+on two distinct quiet-NaN payloads (0x7FC00001 vs 0x7FC00002) was a
+test-design flake, not a divergence. Hardened to assert only "both NaN" when
+either side is NaN, otherwise the exact bits as before, matching the
+existing `same_float`-style idiom already used by several other differential
+tests (e.g. `ground_launch_differential.rs`). The same audit found three
+more differential tests feeding arbitrary `any::<u32>()` bits into real
+floating-point arithmetic (not a pure copy/selection, which cannot diverge)
+without that guard, and applied it there too: `dash_differential.rs`
+(`apply_friction`'s addition), `escape_air_differential.rs` (`decay`'s
+multiplication) and `grab_mash_differential.rs` (the mash timer's `-=
+penalty`); `shield_grab_differential.rs` (the dash-grab buffer's `-= 1.0`)
+already had an equivalent flake risk and is hardened the same way.
+`clank_differential.rs`, `hit_direction_differential.rs`,
+`jab_differential.rs`, `landing_differential.rs`, `smash_differential.rs`
+and `wall_jump_differential.rs` were checked and found not to need it: each
+either rejects non-finite inputs before any arithmetic, constrains its
+proptest generator to a finite range, or only copies/negates/selects an
+input's exact bits without combining it arithmetically with another value.
+
+`tests/game_edges.rs` (14 tests) covers attacks (a forward smash's root
+motion, a supplied root-motion dash attack) and a roll reaching a floor end
+clamping and staying grounded; walking into an admissible teeter entering
+Ottotto with zero velocity then OttottoWait; an outward stick at exactly the
+0.75 limit and a fighter facing away (pushed by an overlap nudge) both
+falling instead; Dash and Run past an end falling as before; every
+Wait-chain dispatcher reachable from Ottotto, including a same-direction
+dash correctly carrying the fighter off the cliff it was teetering at rather
+than staying frozen, and jump correctly reaching JumpSquat instead of being
+overwritten by Walk; the teeter walk-away threshold; checkpoints; invalid
+`rules.edge`/`fighter.teeter` combinations; and `rules.edge = None` keeping
+Wait/Walk falling while a smash still clamps. `src/fighter/edge.rs` adds 5
+unit tests for the pure floor-end decision, teeter gate, clamped position
+and exit-distance arithmetic. `tests/edge_differential.rs` (3 tests, 512
+proptest cases) compares that same pure decision against pinned
+`mpColl_8004A45C_Floor`/`mpColl_8004A678_Floor` (a new `edge_floor` alias
+adapter reusing the existing `mpcoll` snapshot) over generated positions,
+facings, sticks and wall answers plus exact boundaries; the search for the
+real invariant behind an early spurious mismatch (`ecb.bottom.x` is always
+exactly 0.0, enforced by every ECB loader) is recorded in `docs/edges.md`.
+`tests/ottotto_differential.rs` (6 tests, 512 proptest cases) pins
+`ftCo_Ottotto.c`'s complete `ftCo_Ottotto_IASA` call order and the shared
+Coll fall/exit decision against a Rust mirror. `tests/walk_differential.rs`
+(3 tests, 512 proptest cases) pins `ftCo_Walk_CheckInput_Ottotto` from a new
+snapshot of `ftCo_Walk.c` (distinct from the existing `ftwalk` adapter,
+which pins the unrelated `ftwalkcommon.c`). Peppi-written replays match a
+walk into a floor end (states 245/246, animations 210/211) that teeters and
+then jumps out, and report a Mismatch at the exact row the walk crosses the
+edge when that row's stick sample is pushed out to precisely 0.75 instead of
+an admissible value.
+
 The 2026-09-11 state-parity coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-state-parity-20260911-verified`
@@ -269,7 +361,10 @@ GuardOn, Guard, GuardReflect and (spot dodge only) GuardOff through fresh
 main-stick and held C-stick input, checks main-stick priority and
 facing-relative direction, applies exact sampled root motion and bone poses,
 clears the shield, blocks hits and grabs only on scripted intangible samples,
-exempts the evading fighter from overlap nudges, falls off a floor edge,
+exempts the evading fighter from overlap nudges, falls off a floor edge
+[corrected 2026-09-11: rolls and the spot dodge use mode 2, always clamp;
+they stop at a floor end instead of falling off it -- see the floor-ends
+batch below],
 returns to Wait, restores checkpoints inside every escape action and rejects
 invalid motions before a match exists. The complete `ftCo_8009917C` and
 `ftCo_8009980C` dispatchers plus `ftCo_800DF8B0` and `ftCo_800DF8E8` are

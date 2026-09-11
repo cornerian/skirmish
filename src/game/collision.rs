@@ -162,6 +162,7 @@ pub(crate) fn resolve(
     }
     f.position = previous_position;
     f.contacts = [None; 4];
+    f.edge_contact = None;
     let mut responded = false;
     for step in 0..plan.steps {
         f.ecb
@@ -271,6 +272,17 @@ pub(crate) fn resolve(
                 f.ground_line = Some(projection.line_id);
                 f.floor_normal = projection.normal;
                 f.contacts[0] = Some(projection.line_id);
+                if let Some(after_ceiling) = ceiling_position {
+                    let after_floor = f.position[1];
+                    f.ecb
+                        .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
+                }
+                continue;
+            }
+            if let Some(line) = f.ground_line
+                && let Some(geom_line) = geometry.lines.get(line)
+                && floor_end_clamp(f, rules, line, geom_line, stage, input)?
+            {
                 if let Some(after_ceiling) = ceiling_position {
                     let after_floor = f.position[1];
                     f.ecb
@@ -408,6 +420,23 @@ pub(crate) fn resolve(
             }
         }
     }
+    if f.grounded
+        && super::edge::owns_action(f.action)
+        && let Some(edge_rules) = rules.edge.as_ref()
+        && let Some(line) = f.ground_line
+        && let Some(geom_line) = geometry.lines.get(line)
+    {
+        // ftCo_Ottotto_Coll / ftCo_OttottoWait_Coll: `mpFloorGetRight` for
+        // facing +1, `mpFloorGetLeft` for facing -1. The ground-lost branch
+        // is already the ordinary Fall entry above (mode 2 clamp failing).
+        let (left_pt, right_pt) = super::edge::line_ends(geom_line);
+        let floor_end_x = if f.facing > 0.0 {
+            right_pt[0]
+        } else {
+            left_pt[0]
+        };
+        super::edge::check_exit(f, edge_rules, floor_end_x);
+    }
     if !f.grounded && !responded && f.wall_jump.startup_timer == 0 {
         let contact = wall_jump_contact(f, geometry, previous_geometry, position_delta_x);
         if let (Some(jump_rules), Some(attributes)) = (&rules.wall_jump, data.wall_jump.as_ref())
@@ -449,6 +478,88 @@ fn wall_jump_contact(
         wall_velocity_x: Some(point[0] - remapped[0]),
         position_delta_x,
     })
+}
+
+/// Ground collision modes (`inline2(coll, mode)`), applied once the ordinary
+/// floor projection has already failed past the current line's end. See
+/// docs/edges.md's "Ground collision modes" table for every source line.
+/// Returns whether a clamp (mode 2) or teeter clamp (mode 1) held this frame.
+fn floor_end_clamp(
+    f: &mut Fighter,
+    rules: &Rules,
+    line: usize,
+    geom_line: &stage::Line,
+    stage: &stage::Stage<'_>,
+    input: super::Controller,
+) -> Result<bool, Error> {
+    use crate::fighter::edge as math;
+    let mode = super::edge::mode_for_action(f.action, rules.edge.is_some());
+    if mode == math::Mode::Plain {
+        return Ok(false);
+    }
+    let (left_pt, right_pt) = super::edge::line_ends(geom_line);
+    let bottom_x = f.position[0] + f.ecb.current.bottom[0];
+    let Some(side) = math::passed_side(bottom_x, left_pt[0], right_pt[0]) else {
+        return Ok(false);
+    };
+    let edge_point = if side == math::Side::Left {
+        left_pt
+    } else {
+        right_pt
+    };
+    let blocked = wall_blocks(stage, f, side, edge_point)?;
+    let stick_limit = rules.edge.as_ref().map_or(0.75, |r| r.teeter_stick_limit);
+    let query = math::EdgeQuery {
+        bottom_x,
+        left_x: left_pt[0],
+        right_x: right_pt[0],
+        facing: f.facing,
+        stick_x: input.stick[0],
+        stick_limit,
+    };
+    let Some(resolution) = math::resolve(mode, query, blocked) else {
+        return Ok(false);
+    };
+    f.position = math::clamped_position(edge_point, f.ecb.current.bottom);
+    f.ground_line = Some(line);
+    f.contacts[0] = Some(line);
+    f.edge_contact = Some(resolution.side);
+    if resolution.enter_teeter {
+        super::edge::enter(f);
+    }
+    Ok(true)
+}
+
+/// `mpCheckLeftWall`/`mpCheckRightWall`, simplified: this reuses the
+/// generic wall sweep (already this codebase's own translation of the
+/// wall-line crossing test, including joint bounding/extension) rather than
+/// hand-porting their distinct `joint_id_skip`/`joint_id_only` traversal and
+/// NULL-output variant. Both check for a wall between the edge point (one
+/// unit inward and up) and the far ECB side.
+fn wall_blocks(
+    stage: &stage::Stage<'_>,
+    f: &Fighter,
+    side: crate::fighter::edge::Side,
+    edge: [f32; 2],
+) -> Result<bool, Error> {
+    let (surface, inward_x, far_offset) = match side {
+        crate::fighter::edge::Side::Left => (Surface::LeftWall, 1.0, f.ecb.current.right),
+        crate::fighter::edge::Side::Right => (Surface::RightWall, -1.0, f.ecb.current.left),
+    };
+    let from = [edge[0] + inward_x, edge[1] + 1.0];
+    let clamped = crate::fighter::edge::clamped_position(edge, f.ecb.current.bottom);
+    let to = add(clamped, far_offset);
+    Ok(stage
+        .sweep(
+            surface,
+            Query {
+                from,
+                to,
+                ..Default::default()
+            },
+        )
+        .map_err(physics)?
+        .is_some())
 }
 
 fn land(

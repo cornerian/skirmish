@@ -65,7 +65,14 @@ proptest! {
             threshold,
         );
         prop_assert_eq!(actual, expected);
-        prop_assert_eq!(actual_timer.to_bits(), expected_timer.to_bits());
+        // NaN payload propagation through the timer's `-= penalty` arithmetic
+        // is unspecified, so two NaN results are equivalent for parity
+        // purposes even when their bit patterns differ.
+        if expected_timer.is_nan() {
+            prop_assert!(actual_timer.is_nan());
+        } else {
+            prop_assert_eq!(actual_timer.to_bits(), expected_timer.to_bits());
+        }
         prop_assert_eq!(actual_state.axes, expected_axes);
         prop_assert_eq!(u8::from(actual_state.shake_enabled), expected_shake[0]);
         prop_assert_eq!(u8::from(actual_state.shaking), expected_shake[1]);

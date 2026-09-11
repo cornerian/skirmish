@@ -431,7 +431,12 @@ fn intangible_samples_block_grabs_only_on_their_frames() {
 }
 
 #[test]
-fn rolling_off_a_floor_edge_enters_fall_with_collision_active() {
+fn rolling_into_a_floor_edge_clamps_and_stays_grounded() {
+    // Escape's collision callback is `ft_80084104` (mode 2, always clamp,
+    // `mpColl_8004A45C_Floor`, mpcoll.c:3584-3652): past the floor's end the
+    // roll stops there instead of falling off (docs/edges.md, "Ground
+    // collision modes"). This corrects the earlier "falls off a floor edge"
+    // expectation from the shield-escape batch.
     let mut resource = data();
     resource.stage.floor.right = 3.0;
     let mut game = Match::new(resource, 42).unwrap();
@@ -440,14 +445,34 @@ fn rolling_off_a_floor_edge_enters_fall_with_collision_active() {
     let first = step(&mut game, attacker(0), Controller::default());
     assert_eq!(first.fighters[1].position[0], 2.5);
     assert!(first.fighters[1].grounded);
-    let departed = step(&mut game, attacker(0), Controller::default());
-    assert_eq!(departed.fighters[1].action, Action::Fall);
-    assert!(!departed.fighters[1].grounded);
-    assert_eq!(departed.fighters[1].ground_line, None);
-    assert_eq!(departed.fighters[1].body_state, BodyState::Normal);
-    assert!(departed.fighters[1].position[0] > 3.0);
-    let falling = step(&mut game, attacker(0), Controller::default());
-    assert!(falling.fighters[1].position[1] < 0.0);
+    let clamped = step(&mut game, attacker(0), Controller::default());
+    assert_eq!(clamped.fighters[1].action, Action::EscapeB);
+    assert!(clamped.fighters[1].grounded);
+    assert_eq!(clamped.fighters[1].ground_line, Some(0));
+    // edge.x - ecb.bottom.x with ecb.bottom.x == 0.0 for this fixture skeleton.
+    assert_eq!(clamped.fighters[1].position, [3.0, 0.0]);
+    assert_eq!(
+        clamped.fighters[1].edge_contact,
+        Some(skirmish::game::edge::EdgeSide::Right)
+    );
+    assert_eq!(clamped.fighters[1].body_state, BodyState::Intangible);
+    // The roll keeps re-clamping at the end every remaining frame -- gr_vel is
+    // untouched by the clamp and keeps following the sampled root motion, but
+    // the position itself never slides past the edge -- then returns to Wait
+    // exactly like an ordinary completed roll, still grounded at the edge.
+    let mut current = clamped;
+    let mut reached_wait = false;
+    for _ in 0..8 {
+        assert!(current.fighters[1].grounded);
+        assert_eq!(current.fighters[1].position[0], 3.0);
+        if current.fighters[1].action == Action::Wait {
+            reached_wait = true;
+            break;
+        }
+        current = step(&mut game, attacker(0), Controller::default());
+    }
+    assert!(reached_wait, "the roll should return to Wait");
+    assert_eq!(current.fighters[1].ground_velocity, 0.0);
 }
 
 #[test]

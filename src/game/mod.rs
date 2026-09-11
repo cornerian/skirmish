@@ -11,6 +11,7 @@ pub mod damage;
 pub mod dash;
 pub mod data;
 pub mod death;
+pub mod edge;
 pub mod escape;
 pub mod escape_air;
 pub mod grab;
@@ -87,6 +88,10 @@ pub enum Action {
     Squat,
     SquatWait,
     SquatRv,
+    /// Slippi 245, animation 210. `ftCo_Ottotto.c`.
+    Ottotto,
+    /// Slippi 246, animation 211. `ftCo_Ottotto.c`.
+    OttottoWait,
     JumpSquat,
     Jump,
     JumpAerial,
@@ -230,6 +235,10 @@ pub struct Fighter {
     pub floor_normal: [f32; 3],
     /// Last collision pass's floor, ceiling, left/right-facing wall IDs.
     pub contacts: [Option<usize>; 4],
+    /// Set for one frame when a mode-2/mode-1 floor-end clamp (`Collide_Left
+    /// Edge`/`Collide_RightEdge`/`Collide_Edge`) held this frame's position.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_contact: Option<edge::EdgeSide>,
     /// All interpolation history is included in checkpoints and trace output.
     pub ecb: ecb::State,
     pub ecb_lock: u8,

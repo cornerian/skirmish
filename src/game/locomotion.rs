@@ -471,6 +471,7 @@ pub(crate) fn update_actions(
     f: &mut Fighter,
     data: &FighterData,
     attack_rules: (Option<&super::tilt::Rules>, Option<&super::smash::Rules>),
+    edge_rules: Option<&super::edge::Rules>,
     input: Controller,
     just_turned: bool,
 ) {
@@ -508,6 +509,16 @@ pub(crate) fn update_actions(
             f.short_hop = false;
             f.locomotion.jump_input = source;
             enter(f, Action::JumpSquat);
+            // ftCo_Wait_IASA (and every other Wait-chain IASA) is a
+            // RETURN_IF chain: `RETURN_IF(ftCo_Jump_CheckInput(gobj))`
+            // returns immediately once the jump-squat entry fires, before
+            // ftCo_Dash_CheckInput/ftCo_800D5FB0/ftCo_Turn_CheckInput/the
+            // walk check ever run. Without this return, the second match
+            // below still matches the shared Wait/Walk arm's guard (its
+            // `interruptible_tilt` was computed before this entry, so it
+            // does not know `f.action` just changed) and can immediately
+            // overwrite the fresh JumpSquat with Dash/Squat/Turn/Walk.
+            return;
         }
     } else if matches!(
         f.action,
@@ -533,7 +544,19 @@ pub(crate) fn update_actions(
                 enter(f, Action::Squat);
             } else if input.stick[0] * f.facing <= p.turn_threshold {
                 start_turn(f, p, false);
-            } else if input.stick[0] * f.facing >= p.walk_threshold {
+            } else if input.stick[0] * f.facing >= p.walk_threshold
+                // ftCo_Walk_CheckInput_Ottotto: Ottotto/OttottoWait ANDs the
+                // ordinary walk predicate with this extra facing-relative
+                // stick gate; every other Wait-chain state has none.
+                && (!super::edge::owns_action(f.action)
+                    || edge_rules.is_some_and(|rules| {
+                        crate::fighter::edge::teeter_walk_allowed(
+                            input.stick[0],
+                            f.facing,
+                            rules.teeter_walk_threshold,
+                        )
+                    }))
+            {
                 if f.action != Action::Walk {
                     enter(f, Action::Walk);
                 }

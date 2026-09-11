@@ -232,6 +232,14 @@ windows, incapable fighters, startup freeze, repeated-height decay, sampled
 physics bones, landing reset and checkpoint state are covered independently from
 damage wall techs even though both use `PassiveWallJump`.
 
+Optional [`rules.edge`](edges.md) and per-fighter teeter poses derive one of
+three grounded floor-end collision modes (plain fall-off, always-clamp, or a
+facing/stick-gated teeter) from the fighter's action, and add the
+zero-velocity, no-physics `Ottotto`/`OttottoWait` states, which expose the
+full Wait input chain plus their own walk-away threshold and exit-to-Wait
+distance. Without it, mode-2 (always-clamp) actions still clamp at a floor
+end instead of falling off it; only the teeter degrades to plain fall-off.
+
 Optional [`rules.grab`](grabs.md) and per-fighter grab resources add physical-Z
 standing, Dash/Run and turn-facing catch entry, distinct sampled standing/dash
 grab capsules, paired pull/hold states and fresh-A pummels plus

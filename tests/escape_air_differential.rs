@@ -36,6 +36,21 @@ fn original_launch(stick: [f32; 2], deadzone: [f32; 2], force: f32) -> ([f32; 2]
     ([out[0], out[1]], out[2] as i32)
 }
 
+/// NaN payload propagation through arithmetic is unspecified, so two NaN
+/// results are equivalent for parity purposes even when their bit patterns
+/// differ; a non-NaN result must still match exactly.
+fn same_bits(label: &str, actual: f32, expected: f32) {
+    if expected.is_nan() {
+        assert!(actual.is_nan(), "{label}: {actual:?} != {expected:?}");
+    } else {
+        assert_eq!(
+            actual.to_bits(),
+            expected.to_bits(),
+            "{label}: {actual:?} != {expected:?}"
+        );
+    }
+}
+
 fn compare_decay(velocity: [f32; 2], factor: f32, skip: bool) {
     let mut out = [0.0_f32; 2];
     // SAFETY: the adapter reads two floats and writes two floats.
@@ -44,13 +59,14 @@ fn compare_decay(velocity: [f32; 2], factor: f32, skip: bool) {
     };
     if skip {
         assert_eq!(fell, 1);
+        // Unmultiplied passthrough: an exact copy, safe to compare bit-exact
+        // even for a NaN velocity.
         assert_eq!(out.map(f32::to_bits), velocity.map(f32::to_bits));
     } else {
         assert_eq!(fell, 0);
-        assert_eq!(
-            out.map(f32::to_bits),
-            decay(velocity, factor).map(f32::to_bits)
-        );
+        let expected = decay(velocity, factor);
+        same_bits("x", out[0], expected[0]);
+        same_bits("y", out[1], expected[1]);
     }
 }
 

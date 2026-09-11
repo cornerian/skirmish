@@ -358,5 +358,15 @@
     "fixture": "tests/oracle/original/jump.c",
     "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
     "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
+  },
+  {
+    "fixture": "tests/oracle/original/ottotto.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Ottotto.c",
+    "sha256": "0e42f15a99870892f42b4dfdf142dfc6494e2afc5102a8989cd8c49cbb86bc1f"
+  },
+  {
+    "fixture": "tests/oracle/original/walk.c",
+    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Walk.c",
+    "sha256": "922999974fddc2bd07042e31ea332ce17e8a24a08d8d6d37e2267adc4d13ab0a"
   }
 ]

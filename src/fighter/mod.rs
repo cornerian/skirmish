@@ -9,6 +9,7 @@ mod compat;
 pub mod damage;
 pub mod dash;
 pub mod death;
+pub mod edge;
 pub mod escape;
 pub mod escape_air;
 pub mod grab;
