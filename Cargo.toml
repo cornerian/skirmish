@@ -31,12 +31,27 @@ cc = { version = "1", optional = true }
 serde_json = "1"
 
 [dev-dependencies]
+criterion = { version = "0.7", default-features = false, features = ["html_reports"] }
 proptest = "1"
 replay-validation = { path = "crates/replay-validation" }
 skirmish-equivalence = { path = "crates/equivalence" }
+skirmish-replay = { path = "crates/skirmish-replay" }
 tempfile = "3"
 
+[[bench]]
+name = "match_step"
+harness = false
+
 [profile.release]
+overflow-checks = true
+
+# Keep debug info in the bench profile (still opt-level 3) so `samply`/
+# `flamegraph`/`perf` (when available) can symbolicate; mirror the release
+# profile's `overflow-checks = true` so bench numbers reflect what an actual
+# `cargo build --release` pays for the same checked arithmetic, per
+# docs/performance.md.
+[profile.bench]
+debug = true
 overflow-checks = true
 
 [profile.dev.package.xxhash-rust]
