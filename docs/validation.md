@@ -1,5 +1,110 @@
 # Local validation provenance
 
+The 2026-09-11 Fox side-special coverage batch is recorded at:
+
+`/mnt/archive/runs/skirmish-fox-side-special-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace (both without and with the `c-oracle` feature), and the
+new original-C functions in debug and release modes. `game::fox_side_
+special` (resource, dispatch, `src/game/fox_side_special.rs`) and `fighter::
+fox_side_special` (the pure input gate, turn check and entry ground-speed
+blend, `src/fighter/fox_side_special.rs`) cover `Action::SpecialSStart/
+SpecialS/SpecialSEnd/SpecialAirSStart/SpecialAirS/SpecialAirSEnd`
+(`docs/fox-side-special.md`), Fox's side special (Illusion; Falco's
+Phantasm shares the code with its own attributes).
+
+Two concrete facts requested for this batch: the ghost item (`itfoxillusion.
+c`, `it_3F2F.c:360-390`) is confirmed hitbox-free -- every one of its three
+`Coll` callbacks unconditionally returns `false`, and its `DmgDealt` slot
+only clears a bookkeeping field it can never reach -- so it stays entirely
+unmodeled as GFX; and the Slippi ids are confirmed directly against `ftFox/
+forward.h`'s own enum order (347..352), while the matching animation
+indices (301..306) remain an unverified extrapolation, since the pinned C
+decomp has no figatree/animation-index table for character-specific motion
+states (only DAT-resource data, owned by the separate `skirmish-assets`
+project, would confirm it) -- flagged in code, in `docs/fox-side-special.md`
+and here rather than silently assumed.
+
+This batch's own preceding design note (`docs/fox-side-special.md`'s
+predecessor) was found to be wrong in two places while implementing
+against the pinned source, both corrected with exact citations before any
+code was written against them: `doEnter`'s ground-velocity blend is scaled
+by `ft_GetGroundFrictionMultiplier(fp)` (`ft_081B.c:1235-1240`, a per-
+floor-material lookup), not a fixed `1.0` -- this port still uses `1.0`
+(no per-surface friction-material table exists anywhere in this codebase),
+a documented simplification, exact on ordinary terrain and exercised
+directly by `fox_side_special_differential.rs`'s `entry_multiplier_gap_
+is_the_documented_one`; and the End phase's ground/air conversions are
+*not* symmetric with Start/Dash (ground leaving the floor enters ordinary
+Fall; air landing enters `LandingFallSpecial` directly via `ftCo_
+LandingFallSpecial_Enter`, bypassing SpecialSEnd/SpecialAirSEnd entirely),
+not a uniform GroundToAir/AirToGround pair. A third, implementation-only
+gap was caught by this batch's own test suite before being recorded here:
+the Start/End grounded phases tick `mv.fx.SpecialS.gravityDelay` down
+every frame even though gravity is never read on the ground (`ftFx_
+SpecialSStart_Phys`/`ftFx_SpecialSEnd_Phys`); an early draft only ticked it
+in the air, which would have desynced the counter across a mid-Start
+ground<->air conversion. No contradiction between this batch's final
+implementation and the pinned source was found; the pre-existing test
+suite remains green unchanged.
+
+Resource shape: `Rules.specials: Option<fox_side_special::Rules {
+side_stick_threshold (x218), turn_threshold (x220), vertical_threshold
+(x21C) }>`; `FighterData.side_special: Option<fox_side_special::
+SideSpecial { ground_speed_retention, start, dash (with per-pose ground/
+air TransN), end, attributes: 12 fields covering the gravity delays,
+speeds and frictions of all three phases }>`; `Fighter.fox_side_special:
+State { gravity_delay: f32 }`; `aerial::State` gained `mobility: f32`
+(default `1.0`, recovering every previously modeled `FallSpecial` entry's
+exact prior behavior); `locomotion::State` gained `side_special_b_age: u8`
+(`x688`, distinct from the existing `attack_b_age`/x67D, since `x688`
+additionally requires the stick past the side threshold);
+`edge::mode_for_action` gained the End-ground clamp; `ledge::catchable`
+gained the three aerial phases.
+
+`src/fighter/fox_side_special.rs` adds 3 unit tests. `tests/
+game_fox_side_special.rs` adds 16 integration tests covering grounded and
+aerial entry (retention blend, entry-speed division, the `x688` age gate,
+jumps left untouched or restored), the strict turn-around boundary, a
+vertical stick suppressing the unmodeled aerial Hi/Lw branches, the ground
+and air TransN-driven dash (including the no-sample friction fallback),
+B-press shortening on the ground and in the air, a mid-Start ground<->air
+conversion preserving the frame and the gravity delay, the End phase's
+speeds and dedicated frictions, the FallSpecial exit with the scaled
+mobility and every jump restored, the Slippi ids, a full-phase checkpoint
+round trip, invalid resources and `None` keeping B+side inert.
+`tests/oracle/original/fox_specials.c` snapshots `ftfoxspecials.c`
+(`fox_specials.functions.json`: 42 of its 43 functions -- every non-static
+callback plus all four `static inline` helpers except `ftFx_
+SpecialS_CreateGFX`, hand-written as a no-op since its real body needs the
+full `ftParts` system and it is never invoked by anything this oracle
+calls); `tests/oracle/original/special_s.c`/`special_air.c` snapshot
+`ftCo_SpecialS.c`/`ftCo_SpecialAir.c` in full, with the character tables
+stubbed to record which entry fired. `tests/oracle/fox_specials.c` treats
+`Fighter_ChangeMotionState`/`ftCo_80096900`/`ftCo_LandingFallSpecial_
+Enter`/`ftCo_Fall_Enter`/`ft_8008A2BC` as captured; `ftAnim_
+IsFramesRemaining`/`ft_80082708`/`ft_800827A0`/`ft_CheckGroundAndLedge`/
+`ftCliffCommon_80081298`/`ft_GetGroundFrictionMultiplier` as scripted;
+`ftCommon_Fall`/`ApplyFrictionAir`/`ApplyFrictionGround`/`8007D60C`/
+`8007D6A4`/`8007D7FC`/`AirToGroundStateChange`/`UseAllJumps`/`ft_
+80084F3C`/`ft_800850E0`/`ft_80085088`/`ft_80085134` as faithful verbatim
+reimplementations against this file's own `Fighter` struct (not linked
+against `physics.c`/`locomotion.c`'s own extractions of the same
+functions, to avoid an unchecked cross-adapter struct-offset assumption);
+`ftCommon_ApplyGroundMovement` and every ghost/GFX call as documented
+no-ops. `tests/fox_side_special_differential.rs` (13 tests, 512 proptest
+cases each plus exact boundaries) compares entry selection, per-phase
+speed/gravity-delay arithmetic, TransN velocities, the B-press IASA
+shortening and the Coll conversion/exit decisions against the C oracle,
+plus the documented friction-multiplier gap exercised directly; all pass
+in both debug and release. `crates/cli/tests/replay_match.rs` gains 2
+file-backed regressions: a grounded Fox Illusion through SpecialSStart/
+SpecialS/SpecialSEnd (Slippi 347/348/349) and an aerial one free-falling
+through SpecialAirSStart/SpecialAirS/SpecialAirSEnd/FallSpecial into
+LandingFallSpecial (Slippi 43), each matching its own generated bytes and
+reporting a `Mismatch` at frame 0 once the entry press is removed.
+
 The 2026-09-11 taunt coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-taunt-20260911-verified`

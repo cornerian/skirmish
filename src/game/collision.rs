@@ -596,6 +596,7 @@ fn land(
             let pose = simulation::pose(f, data)?;
             super::damage::land(f, data, &pose, &rules.damage, input)?;
         } else if !super::special::transfer_ground_air(f, true)
+            && !super::fox_side_special::land(f, data)?
             && !super::escape_air::land(f, data, rules.escape_air.as_ref())?
             && !super::aerial::land(f, data)?
         {

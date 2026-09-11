@@ -12,6 +12,7 @@ pub mod death;
 pub mod edge;
 pub mod escape;
 pub mod escape_air;
+pub mod fox_side_special;
 pub mod grab;
 pub mod idle;
 pub mod instance;

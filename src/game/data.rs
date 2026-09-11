@@ -113,6 +113,8 @@ pub struct Rules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape_air: Option<super::escape_air::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub specials: Option<super::fox_side_special::Rules>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilt: Option<super::tilt::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smash: Option<super::smash::Rules>,
@@ -204,6 +206,8 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub special: Option<super::special::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_special: Option<super::fox_side_special::SideSpecial>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape: Option<super::escape::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape_air: Option<super::escape_air::Parameters>,
@@ -262,6 +266,13 @@ impl FighterData {
             .special
             .as_ref()
             .and_then(|parameters| super::special::attack(action, parameters))
+        {
+            return Some(attack);
+        }
+        if let Some(attack) = self
+            .side_special
+            .as_ref()
+            .and_then(|parameters| super::fox_side_special::attack(action, parameters))
         {
             return Some(attack);
         }

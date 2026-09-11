@@ -112,6 +112,10 @@ pub struct State {
     /// Fighter x67C/x67D: separate ages of fresh physical A/B presses.
     pub attack_a_age: u8,
     pub attack_b_age: u8,
+    /// Fighter x688 (`fighter.c:1735-1739`): age of a fresh B press with the
+    /// stick past the side-special threshold (`ftCo_SpecialS_HasInput`).
+    /// Distinct from `attack_b_age`/x67D, which has no stick condition.
+    pub side_special_b_age: u8,
     pub jumps_used: u8,
     pub jump_input: JumpInput,
     pub turn_frames: f32,
@@ -171,6 +175,7 @@ impl Default for State {
             jump_press_age: 255,
             attack_a_age: 255,
             attack_b_age: 255,
+            side_special_b_age: 255,
             jumps_used: 0,
             jump_input: JumpInput::Buttons,
             turn_frames: 0.0,

@@ -1,397 +1,412 @@
 [
-  {
-    "fixture": "tests/oracle/original/random_hsd.c",
-    "upstream": "src/sysdolphin/baselib/random.c",
-    "sha256": "c1ee9c4317a48b59021c23b901e97fe7ad794f148d6ab98783ecfcadcdd566e6"
-  },
-  {
-    "fixture": "tests/oracle/original/random_msl.c",
-    "upstream": "src/MSL/rand.c",
-    "sha256": "49e38ee5f365851d21136fd500f865b6e9813aaeaaa5ea14f8b5108a029cbb92"
-  },
-  {
-    "fixture": "tests/oracle/original/ctype.c",
-    "upstream": "src/MSL/ctype.c",
-    "sha256": "65ddfaa1db335e4297c949b23bdcb30f57b1d09021085edcdaa9145997bb2069"
-  },
-  {
-    "fixture": "tests/oracle/original/ctype.h",
-    "upstream": "src/MSL/ctype.h",
-    "sha256": "c7bd4ffa7cc9843eede42aed336a7f0ff51422edf0aaafa5ad2f73e6f99783fd"
-  },
-  {
-    "fixture": "tests/oracle/original/mbstring.c",
-    "upstream": "src/MSL/mbstring.c",
-    "sha256": "329846f1a99ee1bf1c4d87ed87a25fa70dce76f7ab8dd6c255fdf56ced37f212"
-  },
-  {
-    "fixture": "tests/oracle/original/bytecode.c",
-    "upstream": "src/sysdolphin/baselib/bytecode.c",
-    "sha256": "f8aeb58df6729e39ed38a8523ba3d0768368b7a15e302f96892af4155ffe285b"
-  },
-  {
-    "fixture": "tests/oracle/original/spline.c",
-    "upstream": "src/sysdolphin/baselib/spline.c",
-    "sha256": "736ab29868437a263bcdbdaefdf973c75e9fa4ff3d86a3baf548f3396d415c50"
-  },
-  {
-    "fixture": "tests/oracle/original/id.c",
-    "upstream": "src/sysdolphin/baselib/id.c",
-    "sha256": "4a97a6c75c848ca98f01298aa9a8c15715dfba597ef0c644c2779310a3a2e3bc"
-  },
-  {
-    "fixture": "tests/oracle/original/quaternion.c",
-    "upstream": "src/sysdolphin/baselib/quatlib.c",
-    "sha256": "4646bd1134c634c768d26f1096ab960fbbbdb213a9b9db5cc0682e3d48eda7ad"
-  },
-  {
-    "fixture": "tests/oracle/original/ftcommon.c",
-    "upstream": "src/melee/ft/ftcommon.c",
-    "sha256": "43dff29e65d9c38c0b480d59510258d3a3b6f4aebf0b67d3b385e40ef560114d"
-  },
-  {
-    "fixture": "tests/oracle/original/PadClamp.c",
-    "upstream": "extern/dolphin/src/dolphin/pad/PadClamp.c",
-    "sha256": "80bae8c313d8ad603eb0708ded09cb0130a49865a0579179e2ef1c2060f41f34"
-  },
-  {
-    "fixture": "tests/oracle/original/hsd_mtx.c",
-    "upstream": "src/sysdolphin/baselib/mtx.c",
-    "sha256": "f310c0e473efa52037f5ddaaaa415f1b705915c853b3a071241ede2a548941ac"
-  },
-  {
-    "fixture": "tests/oracle/original/sdk_mtx.c",
-    "upstream": "extern/dolphin/src/dolphin/mtx/mtx.c",
-    "sha256": "594e946b2686708a44f50683acb142c7f7e138eac520905e11f089e333414caa"
-  },
-  {
-    "fixture": "tests/oracle/original/sdk_mtx.h",
-    "upstream": "extern/dolphin/include/dolphin/mtx.h",
-    "sha256": "6c99b820e91b48446835df8b6bf77fd92c66fb353e023db5ec20511003f36be9"
-  },
-  {
-    "fixture": "tests/oracle/original/sdk_mtxvec.c",
-    "upstream": "extern/dolphin/src/dolphin/mtx/mtxvec.c",
-    "sha256": "41335e9824650e3ac56f620774028bba01d539ed8384b2c89d9e5bb3ed597184"
-  },
-  {
-    "fixture": "tests/oracle/original/combat_knockback.c",
-    "upstream": "src/melee/ft/ftcoll.c",
-    "sha256": "f376f14500c1e018fd022b45563ac8163d0aba043f1817f8e1b2eeba651f16e7"
-  },
-  {
-    "fixture": "tests/oracle/original/combat_collision.c",
-    "upstream": "src/melee/lb/lbcollision.c",
-    "sha256": "59705ddc7a8a20fe40598b9e97251bb5cbd3f4ede890e3f6fa3ed5bc34dbd36b"
-  },
-  {
-    "fixture": "tests/oracle/original/combat_hitstun.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Damage.c",
-    "sha256": "8865a532b8bbbdd7464f95b9bd291b13fdf570aa3e554dc3171d91a4a1952b13"
-  },
-  {
-    "fixture": "tests/oracle/original/ftjump.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
-    "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
-  },
-  {
-    "fixture": "tests/oracle/original/ftwalk.c",
-    "upstream": "src/melee/ft/ftwalkcommon.c",
-    "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
-  },
-  {
-    "fixture": "tests/oracle/original/damage_fighter.c",
-    "upstream": "src/melee/ft/fighter.c",
-    "sha256": "c2a3b8b82ee2d141063f63a0be40717e65b015e85491143e1525b6c50730fdf1"
-  },
-  {
-    "fixture": "tests/oracle/original/mplib.c",
-    "upstream": "src/melee/mp/mplib.c",
-    "sha256": "7984d542363a1ee87ec5c812fb087ae0bc780916ea047278f297efbdb369e7eb"
-  },
-  {
-    "fixture": "tests/oracle/original/sdk_vec.c",
-    "upstream": "extern/dolphin/src/dolphin/mtx/vec.c",
-    "sha256": "6dd4bc76acd98fc8cc5ed000f0555928325ed86060b03ba2fdccff265d405e80"
-  },
-  {
-    "fixture": "tests/oracle/original/shield_guard.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Guard.c",
-    "sha256": "738114cca1146510f30bb6456151cf6f2a9479466bd45e6e5389ce07a7dbb4a3"
-  },
-  {
-    "fixture": "tests/oracle/original/mpcoll.c",
-    "upstream": "src/melee/mp/mpcoll.c",
-    "sha256": "a89b65abe1203137f2efdc66de1b1280c15b6a4632991e06022dba4979c74172"
-  },
-  {
-    "fixture": "tests/oracle/original/stale_queue.c",
-    "upstream": "src/melee/pl/plstale.c",
-    "sha256": "7a93b42a63a16c9f1c3b367f8d7198b432d1f35a80dce1ea6fc666f2ca920a10"
-  },
-  {
-    "fixture": "tests/oracle/original/stale_damage.c",
-    "upstream": "src/melee/ft/ft_0881.c",
-    "sha256": "811b429ea6572f10249e31db3a9ea9c5a458bbb2187af8215c678907c9395d62"
-  },
-  {
-    "fixture": "tests/oracle/original/aerial_input.c",
-    "upstream": "src/melee/ft/ft_0DF1.c",
-    "sha256": "e13eff4bf5970f45db95b30b6f67e8a9d25149dad45046f8b91a9114ba37056a"
-  },
-  {
-    "fixture": "tests/oracle/original/aerial_select.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackAir.c",
-    "sha256": "18eb8f663442558e375f07e2cdefe818b311473c93e023fc6d81f012d3ceeeac"
-  },
-  {
-    "fixture": "tests/oracle/original/aerial_landing.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_LandingAir.c",
-    "sha256": "ac7235335876dfa582015ce27e141e1baaea04abfe07ae20c971e3a2c196edab"
-  },
-  {
-    "fixture": "tests/oracle/original/clank_rebound.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Rebound.c",
-    "sha256": "040104daf2aa67ff7bb8a8207df217cc2e91eeafe97223aef5a9d9adb013003c"
-  },
-  {
-    "fixture": "tests/oracle/original/mnmain.c",
-    "upstream": "src/melee/mn/mnmain.c",
-    "sha256": "cbce53b1c0d06c1eb851cc203b17237c0fef827cb024ba6f6a0544761850b7c2"
-  },
-  {
-    "fixture": "tests/oracle/original/mn_forward.h",
-    "upstream": "src/melee/mn/forward.h",
-    "sha256": "f61ba58af8cbed9b89e13126e6b17b4fa8dd62c4b765bb0b2ab3df84bb9abb1a"
-  },
-  {
-    "fixture": "tests/oracle/original/mn_inlines.h",
-    "upstream": "src/melee/mn/inlines.h",
-    "sha256": "0cdc22a029093747943ca3089ab3031aa3c2d9701b075f4254c48c62974cb1d4"
-  },
-  {
-    "fixture": "tests/oracle/original/gm_controller.c",
-    "upstream": "src/melee/gm/gm_1A36.c",
-    "sha256": "3964234a0a3dc1dccb39824c6f78c88b9a59a301f8fec4078120efa4b7aa9d7d"
-  },
-  {
-    "fixture": "tests/oracle/original/gm_controller.static.h",
-    "upstream": "src/melee/gm/gm_1A36.static.h",
-    "sha256": "d262ea2b3ea52a62c191ce1daf3ade80c880955776c8721da8538aa8baee1923"
-  },
-  {
-    "fixture": "tests/oracle/original/dolphin_pad.h",
-    "upstream": "extern/dolphin/include/dolphin/pad.h",
-    "sha256": "d5fec142b1165aea3764fffe7e66c241ede2c2c31b16cbed05b5c0bccacdd947"
-  },
-  {
-    "fixture": "tests/oracle/original/down_attack.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownAttack.c",
-    "sha256": "2a9fde40a5d8262befa31df1b2eeca7d4ae827091bf089fcc161b2ae14684c48"
-  },
-  {
-    "fixture": "tests/oracle/original/throw_input.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Throw.c",
-    "sha256": "5ff98ff23893109eeb38450325a26fccbce81c869e4db3fc59ab813ed42f9a02"
-  },
-  {
-    "fixture": "tests/oracle/original/ledge_option.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c",
-    "sha256": "7e6c054dea388508689b0eea87b899246961a260f762055be40a9d7e7b68c274"
-  },
-  {
-    "fixture": "tests/oracle/original/wall_jump.c",
-    "upstream": "src/melee/ft/ftwalljump.c",
-    "sha256": "02b5d6f71363666a11bd1625550ac9e179c330fdd7faf9239acb32e716c81a79"
-  },
-  {
-    "fixture": "tests/oracle/original/rebirth.c",
-    "upstream": "src/melee/ft/ft_0D4D.c",
-    "sha256": "e820dee162afc842ec4e3dab7aecd8a22331d9ebf9c484362de8e005735eb296"
-  },
-  {
-    "fixture": "tests/oracle/original/special_input.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_0D67.c",
-    "sha256": "30fc5f74f8f8f04eb988f47fdb897359b5cd6dc08d1de5d09bc2162807562614"
-  },
-  {
-    "fixture": "tests/oracle/original/death.c",
-    "upstream": "src/melee/ft/ft_0D31.c",
-    "sha256": "014cdd01686238eb22398e87cc10784e899684beedccbba4eb41f02524bb94d5"
-  },
-  {
-    "fixture": "tests/oracle/original/fly_reflect.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FlyReflect.c",
-    "sha256": "474e82d6e690eef87275bb723ec620a853c05da600fd11fd9fc24415f68615e7"
-  },
-  {
-    "fixture": "tests/oracle/original/lbvector.c",
-    "upstream": "src/melee/lb/lbvector.c",
-    "sha256": "86fb5f0d484345ad9264ab8b9cafcc753b972a40d5d22156b3792e9567485bd5"
-  },
-  {
-    "fixture": "tests/oracle/original/passive_wall.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveWall.c",
-    "sha256": "55e1ad5c190aa8653f665167f9e3e4da851fd941ee73d0226ffc4f6ae50b8e29"
-  },
-  {
-    "fixture": "tests/oracle/original/passive_stand.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveStand.c",
-    "sha256": "2a14e2143752cafe018e49a04a792d9063c1cd9e4f3953c758158afded208078"
-  },
-  {
-    "fixture": "tests/oracle/original/down_damage.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownDamage.c",
-    "sha256": "3a95e0bb90b4152649c00db02e374c7772aa47e0c4eacb19921245a430ffd9d2"
-  },
-  {
-    "fixture": "tests/oracle/original/capture_pulled.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CapturePulled.c",
-    "sha256": "14004df0dee607f3a84d2e205a35e298ab54b152c796d4dbb51975eafa0cbbbb"
-  },
-  {
-    "fixture": "tests/oracle/original/multi_jump.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_JumpAerial.c",
-    "sha256": "32da7dd4e7f68c4f3152e0eac9aac4f8c806e1238701c2adbe383af42047cf3b"
-  },
-  {
-    "fixture": "tests/oracle/original/turn_run.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_TurnRun.c",
-    "sha256": "162624ab052be87b8d8046070059164de0b7c822be5c51ff54878f00a67d81f1"
-  },
-  {
-    "fixture": "tests/oracle/original/action_instance.c",
-    "upstream": "src/melee/ft/ft_0892.c",
-    "sha256": "02975b4fe744bf053a17f164dee7622a337b90391631d4bfd8938fe4ba2ff084"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_counter.c",
-    "upstream": "src/melee/pl/plattack.c",
-    "sha256": "8ac9163d7ade4af6740167098b7daa6bea50c6881ec31d8f0cb34db71fe90316"
-  },
-  {
-    "fixture": "tests/oracle/original/pass.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Pass.c",
-    "sha256": "5a54a6cd1171bab28687ce55a96d0ed3a1eb36356b5c94a66b4af60ff6d1eaa1"
-  },
-  {
-    "fixture": "tests/oracle/original/escape.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Escape.c",
-    "sha256": "664f3a057fe21f775a382ba1afff6671185bde2e30418b66084499e1514c1c99"
-  },
-  {
-    "fixture": "tests/oracle/original/catch.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Catch.c",
-    "sha256": "98b524105702a42ef2bf1b4c3993870543e62d54353d31e81e7abd84d40beb55"
-  },
-  {
-    "fixture": "tests/oracle/original/escape_air.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_EscapeAir.c",
-    "sha256": "7f00d1a93ea4030d527e0bd794a0d71d56b28d3c4dc7ecad0da2a838f8e30334"
-  },
-  {
-    "fixture": "tests/oracle/original/fall_special.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FallSpecial.c",
-    "sha256": "6b981881df052b3eef9a246efa4fb9ea18cc713673c18161b8634eb9edf29789"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_s3.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS3.c",
-    "sha256": "52c2bd587d26bfb3a2f90cbd1bcbd4b2479be44a339671fa8599eda500fb892c"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_hi3.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi3.c",
-    "sha256": "d6523b738a84ae1cc9a223eec45e6b8f22b3e66c0d42adb2d9a8fac03a3664e4"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_lw3.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw3.c",
-    "sha256": "bc2a3450b48af01ebfbf13eb52bc64849d99d4826793fb7c178678695caa01df"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_s4.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS4.c",
-    "sha256": "155e2cd8b703ff24d427ba42807ae464927502f01a3ed53c2ee0d2df754fd913"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_hi4.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi4.c",
-    "sha256": "b6b15f38befea0d2303d20240f9538e6a9fc72d1ea263f008ba11b23ec57ceed"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_lw4.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw4.c",
-    "sha256": "669a1d1248df474794868ccdaae7b432f7cf5d5b8b1df921a5f615c1ba2ce7d9"
-  },
-  {
-    "fixture": "tests/oracle/original/smash_charge.c",
-    "upstream": "src/melee/ft/ft_0DF0.c",
-    "sha256": "38836511908f55b2c5860ff30174374b980abf9e99869b151ad9b1c48d72673e"
-  },
-  {
-    "fixture": "tests/oracle/original/attack1.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack1.c",
-    "sha256": "41af2de0d294cb2127cd16c8d4af90dbde72c82616d90b08d374d71d75a5c075"
-  },
-  {
-    "fixture": "tests/oracle/original/attack100.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack100.c",
-    "sha256": "7d56d7d8fc4f6d8528c21053e69530c865109edd8b9bd255e45c201543b6e6bf"
-  },
-  {
-    "fixture": "tests/oracle/original/dash.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Dash.c",
-    "sha256": "7251dcee053adcaf812b245c569574a112713758d8d24f2e5101d98dbe6fdd84"
-  },
-  {
-    "fixture": "tests/oracle/original/attack_dash.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackDash.c",
-    "sha256": "7321ca3fd67da63d3ea53c87df77129295724624400313f3f1574c18ac67f486"
-  },
-  {
-    "fixture": "tests/oracle/original/landing.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Landing.c",
-    "sha256": "b0617103339bbc8e57a3fe5e7968a8424aa9044d4ef678cbfbb0ab2970222984"
-  },
-  {
-    "fixture": "tests/oracle/original/jump.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
-    "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
-  },
-  {
-    "fixture": "tests/oracle/original/ottotto.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Ottotto.c",
-    "sha256": "0e42f15a99870892f42b4dfdf142dfc6494e2afc5102a8989cd8c49cbb86bc1f"
-  },
-  {
-    "fixture": "tests/oracle/original/walk.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Walk.c",
-    "sha256": "922999974fddc2bd07042e31ea332ce17e8a24a08d8d6d37e2267adc4d13ab0a"
-  },
-  {
-    "fixture": "tests/oracle/original/walkcommon.c",
-    "upstream": "src/melee/ft/ftwalkcommon.c",
-    "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
-  },
-  {
-    "fixture": "tests/oracle/original/run.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Run.c",
-    "sha256": "4cc5312f880a416a997030e7b81521b55595984f10c4ddc5e5c4f70a4f693a9d"
-  },
-  {
-    "fixture": "tests/oracle/original/runbrake.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_RunBrake.c",
-    "sha256": "3f03aa8e3c97a48d487a1b10f893e868054bd32796f93e3c9d4cb60301f41928"
-  },
-  {
-    "fixture": "tests/oracle/original/waitanim.c",
-    "upstream": "src/melee/ft/ftwaitanim.c",
-    "sha256": "8d0f5e48e3a4102a9c103912352157721229e2472d741dc065332474f4f42871"
-  },
-  {
-    "fixture": "tests/oracle/original/appeal.c",
-    "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AppealS.c",
-    "sha256": "7e8153323fd2a45d0c16fd3fe5841ff88548a93df2d68bc4948ee952bd196841"
-  }
+ {
+  "fixture": "tests/oracle/original/random_hsd.c",
+  "upstream": "src/sysdolphin/baselib/random.c",
+  "sha256": "c1ee9c4317a48b59021c23b901e97fe7ad794f148d6ab98783ecfcadcdd566e6"
+ },
+ {
+  "fixture": "tests/oracle/original/random_msl.c",
+  "upstream": "src/MSL/rand.c",
+  "sha256": "49e38ee5f365851d21136fd500f865b6e9813aaeaaa5ea14f8b5108a029cbb92"
+ },
+ {
+  "fixture": "tests/oracle/original/ctype.c",
+  "upstream": "src/MSL/ctype.c",
+  "sha256": "65ddfaa1db335e4297c949b23bdcb30f57b1d09021085edcdaa9145997bb2069"
+ },
+ {
+  "fixture": "tests/oracle/original/ctype.h",
+  "upstream": "src/MSL/ctype.h",
+  "sha256": "c7bd4ffa7cc9843eede42aed336a7f0ff51422edf0aaafa5ad2f73e6f99783fd"
+ },
+ {
+  "fixture": "tests/oracle/original/mbstring.c",
+  "upstream": "src/MSL/mbstring.c",
+  "sha256": "329846f1a99ee1bf1c4d87ed87a25fa70dce76f7ab8dd6c255fdf56ced37f212"
+ },
+ {
+  "fixture": "tests/oracle/original/bytecode.c",
+  "upstream": "src/sysdolphin/baselib/bytecode.c",
+  "sha256": "f8aeb58df6729e39ed38a8523ba3d0768368b7a15e302f96892af4155ffe285b"
+ },
+ {
+  "fixture": "tests/oracle/original/spline.c",
+  "upstream": "src/sysdolphin/baselib/spline.c",
+  "sha256": "736ab29868437a263bcdbdaefdf973c75e9fa4ff3d86a3baf548f3396d415c50"
+ },
+ {
+  "fixture": "tests/oracle/original/id.c",
+  "upstream": "src/sysdolphin/baselib/id.c",
+  "sha256": "4a97a6c75c848ca98f01298aa9a8c15715dfba597ef0c644c2779310a3a2e3bc"
+ },
+ {
+  "fixture": "tests/oracle/original/quaternion.c",
+  "upstream": "src/sysdolphin/baselib/quatlib.c",
+  "sha256": "4646bd1134c634c768d26f1096ab960fbbbdb213a9b9db5cc0682e3d48eda7ad"
+ },
+ {
+  "fixture": "tests/oracle/original/ftcommon.c",
+  "upstream": "src/melee/ft/ftcommon.c",
+  "sha256": "43dff29e65d9c38c0b480d59510258d3a3b6f4aebf0b67d3b385e40ef560114d"
+ },
+ {
+  "fixture": "tests/oracle/original/PadClamp.c",
+  "upstream": "extern/dolphin/src/dolphin/pad/PadClamp.c",
+  "sha256": "80bae8c313d8ad603eb0708ded09cb0130a49865a0579179e2ef1c2060f41f34"
+ },
+ {
+  "fixture": "tests/oracle/original/hsd_mtx.c",
+  "upstream": "src/sysdolphin/baselib/mtx.c",
+  "sha256": "f310c0e473efa52037f5ddaaaa415f1b705915c853b3a071241ede2a548941ac"
+ },
+ {
+  "fixture": "tests/oracle/original/sdk_mtx.c",
+  "upstream": "extern/dolphin/src/dolphin/mtx/mtx.c",
+  "sha256": "594e946b2686708a44f50683acb142c7f7e138eac520905e11f089e333414caa"
+ },
+ {
+  "fixture": "tests/oracle/original/sdk_mtx.h",
+  "upstream": "extern/dolphin/include/dolphin/mtx.h",
+  "sha256": "6c99b820e91b48446835df8b6bf77fd92c66fb353e023db5ec20511003f36be9"
+ },
+ {
+  "fixture": "tests/oracle/original/sdk_mtxvec.c",
+  "upstream": "extern/dolphin/src/dolphin/mtx/mtxvec.c",
+  "sha256": "41335e9824650e3ac56f620774028bba01d539ed8384b2c89d9e5bb3ed597184"
+ },
+ {
+  "fixture": "tests/oracle/original/combat_knockback.c",
+  "upstream": "src/melee/ft/ftcoll.c",
+  "sha256": "f376f14500c1e018fd022b45563ac8163d0aba043f1817f8e1b2eeba651f16e7"
+ },
+ {
+  "fixture": "tests/oracle/original/combat_collision.c",
+  "upstream": "src/melee/lb/lbcollision.c",
+  "sha256": "59705ddc7a8a20fe40598b9e97251bb5cbd3f4ede890e3f6fa3ed5bc34dbd36b"
+ },
+ {
+  "fixture": "tests/oracle/original/combat_hitstun.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Damage.c",
+  "sha256": "8865a532b8bbbdd7464f95b9bd291b13fdf570aa3e554dc3171d91a4a1952b13"
+ },
+ {
+  "fixture": "tests/oracle/original/ftjump.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
+  "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
+ },
+ {
+  "fixture": "tests/oracle/original/ftwalk.c",
+  "upstream": "src/melee/ft/ftwalkcommon.c",
+  "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
+ },
+ {
+  "fixture": "tests/oracle/original/damage_fighter.c",
+  "upstream": "src/melee/ft/fighter.c",
+  "sha256": "c2a3b8b82ee2d141063f63a0be40717e65b015e85491143e1525b6c50730fdf1"
+ },
+ {
+  "fixture": "tests/oracle/original/mplib.c",
+  "upstream": "src/melee/mp/mplib.c",
+  "sha256": "7984d542363a1ee87ec5c812fb087ae0bc780916ea047278f297efbdb369e7eb"
+ },
+ {
+  "fixture": "tests/oracle/original/sdk_vec.c",
+  "upstream": "extern/dolphin/src/dolphin/mtx/vec.c",
+  "sha256": "6dd4bc76acd98fc8cc5ed000f0555928325ed86060b03ba2fdccff265d405e80"
+ },
+ {
+  "fixture": "tests/oracle/original/shield_guard.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Guard.c",
+  "sha256": "738114cca1146510f30bb6456151cf6f2a9479466bd45e6e5389ce07a7dbb4a3"
+ },
+ {
+  "fixture": "tests/oracle/original/mpcoll.c",
+  "upstream": "src/melee/mp/mpcoll.c",
+  "sha256": "a89b65abe1203137f2efdc66de1b1280c15b6a4632991e06022dba4979c74172"
+ },
+ {
+  "fixture": "tests/oracle/original/stale_queue.c",
+  "upstream": "src/melee/pl/plstale.c",
+  "sha256": "7a93b42a63a16c9f1c3b367f8d7198b432d1f35a80dce1ea6fc666f2ca920a10"
+ },
+ {
+  "fixture": "tests/oracle/original/stale_damage.c",
+  "upstream": "src/melee/ft/ft_0881.c",
+  "sha256": "811b429ea6572f10249e31db3a9ea9c5a458bbb2187af8215c678907c9395d62"
+ },
+ {
+  "fixture": "tests/oracle/original/aerial_input.c",
+  "upstream": "src/melee/ft/ft_0DF1.c",
+  "sha256": "e13eff4bf5970f45db95b30b6f67e8a9d25149dad45046f8b91a9114ba37056a"
+ },
+ {
+  "fixture": "tests/oracle/original/aerial_select.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackAir.c",
+  "sha256": "18eb8f663442558e375f07e2cdefe818b311473c93e023fc6d81f012d3ceeeac"
+ },
+ {
+  "fixture": "tests/oracle/original/aerial_landing.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_LandingAir.c",
+  "sha256": "ac7235335876dfa582015ce27e141e1baaea04abfe07ae20c971e3a2c196edab"
+ },
+ {
+  "fixture": "tests/oracle/original/clank_rebound.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Rebound.c",
+  "sha256": "040104daf2aa67ff7bb8a8207df217cc2e91eeafe97223aef5a9d9adb013003c"
+ },
+ {
+  "fixture": "tests/oracle/original/mnmain.c",
+  "upstream": "src/melee/mn/mnmain.c",
+  "sha256": "cbce53b1c0d06c1eb851cc203b17237c0fef827cb024ba6f6a0544761850b7c2"
+ },
+ {
+  "fixture": "tests/oracle/original/mn_forward.h",
+  "upstream": "src/melee/mn/forward.h",
+  "sha256": "f61ba58af8cbed9b89e13126e6b17b4fa8dd62c4b765bb0b2ab3df84bb9abb1a"
+ },
+ {
+  "fixture": "tests/oracle/original/mn_inlines.h",
+  "upstream": "src/melee/mn/inlines.h",
+  "sha256": "0cdc22a029093747943ca3089ab3031aa3c2d9701b075f4254c48c62974cb1d4"
+ },
+ {
+  "fixture": "tests/oracle/original/gm_controller.c",
+  "upstream": "src/melee/gm/gm_1A36.c",
+  "sha256": "3964234a0a3dc1dccb39824c6f78c88b9a59a301f8fec4078120efa4b7aa9d7d"
+ },
+ {
+  "fixture": "tests/oracle/original/gm_controller.static.h",
+  "upstream": "src/melee/gm/gm_1A36.static.h",
+  "sha256": "d262ea2b3ea52a62c191ce1daf3ade80c880955776c8721da8538aa8baee1923"
+ },
+ {
+  "fixture": "tests/oracle/original/dolphin_pad.h",
+  "upstream": "extern/dolphin/include/dolphin/pad.h",
+  "sha256": "d5fec142b1165aea3764fffe7e66c241ede2c2c31b16cbed05b5c0bccacdd947"
+ },
+ {
+  "fixture": "tests/oracle/original/down_attack.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownAttack.c",
+  "sha256": "2a9fde40a5d8262befa31df1b2eeca7d4ae827091bf089fcc161b2ae14684c48"
+ },
+ {
+  "fixture": "tests/oracle/original/throw_input.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Throw.c",
+  "sha256": "5ff98ff23893109eeb38450325a26fccbce81c869e4db3fc59ab813ed42f9a02"
+ },
+ {
+  "fixture": "tests/oracle/original/ledge_option.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CliffClimb.c",
+  "sha256": "7e6c054dea388508689b0eea87b899246961a260f762055be40a9d7e7b68c274"
+ },
+ {
+  "fixture": "tests/oracle/original/wall_jump.c",
+  "upstream": "src/melee/ft/ftwalljump.c",
+  "sha256": "02b5d6f71363666a11bd1625550ac9e179c330fdd7faf9239acb32e716c81a79"
+ },
+ {
+  "fixture": "tests/oracle/original/rebirth.c",
+  "upstream": "src/melee/ft/ft_0D4D.c",
+  "sha256": "e820dee162afc842ec4e3dab7aecd8a22331d9ebf9c484362de8e005735eb296"
+ },
+ {
+  "fixture": "tests/oracle/original/special_input.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_0D67.c",
+  "sha256": "30fc5f74f8f8f04eb988f47fdb897359b5cd6dc08d1de5d09bc2162807562614"
+ },
+ {
+  "fixture": "tests/oracle/original/death.c",
+  "upstream": "src/melee/ft/ft_0D31.c",
+  "sha256": "014cdd01686238eb22398e87cc10784e899684beedccbba4eb41f02524bb94d5"
+ },
+ {
+  "fixture": "tests/oracle/original/fly_reflect.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FlyReflect.c",
+  "sha256": "474e82d6e690eef87275bb723ec620a853c05da600fd11fd9fc24415f68615e7"
+ },
+ {
+  "fixture": "tests/oracle/original/lbvector.c",
+  "upstream": "src/melee/lb/lbvector.c",
+  "sha256": "86fb5f0d484345ad9264ab8b9cafcc753b972a40d5d22156b3792e9567485bd5"
+ },
+ {
+  "fixture": "tests/oracle/original/passive_wall.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveWall.c",
+  "sha256": "55e1ad5c190aa8653f665167f9e3e4da851fd941ee73d0226ffc4f6ae50b8e29"
+ },
+ {
+  "fixture": "tests/oracle/original/passive_stand.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_PassiveStand.c",
+  "sha256": "2a14e2143752cafe018e49a04a792d9063c1cd9e4f3953c758158afded208078"
+ },
+ {
+  "fixture": "tests/oracle/original/down_damage.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_DownDamage.c",
+  "sha256": "3a95e0bb90b4152649c00db02e374c7772aa47e0c4eacb19921245a430ffd9d2"
+ },
+ {
+  "fixture": "tests/oracle/original/capture_pulled.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_CapturePulled.c",
+  "sha256": "14004df0dee607f3a84d2e205a35e298ab54b152c796d4dbb51975eafa0cbbbb"
+ },
+ {
+  "fixture": "tests/oracle/original/multi_jump.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_JumpAerial.c",
+  "sha256": "32da7dd4e7f68c4f3152e0eac9aac4f8c806e1238701c2adbe383af42047cf3b"
+ },
+ {
+  "fixture": "tests/oracle/original/turn_run.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_TurnRun.c",
+  "sha256": "162624ab052be87b8d8046070059164de0b7c822be5c51ff54878f00a67d81f1"
+ },
+ {
+  "fixture": "tests/oracle/original/action_instance.c",
+  "upstream": "src/melee/ft/ft_0892.c",
+  "sha256": "02975b4fe744bf053a17f164dee7622a337b90391631d4bfd8938fe4ba2ff084"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_counter.c",
+  "upstream": "src/melee/pl/plattack.c",
+  "sha256": "8ac9163d7ade4af6740167098b7daa6bea50c6881ec31d8f0cb34db71fe90316"
+ },
+ {
+  "fixture": "tests/oracle/original/pass.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Pass.c",
+  "sha256": "5a54a6cd1171bab28687ce55a96d0ed3a1eb36356b5c94a66b4af60ff6d1eaa1"
+ },
+ {
+  "fixture": "tests/oracle/original/escape.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Escape.c",
+  "sha256": "664f3a057fe21f775a382ba1afff6671185bde2e30418b66084499e1514c1c99"
+ },
+ {
+  "fixture": "tests/oracle/original/catch.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Catch.c",
+  "sha256": "98b524105702a42ef2bf1b4c3993870543e62d54353d31e81e7abd84d40beb55"
+ },
+ {
+  "fixture": "tests/oracle/original/escape_air.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_EscapeAir.c",
+  "sha256": "7f00d1a93ea4030d527e0bd794a0d71d56b28d3c4dc7ecad0da2a838f8e30334"
+ },
+ {
+  "fixture": "tests/oracle/original/fall_special.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_FallSpecial.c",
+  "sha256": "6b981881df052b3eef9a246efa4fb9ea18cc713673c18161b8634eb9edf29789"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_s3.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS3.c",
+  "sha256": "52c2bd587d26bfb3a2f90cbd1bcbd4b2479be44a339671fa8599eda500fb892c"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_hi3.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi3.c",
+  "sha256": "d6523b738a84ae1cc9a223eec45e6b8f22b3e66c0d42adb2d9a8fac03a3664e4"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_lw3.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw3.c",
+  "sha256": "bc2a3450b48af01ebfbf13eb52bc64849d99d4826793fb7c178678695caa01df"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_s4.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackS4.c",
+  "sha256": "155e2cd8b703ff24d427ba42807ae464927502f01a3ed53c2ee0d2df754fd913"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_hi4.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackHi4.c",
+  "sha256": "b6b15f38befea0d2303d20240f9538e6a9fc72d1ea263f008ba11b23ec57ceed"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_lw4.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackLw4.c",
+  "sha256": "669a1d1248df474794868ccdaae7b432f7cf5d5b8b1df921a5f615c1ba2ce7d9"
+ },
+ {
+  "fixture": "tests/oracle/original/smash_charge.c",
+  "upstream": "src/melee/ft/ft_0DF0.c",
+  "sha256": "38836511908f55b2c5860ff30174374b980abf9e99869b151ad9b1c48d72673e"
+ },
+ {
+  "fixture": "tests/oracle/original/attack1.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack1.c",
+  "sha256": "41af2de0d294cb2127cd16c8d4af90dbde72c82616d90b08d374d71d75a5c075"
+ },
+ {
+  "fixture": "tests/oracle/original/attack100.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Attack100.c",
+  "sha256": "7d56d7d8fc4f6d8528c21053e69530c865109edd8b9bd255e45c201543b6e6bf"
+ },
+ {
+  "fixture": "tests/oracle/original/dash.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Dash.c",
+  "sha256": "7251dcee053adcaf812b245c569574a112713758d8d24f2e5101d98dbe6fdd84"
+ },
+ {
+  "fixture": "tests/oracle/original/attack_dash.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AttackDash.c",
+  "sha256": "7321ca3fd67da63d3ea53c87df77129295724624400313f3f1574c18ac67f486"
+ },
+ {
+  "fixture": "tests/oracle/original/landing.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Landing.c",
+  "sha256": "b0617103339bbc8e57a3fe5e7968a8424aa9044d4ef678cbfbb0ab2970222984"
+ },
+ {
+  "fixture": "tests/oracle/original/jump.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Jump.c",
+  "sha256": "ebf6463708f6a1d90bc077f629df01a69643286fa81abad8516ffdb2f14ea700"
+ },
+ {
+  "fixture": "tests/oracle/original/ottotto.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Ottotto.c",
+  "sha256": "0e42f15a99870892f42b4dfdf142dfc6494e2afc5102a8989cd8c49cbb86bc1f"
+ },
+ {
+  "fixture": "tests/oracle/original/walk.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Walk.c",
+  "sha256": "922999974fddc2bd07042e31ea332ce17e8a24a08d8d6d37e2267adc4d13ab0a"
+ },
+ {
+  "fixture": "tests/oracle/original/walkcommon.c",
+  "upstream": "src/melee/ft/ftwalkcommon.c",
+  "sha256": "b649146a3e93f7679fa1d4b9ab578ab7c9f2daf15cdb94de936c283ca74fca3c"
+ },
+ {
+  "fixture": "tests/oracle/original/run.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_Run.c",
+  "sha256": "4cc5312f880a416a997030e7b81521b55595984f10c4ddc5e5c4f70a4f693a9d"
+ },
+ {
+  "fixture": "tests/oracle/original/runbrake.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_RunBrake.c",
+  "sha256": "3f03aa8e3c97a48d487a1b10f893e868054bd32796f93e3c9d4cb60301f41928"
+ },
+ {
+  "fixture": "tests/oracle/original/waitanim.c",
+  "upstream": "src/melee/ft/ftwaitanim.c",
+  "sha256": "8d0f5e48e3a4102a9c103912352157721229e2472d741dc065332474f4f42871"
+ },
+ {
+  "fixture": "tests/oracle/original/appeal.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_AppealS.c",
+  "sha256": "7e8153323fd2a45d0c16fd3fe5841ff88548a93df2d68bc4948ee952bd196841"
+ },
+ {
+  "fixture": "tests/oracle/original/fox_specials.c",
+  "upstream": "src/melee/ft/kinds/ftFox/ftfoxspecials.c",
+  "sha256": "d793fa1251f52b37595ea342e16dbe40764f03d0ef6674e698692bb713d9481e"
+ },
+ {
+  "fixture": "tests/oracle/original/special_s.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_SpecialS.c",
+  "sha256": "f714f2e7dbc5a4e3b7d1aaffda7d45cbd433e95855e22ba9d082affa8f02ddd4"
+ },
+ {
+  "fixture": "tests/oracle/original/special_air.c",
+  "upstream": "src/melee/ft/kinds/ftCommon/ftCo_SpecialAir.c",
+  "sha256": "ce96d1baba09e5f1be4b4a0b66a9b381e576d7f83af2a89f896df8432e9d5b53"
+ }
 ]

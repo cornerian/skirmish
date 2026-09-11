@@ -331,6 +331,15 @@ match. The [neutral-special profile](specials.md) records the exact source input
 boundary and the character-specific effects and directional specials that are
 still pending.
 
+Optional [`fighters[].side_special`](fox-side-special.md) adds Fox's (and, by
+shared code, Falco's) side special: a Start pose set, a TransN-driven root-
+motion dash shortenable by a second B press, and a fixed-speed End pose set
+that returns to Wait on the ground or exits into `FallSpecial` with a scaled
+air-drift mobility and landing lag in the air. Its own input check runs ahead
+of the neutral-special branch in every chain that reaches it, matching the
+source's own ordering. Up and down specials and every other character's
+special kit remain unported.
+
 Optional [`rules.rebirth`](rebirth.md) replaces the compatibility grounded
 respawn with an airborne entry, exact remaining-frame travel to a supplied
 static platform, an invulnerable wait, and input/timeout release to `Fall`.
@@ -425,8 +434,10 @@ interrupt window to the ordinary Landing once `movement.normal_landing_lag`
 elapses, reusing the same Wait chain an interruptible tilt or dash attack
 already exposes; without it Landing keeps its previous chainless behaviour,
 and `LandingFallSpecial` is unaffected either way. The optional [neutral-special
-profile](specials.md) adds paired ground and air neutral-B actions. Inputs do not yet reproduce the full PAD-to-fighter
-history. Directional specials and character-specific special state remain
+profile](specials.md) adds paired ground and air neutral-B actions, and the
+optional [Fox side-special profile](fox-side-special.md) adds its own
+Start/Dash/End actions ahead of it. Inputs do not yet reproduce the full PAD-to-fighter
+history. Up/down specials and every other character-specific special state remain
 unported. Some accepted stick/button
 combinations consequently have no action in this experimental profile.
 

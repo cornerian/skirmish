@@ -643,7 +643,19 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         // neutral-special shell retains only the startup family distinction.
         SpecialN if character == Some(2) => 341,
         SpecialAirN if character == Some(2) => 344,
-        SpecialN | SpecialAirN | Eliminated => return None,
+        // ftFox/forward.h: ftFx_MS_SpecialSStart is ftCo_MS_Count + 6;
+        // Start/Dash/End follow it in source declaration order (347..352).
+        // Falco (character 22) shares `ftfoxspecials.c` with its own
+        // attributes, but this profile follows the neutral shell's own
+        // precedent of gating only Fox in the observation layer.
+        SpecialSStart if character == Some(2) => 347,
+        SpecialS if character == Some(2) => 348,
+        SpecialSEnd if character == Some(2) => 349,
+        SpecialAirSStart if character == Some(2) => 350,
+        SpecialAirS if character == Some(2) => 351,
+        SpecialAirSEnd if character == Some(2) => 352,
+        SpecialN | SpecialAirN | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
+        | SpecialAirS | SpecialAirSEnd | Eliminated => return None,
     })
 }
 
@@ -697,6 +709,14 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         264 | 265 => u32::from(state - 25),
         341 => 295,
         344 => 298,
+        // UNVERIFIED: no figatree/animation-index table for the Fox/Falco
+        // character-specific motion states exists in the pinned C decomp
+        // (only DAT-resource data, owned by the separate skirmish-assets
+        // project, would confirm it). Extrapolated from the two confirmed
+        // neutral-special data points above, whose constant -46 offset this
+        // assumes continues unbroken across the six side-special states.
+        // Re-derive against the asset-exported table before trusting these.
+        347..=352 => u32::from(state - 46),
         _ => return None,
     })
 }
@@ -1394,6 +1414,23 @@ mod tests {
         fighter.action = game::Action::SpecialAirN;
         assert_eq!(action_state(&fighter, Some(2)), Some(344));
         assert_eq!(animation_index(&fighter, Some(2)), Some(298));
+
+        for (action, state, animation) in [
+            (game::Action::SpecialSStart, 347, 301),
+            (game::Action::SpecialS, 348, 302),
+            (game::Action::SpecialSEnd, 349, 303),
+            (game::Action::SpecialAirSStart, 350, 304),
+            (game::Action::SpecialAirS, 351, 305),
+            (game::Action::SpecialAirSEnd, 352, 306),
+        ] {
+            fighter.action = action;
+            assert_eq!(action_state(&fighter, Some(2)), Some(state));
+            assert_eq!(animation_index(&fighter, Some(2)), Some(animation));
+            // Only Fox is gated in the observation layer, matching the
+            // neutral-special shell's own precedent (Falco 22 unmapped).
+            assert_eq!(action_state(&fighter, Some(22)), None);
+            assert_eq!(action_state(&fighter, None), None);
+        }
 
         fighter.action = game::Action::Respawn;
         assert_eq!(action_state(&fighter, Some(2)), Some(11));

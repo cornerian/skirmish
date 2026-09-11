@@ -173,6 +173,16 @@ but no jump, dash, squat, turn or walk. The same batch corrects Wait (and
 AppealS) so a held shoulder with the stick already pointed down dodges
 immediately instead of raising a shield first; every D-pad bit is now
 accepted on import, though only up has an effect.
+The [Fox/Falco side-special profile](docs/fox-side-special.md) adds Fox's
+side special (Illusion; Falco's Phantasm shares the code): its own fresh-B-
+plus-stick input check runs ahead of the neutral special in every chain
+that reaches it, then a Start pose set, a TransN-driven root-motion dash
+shortenable by a second B press, and a fixed-speed End pose set returning
+to Wait on the ground or exiting into `FallSpecial` with a scaled air-
+drift mobility and landing lag in the air. The ghost item's hitbox
+question is resolved (it has none; confirmed from `itfoxillusion.c`), and
+a differential harness against the pinned C plus two replay regressions
+back the implementation.
 
 Browse the translated menu branches with `cargo run --locked --bin skirmish -- menus`.
 This terminal preview supports navigation and confirm/back. The renderer adds

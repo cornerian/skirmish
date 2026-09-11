@@ -176,12 +176,19 @@ once `movement.normal_landing_lag` elapses, so a C-stick sample on the first
 interruptible frame can now select a smash straight out of that state. With
 the optional [taunt profile](taunt.md), a fresh physical D-pad-up press maps
 to state 264 (animation 239, AppealSR) or 265 (animation 240, AppealSL);
-without the profile the press is accepted as input but has no effect.
+without the profile the press is accepted as input but has no effect. With
+the optional [Fox side-special profile](fox-side-special.md), a fresh
+physical B press past the side threshold maps to states 347..349 on the
+ground or 350..352 in the air (animation indices 301..306 are an
+unverified extrapolation, see that profile's own doc); the ground End
+returns to Wait's own state 14, and the air End's own natural completion
+exits into `FallSpecial`'s existing state 35, landing into the existing
+`LandingFallSpecial` state 43.
 File-backed regressions require changed down-stick, up-C-stick, roll-stick,
 horizontal/downward C-stick, shield-grab button, air-dodge trigger, tilt
 attack, smash attack or charge, jab press, dash-attack/re-dash press,
-landing interrupt-window and D-pad-up taunt samples to diverge at their
-first affected frames.
+landing interrupt-window, D-pad-up taunt and Fox side-special B-press
+samples to diverge at their first affected frames.
 Pre-frame position, action and RNG never overwrite the simulation.
 
 The named **`fighter-post-v11`** policy compares these post-frame fields for each
@@ -216,9 +223,11 @@ mapped actor:
 The report's `fields` array follows the replay version, so fields absent from an
 older Slippi schema are visible rather than silently claimed. The refactored
 action enum collapses some original motion states. Those actions map to one
-documented common-state ID. Fox's current neutral-special shell maps to its
-ground and air startup families using GameStart character metadata; other
-character-specific specials and internal elimination remain unmapped and
+documented common-state ID. Fox's current neutral-special shell and side-
+special profile both map using GameStart character metadata (gated on
+character 2 only, matching the neutral shell's own precedent -- Falco 22
+shares the side-special code but is not mapped here); every other
+character-specific special and internal elimination remain unmapped and
 therefore produce an action-state mismatch. The inactive respawn interval maps
 to Melee's common `Sleep` state 11 and its absent animation. Zelda/Sheik
 transformations are also unimplemented, so a post-frame internal character

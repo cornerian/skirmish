@@ -34,5 +34,22 @@ conformance scenarios now run normally.
 This profile provides the shared neutral-B action shell. Authentic character
 callbacks still need character-specific resources and state for projectiles,
 charge storage, reflectors, capture, transformation, RNG use and other effects.
-Side, up and down specials and direct special-to-special interrupt rules remain
+Up and down specials and direct special-to-special interrupt rules remain
 separate work. Omitting the profile leaves B accepted but without an action.
+
+# Fox/Falco side special (Illusion/Phantasm)
+
+`fighters[].side_special` and `rules.specials` cover Fox's (and, by shared
+code, Falco's) side special: `SpecialSStart/SpecialS/SpecialSEnd` on the
+ground, `SpecialAirSStart/SpecialAirS/SpecialAirSEnd` in the air. It checks
+its own fresh-B-plus-stick-threshold input ahead of the neutral branch
+above, in every chain that reaches it (`ftCo_SpecialS_CheckInput` is the
+source's own first check there too), turns the fighter, blends ground
+velocity toward zero by a fighter-specific retention, then plays a Start
+pose set, a TransN-driven root-motion dash (direct velocity set from the
+animation, not accumulated) shortenable by a second B press, and a fixed-
+speed End pose set that returns to Wait on the ground or exits into
+`FallSpecial` with a scaled air-drift mobility and landing lag in the air.
+See `docs/fox-side-special.md` for the complete per-phase citation, the
+resolved ghost-item hitbox question and the deviations found from this
+batch's own design note while implementing it.

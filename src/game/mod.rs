@@ -14,6 +14,7 @@ pub mod death;
 pub mod edge;
 pub mod escape;
 pub mod escape_air;
+pub mod fox_side_special;
 pub mod grab;
 pub mod hitboxes;
 pub mod idle;
@@ -182,6 +183,21 @@ pub enum Action {
     RebirthWait,
     SpecialN,
     SpecialAirN,
+    /// Slippi 347 (`ftFx_MS_SpecialSStart = ftCo_MS_Count + 6`, confirmed
+    /// against `ftFox/forward.h`). Animation 301 is an unverified
+    /// extrapolation; see `observation::animation_index`.
+    /// `ftFx_SpecialSStart_Enter`.
+    SpecialSStart,
+    /// Slippi 348. `ftFx_SpecialS_Enter`.
+    SpecialS,
+    /// Slippi 349. `ftFx_SpecialSEnd_Enter`.
+    SpecialSEnd,
+    /// Slippi 350. `ftFx_SpecialAirSStart_Enter`.
+    SpecialAirSStart,
+    /// Slippi 351. `ftFx_SpecialAirS_Enter`.
+    SpecialAirS,
+    /// Slippi 352. `ftFx_SpecialAirSEnd_Enter`.
+    SpecialAirSEnd,
     AttackAirN,
     AttackAirF,
     AttackAirB,
@@ -261,6 +277,7 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
+    pub fox_side_special: fox_side_special::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,

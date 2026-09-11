@@ -83,6 +83,7 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
+        fox_side_special: fox_side_special::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -152,6 +153,10 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     }
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
+    // mv.fx.SpecialS.gravityDelay is freshly assigned by every phase's own
+    // Enter (x24 at Start, x44 at End); a mid-phase ground<->air conversion
+    // preserves it explicitly around this reset (special::transfer_ground_air).
+    fighter.fox_side_special = fox_side_special::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
@@ -1102,6 +1107,20 @@ fn sample_input_history(f: &mut Fighter, data: &FighterData, rules: &Rules, inpu
     } else {
         f.locomotion.attack_b_age.saturating_add(1)
     };
+    // fighter.c:1735-1739 (`x688`): distinct from x67D/attack_b_age above,
+    // since ftCo_SpecialS_HasInput also requires the stick past the side
+    // threshold. A missing `rules.specials` keeps the gate permanently open
+    // (never 0), matching "None keeps B+side inert".
+    let side_threshold = rules
+        .specials
+        .as_ref()
+        .map_or(f32::INFINITY, |specials| specials.side_stick_threshold);
+    f.locomotion.side_special_b_age =
+        if pressed & BUTTON_B != 0 && input.stick[0].abs() >= side_threshold {
+            0
+        } else {
+            f.locomotion.side_special_b_age.saturating_add(1)
+        };
     if pressed & (BUTTON_L | BUTTON_R) != 0 {
         f.locomotion.previous_tech_press_age = f.locomotion.tech_press_age;
         f.locomotion.tech_press_age = 0;
@@ -1158,6 +1177,7 @@ fn update_animation(
         rules.respawn_invincibility_frames,
     );
     special::update_animation(f, data.special.as_ref());
+    fox_side_special::update_animation(f, data);
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
@@ -1278,7 +1298,7 @@ fn update_actions(
         return Ok(());
     }
     let dash_before_special = f.action == Action::Dash;
-    if special::update_actions(f, data, input) {
+    if special::update_actions(f, data, rules, input) {
         // ftCo_SpecialS_CheckInput is the first check of both ftCo_Dash_IASA
         // phases; firing from Dash falls through to the shared x54 friction
         // tail exactly like the transitions dash::update_actions applies it
@@ -1382,6 +1402,12 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         ..Movement::default()
     };
     if f.grounded {
+        // ftFx_SpecialSStart_Phys/ftFx_SpecialSEnd_Phys: both grounded
+        // phases count the gravity delay down every frame even though
+        // gravity is never applied on the ground, so a mid-Start
+        // ground<->air conversion sees the same countdown the air variant
+        // would have reached (`special::transfer_ground_air` preserves it).
+        fox_side_special::tick_ground_gravity_delay(f);
         if f.action == Action::Rebound
             && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
@@ -1392,6 +1418,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
             .or_else(|| jab::ground_target_velocity(f, data))
             .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
             .or_else(|| taunt::ground_target_velocity(f, data))
+            .or_else(|| fox_side_special::ground_target_velocity(f, data))
         {
             // ft_80085030 converts the animation's local TransN delta into the
             // exact target ground velocity before projecting it onto the floor.
@@ -1417,6 +1444,12 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                     animation_speed_multiplier: 1.0,
                 },
             );
+        } else if let Some(friction) = fox_side_special::end_ground_friction(f, data) {
+            // ftFx_SpecialSEnd_Phys: ftCommon_ApplyFrictionGround(x38) then
+            // ftCommon_ApplyGroundMovement, not the fighter's ordinary
+            // ground_friction attribute.
+            movement.friction_ground(friction);
+            movement.project_ground();
         } else {
             let mut friction = attrs.ground_friction;
             if f.ground_velocity.abs() > attrs.walk_max_velocity {
@@ -1438,7 +1471,11 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if let Some(false) = escape_air::skip_decay(f, data) {
+        if fox_side_special::air_physics(f, data, &mut movement) {
+            // SpecialAirSStart/SpecialAirS/SpecialAirSEnd own this frame's
+            // airborne physics entirely (gravity-delayed fall plus a fixed
+            // air friction, or the Dash phase's unconditional TransN set).
+        } else if let Some(false) = escape_air::skip_decay(f, data) {
             // ftCo_EscapeAir_Phys decays both axes without gravity or drift
             // until the script raises its skip-decay flag.
             let decayed = crate::fighter::escape_air::decay(
@@ -1485,7 +1522,15 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                 movement.fall_basic();
             }
             if !locomotion::multi_jump_drift(f, data, &mut movement) {
-                movement.drift_air();
+                if f.action == Action::FallSpecial {
+                    // ftCo_80096900: mv.co.fallspecial.mobility is
+                    // ca->air_drift_max * mobility. Ordinary FallSpecial
+                    // callers pass mobility == 1 (unchanged from ordinary
+                    // drift); the Fox/Falco side-special End sets x4C.
+                    movement.drift_air_scaled(attrs.air_drift_max * f.aerial.mobility);
+                } else {
+                    movement.drift_air();
+                }
             }
             if f.action == Action::Jump && movement.self_velocity[1] < 0.0 {
                 enter(f, Action::Fall);

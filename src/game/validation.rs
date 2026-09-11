@@ -341,6 +341,27 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
+        match (&rules.specials, &fighter.side_special) {
+            (Some(rules), Some(parameters)) => {
+                fox_side_special::validate(rules, parameters, fighter)?;
+                if fighter.escape_air.is_none() {
+                    return Err(Error::Data(
+                        "side-special landing shares the common air-dodge landing resources".into(),
+                    ));
+                }
+            }
+            (Some(_), None) => {
+                return Err(Error::Data(
+                    "side-special rules require a motion for every fighter".into(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Data(
+                    "side-special motions require common rules".into(),
+                ));
+            }
+            (None, None) => {}
+        }
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
             (Some(_), None) => {

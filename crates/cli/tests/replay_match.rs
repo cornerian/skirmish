@@ -27,6 +27,8 @@ mod edge_support;
 mod escape_air_support;
 #[path = "../../../tests/support/escape.rs"]
 mod escape_support;
+#[path = "../../../tests/support/fox_side_special.rs"]
+mod fox_side_special_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
 #[path = "../../../tests/support/idle.rs"]
@@ -2871,4 +2873,113 @@ fn a_replay_containing_an_inert_dpad_down_press_still_imports() {
     assert_eq!(recording.states[0].fighters[0].action, Action::Wait);
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+}
+
+#[test]
+fn physical_b_drives_file_backed_fox_ground_illusion_and_detects_its_removal() {
+    // Slippi 347 (SpecialSStart)/348 (SpecialS)/349 (SpecialSEnd); their
+    // animation indices are an unverified extrapolation from the neutral
+    // shell's own two confirmed data points (`docs/fox-side-special.md`),
+    // not a confirmed fact -- the replay round trip below only requires
+    // this recording's own `action_state`/`animation_index` calls to agree
+    // with themselves, which they do regardless of that open question.
+    let mut data = fox_side_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 10];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[0] = 0.6;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialSStart
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialS)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialSEnd)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press entirely: the fighter stays in Wait instead of
+    // entering SpecialSStart, so the removed press's effect is visible on
+    // the very first recorded frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.x.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn physical_b_drives_file_backed_fox_air_illusion_into_landing_fall_special() {
+    // Slippi 43 (LandingFallSpecial, an already-verified mapping, unlike
+    // the side-special ids in the ground scenario above).
+    let mut data = fox_side_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 6.0], [2.0, 0.0]];
+    let mut inputs = vec![IDLE; 60];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[0] = 0.6;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialAirSStart
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialAirS)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::SpecialAirSEnd)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::FallSpecial)
+    );
+    assert!(
+        recording
+            .states
+            .iter()
+            .any(|s| s.fighters[0].action == Action::LandingFallSpecial)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press: the fighter free-falls (Fall) instead of
+    // entering SpecialAirSStart, diverging from the very first frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.x.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
 }

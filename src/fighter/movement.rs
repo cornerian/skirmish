@@ -152,6 +152,18 @@ impl Movement {
 
     /// `ftCommon_8007D28C`.
     pub fn drift_air_from(&mut self, velocity: f32) {
+        self.drift_air_scaled_from(velocity, self.attributes.air_drift_max);
+    }
+
+    /// `ftCommon_8007D268`/`8007D28C` generalized with an explicit drift
+    /// maximum, for `ftCo_80096900` callers that scale it by a mobility
+    /// multiplier (`ca->air_drift_max * mobility`, e.g. Fox/Falco's
+    /// Illusion/Phantasm End, `x4C_FOX_ILLUSION_FREEFALL_MOBILITY`).
+    pub fn drift_air_scaled(&mut self, drift_max: f32) {
+        self.drift_air_scaled_from(self.self_velocity[0], drift_max);
+    }
+
+    fn drift_air_scaled_from(&mut self, velocity: f32, drift_max: f32) {
         let scaling = self.stick_x * self.attributes.air_drift_stick_mul;
         let flat = if self.stick_x > 0.0 {
             self.attributes.aerial_drift_base
@@ -161,7 +173,7 @@ impl Movement {
         self.accelerate_air_from(
             velocity,
             scaling + flat,
-            self.stick_x * self.attributes.air_drift_max,
+            self.stick_x * drift_max,
             self.attributes.aerial_friction,
         );
     }

@@ -38,13 +38,32 @@ pub struct FrameFlags {
     pub reverse_facing: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct State {
     pub applied_frame: Option<u32>,
     pub landing_lag_enabled: bool,
     pub allow_interrupt: bool,
     pub landing_elapsed: f32,
     pub landing_rate: f32,
+    /// `mv.co.fallspecial.mobility` is `ca->air_drift_max * mobility`
+    /// (`ftCo_FallSpecial.c:55-59`); this field stores the multiplier, so
+    /// the ordinary air-drift maximum is recovered unscaled by default.
+    /// Every currently modeled `FallSpecial` entry but the Fox/Falco side
+    /// special's own End phase passes the source's literal `mobility == 1`.
+    pub mobility: f32,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            applied_frame: None,
+            landing_lag_enabled: false,
+            allow_interrupt: false,
+            landing_elapsed: 0.0,
+            landing_rate: 0.0,
+            mobility: 1.0,
+        }
+    }
 }
 
 const ATTACKS: [Action; 5] = [
