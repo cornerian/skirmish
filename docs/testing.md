@@ -355,6 +355,7 @@ in the root `tests/game_*.rs` suite extend these beyond the original single gap 
 | `edges` | Attacks (smash root motion, a root-motion dash attack) and a roll reaching a floor end clamping and staying grounded, walking into an admissible teeter entering Ottotto with zero velocity then OttottoWait, an outward stick at exactly the 0.75 limit and a fighter facing away both falling instead, Dash/Run past an end falling as before, every Wait-chain dispatcher reachable from Ottotto (catch, smash, shield, jump, dash, turn), the teeter walk-away threshold, checkpoint replay in both teeter phases, invalid `rules.edge`/`fighter.teeter` combinations and `rules.edge = None` keeping Wait falling while a smash still clamps |
 | `walk` | Slow walk kind and frame 0 entering from Wait, a full ramp reaching Middle then Fast with a stable `action_instance.id` and the remapped frame bit-exact against the pure helper, the animation rate's one-frame `SetAnimRate` delay and its zero value while moving against facing, wrapping at the kind's figatree length, Wait-chain exit on a reversed or deadzone stick leaving the walk state untouched, a tilt press preempting the retype check on its own frame, checkpoint replay and invalid/absent resources |
 | `run` | Dash-to-Run entry at frame 0 with `last_rate` 1.0, the first Run frame advancing by exactly one and every later frame matching the pure rate helper bit-exact against the previous frame's velocity/facing, wrapping at the figatree length, checkpoint replay, invalid/absent resources, and a Run-Turn-to-Run reversal confirming `ground_velocity` already agrees with the flipped facing on every observed Run frame (the zero-rate-against-facing branch is not independently reachable this way; it is exercised directly by `run_animation_rate`'s own unit test) |
+| `run_corrections` | A right-facing and a left-facing run-turn reversal each flipping only once ground velocity has crossed past the *entry* facing's own sign (not a fixed resource scale), with the frozen frames holding `action_frame`; the RunBrake freeze holding `action_frame` while fast and resuming once slow with the `frames` countdown still ticking throughout; the freeze speed never reached still ending the brake on the countdown while frozen; the marker absent keeping the pre-batch unfrozen RunBrake behavior; the turn-run lockout blocking both RunTurn and RunBrake entry from Run for exactly its frame count, separately for a reversed and a neutral stick; an ordinary Dash-to-Run entry never setting the lockout; checkpoint replay mid-lockout; and every new field's invalid/unpaired/out-of-range values rejected before a `Match` exists |
 
 These scenarios use supplied synthetic coefficients and poses. Passing them
 establishes those behavioral contracts; authentic animation, full callback order
@@ -374,9 +375,28 @@ snapshot (`tests/oracle/original/run.c`, `ftCo_Run_Enter`/`_Full`/`_Anim`)
 bit-exact over generated velocities/facings/scalings/friction multipliers,
 including NaN, plus exact boundaries (velocity exactly 0, negative velocity,
 tiny scaling); it also checks the oracle's own `run.x0` turn-run-lockout
-countdown against the source's literal decrement (not modeled by any Rust
-helper) and `ftCo_Run_Enter`'s literal `anim_start = 0.0`/`anim_speed = 1.0`/
-`run.x0`/`run.x4` field assignments.
+countdown against the source's literal decrement (now modeled by
+`locomotion::State.run_lockout`) and `ftCo_Run_Enter`'s literal `anim_start =
+0.0`/`anim_speed = 1.0`/`run.x0`/`run.x4` field assignments, plus (added by
+the run-corrections batch) `ftCo_Run_IASA`'s gate order over every scripted
+boolean combination and `run_x0` in `{-1, 0, 1, 5, NaN}`, proving the jump
+check always runs first and the RunTurn/RunBrake checks only run while
+`run.x0 <= 0.0`.
+`turn_run_anim_differential` (the run-corrections batch) extends the pinned
+`turn_run.c` snapshot with `ftCo_TurnRun_Enter`/`_Anim`/`fn_800C9CEC`/
+`fn_800C9D40`, comparing a Rust mirror of the freeze/resume/flip/animation-
+end decision against the C oracle over 512 proptest cases (both fixed
+facings, arbitrary binary32 velocity, NaN-safe) plus generated 8-frame
+velocity sequences per facing threaded frame to frame, exact boundaries and
+the literal `ftCo_TurnRun_Enter`/`fn_800C9CEC`/`fn_800C9D40` field
+assignments and gate.
+`runbrake_differential` (the run-corrections batch) snapshots
+`ftCo_RunBrake.c` for the first time (`tests/oracle/original/runbrake.c`,
+`ftCo_RunBrake_Anim`/`_IASA`), comparing a Rust mirror of the freeze/resume/
+end decision against the C oracle over 512 proptest cases plus a second
+proptest generating physically realistic (monotonically non-increasing
+magnitude) 12-frame velocity sequences, exact boundaries and every boolean
+combination of the `ftCo_RunBrake_IASA` gate order.
 Adapters explicitly disable unrelated state/environment branches.
 
 | Required behavior | Integration cases |

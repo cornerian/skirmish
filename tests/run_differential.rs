@@ -26,6 +26,24 @@ struct RunEnterResult {
     x4: f32,
 }
 
+#[repr(C)]
+struct RunIasaResult {
+    special_called: i32,
+    attack100_called: i32,
+    x6824_called: i32,
+    x68c0_called: i32,
+    x8a38_called: i32,
+    attackdash_called: i32,
+    attackdash_setmv0_called: i32,
+    x91a4c_called: i32,
+    x91b90_called: i32,
+    x91b9c_called: i32,
+    de9d8_called: i32,
+    jump_called: i32,
+    turn_called: i32,
+    brake_called: i32,
+}
+
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
     fn oracle_run_anim(
@@ -37,6 +55,21 @@ unsafe extern "C" {
         run_x0: f32,
     ) -> RunAnimResult;
     fn oracle_run_enter(x0: f32, gr_vel: f32) -> RunEnterResult;
+    #[allow(clippy::too_many_arguments)]
+    fn oracle_run_iasa(
+        run_x0: f32,
+        special: i32,
+        attack100: i32,
+        x6824: i32,
+        x68c0: i32,
+        x8a38: i32,
+        attackdash: i32,
+        x91a4c: i32,
+        de9d8: i32,
+        jump: i32,
+        turn: i32,
+        brake: i32,
+    ) -> RunIasaResult;
 }
 
 fn exact(actual: f32, expected: f32) {
@@ -153,5 +186,57 @@ fn adapter_retains_the_complete_pinned_functions() {
             .contains("void ftCo_Run_Enter_Full(Fighter_GObj* gobj, float arg0, float anim_start,")
     );
     assert!(source.contains("void ftCo_Run_Anim(Fighter_GObj* gobj)"));
+    assert!(source.contains("void ftCo_Run_IASA(Fighter_GObj* gobj)"));
     assert!(include_str!("oracle/run.c").contains("#include \"run_original.inc\""));
+}
+
+/// `ftCo_Run_IASA`'s gate order (`ftCo_Run.c:101-128`), focused on the
+/// `run.x0` lockout this batch adds (`Parameters::run_turn_lockout_frames`,
+/// `State::run_lockout`): `RETURN_IF((run.x0 <= 0.0F) && fn_800C9D40(gobj))`
+/// only reaches the turn-run check while `run.x0 <= 0.0F`;
+/// `RETURN_IF(!(run.x0 <= 0.0F))` then returns immediately whenever
+/// `run.x0 > 0.0F`, so `ftCo_RunBrake_CheckInput` is unreached too --
+/// exactly the "both RunTurn and RunBrake are locked out" behavior
+/// `game::locomotion::update_actions`'s `Action::Run` arm and
+/// `game::dash::update_dash_or_run`'s Run arm both now gate on
+/// `run_lockout <= 0.0`.
+fn compare_iasa(run_x0: f32, jump: bool, turn: bool, brake: bool) {
+    // Every earlier scripted check answers false so the chain reaches the
+    // lockout gate; jump is always reached first regardless of run.x0.
+    let jump_called = true;
+    let turn_called = !jump && run_x0 <= 0.0;
+    let brake_called = !jump && run_x0 <= 0.0 && !turn;
+    // SAFETY: twelve scalar inputs; the adapter owns all thread-local state.
+    let actual = unsafe {
+        oracle_run_iasa(
+            run_x0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            i32::from(jump),
+            i32::from(turn),
+            i32::from(brake),
+        )
+    };
+    assert_eq!(actual.jump_called != 0, jump_called);
+    assert_eq!(actual.turn_called != 0, turn_called);
+    assert_eq!(actual.brake_called != 0, brake_called);
+}
+
+#[test]
+fn run_iasa_lockout_gate_order_matches_c() {
+    for run_x0 in [-1.0f32, 0.0, 1.0, 5.0, f32::NAN] {
+        for jump in [false, true] {
+            for turn in [false, true] {
+                for brake in [false, true] {
+                    compare_iasa(run_x0, jump, turn, brake);
+                }
+            }
+        }
+    }
 }

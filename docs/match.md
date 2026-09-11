@@ -330,11 +330,21 @@ aerial jump requires a fresh input; later jumps accept held X/Y or up only after
 the current jump's marker. Root yaw changes sampled bone physics and facing flips
 at the source integer halfway point.
 TurnRun tests its reversed-stick boundary before braking, stores entry facing,
-decelerates with the source branch, and pauses at an explicit script marker until
-its scaled ground velocity reaches x0.01. RunBrake has its own explicit command
-marker and carries its current action time into a later TurnRun. Jump button
-history, tilt ages, consumed jumps, multijump root rotation and transition timers
-are checkpointed.
+decelerates with the source branch, and pauses at an explicit script marker
+until the *stored entry facing* times ground velocity reaches x0.01 -- a
+per-entry sign, not a fixed resource scale, so a run turn started while
+facing either direction flips at the same physical velocity crossing (fixed
+in the 2026-09-11 run-corrections batch; see [run](run.md)). RunBrake has
+its own explicit command marker and carries its current action time into a
+later TurnRun; an optional paired marker pose and freeze speed also pause
+RunBrake's own reported time while ground velocity stays above that speed,
+resuming once it drops back under it, independent of the countdown that can
+still end the brake into Wait while frozen. An optional turn-run lockout
+duration blocks both RunTurn and RunBrake re-entry from Run for that many
+frames immediately after a run turn completes back into Run (an ordinary
+Dash-to-Run entry never sets it). Jump button history, tilt ages, consumed
+jumps, multijump root rotation, the RunBrake freeze bit and the turn-run
+lockout countdown are checkpointed.
 `tests/fixtures/game/locomotion.json` contains invented values used by
 the conformance and movement integration tests. These actions still use the
 supplied static non-jab pose, with the multijump root turn applied to it;

@@ -1,1 +1,7 @@
-["ftCo_TurnRun_Phys"]
+[
+  "ftCo_TurnRun_Phys",
+  "ftCo_TurnRun_Enter",
+  "ftCo_TurnRun_Anim",
+  "fn_800C9CEC",
+  "fn_800C9D40"
+]

@@ -1,4 +1,4 @@
-# Run animation rate (batch after walk speeds)
+# Run animation rate and run-corrections batches
 
 `skirmish::game::locomotion` (wiring: entry, the per-frame animation advance,
 `src/game/locomotion.rs`) and `skirmish::fighter::locomotion` (pure
@@ -6,14 +6,26 @@ arithmetic: the animation-rate formula, `src/fighter/locomotion.rs`) extend
 the walk batch's float animation-frame model (`docs/walk.md`) to Run. Pinned
 decomp rev `0bac93a5`. Sources: `src/melee/ft/kinds/ftCommon/ftCo_Run.c`
 (`fn_800CA5F0`:22-33, `fn_800CA644`:35-46, `fn_800CA698`:48-59,
-`ftCo_Run_Enter`:61-64, `ftCo_Run_Enter_Full`:66-74, `ftCo_Run_Anim`:76-99),
-`ftCo_RunBrake.c` (`ftCo_RunBrake_Anim`:49-77), `ftCo_TurnRun.c`
-(`ftCo_TurnRun_Enter`:44-55, `ftCo_TurnRun_Anim`:57-77), `types.h:698`
-(`run_animation_scaling`, `co_attrs+0x2C`), `types.h:312-313` (`x42C`/`x430`,
-unnamed common-data floats), `kinds/ftCommon/forward.h:310`
-(`ftCo_MS_Run`, common motion-state table) and `kinds/ftCommon/forward.h:648`
-(`ftCo_SM_Run`, the `ftCo_Submotion` table -- `None=-1` then 0-indexed,
-`Run` is the 14th entry, giving sub-motion 13).
+`ftCo_Run_Enter`:61-64, `ftCo_Run_Enter_Full`:66-74, `ftCo_Run_Anim`:76-99,
+`ftCo_Run_IASA`:101-128), `ftCo_RunBrake.c` (`ftCo_RunBrake_Anim`:49-77,
+`ftCo_RunBrake_IASA`:80-87, `ftCo_RunBrake_Phys`:89-97), `ftCo_TurnRun.c`
+(`fn_800C9CEC`:19-29, `fn_800C9D40`:31-42, `ftCo_TurnRun_Enter`:44-55,
+`ftCo_TurnRun_Anim`:57-77), `types.h:698` (`run_animation_scaling`,
+`co_attrs+0x2C`), `types.h:312-313` (`x42C`/`x430`, unnamed common-data
+floats), `kinds/ftCommon/forward.h:310` (`ftCo_MS_Run`, common motion-state
+table) and `kinds/ftCommon/forward.h:648` (`ftCo_SM_Run`, the
+`ftCo_Submotion` table -- `None=-1` then 0-indexed, `Run` is the 14th entry,
+giving sub-motion 13).
+
+This note covers two batches: the original animation-rate/float-frame batch
+(2026-09-11, `run` -- everything below "Source behavior" through "Oracle"'s
+first subsection) and the run-corrections batch (2026-09-11, `run-
+corrections`) that fixed three behaviors the first batch's audit reported as
+discrepancies/gaps rather than silently changing: the run-turn flip check,
+RunBrake's velocity-gated marker freeze, and `run.x0`'s turn-run lockout.
+The corrections are described in their own section below; the surrounding
+prose is left as the first batch wrote it except where a correction changed
+it.
 
 ## Source behavior
 
@@ -79,74 +91,123 @@ unnamed common-data floats), `kinds/ftCommon/forward.h:310`
   supplied, mirroring exactly how the walk batch published `WalkState.frame`
   -- a real Slippi file's `state_age` for Run *is* `fp->cur_anim_frame`, the
   float animation frame, not a separate integer.
-- **RunBrake and RunTurn's existing freeze/resume model**: both are left
-  exactly as they were before this batch (rates 0 and 1 only, integer
-  frames). `ftCo_RunBrake_Anim` (`ftCo_RunBrake.c:49-77`): while the script's
-  `cmd_vars[1]` marker is set, freeze (rate 0) once `|gr_vel| >= x42C`, then
-  resume at rate 1 and clear the marker once `|gr_vel| <= x42C`; the brake
-  `frames` timer separately counts down to 0 (clamped there) every frame
-  regardless of the marker. `ftCo_TurnRun_Anim` (`ftCo_TurnRun.c:57-77`):
-  while its own marker is set, first freeze (rate 0), then resume at rate 1
-  and flip facing once `facing_at_entry * gr_vel <= 0.01` --
-  `ftCo_TurnRun_Enter` (`ftCo_TurnRun.c:44-55`) stores `turnrun.accel_mul =
-  facing_dir` at entry, and the check reads that same value back through the
-  union alias `mv.co.walk.middle_anim_frame` (`ftCo_TurnRun.c:67`). Verifying
-  these against the source surfaced two discrepancies from an earlier design
-  draft's assumptions, reported below rather than silently fixed (out of
-  this batch's scope, which is the Run animation-frame/rate layer only).
+- **RunBrake and RunTurn's freeze/resume model** (corrected by the
+  run-corrections batch; see "Corrections" below): `ftCo_RunBrake_Anim`
+  (`ftCo_RunBrake.c:49-77`): while the script's `cmd_vars[1]` marker is set,
+  freeze (rate 0) once `|gr_vel| >= x42C`, then resume at rate 1 and clear
+  the marker once `|gr_vel| <= x42C`; the brake `frames` timer separately
+  counts down to 0 (clamped there) every frame regardless of the marker.
+  `ftCo_TurnRun_Anim` (`ftCo_TurnRun.c:57-77`): while its own marker is set,
+  first freeze (rate 0), then resume at rate 1 and flip facing once
+  `facing_at_entry * gr_vel <= 0.01` -- `ftCo_TurnRun_Enter`
+  (`ftCo_TurnRun.c:44-55`) stores `turnrun.accel_mul = facing_dir` at entry,
+  and the check reads that same value back through the union alias
+  `mv.co.walk.middle_anim_frame` (`ftCo_TurnRun.c:67`).
 
-### Discrepancy: RunBrake's velocity-gated marker freeze is not modeled
+## Corrections (2026-09-11 run-corrections batch)
 
-An earlier draft of this note assumed RunBrake's `cmd_vars[1]`/`x42C`
-velocity-gated animation freeze was "already modeled ('velocity-gated marker
-freeze' in the locomotion batch)". Auditing the actual code
-(`game::locomotion::update_animation`'s `Action::RunBrake` arm and
-`game::locomotion::hold_action_frame`) shows only `mv.co.runbrake.frames`'s
-plain countdown is modeled (`f.locomotion.run_brake_frames`, decremented and
-clamped at 0, driving the exit to Wait); no field or check corresponds to
-`cmd_vars[1]`/`x42C`/`runbrake.x0`, and `hold_action_frame` -- the only
-frame-freeze mechanism in this codebase -- only ever returns true for
-RunTurn (`f.action == Action::RunTurn && f.locomotion.run_turn_waiting`).
-So unlike RunTurn, RunBrake's own reported `action_frame`/Slippi age never
-freezes here, contrary to that earlier assumption. This batch does not add
-it (out of scope; RunBrake's own animation layer, not Run's); it is reported
-as a pre-existing gap.
+The animation-rate batch above audited RunBrake/RunTurn/`run.x0` and
+reported three items rather than silently changing them, out of that
+batch's stated scope (the Run animation-frame/rate layer only). This batch
+fixes all three; no further contradiction against the pinned source was
+found while doing so.
 
-### Discrepancy: RunTurn's flip check uses a fixed scale instead of the per-entry facing
+### Fix: RunTurn's flip check now reads the per-entry facing
 
-`game::locomotion`'s existing RunTurn model gates the flip on `f.action_frame
->= p.run_turn_flip_frame` (standing in for the unmodeled script event that
-sets `cmd_vars[1]`) and then checks `p.run_turn_velocity_scale *
-f.ground_velocity <= 0.01`. Comparing that against `ftCo_TurnRun.c:67`'s
-`facing_at_entry * gr_vel <= 0.01F`: the source multiplies by the *per-entry*
-facing captured at `ftCo_TurnRun_Enter` (`turnrun.accel_mul`, read back
-through the `middle_anim_frame` union alias), not a fixed resource constant.
-`game::locomotion::start_run_turn` already captures that same per-entry value
-as `f.locomotion.run_turn_facing` (used correctly by `fighter::locomotion::
-turn_run`'s own physics branch), but the flip check in `game::locomotion::
-update_animation`'s `Action::RunTurn` arm uses the unrelated `Parameters::
-run_turn_velocity_scale` field instead. A fixed per-match resource constant
-cannot reproduce a per-entry sign that flips with whichever direction the
-fighter was facing when RunTurn began, so this is a discrepancy from the
-pinned source. Reported here rather than silently changed; the existing
-behavior (already covered by earlier-batch tests) is left as is.
+`game::locomotion`'s RunTurn model gated the flip on `f.action_frame >=
+p.run_turn_flip_frame` (standing in for the unmodeled script event that sets
+`cmd_vars[1]`) and then checked `p.run_turn_velocity_scale *
+f.ground_velocity <= 0.01` -- a *fixed per-match resource constant*.
+Comparing that against `ftCo_TurnRun.c:67`'s `facing_at_entry * gr_vel <=
+0.01F`: the source multiplies by the *per-entry* facing captured at
+`ftCo_TurnRun_Enter` (`turnrun.accel_mul`, read back through the
+`middle_anim_frame` union alias), not a fixed resource constant. A fixed
+constant cannot reproduce a per-entry sign that flips with whichever
+direction the fighter was facing when RunTurn began -- it was silently wrong
+for a run turn started while facing -1 (the check would use the wrong sign
+and flip either too early or never, depending on velocity). `game::
+locomotion::start_run_turn` already captured that same per-entry value as
+`f.locomotion.run_turn_facing` (used correctly by `fighter::locomotion::
+turn_run`'s own physics branch); the flip check in `game::locomotion::
+update_animation`'s `Action::RunTurn` arm now reads `f.locomotion.
+run_turn_facing` instead of `Parameters::run_turn_velocity_scale`, which is
+removed from `Parameters` entirely (every fixture must drop it,
+`deny_unknown_fields`). The marker model itself (`run_turn_flip_frame`
+gating `run_turn_waiting`, `hold_action_frame` freezing `action_frame` while
+waiting) already reproduced "rate 0 on the marker frame, rate 1 once the
+condition holds" correctly and needed no change.
+`tests/game_run_corrections.rs` covers both a right-facing and a left-facing
+run turn, each flipping only once ground velocity has actually crossed past
+the entry facing's sign, with the frozen frames holding `action_frame`.
 
-### Known gap: `run.x0` (the turn-run lockout) is not modeled
+### Fix: RunBrake's velocity-gated marker freeze is now modeled
+
+`game::locomotion::update_animation`'s `Action::RunBrake` arm modeled only
+`mv.co.runbrake.frames`'s plain countdown; no field or check corresponded to
+`cmd_vars[1]`/`x42C`/`runbrake.x0`, so RunBrake's own reported
+`action_frame`/Slippi age never froze, unlike RunTurn's. `Parameters` gains
+`run_brake_marker_frame: Option<u32>` (the pose whose script sets the
+marker, modeled the same level-condition way `run_turn_flip_frame` already
+is: `action_frame >= marker`) and `run_brake_freeze_speed: Option<f32>`
+(`x42C`), paired (both `Some` or both `None`; `None` keeps the pre-batch
+unfrozen behavior). `locomotion::State` gains `run_brake_frozen: bool`
+(mirrors `runbrake.x0`: false until the freeze first fires while fast
+`(|gr_vel| >= freeze_speed)`, then true until it resumes while slow
+(`|gr_vel| <= freeze_speed)`), and `hold_action_frame` now also holds
+`action_frame` while `f.action == Action::RunBrake && f.locomotion.
+run_brake_frozen`. The `frames` countdown (`run_brake_frames`) keeps
+counting down every frame regardless of the freeze, exactly as before, and
+can still end the brake into `Wait` while the animation stays frozen the
+entire time. Because RunBrake's own friction (`ftCo_RunBrake_Phys`/
+`game::locomotion::ground_motion`) only ever reduces `|ground_velocity|`
+(never re-accelerates), a single "currently frozen" bit -- reset at
+RunBrake entry, matching `runbrake.x0`'s own `false` at
+`ftCo_RunBrake_Enter` -- cannot be re-armed by a later RunBrake frame in
+this codebase's own reachable game states; the C oracle
+(`tests/runbrake_differential.rs`) still verifies the underlying decision
+bit-exactly against arbitrary (not just monotonic) velocity, matching the
+source's own per-frame logic rather than this codebase's narrower
+reachability argument. `ftCo_RunBrake_IASA`'s own `cmd_vars[0]`-gated
+turn-run entry (`fn_800C9CEC`, entering TurnRun at the brake's current
+animation frame) was already modeled correctly by the existing
+`run_brake_turn_frame`/`start_run_turn(f, f.action_frame)` pair and needed
+no change; `ftCo_RunBrake_Phys`'s friction multiplier
+(`run_dash_turn_friction_multiplier`) was already applied correctly by
+`game::locomotion::ground_motion`'s `run_friction_multiplier` and likewise
+needed no change. `tests/game_run_corrections.rs` covers the freeze holding
+frames while fast and resuming when slow (with the `frames` countdown
+ticking throughout), the countdown ending the brake early while still
+frozen (the freeze speed never reached), and the marker absent keeping the
+pre-batch unfrozen behavior.
+
+### Fix: `run.x0`'s turn-run lockout is now modeled
 
 `ftCo_Run_IASA` (`ftCo_Run.c:125-126`) gates RunTurn/RunBrake entry behind
 `run.x0 <= 0.0F`: while `run.x0 > 0` (freshly set by a RunTurn-to-Run
 re-entry, `fn_800CA644`'s `arg0 = x430`; always 0 from the ordinary
 Dash-to-Run path, `fn_800CA5F0`'s `arg0 = 0.0`), the whole rest of Run's IASA
-chain -- including the RunTurn and RunBrake checks -- is skipped. No existing
-Rust code models this countdown or its IASA gate: `game::locomotion::
-update_actions`'s `Action::Run` arm allows RunTurn/RunBrake entry
-unconditionally, with no lockout field on `locomotion::State`. This batch's
-resource/state shape (`RunAnimation { length, scaling }`, `RunState { frame,
-last_rate }`) does not add one either -- it is out of scope here (the
-animation-frame/rate layer only) -- so this is reported as a pre-existing gap
-rather than introduced or silently fixed by this batch. The C oracle
-(`tests/oracle/run.c`) still exposes `run.x0`'s own countdown
-(`oracle_run_anim`'s `run_x0_after`) for a future batch that models it.
+chain -- including the RunTurn and RunBrake checks -- is skipped. No
+existing Rust code modeled this countdown or its IASA gate. `Parameters`
+gains `run_turn_lockout_frames: Option<f32>` (`x430`; `None` keeps no
+lockout, matching the pre-batch behavior); `locomotion::State` gains
+`run_lockout: f32` (`run.x0`), set by `enter_run`'s new `lockout` parameter
+-- `0.0` from both of this codebase's Dash-to-Run call sites (`game::
+locomotion::update_actions`'s `Action::Dash` arm and `game::dash::
+update_dash_or_run`'s Dash arm, matching `fn_800CA5F0`'s literal `arg0 =
+0.0`) and `p.run_turn_lockout_frames.unwrap_or(0.0)` from the RunTurn-to-Run
+re-entry (`game::locomotion::update_animation`'s `Action::RunTurn` arm,
+matching `fn_800CA644`'s `arg0 = x430`) -- and counted down by 1.0 per Run
+animation frame while positive in `update_animation`'s `Action::Run` arm
+(`ftCo_Run.c:96-98`, independent of whether `MovementData.run_animation` is
+supplied, matching the source's own unconditional countdown). Both
+`game::locomotion::update_actions`'s `Action::Run` arm and `game::dash::
+update_dash_or_run`'s Run arm now gate their RunTurn/RunBrake entry checks
+behind `f.locomotion.run_lockout <= 0.0`, mirroring `ftCo_Run_IASA`'s own
+gate order (RunTurn checked first, then RunBrake, both skipped together
+while `run.x0 > 0`). `tests/game_run_corrections.rs` covers the lockout
+blocking both RunTurn and RunBrake entry for exactly `x430` frames after a
+completed run turn, and confirms an ordinary Dash-to-Run entry never sets
+it.
 
 ## Resource shape
 
@@ -161,6 +222,16 @@ rather than introduced or silently fixed by this batch. The C oracle
   its default.
 - `game::locomotion::State.run: locomotion::RunState { frame: f32, last_rate:
   f32 }` (`Serialize`/`Deserialize`, checkpoint-safe).
+- `Parameters.run_turn_lockout_frames: Option<f32>` (`x430`): `None` keeps
+  no lockout. Validated finite and `0.0..=1_000_000.0` when `Some`.
+- `Parameters.run_brake_marker_frame: Option<u32>` (the RunBrake pose whose
+  script sets the marker) and `run_brake_freeze_speed: Option<f32>` (`x42C`):
+  both `None` or both `Some` (validated paired); `run_brake_marker_frame`
+  must be `< run_brake_animation_frames`; `run_brake_freeze_speed` must be
+  finite and `0.0..=1_000_000.0`. `None` keeps no freeze.
+- `game::locomotion::State.run_lockout: f32` (`run.x0`) and
+  `run_brake_frozen: bool` (`runbrake.x0`), both `Serialize`/`Deserialize`,
+  checkpoint-safe.
 
 ## Tests
 
@@ -215,6 +286,24 @@ velocity is not read into a new `last_rate` until the following frame's Anim
 call, and that rate is not read into the tracked frame until the frame after
 that.
 
+### run-corrections batch
+
+`tests/game_run_corrections.rs` (9 tests): a right-facing and a left-facing
+run-turn reversal each flip only once ground velocity has crossed past the
+entry facing's own sign (not a fixed scale), with the frozen frames holding
+`action_frame` at `run_turn_flip_frame` throughout; the RunBrake freeze
+holding `action_frame` while fast and resuming (with `run_brake_frames`
+still ticking down throughout) once slow; the freeze speed never reached
+still ending the brake on the `frames` countdown while frozen the whole
+time; the marker absent keeping the pre-batch unfrozen RunBrake behavior;
+the lockout blocking both RunTurn and RunBrake entry from Run for exactly
+`run_turn_lockout_frames` frames, separately for a neutral (brake) and a
+reversed (turn) stick, both via a cloned `Match` branching from the same
+pre-lockout checkpoint; an ordinary Dash-to-Run entry never setting the
+lockout; checkpoints taken mid-lockout restoring `run_lockout` exactly; and
+every new `Parameters` field's invalid/unpaired/out-of-range values rejected
+before a `Match` exists.
+
 ## Oracle
 
 `tests/oracle/original/run.c` is a snapshot of `ftCo_Run.c` (`sources.json`).
@@ -250,7 +339,73 @@ velocity, velocity negative with facing also negative, scaling as small as
 `f32::MIN_POSITIVE`/`1e-30`, the friction-multiplier branch, and the
 `run.x0` countdown at a positive value, exactly 1.0, exactly 0.0 and
 negative). It also checks `oracle_run_anim`'s `run_x0_after` against the
-source's own literal decrement (`ftCo_Run.c:96-98`, not modeled by any Rust
-helper -- see "Known gap" above) and `oracle_run_enter`'s literal
+source's own literal decrement (`ftCo_Run.c:96-98`, now modeled by
+`locomotion::State.run_lockout`) and `oracle_run_enter`'s literal
 `anim_start = 0.0`/`anim_speed = 1.0`/`run.x0 = arg0`/`run.x4 = gr_vel`
 field assignments, which `game::locomotion::enter_run` assumes.
+
+### run-corrections batch
+
+`run.functions.json` additionally selects `ftCo_Run_IASA` (`ftCo_Run.c:
+101-128`). The adapter (`tests/oracle/run.c`) stubs its own eleven checks
+(`ftCo_SpecialS_CheckInput`, `ftCo_Attack100_CheckInput`, `ftCo_800D6824`,
+`ftCo_800D68C0`, `ftCo_800D8A38`, `ftCo_AttackDash_CheckInput`/
+`_SetMv0`, `ftCo_80091A4C`/`ftCo_80091B90`/`ftCo_80091B9C`,
+`ftCo_800DE9D8`, `fn_800CAF78`, `fn_800C9D40`, `ftCo_RunBrake_CheckInput`)
+as scriptable booleans recording whether each was reached, exposing
+`oracle_run_iasa(run_x0, ...) -> { ..._called: bool }`. `tests/
+run_differential.rs`'s `run_iasa_lockout_gate_order_matches_c` (over every
+boolean combination and `run_x0` in `{-1, 0, 1, 5, NaN}`) proves the gate
+order this batch's lockout depends on: the jump check is always reached
+first regardless of `run.x0`; the RunTurn check (`fn_800C9D40`) is only
+reached while `run.x0 <= 0.0`; the RunBrake check
+(`ftCo_RunBrake_CheckInput`) is only reached while `run.x0 <= 0.0` and the
+RunTurn check did not itself already return.
+
+`tests/oracle/original/runbrake.c` is a new snapshot of `ftCo_RunBrake.c`
+(`sources.json`). `runbrake.functions.json` selects `ftCo_RunBrake_Anim`
+and `ftCo_RunBrake_IASA` verbatim. The adapter (`tests/oracle/runbrake.c`)
+stubs `ftAnim_SetAnimRate` (captures the rate and whether it was called this
+call), `ftAnim_IsFramesRemaining` and `ft_8008A2BC` the same way `run.c`/
+`turn_run.c` do, and `ftCo_RunBrake_IASA`'s own three checks (`fn_800CAF78`,
+`fn_800C9CEC`, `ftCo_800D5FB0`) as scriptable booleans, exposing:
+
+- `oracle_run_brake_anim(cmd_vars1, runbrake_x0, gr_vel, freeze_speed,
+  runbrake_frames, is_frames_remaining) -> { set_rate_called, rate,
+  cmd_vars1_after, x0_after, frames_after, wait_called }`.
+- `oracle_run_brake_iasa(jump_result, cmd_vars0, turn_result, squat_result)
+  -> { jump_called, turn_called, squat_called }`, proving the `RETURN_IF`
+  gate order (jump, then `cmd_vars[0] && fn_800C9CEC` -- a short-circuiting
+  `&&`, so the turn check itself is only reached while `cmd_vars[0]` is
+  truthy -- then squat).
+
+`tests/runbrake_differential.rs` compares a Rust mirror of the freeze/
+resume/end decision against `oracle_run_brake_anim` over 512 proptest cases
+(arbitrary binary32 `gr_vel`/`freeze_speed`, NaN-safe) plus a second
+proptest generating physically realistic (monotonically non-increasing
+magnitude, matching `ftCo_RunBrake_Phys`'s friction-only deceleration)
+12-frame velocity sequences threaded frame to frame, plus exact boundaries
+(the freeze/resume boundaries themselves, `frames` already/reaching exactly
+0, no frames remaining ending the brake even with `frames` still positive,
+NaN velocity never freezing or resuming) and every boolean combination of
+`oracle_run_brake_iasa`'s gate order.
+
+`turn_run.functions.json` additionally selects `ftCo_TurnRun_Enter`,
+`ftCo_TurnRun_Anim`, `fn_800C9CEC` and `fn_800C9D40` (`ftCo_TurnRun.c:
+19-77`) from the same pinned `turn_run.c` snapshot `tests/
+locomotion_differential.rs` already uses for `ftCo_TurnRun_Phys`. The
+adapter (`tests/oracle/turn_run.c`) models `mv.co` as a real C union
+(`CoData`) so `turnrun.accel_mul` and `walk.middle_anim_frame` alias the
+same storage exactly as the pinned source's own union does -- the exact
+mechanism the corrected flip check depends on -- and stubs
+`Fighter_ChangeMotionState`, `ftAnim_SetAnimRate`, `ftAnim_IsFramesRemaining`,
+`fn_800CA644` and `ft_8008A2BC` the same way `run.c` does, exposing
+`oracle_turn_run_enter`, `oracle_turn_run_anim` and `oracle_fn_800c9cec`/
+`oracle_fn_800c9d40`. `tests/turn_run_anim_differential.rs` compares a Rust
+mirror of the freeze/resume/flip/animation-end decision against
+`oracle_turn_run_anim` over 512 proptest cases (both fixed facings,
+arbitrary binary32 `gr_vel`, NaN-safe) plus a second proptest generating
+8-frame velocity sequences per facing threaded frame to frame, plus exact
+boundaries and the literal `ftCo_TurnRun_Enter`/`fn_800C9CEC`/`fn_800C9D40`
+field assignments and gate (`lstick.x * facing_dir <= x38`, differing only
+in the entered `anim_start`: `cur_anim_frame` versus a fixed `0.0F`).

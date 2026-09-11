@@ -347,9 +347,14 @@ fn update_dash_or_run(
     }
     if f.action == Action::Dash {
         if f.action_frame >= p.dash_run_frame && input.stick[0] * f.facing >= p.run_threshold {
-            super::locomotion::enter_run(f);
+            super::locomotion::enter_run(f, 0.0);
             return Ok(true);
         }
+        return Ok(false);
+    }
+    // ftCo_Run_IASA (ftCo_Run.c:125-126): while run.x0 > 0.0 the RunTurn and
+    // RunBrake entry checks below are skipped entirely.
+    if f.locomotion.run_lockout > 0.0 {
         return Ok(false);
     }
     if input.stick[0] * f.facing <= p.turn_threshold {
@@ -359,6 +364,7 @@ fn update_dash_or_run(
     if input.stick[0].abs() < p.run_threshold {
         super::locomotion::enter(f, Action::RunBrake);
         f.locomotion.run_brake_frames = p.run_brake_max_frames;
+        f.locomotion.run_brake_frozen = false;
         return Ok(true);
     }
     Ok(false)

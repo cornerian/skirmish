@@ -659,14 +659,34 @@ fn legacy_profiles_and_invalid_locomotion_resources_are_explicit() {
     multi.repeat_input_frames[0] = multi.animation_frames[0];
     assert!(Match::new(invalid, 42).is_err());
     let mut invalid = data();
+    let p = invalid.fighters[0].locomotion.as_mut().unwrap();
+    p.run_brake_turn_frame = p.run_brake_animation_frames;
+    assert!(Match::new(invalid, 42).is_err());
+    // run_brake_marker_frame/run_brake_freeze_speed must be paired.
+    let mut invalid = data();
     invalid.fighters[0]
         .locomotion
         .as_mut()
         .unwrap()
-        .run_turn_velocity_scale = 0.0;
+        .run_brake_marker_frame = Some(0);
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = data();
+    invalid.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .run_brake_freeze_speed = Some(1.0);
     assert!(Match::new(invalid, 42).is_err());
     let mut invalid = data();
     let p = invalid.fighters[0].locomotion.as_mut().unwrap();
-    p.run_brake_turn_frame = p.run_brake_animation_frames;
+    p.run_brake_marker_frame = Some(p.run_brake_animation_frames);
+    p.run_brake_freeze_speed = Some(1.0);
+    assert!(Match::new(invalid, 42).is_err());
+    let mut invalid = data();
+    invalid.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .run_turn_lockout_frames = Some(-1.0);
     assert!(Match::new(invalid, 42).is_err());
 }

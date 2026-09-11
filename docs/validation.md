@@ -1,5 +1,74 @@
 # Local validation provenance
 
+The 2026-09-11 run-corrections batch is recorded at:
+
+`/mnt/archive/runs/skirmish-run-corrections-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace, and all selected original-C functions in debug and release
+modes. This batch fixes three behaviors the run-animation-rate batch below
+audited and reported as discrepancies/gaps rather than silently changing,
+out of that batch's stated scope; no further contradiction against the
+pinned source was found while fixing them (`docs/run.md`'s "Corrections"
+section has the full detail with source line citations).
+
+RunTurn's flip check (`game::locomotion::update_animation`'s `Action::
+RunTurn` arm) now reads `f.locomotion.run_turn_facing` -- the per-entry
+facing `start_run_turn` already captured for the physics branch -- instead
+of the removed `Parameters::run_turn_velocity_scale` fixed resource
+constant, matching `ftCo_TurnRun.c:67`'s `facing_at_entry * gr_vel <=
+0.01F` exactly. `run_turn_velocity_scale` is removed from `Parameters`
+(`deny_unknown_fields` required dropping it from every fixture).
+
+RunBrake's velocity-gated marker freeze (`ftCo_RunBrake.c:49-77`) is now
+modeled: `Parameters` gains `run_brake_marker_frame: Option<u32>` and
+`run_brake_freeze_speed: Option<f32>` (paired; `None` keeps the pre-batch
+unfrozen behavior), `locomotion::State` gains `run_brake_frozen: bool`, and
+`hold_action_frame` now also freezes `action_frame` while RunBrake is
+frozen, alongside its existing RunTurn case. The `frames` countdown keeps
+ticking regardless and can still end the brake into `Wait` while frozen.
+
+`run.x0`, the turn-run lockout gating `ftCo_Run_IASA`'s RunTurn/RunBrake
+entry (`ftCo_Run.c:125-126`), is now modeled: `Parameters` gains
+`run_turn_lockout_frames: Option<f32>` (`x430`), `locomotion::State` gains
+`run_lockout: f32`, set by `enter_run`'s new `lockout` parameter (`0.0`
+from both Dash-to-Run call sites, `run_turn_lockout_frames.unwrap_or(0.0)`
+from a RunTurn-to-Run re-entry) and counted down every Run animation frame
+independent of `MovementData.run_animation`. Both `game::locomotion::
+update_actions`'s `Action::Run` arm and `game::dash::update_dash_or_run`'s
+Run arm now gate their RunTurn/RunBrake entry checks behind `run_lockout <=
+0.0`, matching `ftCo_Run_IASA`'s own gate order.
+
+`tests/game_run_corrections.rs` (9 tests) covers: a right-facing and a
+left-facing run-turn reversal each flipping only once ground velocity has
+crossed past the *entry* facing's own sign, with the frozen frames holding
+`action_frame`; the RunBrake freeze holding frames while fast and resuming
+once slow with the countdown still ticking; the freeze speed never reached
+still ending the brake on the countdown while frozen; the marker absent
+keeping the pre-batch unfrozen behavior; the lockout blocking both RunTurn
+and RunBrake entry from Run for exactly its frame count (a neutral and a
+reversed stick, branched from the same pre-lockout checkpoint via a cloned
+`Match`); an ordinary Dash-to-Run entry never setting the lockout;
+checkpoints mid-lockout; and every new field's invalid/unpaired/
+out-of-range values rejected before a `Match` exists.
+`tests/turn_run_anim_differential.rs` (7 tests, 512+512 proptest cases)
+extends the pinned `turn_run.c` snapshot (already used for
+`ftCo_TurnRun_Phys`) with `ftCo_TurnRun_Enter`/`_Anim`/`fn_800C9CEC`/
+`fn_800C9D40`, comparing a Rust mirror of the freeze/resume/flip/
+animation-end decision against the C oracle bit-exactly, including a
+generated 8-frame velocity sequence per fixed facing threaded frame to
+frame. `tests/runbrake_differential.rs` (5 tests, 512+512 proptest cases)
+snapshots `ftCo_RunBrake.c` for the first time
+(`tests/oracle/original/runbrake.c`, `ftCo_RunBrake_Anim`/`_IASA`),
+comparing a Rust mirror of the freeze/resume/end decision against the C
+oracle, including a generated 12-frame, physically realistic
+(monotonically non-increasing magnitude) velocity sequence, plus every
+boolean combination of the IASA gate order. `tests/run_differential.rs`
+gains `run_iasa_lockout_gate_order_matches_c` (extending `ftCo_Run_IASA`
+into the pinned `run.c` snapshot), proving the jump check always runs
+first and the RunTurn/RunBrake checks only run while `run.x0 <= 0.0`, over
+every scripted boolean combination and `run_x0` in `{-1, 0, 1, 5, NaN}`.
+
 The 2026-09-11 run-animation-rate coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-run-animation-20260911-verified`
@@ -37,13 +106,17 @@ per-entry facing the pinned source actually uses (`ftCo_TurnRun.c:67`,
 `facing_at_entry * gr_vel <= 0.01F`, sourced from `ftCo_TurnRun_Enter`'s own
 `turnrun.accel_mul = facing_dir`) -- `game::locomotion::start_run_turn`
 already captures that exact per-entry value as `run_turn_facing` for the
-physics branch, but the flip check does not use it. Both are pre-existing
-gaps in already-audited code, left unchanged per this batch's "verify, don't
-silently change" instruction. Separately, `run.x0` (the turn-run lockout
-countdown gating `ftCo_Run_IASA`'s RunTurn/RunBrake entry, `ftCo_Run.c:
-125-126`) remains unmodeled, as it was before this batch -- outside this
-batch's resource/state shape, which covers only the animation-frame/rate
-layer.
+physics branch, but the flip check does not use it. [Corrected by the
+2026-09-11 run-corrections batch above: the flip check now reads
+`run_turn_facing` and `run_turn_velocity_scale` is removed.] Both are
+pre-existing gaps in already-audited code, left unchanged per this batch's
+"verify, don't silently change" instruction. [RunBrake's own freeze is also
+corrected by the run-corrections batch above.] Separately, `run.x0` (the
+turn-run lockout countdown gating `ftCo_Run_IASA`'s RunTurn/RunBrake entry,
+`ftCo_Run.c:125-126`) remains unmodeled, as it was before this batch --
+outside this batch's resource/state shape, which covers only the
+animation-frame/rate layer. [Also corrected by the run-corrections batch
+above.]
 
 This batch's own explicit modeling choices, documented in `docs/run.md`
 rather than treated as verified source behavior: `last_rate` is initialized

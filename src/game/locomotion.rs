@@ -26,10 +26,25 @@ pub struct Parameters {
     pub run_friction_multiplier: f32,
     pub run_turn_animation_frames: u32,
     pub run_turn_flip_frame: u32,
-    pub run_turn_velocity_scale: f32,
     pub run_brake_animation_frames: u32,
     pub run_brake_turn_frame: u32,
     pub run_brake_max_frames: f32,
+    /// `ftCommonData.x430`: the turn-run lockout (`mv.co.run.x0`) applied by
+    /// `fn_800CA644` (`ftCo_TurnRun.c:74`, the turn-run-to-run re-entry) and
+    /// counted down every `ftCo_Run_Anim` frame (`ftCo_Run.c:96-98`); while
+    /// positive, `ftCo_Run_IASA` (`ftCo_Run.c:125-126`) skips both the
+    /// TurnRun and RunBrake entry checks. `None` keeps no lockout (a plain
+    /// Dash-to-Run entry never sets it either, `fn_800CA5F0`'s `arg0 = 0.0`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_turn_lockout_frames: Option<f32>,
+    /// The RunBrake animation pose whose script sets `cmd_vars[1]`
+    /// (`ftCo_RunBrake.c:53-66`), paired with `run_brake_freeze_speed`
+    /// (`ftCommonData.x42C`). Both `None` or both `Some`; `None` keeps no
+    /// freeze (this codebase's pre-batch behavior).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_brake_marker_frame: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_brake_freeze_speed: Option<f32>,
     pub turn_threshold: f32,
     pub standing_turn_frames: f32,
     pub turn_animation_frames: u32,
@@ -111,6 +126,17 @@ pub struct State {
     /// The animation event fired and is waiting for velocity to cross x0.01.
     pub run_turn_waiting: bool,
     pub run_brake_frames: f32,
+    /// `mv.co.run.x0` (`ftCo_Run.c:72,96-98`): the turn-run lockout
+    /// countdown, set by `enter_run` from a TurnRun-to-Run re-entry (else
+    /// left at 0.0 for an ordinary Dash-to-Run entry) and counted down by
+    /// 1.0 per Run animation frame while positive. Gates RunTurn/RunBrake
+    /// entry from Run (`ftCo_Run_IASA`, `ftCo_Run.c:125-126`).
+    pub run_lockout: f32,
+    /// `mv.co.runbrake.x0` (`ftCo_RunBrake.c:55-65`): true while the
+    /// velocity-gated marker freeze (`run_brake_marker_frame`/
+    /// `run_brake_freeze_speed`) currently holds `action_frame` at rate 0,
+    /// cleared once ground velocity crosses back under the freeze speed.
+    pub run_brake_frozen: bool,
     pub pass_delay: Option<f32>,
     /// Root-joint turn state from `ft_800CB6EC`; yaw affects bone physics.
     pub multi_jump_turn_remaining: i32,
@@ -155,6 +181,8 @@ impl Default for State {
             run_turn_facing: 0.0,
             run_turn_waiting: false,
             run_brake_frames: 0.0,
+            run_lockout: 0.0,
+            run_brake_frozen: false,
             pass_delay: None,
             multi_jump_turn_remaining: 0,
             multi_jump_yaw: 0.0,
@@ -302,7 +330,6 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         p.dash_max_velocity,
         p.run_accel_taper_gain,
         p.run_friction_multiplier,
-        p.run_turn_velocity_scale,
         p.run_brake_max_frames,
         p.standing_turn_frames,
         p.air_jump_horizontal_multiplier,
@@ -329,7 +356,13 @@ pub fn validate(p: &Parameters) -> Result<(), Error> {
         || p.dash_run_frame >= p.dash_animation_frames
         || p.run_turn_flip_frame >= p.run_turn_animation_frames
         || p.run_brake_turn_frame >= p.run_brake_animation_frames
-        || p.run_turn_velocity_scale == 0.0
+        || p.run_turn_lockout_frames
+            .is_some_and(|frames| !frames.is_finite() || !(0.0..=1_000_000.0).contains(&frames))
+        || p.run_brake_marker_frame.is_some() != p.run_brake_freeze_speed.is_some()
+        || p.run_brake_marker_frame
+            .is_some_and(|frame| frame >= p.run_brake_animation_frames)
+        || p.run_brake_freeze_speed
+            .is_some_and(|speed| !speed.is_finite() || !(0.0..=1_000_000.0).contains(&speed))
         || ![p.dash_window, p.tap_jump_window, p.pass_window]
             .into_iter()
             .all(|n| (1..254).contains(&n))
@@ -526,7 +559,33 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
             ground_jump(f, data, p, input)
         }
         Action::Dash if f.action_frame >= p.dash_animation_frames => enter(f, Action::Wait),
+        // ftCo_RunBrake_Anim (ftCo_RunBrake.c:49-77): while the script's
+        // cmd_vars[1] marker is set (modeled as action_frame >=
+        // run_brake_marker_frame, the same level-condition convention
+        // RunTurn's own marker already uses) and the freeze has not yet
+        // happened, freeze (rate 0, held via hold_action_frame) once
+        // |gr_vel| >= run_brake_freeze_speed; once frozen, resume (rate 1)
+        // once |gr_vel| <= run_brake_freeze_speed. The frames countdown
+        // continues regardless and ends the brake into Wait on either the
+        // countdown or the animation running out, independent of the
+        // freeze. Ground velocity only ever loses magnitude under
+        // RunBrake's own friction (ftCo_RunBrake_Phys/game::locomotion::
+        // ground_motion), so a single "currently frozen" bit -- reset false
+        // at RunBrake entry, mirroring runbrake.x0's own false at Enter --
+        // cannot be re-armed by a later RunBrake frame in this codebase.
         Action::RunBrake => {
+            if let (Some(marker), Some(freeze_speed)) =
+                (p.run_brake_marker_frame, p.run_brake_freeze_speed)
+                && f.action_frame >= marker
+            {
+                if !f.locomotion.run_brake_frozen {
+                    if f.ground_velocity.abs() >= freeze_speed {
+                        f.locomotion.run_brake_frozen = true;
+                    }
+                } else if f.ground_velocity.abs() <= freeze_speed {
+                    f.locomotion.run_brake_frozen = false;
+                }
+            }
             if f.locomotion.run_brake_frames != 0.0 {
                 f.locomotion.run_brake_frames = (f.locomotion.run_brake_frames - 1.0).max(0.0);
             }
@@ -536,10 +595,16 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
                 enter(f, Action::Wait);
             }
         }
+        // ftCo_TurnRun_Anim (ftCo_TurnRun.c:57-77): while its own marker is
+        // set, first freeze (rate 0), then resume at rate 1 and flip facing
+        // once facing_at_entry * gr_vel <= 0.01 -- the per-entry facing
+        // ftCo_TurnRun_Enter stored at entry (turnrun.accel_mul, read back
+        // through the middle_anim_frame union alias), already captured here
+        // as run_turn_facing, not a fixed per-match resource constant.
         Action::RunTurn => {
             if !f.locomotion.turn_has_turned && f.action_frame >= p.run_turn_flip_frame {
                 f.locomotion.run_turn_waiting = true;
-                if p.run_turn_velocity_scale * f.ground_velocity <= 0.01 {
+                if f.locomotion.run_turn_facing * f.ground_velocity <= 0.01 {
                     f.locomotion.run_turn_waiting = false;
                     f.locomotion.turn_has_turned = true;
                     f.facing = -f.facing;
@@ -547,7 +612,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
             }
             if f.locomotion.turn_has_turned && f.action_frame >= p.run_turn_animation_frames {
                 if input.stick[0] * f.facing >= p.run_threshold {
-                    enter_run(f);
+                    enter_run(f, p.run_turn_lockout_frames.unwrap_or(0.0));
                 } else {
                     enter(f, Action::Wait);
                 }
@@ -601,6 +666,12 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
         // Run figatree's length, then store this frame's rate for the next
         // call. Same wrap rule as Walk's own animation phase.
         Action::Run => {
+            // ftCo_Run.c:96-98: run.x0 counts down by 1.0 per frame while
+            // positive (never otherwise clamped), independent of whether
+            // the float animation-frame resource below is supplied.
+            if f.locomotion.run_lockout > 0.0 {
+                f.locomotion.run_lockout -= 1.0;
+            }
             if let Some(animation) = &data.movement.run_animation {
                 advance_run_animation(f, animation);
             }
@@ -622,12 +693,19 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
 /// 1.0 (`Fighter_ChangeMotionState`'s own `rate = 1` argument), applied on
 /// the first Run animation update, exactly as the walk batch modeled
 /// Walk's own entry rate.
-pub(crate) fn enter_run(f: &mut Fighter) {
+/// `lockout` is `mv.co.run.x0` (`ftCo_Run.c:72`): `fn_800CA5F0` (Dash's own
+/// IASA transition) always supplies `0.0`; `fn_800CA644` (RunTurn's own
+/// Anim-phase re-entry once its flip has finished) supplies
+/// `Parameters::run_turn_lockout_frames` (`ftCommonData.x430`), or `0.0`
+/// when that resource is absent (keeping this codebase's pre-batch
+/// behavior of no lockout).
+pub(crate) fn enter_run(f: &mut Fighter, lockout: f32) {
     enter(f, Action::Run);
     f.locomotion.run = RunState {
         frame: 0.0,
         last_rate: 1.0,
     };
+    f.locomotion.run_lockout = lockout;
 }
 
 fn advance_run_animation(f: &mut Fighter, animation: &RunAnimation) {
@@ -823,14 +901,19 @@ pub(crate) fn update_actions(
             if f.action_frame >= p.dash_run_frame
                 && input.stick[0] * f.facing >= p.run_threshold =>
         {
-            enter_run(f)
+            enter_run(f, 0.0)
         }
-        Action::Run => {
+        // ftCo_Run_IASA (ftCo_Run.c:125-126): while run.x0 > 0.0 (freshly
+        // set by a RunTurn-to-Run re-entry), the whole rest of the IASA
+        // chain -- including this RunTurn/RunBrake entry check -- is
+        // skipped.
+        Action::Run if f.locomotion.run_lockout <= 0.0 => {
             if input.stick[0] * f.facing <= p.turn_threshold {
                 start_run_turn(f, 0);
             } else if input.stick[0].abs() < p.run_threshold {
                 enter(f, Action::RunBrake);
                 f.locomotion.run_brake_frames = p.run_brake_max_frames;
+                f.locomotion.run_brake_frozen = false;
             }
         }
         Action::RunBrake => {
@@ -1097,5 +1180,6 @@ pub fn ground_motion(
 }
 
 pub(crate) fn hold_action_frame(f: &Fighter) -> bool {
-    f.action == Action::RunTurn && f.locomotion.run_turn_waiting
+    (f.action == Action::RunTurn && f.locomotion.run_turn_waiting)
+        || (f.action == Action::RunBrake && f.locomotion.run_brake_frozen)
 }
