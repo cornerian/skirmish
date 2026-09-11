@@ -5,6 +5,7 @@
 *.rvz
 *.slp
 !/tests/fixtures/slippi/*.slp
+!/tests/fixtures/slippi/parity/*.slp
 *.dtm
 *.raw
 *.log
