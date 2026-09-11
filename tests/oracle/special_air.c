@@ -37,8 +37,14 @@ typedef struct Fighter {
 typedef struct { Fighter* user_data; } Fighter_GObj;
 
 typedef struct { float x218, x220, x21C, x224; } FtCommonData;
-static FtCommonData ftCommonData_;
-static FtCommonData* p_ftCommonData = &ftCommonData_;
+/* Thread-local: written per call (the threshold assignments below) and read
+ * back by the included decomp source within the same call; a plain global
+ * here would race exactly like `ftfoxspeciallw.c`'s own copy did (fixed in
+ * `3b56a66`). `p_ftCommonData` is a macro, not a plain pointer, so it
+ * resolves per-thread instead of freezing to whichever thread ran static
+ * init. */
+static _Thread_local FtCommonData ftCommonData_;
+#define p_ftCommonData (&ftCommonData_)
 
 static _Thread_local int fired_table;
 static void ftData_SpecialAirHi_Fox(Fighter_GObj* gobj) {

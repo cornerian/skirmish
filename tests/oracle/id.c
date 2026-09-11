@@ -13,8 +13,14 @@ typedef int32_t s32;
 typedef struct IDEntry { struct IDEntry* next; u32 id; void* data; } IDEntry;
 typedef struct { IDEntry* table[101]; } HSD_IDTable;
 typedef struct { size_t size; } HSD_ObjAllocData;
-static void* oracle_allocations[1024];
-static size_t oracle_allocation_count;
+/* Thread-local: `oracle_id_trace` resets and repopulates these on every
+ * call, and `tests/id_differential.rs`'s tests (including a `proptest!`
+ * block) run under the default parallel test runner; a plain global here
+ * would let one thread's allocation tracking corrupt another's concurrent
+ * call, the same class of race `3b56a66` fixed for the shared
+ * `ftCommonData` struct elsewhere in this directory. */
+static _Thread_local void* oracle_allocations[1024];
+static _Thread_local size_t oracle_allocation_count;
 
 static void HSD_ObjAllocInit(HSD_ObjAllocData* data, size_t size, int alignment)
 {

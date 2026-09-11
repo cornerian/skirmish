@@ -143,8 +143,15 @@ static Fighter* getFighter(Fighter_GObj* gobj) { return GET_FIGHTER(gobj); }
 static ftFox_DatAttrs* getFtSpecialAttrs(Fighter* fp) { return fp->dat_attrs; }
 
 typedef struct { float friction_when_above_walk_speed; } FtCommonData;
-static FtCommonData ftCommonData_ = { 1.0f };
-static FtCommonData* p_ftCommonData = &ftCommonData_;
+/* Thread-local: written per call (see the assignment below) and read back
+ * by the included decomp source within the same call. A plain global here
+ * let one proptest thread's `friction_when_above_walk_speed` bleed into
+ * another's concurrent call, the same race `3b56a66` fixed for
+ * `ftfoxspeciallw.c`/`air_drift_recovery.c`'s own copies of this struct.
+ * `p_ftCommonData` is a macro, not a plain pointer, so it resolves
+ * per-thread instead of freezing to whichever thread ran static init. */
+static _Thread_local FtCommonData ftCommonData_ = { 1.0f };
+#define p_ftCommonData (&ftCommonData_)
 
 /* ---- FAITHFUL: verbatim arithmetic from the pinned source. ---- */
 

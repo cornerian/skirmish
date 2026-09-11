@@ -794,6 +794,36 @@ proptest! {
 }
 
 #[test]
+fn special_air_check_input_regression_from_the_intermittent_c_oracle_race() {
+    // Recorded `arbitrary_special_air_check_input` shrink that failed
+    // intermittently under the default (multi-threaded) test runner:
+    // `oracle_special_air_check_input` (`tests/oracle/special_air.c`) wrote
+    // its per-call thresholds into a plain `static` `FtCommonData`/
+    // `ftCommonData_` instead of a thread-local one (the same class of race
+    // `3b56a66` fixed for the shared `ftCommonData` struct elsewhere), so a
+    // concurrently-running property test on a separate libtest thread could
+    // stomp these thresholds mid-call. Pinned here so a regression in this
+    // adapter (or a real check-input arithmetic regression) is caught even
+    // by a single-threaded run.
+    compare_special_air(
+        true,
+        true,
+        false,
+        true,
+        true,
+        f32::from_bits(1577405011),
+        f32::from_bits(1127699417),
+        f32::from_bits(1793199457),
+        f32::from_bits(2485434146),
+        f32::from_bits(1274847487),
+        f32::from_bits(3007116098),
+        1.0,
+        f32::from_bits(1662328526),
+        true,
+    );
+}
+
+#[test]
 fn boundaries() {
     for &pressed in &[true, false] {
         for &stick in &[0.0, 0.2875, -0.2875, 1.0, -1.0, f32::NAN, f32::INFINITY] {

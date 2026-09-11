@@ -73,17 +73,31 @@ enum {
     GM_HOME_RUN_CONTEST = 32, GM_CAMERA_VS = 42, GM_SINGLE_BUTTON_VS = 44
 };
 
-static MenuInputState mn_804D6BC8;
-static MenuFlow mn_804A04F0;
-static MenuKindData mn_803EB6B0[34];
-static HSD_GObj dummy_gobj;
-static HSD_GObjProc dummy_proc;
-static HSD_GObj* HSD_GObj_CurrentInvokedProcGObj = &dummy_gobj;
-static u8 HSD_GObj_804D783C;
-static u64 triggered[5], repeated[5];
-static bool all_star, sound_test;
-static MenuExitData exit_data;
-static u32 request_kind, request_value, controller_port;
+/* Thread-local, the same fix as `fox_specials.c`/`special_air.c`/
+ * `special_s.c`/`id.c` (see those files' own notes): every one of these is
+ * written per call by this adapter's own host functions below (menu-input
+ * state, the scene-kind table, the mocked GObj/proc pair, edge-trigger
+ * masks, the all-star/sound-test flags, the pending-exit struct, and the
+ * leaf request), and read back by the included decomp source
+ * (`mnmain_original.inc`) within the same call. `tests/menu_differential.rs`
+ * runs its several `#[test]`s -- including a `proptest!` block -- under the
+ * default parallel test runner, so a plain (non-thread-local) global here
+ * would let one concurrently-running test's menu state bleed into another's,
+ * exactly like the race `3b56a66` fixed for the shared `ftCommonData`.
+ * `HSD_GObj_CurrentInvokedProcGObj` is a macro rather than a plain pointer
+ * for the same reason `p_ftCommonData` is: a pointer initialized once at
+ * declaration would only ever resolve to one thread's `dummy_gobj`. */
+static _Thread_local MenuInputState mn_804D6BC8;
+static _Thread_local MenuFlow mn_804A04F0;
+static _Thread_local MenuKindData mn_803EB6B0[34];
+static _Thread_local HSD_GObj dummy_gobj;
+static _Thread_local HSD_GObjProc dummy_proc;
+#define HSD_GObj_CurrentInvokedProcGObj (&dummy_gobj)
+static _Thread_local u8 HSD_GObj_804D783C;
+static _Thread_local u64 triggered[5], repeated[5];
+static _Thread_local bool all_star, sound_test;
+static _Thread_local MenuExitData exit_data;
+static _Thread_local u32 request_kind, request_value, controller_port;
 
 static inline void Menu_DecrementAnimTimer(void)
 {
