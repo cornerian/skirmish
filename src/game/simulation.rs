@@ -9,10 +9,11 @@ use crate::{
     },
 };
 
-pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error> {
+pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
     let geometry = stage_motion::geometry(&data.stage, stage_state.frame);
     let mut action_instances = crate::fighter::instance::Counter::default();
+    let mut attack_instances = crate::fighter::stale::InstanceCounter::default();
     Ok(State {
         next_frame: 0,
         remaining_frames: data.rules.time_limit_frames,
@@ -31,7 +32,10 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
                 0,
                 data.rules.stocks,
                 0,
+                slots[0],
+                true,
                 &mut action_instances,
+                &mut attack_instances,
             )?,
             spawn(
                 data,
@@ -39,23 +43,34 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32) -> Result<State, Error>
                 1,
                 data.rules.stocks,
                 0,
+                slots[1],
+                true,
                 &mut action_instances,
+                &mut attack_instances,
             )?,
         ],
         rng_seed: seed,
-        attack_instances: crate::fighter::stale::InstanceCounter::default(),
+        attack_instances,
         action_instances,
         events: vec![],
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn(
     data: &MatchData,
     geometry: &StageGeometry,
     player: usize,
     stocks: u8,
     invincibility: u32,
+    slot: u32,
+    // The match-start warp-in (`rules.entry`) only ever applies to the
+    // initial match spawn, never a mid-match stock respawn (Melee's own
+    // respawn uses the unrelated, already-implemented Rebirth platform,
+    // not `ftCo_MS_Entry`).
+    is_match_start: bool,
     action_instances: &mut crate::fighter::instance::Counter,
+    attack_instances: &mut crate::fighter::stale::InstanceCounter,
 ) -> Result<Fighter, Error> {
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
@@ -67,7 +82,21 @@ fn spawn(
         knockback: [0.0; 2],
         ground_knockback: 0.0,
         ground_velocity: 0.0,
-        facing: if player == 0 { 1.0 } else { -1.0 },
+        // gmvs.c:1780-1830 (`Player_GetFacingDirection`'s own assignment
+        // rule), applied only when the match-start warp-in is modeled: a
+        // number of pre-existing fixtures park the "other" fighter far off
+        // to one side purely as a non-interacting dummy (its position was
+        // never meant to influence fighter 0's facing), which the general
+        // rule -- correctly -- would read as a real opponent position. The
+        // plain `player == 0` hardcode is kept as the default so every such
+        // fixture is unaffected; `docs/match-start.md` records this scoping.
+        facing: if data.rules.entry.is_some() {
+            crate::fighter::entry::spawn_facing(data.stage.spawns, player)
+        } else if player == 0 {
+            1.0
+        } else {
+            -1.0
+        },
         grounded: false,
         ground_line: None,
         last_ground_line: None,
@@ -94,6 +123,7 @@ fn spawn(
         grab: grab::State::default(),
         ledge: ledge::State::default(),
         death: death::State::default(),
+        entry: entry::State::default(),
         action: Action::Fall,
         action_frame: 0,
         percent: 0.0,
@@ -131,9 +161,28 @@ fn spawn(
     if !fighter.grounded {
         fighter.locomotion.jumps_used = 1;
     }
-    let identity = crate::fighter::action_instance::motion_identity(Action::Fall, None, false);
-    crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
-    crate::fighter::action_instance::flush(&mut fighter.action_instance, action_instances);
+    // `ftCo_800C61B0`: overrides `collision::initialize`'s own Wait/Fall
+    // spawn action with Entry when the match-start warp-in is modeled.
+    // `docs/match-start.md`: `rules.entry.is_none()` keeps today's Fall/Wait
+    // start unchanged. `entry::enter` calls `simulation::enter`, which
+    // already queues its own motion identity and staling transition (unlike
+    // `collision::initialize`'s raw field assignment); `staling::flush`
+    // drains both, matching every other `simulation::enter` call site.
+    if is_match_start && data.rules.entry.is_some() {
+        entry::enter(&mut fighter, slot);
+        staling::flush(
+            &mut fighter,
+            &data.fighters[player],
+            data.rules.staling.as_ref(),
+            attack_instances,
+            action_instances,
+        )?;
+    } else {
+        let identity =
+            crate::fighter::action_instance::motion_identity(fighter.action, None, false);
+        crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
+        crate::fighter::action_instance::flush(&mut fighter.action_instance, action_instances);
+    }
     Ok(fighter)
 }
 
@@ -264,7 +313,22 @@ pub(crate) fn advance(
                 remaining: remaining - 1,
             }
         };
-        for (fighter, input) in state.fighters.iter_mut().zip(inputs) {
+        for (player, (fighter, input)) in state.fighters.iter_mut().zip(inputs).enumerate() {
+            // `docs/match-start.md`: the match-start warp-in still progresses
+            // during Phase::Countdown (Melee's own pre-"GO" period genuinely
+            // shows Entry/EntryStart/EntryEnd on screen), scoped to only the
+            // entry-owned fighters so a `rules.entry.is_none()` match is
+            // byte-for-byte unaffected (still fully frozen, as before this
+            // batch). No landing check here: stage geometry/collision are
+            // not set up this early, and every fixture that exercises this
+            // spawns well above any floor.
+            if entry::owns_action(fighter.action) {
+                entry::update_animation(
+                    fighter,
+                    &data.fighters[player],
+                    data.rules.entry.as_ref(),
+                )?;
+            }
             fighter.previous_input = input;
         }
         return Ok(());
@@ -318,7 +382,10 @@ pub(crate) fn advance(
                     player,
                     fighter.stocks,
                     data.rules.respawn_invincibility_frames,
+                    0,
+                    false,
                     &mut state.action_instances,
+                    &mut state.attack_instances,
                 )?;
                 if let Some(rules) = &data.rules.rebirth {
                     rebirth::enter(
@@ -1185,6 +1252,7 @@ fn update_animation(
         player,
         rules.respawn_invincibility_frames,
     );
+    entry::update_animation(f, data, rules.entry.as_ref())?;
     specials::update_animation(f, data);
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
@@ -1255,6 +1323,11 @@ fn update_actions(
     clank_owns: bool,
     shield_owns: bool,
 ) -> Result<(), Error> {
+    // ftCo_Entry_IASA/ftCo_EntryStart_IASA/ftCo_EntryEnd_IASA are all empty:
+    // no input callback of any kind runs during the match-start warp-in.
+    if entry::owns_action(f.action) {
+        return Ok(());
+    }
     // ftCo_800DF0D0 precedes every input callback.
     smash::update_charge_input(f, input);
     if rebirth::update_actions(
@@ -1399,6 +1472,12 @@ fn update_actions(
 }
 
 fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+    if entry::owns_action(f.action) {
+        // ftCo_EntryStart_Phys/ftCo_EntryEnd_Phys: position is written
+        // directly from the timer curve, not integrated from velocity.
+        entry::move_fighter(f, rules.entry.as_ref());
+        return;
+    }
     let attrs = &data.movement;
     let mut movement = Movement {
         attributes: attrs.physics(),

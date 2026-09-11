@@ -246,6 +246,14 @@ impl Recording {
                             .is_some()
                     {
                         fighter.locomotion.run.frame
+                    } else if matches!(fighter.action, Action::Entry | Action::EntryEnd) {
+                        -1.0
+                    } else if fighter.action == Action::EntryStart {
+                        let age = fighter.action_frame - 1;
+                        match self.initialization.data.fighters[player].entry {
+                            Some(animation) => age.min(animation.start_frames - 1) as f32,
+                            None => age as f32,
+                        }
                     } else {
                         fighter.action_frame as f32
                     };
@@ -3165,4 +3173,77 @@ fn physical_b_drives_file_backed_fox_air_reflector_through_start_loop_and_end() 
             ..
         }
     ));
+}
+
+fn entry_replay_data() -> MatchData {
+    let mut data: MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    data.rules.countdown_frames = 0;
+    data.rules.time_limit_frames = 9_999;
+    data.stage.floor.left = -200.0;
+    data.stage.floor.right = 200.0;
+    data.stage.blast = [-300.0, 300.0, -300.0, 300.0];
+    data.stage.spawns = [[-60.0, 10.0], [20.0, 10.0]];
+    data.rules.entry = Some(skirmish::game::entry::EntryRules {
+        start_frames: 30,
+        end_frames: 30,
+        scale_y: 0.0,
+        invincibility_frames: 0,
+    });
+    for fighter in &mut data.fighters {
+        fighter.trophy_scale = Some(0.9);
+    }
+    data
+}
+
+#[test]
+fn file_backed_match_start_reports_322_323_324_then_fall_and_detects_a_state_id_change() {
+    // Port P1 is Skirmish player 0 (slot 0, delay 5 frames); P3 is player 1
+    // (slot 2, delay 15). `docs/match-start.md`'s replay table is verified
+    // for slots 0 and 3 by `tests/game_entry.rs`'s native test; this file-
+    // backed regression only needs the state-id/age sequence to reach the
+    // file-format round trip, not the exact port slots.
+    let recording = Recording::from_script(entry_replay_data(), 0, vec![IDLE; 70]);
+    assert_eq!(recording.states[0].fighters[0].action, Action::Entry);
+    let start_row = (1..recording.states.len())
+        .find(|&row| recording.states[row].fighters[0].action == Action::EntryStart)
+        .expect("slot 0 must reach EntryStart within the recorded window");
+    let end_row = (start_row..recording.states.len())
+        .find(|&row| recording.states[row].fighters[0].action == Action::EntryEnd)
+        .expect("slot 0 must reach EntryEnd within the recorded window");
+    let fall_row = (end_row..recording.states.len())
+        .find(|&row| recording.states[row].fighters[0].action == Action::Fall)
+        .expect("slot 0 must exit into Fall within the recorded window");
+    assert_eq!(
+        observation::action_state(&recording.states[0].fighters[0], Some(2)),
+        Some(322)
+    );
+    assert_eq!(
+        observation::action_state(&recording.states[start_row].fighters[0], Some(2)),
+        Some(323)
+    );
+    assert_eq!(
+        observation::action_state(&recording.states[end_row].fighters[0], Some(2)),
+        Some(324)
+    );
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+
+    // Corrupt the EntryStart row's own recorded state id and confirm the
+    // comparison reports a mismatch starting exactly there.
+    let changed = recording.bytes(support::Fixture::default(), move |frames| {
+        frames.ports[0].leader.post.state.set(start_row, Some(0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch { frame, checked_frames, .. }
+            if frame == FIRST + start_row as i32 && checked_frames == start_row as u64
+    ));
+    // Fall is reached well before this fixture's synthetic landing would
+    // matter for this test; confirming the row exists documents that the
+    // exit transition itself was recorded, not asserted further here.
+    let _ = fall_row;
 }

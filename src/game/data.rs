@@ -81,6 +81,11 @@ pub struct Rules {
     pub respawn_invincibility_frames: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebirth: Option<super::rebirth::Rules>,
+    /// The match-start warp-in (Entry/EntryStart/EntryEnd, `docs/
+    /// match-start.md`). `None` keeps every fighter spawning directly into
+    /// `Action::Fall`, unchanged from before this resource existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<super::entry::EntryRules>,
     pub friction_above_walk: f32,
     pub walk_accel_taper_gain: f32,
     pub fast_fall_threshold: f32,
@@ -193,6 +198,16 @@ pub struct FighterData {
     pub surface_tech: Option<super::damage::SurfaceTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_jump: Option<super::wall_jump::Attributes>,
+    /// `co_attrs.trophy_scale` (`ft/types.h:748`, `ftCo_DatAttrs` +0x110).
+    /// Read only at the Entry -> EntryStart transition
+    /// (`rules.entry.is_some()`); absent contributes no amplitude (`0.0`),
+    /// matching an unset optional entry-animation source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trophy_scale: Option<f32>,
+    /// The EntryStart figatree's own frame count, distinct from
+    /// `rules.entry`'s action-duration timers (`docs/match-start.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<super::entry::EntryAnimation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_poses: Option<super::damage::DamagePoseAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

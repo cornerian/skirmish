@@ -1,5 +1,161 @@
 # Local validation provenance
 
+The 2026-09-11 match-start (Entry/EntryStart/EntryEnd) coverage batch is
+recorded at:
+
+`/mnt/archive/runs/skirmish-match-start-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, the complete
+native workspace (without and with the `c-oracle` feature, debug and
+release) and `git diff --check`, all green: 835 passed/19 ignored without
+`c-oracle`, 1140 passed/19 ignored with it (both debug and release; this
+was a net-new-coverage batch, not a behavior-preserving refactor, so no
+pre-batch baseline comparison applies the way it does for the
+specials-framework entry below). `game::entry` (resource,
+per-fighter timer/Y-curve state machine, `src/game/entry.rs`) and
+`fighter::entry` (the pure `entry_delay`, `spawn_facing`, `amplitude`,
+`start_progress`, `end_progress` helpers, `src/fighter/entry.rs`) cover
+`Action::Entry`/`EntryStart`/`EntryEnd` (Slippi 322/323/324,
+`docs/match-start.md`), the match's very first frames.
+
+Entry-owned fighters are folded into the *existing* per-frame pipeline
+rather than given a bypass branch (unlike `rebirth`/`death`/`ledge`): three
+targeted hooks -- `entry::update_animation` inside `simulation::
+update_animation`'s own dispatch chain (the Anim-phase timer/transition
+logic, matching each pinned function's exact control flow, including
+`ftCo_Entry_Anim`'s check-before-decrement whose unconditional trailing
+decrement lands on EntryStart's freshly assigned timer on a transition
+frame), an early return in `simulation::update_actions` (matching the
+pinned source's genuinely empty `_IASA` callbacks for all three states),
+and an early return in `simulation::move_fighter` (`entry::move_fighter`,
+the Phys-phase position write) -- so `collision::sample`/`collision::
+resolve`/`staling::flush` run unmodified and landing/wall/ceiling contact
+works for free. `Match::new_with_slots` (new; `Match::new` now delegates to
+it with `[0, 1]`) threads each player's real Slippi port (P1=0..P4=3) into
+the per-port entry delay; `crates/skirmish-replay/src/match_validation.rs`'s
+`initialize` supplies it from `Initialization.ports`.
+
+Two decomp facts confirmed directly against `ft_0C31.c` that this batch's
+own preceding design note (`docs/match-start.md`'s predecessor) did not
+have: every one of `ftCo_800C6408`/`ftCo_800C6B6C`/`ftCo_EntryEnd_Coll`
+branches on `Fighter::x221F_b4` (a secondary-entity "follow the leader"
+path, e.g. Ice Climbers' partner) before touching position -- only
+`!x221F_b4` is ported, since Skirmish models one fighter per port; and
+`ftCo_EntryStart_Coll`/`ftCo_EntryEnd_Coll` both set `box.bottom = -x28`
+the same frame Phys writes `position.y = x4 + x28`, so the box's
+world-space bottom is *always exactly the spawn height* (`x4`) for the
+whole sequence -- `game::entry` uses this to let Entry-owned fighters
+share the ordinary collision pipeline instead of porting `ft_80083E64`/
+`ft_800846B0`'s bespoke sweep (whose bodies live outside `ft_0C31.c`),
+documented as a simplification rather than a fresh guess. The design
+note's two open questions are both resolved, not left open: no separate
+"input gate" exists or is needed, since all three states' `_IASA`
+callbacks are unconditionally empty (confirmed directly), so nothing reads
+pad state until `ftCommon_8007D92C` exits into ordinary Fall/Wait, where
+Skirmish's existing input dispatch already resumes unmodified; and
+`Phase::Countdown` is extended narrowly (Anim only, for entry-owned
+fighters, before its early return) rather than fully reworked, since the
+shipped gameplay pack's own `countdown_frames` (`2`) is an unrelated
+pre-game buffer, not Melee's 123-frame pre-"GO" period -- documented as a
+scoping decision in `docs/match-start.md`, not a silent limitation.
+
+A genuine bit-exactness bug was found and fixed by the oracle, not assumed
+correct: `ftCo_800C6408`'s `1.497345` is an unsuffixed C double literal, so
+`1.497345 * sp48.y` computes in `double` before truncating to `f32` on
+assignment; `fighter::entry::amplitude` initially computed directly in
+`f32` (Rust's own literal-type inference), differing by one ulp from the
+oracle for generic inputs -- caught immediately by `tests/
+entry_differential.rs`'s `entry_start_enter_amplitude_matches_the_1_
+497345_literal` proptest and fixed by promoting to `f64` explicitly to
+match the source. Separately, `EntryStart`'s externally observed age
+needed a `-1` adjustment relative to the internal `action_frame`
+(`simulation::advance`'s own generic end-of-frame `action_frame += 1`
+already runs once more before a transition frame's state is externally
+observable, the same pre-existing behavior `crates/cli/tests/
+replay_match.rs`'s idle-fighter regression already documents for its own
+restart row) to recover the replay-verified 0-based state_age;
+`crates/skirmish-replay/src/observation.rs`'s `observe` publishes
+`action_frame - 1` for `Action::EntryStart` and the fixed `-1` for
+`Action::Entry`/`Action::EntryEnd`. `animation_index` maps `ftCo_
+SM_EntryStart` to `238`, counted directly from `kinds/ftCommon/
+forward.h`'s submotion enum and cross-checked against this codebase's own
+already-verified `Wait1_0 == 2`/`Fall == 20`/`Landing == 35` entries in the
+same enum. The `player == 0` spawn-facing hardcode is replaced by the
+`gmvs.c` two-slot rule (`fighter::entry::spawn_facing`) only when
+`rules.entry` is `Some`: applying it unconditionally broke three
+pre-existing `tests/game_edges.rs` cases that park a second fighter far to
+one side purely as a non-interacting dummy, which the general rule --
+correctly -- reads as a real opponent position; `rules.entry.is_none()`
+keeps the exact old hardcode. No other contradiction between this batch's
+implementation and the pinned source was found.
+
+A follow-up correction (same batch, before merge): the real `fox-fd.slp`
+recording's own `state_age` for EntryStart advances 0..10 and then holds
+at 10 for the rest of the state, while `position.y` keeps changing
+correctly the whole time. This is not a gap -- it is `state_age` reporting
+the character's own (much shorter) EntryStart *animation* frame, not the
+30-frame `x6BC` action duration, exactly the same "reported age caps at
+the figatree length" semantics Skirmish already models for Walk/Run/idle.
+`FighterData.entry: Option<entry::EntryAnimation { start_frames: u32 }>`
+(the figatree's own frame count, 11 for Fox) makes this explicit;
+`crates/skirmish-replay/src/observation.rs`'s `observe` reports
+`min(action_frame - 1, start_frames - 1)` for EntryStart when supplied,
+and keeps the previous uncapped approximation otherwise.
+`tests/game_entry.rs` gained two tests pinning the exact replay values
+(age 0 at EntryStart's first frame, held at 10 from there through the
+frame before EntryEnd) and confirming the uncapped default is unchanged
+when the resource is absent. The local patched pack now also carries
+`fighter.entry {11}` for both Fox fighters; the real-file measurement
+below was re-run after this correction and reports the same outcome.
+
+Resource shape: `Rules.entry: Option<entry::EntryRules { start_frames:
+u32 (x6BC), end_frames: u32 (x6C0), scale_y: f32 (x6C4, visual only),
+invincibility_frames: u32 (x6C8) }>`; `FighterData.trophy_scale:
+Option<f32>` (`co_attrs.trophy_scale`); `FighterData.entry:
+Option<entry::EntryAnimation { start_frames: u32 }>` (the EntryStart
+figatree's own frame count, distinct from `Rules.entry`'s action-duration
+timers despite the shared field name); `Fighter.entry: entry::State
+{ timer, y0, scale, amplitude, offset }` (`Fighter::mv.co.entry`, one
+`timer` field deliberately reused verbatim across all three states,
+matching the source's own union). `rules.entry.is_none()` keeps every
+fighter spawning directly into `Action::Fall`/`Action::Wait`, unchanged
+from before this resource existed.
+
+`src/fighter/entry.rs` adds 6 unit tests for `entry_delay`, `spawn_facing`
+(including a reversed spawn layout the old hardcode gets backwards),
+`amplitude` and the progress fractions. `tests/game_entry.rs` (12 tests)
+covers: the per-slot entry delay and `gmvs.c` facing on spawn; the
+complete replay-verified frame table (`docs/match-start.md`) reproduced
+for slots 0 and 3 (Y values checked to five decimal places); the
+EntryStart age-counts-from-zero convention and its figatree-length cap
+(both present and absent); landing on a floor within reach; the
+invincibility branch behind a nonzero `invincibility_frames`; no input or
+side effects during any of the three states; `rules.entry == None`
+keeping the pre-batch Fall start and facing hardcode; checkpoints
+mid-sequence; and invalid rules (zero frame counts, non-finite/negative
+`trophy_scale`, a zero-length `entry` animation). `tests/
+entry_differential.rs` (6 tests, 512 proptest
+cases each plus exact boundaries) pins `ftCo_Entry_Anim`/`ftCo_800C6408`/
+`ftCo_EntryStart_Anim`/`ftCo_EntryStart_Phys`/`ftCo_800C6B6C`/`ftCo_
+EntryEnd_Anim`/`ftCo_EntryEnd_Phys` from a new `entry` snapshot of
+`ft_0C31.c`, comparing the timer/transition logic and the Y-curve
+arithmetic (including the `x6BC` divisor EntryEnd's own Phys uses instead
+of `x6C0`) against a Rust mirror, bit-exactly. `crates/cli/tests/
+replay_match.rs` gains a file-backed regression driving both fighters
+through Entry/EntryStart/EntryEnd/Fall, matching its own generated Peppi
+bytes and reporting a `Mismatch` starting at the exact row a corrupted
+EntryStart state id is planted.
+
+Real-file measurement against the pinned `fox-fd.slp` recording (see
+`docs/parity.md`'s entry for this batch): the patched local copy of
+gameplay export v1 still diverges at frame -123, unmoved, but now for an
+unrelated, pre-existing reason (export v1 has no `rules.shield`, so
+`shield` diverges on the very same frame Entry's own fields would first
+matter) -- the Entry sequence's own correctness is verified instead by the
+native and C-oracle tests above, not by this measurement yet.
+`fox-fd-baseline.json` is left at -123, matching `docs/match-start.md`'s
+own instruction.
+
 The 2026-09-11 Fox/Falco down special (Reflector) batch is recorded at:
 
 `/mnt/archive/runs/skirmish-fox-down-special-20260911-verified`

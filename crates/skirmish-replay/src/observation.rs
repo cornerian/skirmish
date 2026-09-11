@@ -336,6 +336,32 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 && fighter_data.movement.run_animation.is_some()
             {
                 fighter.locomotion.run.frame
+            } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
+                // Both are animation-less (`ftCo_SM_None`); Melee's own
+                // state_age stays -1 for the whole state, unlike EntryStart,
+                // which counts its own animation from 0.
+                -1.0
+            } else if fighter.action == game::Action::EntryStart {
+                // `simulation::enter` resets `action_frame` to 0 on the
+                // transition frame, but the shared per-frame tail already
+                // increments it once more before this same frame's state is
+                // externally observed (the same reason Walk/Run/idle track
+                // their own dedicated float frame instead of reusing
+                // `action_frame` directly for age reporting); subtracting 1
+                // recovers the replay-verified 0-based count
+                // (`docs/match-start.md`'s frame table). Slippi's state_age
+                // here is the tracked *animation* frame (the character's own
+                // EntryStart figatree), not the 30-frame action duration: it
+                // advances 0..`entry.start_frames - 1` then holds there for
+                // the rest of EntryStart, confirmed directly against
+                // `fox-fd.slp` (Fox holds at 10, an 11-frame figatree);
+                // when `fighter_data.entry` is
+                // absent, the age is left uncapped (today's approximation).
+                let age = fighter.action_frame - 1;
+                match fighter_data.entry {
+                    Some(animation) => age.min(animation.start_frames - 1) as f32,
+                    None => age as f32,
+                }
             } else {
                 fighter.action_frame as f32
             };
@@ -452,6 +478,10 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         Respawn => 11,
         Rebirth => 12,
         RebirthWait => 13,
+        // `ftCo_MS_Entry`/`EntryStart`/`EntryEnd` (`docs/match-start.md`).
+        Entry => 322,
+        EntryStart => 323,
+        EntryEnd => 324,
         Wait => 14,
         // 15/16/17 by walk kind (Slow/Middle/Fast); stays 15 whenever
         // MovementData.walk_animation is absent, since the kind is then
@@ -660,7 +690,11 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
 pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option<u32> {
     let state = action_state(fighter, character)?;
     Some(match state {
-        0..=3 | 5 | 9..=11 | 237 => u32::MAX,
+        // ftCo_SM_None (Entry/EntryEnd have no sub-motion of their own);
+        // ftCo_SM_EntryStart is index 238 in the same enum
+        // (`ftCommon/forward.h:634-873`, counted from `ftCo_SM_None = -1`).
+        0..=3 | 5 | 9..=11 | 237 | 322 | 324 => u32::MAX,
+        323 => 238,
         4 | 6 | 38 => 29,
         7 => 0,
         8 => 1,
@@ -1337,6 +1371,9 @@ mod tests {
             (game::Action::ThrowLw, 222, 250),
             (game::Action::FlyReflectCeiling, 248, 214),
             (game::Action::DeadUpFallHitCameraIce, 10, u32::MAX),
+            (game::Action::Entry, 322, u32::MAX),
+            (game::Action::EntryStart, 323, 238),
+            (game::Action::EntryEnd, 324, u32::MAX),
         ] {
             fighter.action = action;
             assert_eq!(action_state(&fighter, Some(2)), Some(state), "{action:?}");

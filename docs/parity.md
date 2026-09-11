@@ -80,6 +80,40 @@ matched yet. The export also models only Fox's jab as an attack; every other
 sub-action is absent from the data. The baseline file records this number
 and must move forward as batches land.
 
+**Match-start measurement (2026-09-11, same v1 export, patched locally, not
+committed):** `docs/match-start.md`'s `game::entry` batch was measured by
+copying the export to `/mnt/shared/tmp/skirmish-gameplay-v1-entry/` and
+adding `rules.entry {30, 30, 0.0, 0}`, `trophy_scale: 0.9` (solved
+bit-exactly from the replay's own recorded EntryEnd Y bits, `0x41358fd0` at
+frame -89, against `y0 (10.0, also read directly from the replay) + 1.497345
+* trophy_scale`) and `entry {11}` (the EntryStart figatree length that
+caps the reported `state_age`, also confirmed directly from the replay's
+own recorded values) to both fighters in that copy's
+`fox-fd/match-data.json`. `make-initialization` + `validate-replay
+--report` against this patched copy still report the first divergent
+frame as **-123**, unmoved from the
+unpatched measurement above, but for a different, pre-existing reason
+unrelated to match-start: the differing field is **`shield`** (expected
+`0x42700000` = 60.0, the real replay's starting shield health; Skirmish
+reports `0x00000000`), because export v1's `match-data.json` has no
+`rules.shield`/per-fighter `shield` resource at all (confirmed directly:
+absent from both the original and the patched copy), so every fighter
+spawns with `shield.health == 0.0` regardless of match-start modeling
+(`game::simulation::spawn`'s `data.rules.shield.as_ref().map_or(0.0, ...)`).
+This pre-existing gap already blocked frame -123 before this batch and
+still does after it; the Entry sequence's own correctness is not visible
+through this specific real-file comparison at all yet, since the shield
+field diverges on the very same frame Entry's own fields would first need
+to agree. It is independently verified instead by `tests/game_entry.rs`'s
+`the_replay_verified_frame_table_is_reproduced_for_slots_zero_and_three`
+(the replay-verified Y-curve table above, bit-checked against a synthetic
+fixture with the same `trophy_scale`/frame counts) and `tests/
+entry_differential.rs`'s C-oracle comparison, not by this measurement.
+`fox-fd-baseline.json` is left at -123, matching the note's own instruction
+(pack v1 has no `entry` rules; CI is unaffected). A future batch modeling
+`rules.shield` (or a v2 export that includes it) is a prerequisite for this
+measurement to ever move past -123 at all, independent of match-start.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

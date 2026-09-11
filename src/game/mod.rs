@@ -13,6 +13,7 @@ pub mod dash;
 pub mod data;
 pub mod death;
 pub mod edge;
+pub mod entry;
 pub mod escape;
 pub mod escape_air;
 pub mod grab;
@@ -181,6 +182,12 @@ pub enum Action {
     CliffEscape,
     Rebirth,
     RebirthWait,
+    /// Slippi 322, state age -1. `ftCo_Entry_Anim`. `docs/match-start.md`.
+    Entry,
+    /// Slippi 323, state age counts from 0. `ftCo_EntryStart_Anim`/`_Phys`.
+    EntryStart,
+    /// Slippi 324, state age -1. `ftCo_EntryEnd_Anim`/`_Phys`.
+    EntryEnd,
     SpecialN,
     SpecialAirN,
     /// Slippi 347 (`ftFx_MS_SpecialSStart = ftCo_MS_Count + 6`, confirmed
@@ -314,6 +321,11 @@ pub struct Fighter {
     pub grab: grab::State,
     pub ledge: ledge::State,
     pub death: death::State,
+    /// `Fighter::mv.co.entry`, shared by Entry/EntryStart/EntryEnd. Read
+    /// only while `entry::owns_action(action)`, but not reset by every
+    /// other transition (unlike `dash`/`smash`/`idle`) since it must
+    /// persist across the Entry -> EntryStart -> EntryEnd sequence itself.
+    pub entry: entry::State,
     pub action: Action,
     pub action_frame: u32,
     pub percent: f32,
@@ -507,11 +519,21 @@ pub enum Error {
 
 impl Match {
     pub fn new(data: MatchData, seed: u32) -> Result<Self, Error> {
+        Self::new_with_slots(data, seed, [0, 1])
+    }
+
+    /// `slots` is each player's 0-indexed port (P1=0..P4=3), used only when
+    /// `data.rules.entry` is `Some` (the per-port entry delay,
+    /// `crate::fighter::entry::entry_delay`); every other resource profile
+    /// ignores it. Callers that know a replay's real ports (`make-
+    /// initialization`) should supply them; every other caller keeps using
+    /// `new`, which defaults to `[0, 1]` (today's two-player convention).
+    pub fn new_with_slots(data: MatchData, seed: u32, slots: [u32; 2]) -> Result<Self, Error> {
         validation::validate(&data)?;
         let resource_id =
             Sha256::digest(serde_json::to_vec(&data).map_err(|e| Error::Data(e.to_string()))?)
                 .into();
-        let state = simulation::initial_state(&data, seed)?;
+        let state = simulation::initial_state(&data, seed, slots)?;
         validation::state(&state)?;
         Ok(Self {
             data: Arc::new(data),

@@ -109,6 +109,17 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     if let Some(rebirth) = &rules.rebirth {
         super::rebirth::validate(rebirth, rules.respawn_invincibility_frames)?;
     }
+    if let Some(entry) = &rules.entry {
+        require(
+            entry.start_frames > 0
+                && entry.start_frames < 1_000_000
+                && entry.end_frames > 0
+                && entry.end_frames < 1_000_000
+                && entry.invincibility_frames < 1_000_000
+                && finite([entry.scale_y]),
+            "invalid explicit entry (match-start warp-in) rules",
+        )?;
+    }
     if let Some(death) = &rules.death {
         super::death::validate(death)?;
         require(
@@ -590,6 +601,18 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(taunt) = &fighter.taunt {
             taunt::validate(taunt, fighter)?;
         }
+        require(
+            fighter
+                .trophy_scale
+                .is_none_or(|scale| scale.is_finite() && (0.0..=1_000.0).contains(&scale)),
+            "invalid trophy_scale",
+        )?;
+        require(
+            fighter.entry.is_none_or(|animation| {
+                animation.start_frames > 0 && animation.start_frames < 1_000_000
+            }),
+            "invalid entry animation frame count",
+        )?;
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
             CollisionBox::Fixed { source } => require(
@@ -986,7 +1009,7 @@ mod tests {
             "../../tests/fixtures/game/integration-match.json"
         ))
         .unwrap();
-        let mut snapshot = super::simulation::initial_state(&data, 0).unwrap();
+        let mut snapshot = super::simulation::initial_state(&data, 0, [0, 1]).unwrap();
         for (damage, knockback) in [(f32::NAN, 1.0), (1.0, f32::INFINITY)] {
             snapshot.events = vec![Event::Hit {
                 attacker: 0,

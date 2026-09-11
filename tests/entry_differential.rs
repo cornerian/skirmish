@@ -1,0 +1,233 @@
+//! Match-start warp-in (Entry/EntryStart/EntryEnd) timers and Y curve,
+//! checked bit-exactly against the pinned `ft_0C31.c` (`entry.functions.json`,
+//! `docs/match-start.md`), including the `x6BC` divisor EntryEnd's own Phys
+//! uses instead of `x6C0`.
+#![cfg(feature = "c-oracle")]
+#![allow(unsafe_code)]
+
+use proptest::prelude::*;
+use skirmish::fighter::entry::{amplitude, end_progress, start_progress};
+
+#[link(name = "skirmish_oracle", kind = "static")]
+unsafe extern "C" {
+    fn oracle_entry_anim(
+        timer: *mut i32,
+        trophy_scale: f32,
+        scale_y: f32,
+        start_frames: i32,
+        out_timer: *mut i32,
+        out_x20: *mut f32,
+        out_x24: *mut f32,
+    ) -> i32;
+    fn oracle_entry_start_frame(
+        timer: *mut i32,
+        x4: f32,
+        x20: f32,
+        start_frames: i32,
+        end_frames: i32,
+        out_timer: *mut i32,
+        out_x28: *mut f32,
+        out_y: *mut f32,
+    ) -> i32;
+    fn oracle_entry_end_frame(
+        timer: *mut i32,
+        x4: f32,
+        x20: f32,
+        start_frames: i32,
+        flag_bit4: bool,
+        invincibility_frames: i32,
+        out_timer: *mut i32,
+        out_x28: *mut f32,
+        out_y: *mut f32,
+        out_invincibility_applied: *mut i32,
+        out_invincibility_value: *mut i32,
+    ) -> i32;
+    fn oracle_entry_start_enter(
+        trophy_scale: f32,
+        scale_y: f32,
+        start_frames: i32,
+        out_timer: *mut i32,
+        out_x24: *mut f32,
+        out_x20: *mut f32,
+    );
+    fn oracle_entry_end_enter(
+        x4: f32,
+        x20: f32,
+        end_frames: i32,
+        out_timer: *mut i32,
+        out_y: *mut f32,
+    );
+}
+
+/// Both NaN, or exactly the same bits: NaN payload propagation through
+/// arithmetic is unspecified (an existing hardening idiom used by several
+/// other differential tests, e.g. `ground_launch_differential.rs`), so a
+/// bit-exact comparison must not fail two independently computed NaNs
+/// against each other.
+fn same_float(a: f32, b: f32) {
+    if a.is_nan() || b.is_nan() {
+        assert!(a.is_nan() && b.is_nan(), "{a} != {b}");
+    } else {
+        assert_eq!(a.to_bits(), b.to_bits(), "{a} != {b}");
+    }
+}
+
+proptest! {
+    /// `ftCo_800C6408`'s amplitude formula, scoped to `scale_y == 1.0`
+    /// (Skirmish keeps no separate uniform fighter scale, matching
+    /// `game::entry::enter_start`'s own assumption).
+    #[test]
+    fn entry_start_enter_amplitude_matches_the_1_497345_literal(
+        trophy_scale in prop::num::f32::ANY,
+        start_frames in 1u32..=10_000,
+    ) {
+        let (mut timer, mut x24, mut x20) = (0i32, 0.0f32, 0.0f32);
+        unsafe {
+            oracle_entry_start_enter(
+                trophy_scale, 1.0, start_frames as i32, &mut timer, &mut x24, &mut x20,
+            );
+        }
+        prop_assert_eq!(timer as u32, start_frames);
+        same_float(x24, trophy_scale);
+        same_float(x20, amplitude(trophy_scale));
+    }
+
+    /// `ftCo_Entry_Anim`: the transition (if any) runs first, and the
+    /// unconditional trailing decrement always lands on whatever timer
+    /// value is current *after* that -- EntryStart's own fresh `start_frames`
+    /// on a transition frame, or the plain countdown otherwise.
+    #[test]
+    fn entry_anim_transition_and_shared_timer_decrement(
+        timer_in in 0u32..2_000,
+        trophy_scale in -10.0f32..10.0,
+        start_frames in 1u32..=10_000,
+    ) {
+        let mut timer = timer_in as i32;
+        let (mut out_timer, mut out_x20, mut out_x24) = (0i32, 0.0f32, 0.0f32);
+        let transitioned = unsafe {
+            oracle_entry_anim(
+                &mut timer, trophy_scale, 1.0, start_frames as i32,
+                &mut out_timer, &mut out_x20, &mut out_x24,
+            )
+        };
+        if timer_in == 0 {
+            prop_assert_ne!(transitioned, 0);
+            prop_assert_eq!(out_timer as u32, start_frames - 1);
+            same_float(out_x24, trophy_scale);
+            same_float(out_x20, amplitude(trophy_scale));
+        } else {
+            prop_assert_eq!(transitioned, 0);
+            prop_assert_eq!(out_timer as u32, timer_in - 1);
+        }
+    }
+
+    /// `ftCo_EntryStart_Anim` (decrement-then-check) followed by whichever
+    /// Phys is current afterward: `ftCo_EntryStart_Phys`'s `(x6BC - timer) /
+    /// x6BC`, or -- on the exact frame it transitions -- `ftCo_EntryEnd_Phys`
+    /// at full progress (`x6BC` divisor, matching the design note's cited
+    /// fact that EntryEnd's own Phys divides by `x6BC`, not `x6C0`).
+    #[test]
+    fn entry_start_frame_matches_the_progress_fraction(
+        timer_in in 1u32..2_000,
+        x4 in -1_000.0f32..1_000.0,
+        x20 in -1_000.0f32..1_000.0,
+        start_frames in 1u32..=2_000,
+        end_frames in 1u32..=2_000,
+    ) {
+        let mut timer = timer_in as i32;
+        let (mut out_timer, mut out_x28, mut out_y) = (0i32, 0.0f32, 0.0f32);
+        let transitioned = unsafe {
+            oracle_entry_start_frame(
+                &mut timer, x4, x20, start_frames as i32, end_frames as i32,
+                &mut out_timer, &mut out_x28, &mut out_y,
+            )
+        };
+        if timer_in == 1 {
+            prop_assert_ne!(transitioned, 0);
+            prop_assert_eq!(out_timer as u32, end_frames);
+            let t = end_progress(end_frames, start_frames);
+            same_float(out_x28, x20 * t);
+            same_float(out_y, x4 + x20 * t);
+        } else {
+            prop_assert_eq!(transitioned, 0);
+            prop_assert_eq!(out_timer as u32, timer_in - 1);
+            let t = start_progress(out_timer as u32, start_frames);
+            same_float(out_x28, x20 * t);
+            same_float(out_y, x4 + x20 * t);
+        }
+    }
+
+    /// `ftCo_EntryEnd_Anim` (decrement-then-check; the invincibility branch
+    /// and `ftCommon_8007D92C` exit only fire once timer reaches 0) followed
+    /// by `ftCo_EntryEnd_Phys` on a non-exit frame: `timer / x6BC`.
+    #[test]
+    fn entry_end_frame_matches_the_x6bc_divisor_and_exit_gate(
+        timer_in in 1u32..2_000,
+        x4 in -1_000.0f32..1_000.0,
+        x20 in -1_000.0f32..1_000.0,
+        start_frames in 1u32..=2_000,
+        flag_bit4 in any::<bool>(),
+        invincibility_frames in 0u32..=1_000,
+    ) {
+        let mut timer = timer_in as i32;
+        let (mut out_timer, mut out_x28, mut out_y, mut applied, mut value) =
+            (0i32, 0.0f32, 0.0f32, 0i32, 0i32);
+        let exited = unsafe {
+            oracle_entry_end_frame(
+                &mut timer, x4, x20, start_frames as i32, flag_bit4, invincibility_frames as i32,
+                &mut out_timer, &mut out_x28, &mut out_y, &mut applied, &mut value,
+            )
+        };
+        if timer_in == 1 {
+            prop_assert_ne!(exited, 0);
+            prop_assert_eq!(out_timer, 0);
+            if flag_bit4 {
+                prop_assert_eq!(applied, 1);
+                prop_assert_eq!(value as u32, invincibility_frames);
+            } else {
+                prop_assert_eq!(applied, 0);
+            }
+        } else {
+            prop_assert_eq!(exited, 0);
+            prop_assert_eq!(out_timer as u32, timer_in - 1);
+            let t = end_progress(out_timer as u32, start_frames);
+            same_float(out_x28, x20 * t);
+            same_float(out_y, x4 + x20 * t);
+        }
+    }
+}
+
+#[test]
+fn entry_end_enter_writes_the_full_amplitude_position() {
+    let (mut timer, mut y) = (0i32, 0.0f32);
+    unsafe {
+        oracle_entry_end_enter(10.0, 1.347_610_5, 30, &mut timer, &mut y);
+    }
+    assert_eq!(timer, 30);
+    assert_eq!(y, 11.347_61);
+}
+
+#[test]
+fn boundary_timers_and_frame_counts() {
+    for (timer_in, start_frames) in [(0u32, 1u32), (0, 10_000), (1, 1)] {
+        let mut timer = timer_in as i32;
+        let (mut out_timer, mut out_x20, mut out_x24) = (0i32, 0.0f32, 0.0f32);
+        let transitioned = unsafe {
+            oracle_entry_anim(
+                &mut timer,
+                0.9,
+                1.0,
+                start_frames as i32,
+                &mut out_timer,
+                &mut out_x20,
+                &mut out_x24,
+            )
+        };
+        if timer_in == 0 {
+            assert_ne!(transitioned, 0);
+            assert_eq!(out_timer as u32, start_frames - 1);
+        } else {
+            assert_eq!(transitioned, 0);
+        }
+    }
+}

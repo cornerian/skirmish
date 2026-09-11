@@ -24,7 +24,15 @@ pub fn initialize(initialization: &Initialization) -> Result<game::Match> {
         initialization.ports[0] != initialization.ports[1],
         "duplicate player ports"
     );
-    let mut game = game::Match::new(initialization.data.clone(), initialization.seed)?;
+    // `docs/match-start.md`: real port slots (P1=0..P4=3) feed the per-port
+    // entry delay when `rules.entry` is present; every other resource
+    // profile ignores them.
+    let slots = [
+        initialization.ports[0] as u32,
+        initialization.ports[1] as u32,
+    ];
+    let mut game =
+        game::Match::new_with_slots(initialization.data.clone(), initialization.seed, slots)?;
     for input in &initialization.warmup {
         game.step(*input)?;
     }
