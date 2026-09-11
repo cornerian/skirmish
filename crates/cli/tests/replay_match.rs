@@ -2387,6 +2387,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
     let directory = tempfile::tempdir().unwrap();
     let replay_path = directory.path().join("native-match.slp");
     let initialization_path = directory.path().join("initialization.json");
+    let report_path = directory.path().join("report.json");
     let initialization = serde_json::to_vec(&recording.initialization).unwrap();
     fs::write(&initialization_path, initialization).unwrap();
     for mismatch in [false, true] {
@@ -2401,6 +2402,8 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             .arg(&replay_path)
             .arg("--initialization")
             .arg(&initialization_path)
+            .arg("--report")
+            .arg(&report_path)
             .output()
             .unwrap();
         assert_eq!(
@@ -2410,6 +2413,10 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        // `--report` writes exactly the same JSON also printed to stdout, so
+        // CI can read the outcome without capturing process output.
+        let written: Value = serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
+        assert_eq!(report, written);
         assert_eq!(report["policy"], "fighter-post-v11");
         assert_eq!(report["initialization_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(
@@ -2423,6 +2430,73 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             assert_eq!(report["outcome"]["checked_frames"], recording.inputs.len());
         }
     }
+}
+
+#[test]
+fn cli_chains_make_initialization_into_validate_replay_for_a_self_recorded_fox_battlefield_replay()
+{
+    // `support::Fixture`'s defaults already record P1/P3 as human Fox players
+    // with 4 stocks each on stage 31 (Battlefield); naming the match data to
+    // match lets `make-initialization` accept it without inventing a real
+    // export. This is a self-recorded regression, not independent Melee
+    // evidence; see docs/parity.md.
+    let mut data: MatchData = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    data.stage.name = "Battlefield".to_string();
+    data.rules.stocks = 4;
+    for fighter in &mut data.fighters {
+        fighter.name = "Fox".to_string();
+    }
+    let recording = Recording::from_script(data, 7, vec![IDLE; 4]);
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+
+    let directory = tempfile::tempdir().unwrap();
+    let replay_path = directory.path().join("self-recorded.slp");
+    let match_data_path = directory.path().join("match-data.json");
+    let initialization_path = directory.path().join("initialization.json");
+    let report_path = directory.path().join("report.json");
+    fs::write(&replay_path, &bytes).unwrap();
+    fs::write(
+        &match_data_path,
+        serde_json::to_vec(&recording.initialization.data).unwrap(),
+    )
+    .unwrap();
+
+    let make = Command::new(env!("CARGO_BIN_EXE_skirmish"))
+        .arg("make-initialization")
+        .arg("--match-data")
+        .arg(&match_data_path)
+        .arg("--replay")
+        .arg(&replay_path)
+        .arg("--output")
+        .arg(&initialization_path)
+        .output()
+        .unwrap();
+    assert!(
+        make.status.success(),
+        "{}",
+        String::from_utf8_lossy(&make.stderr)
+    );
+
+    let validate = Command::new(env!("CARGO_BIN_EXE_skirmish"))
+        .arg("validate-replay")
+        .arg(&replay_path)
+        .arg("--initialization")
+        .arg(&initialization_path)
+        .arg("--report")
+        .arg(&report_path)
+        .output()
+        .unwrap();
+    assert!(
+        validate.status.success(),
+        "{}",
+        String::from_utf8_lossy(&validate.stderr)
+    );
+    let report: Value = serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
+    assert_eq!(report["outcome"]["status"], "matched");
+    assert_eq!(report["outcome"]["checked_frames"], 4);
 }
 
 fn edge_replay_data() -> MatchData {

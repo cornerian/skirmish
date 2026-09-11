@@ -216,6 +216,16 @@ from 3.16 onward. Matching those fields does not certify complete state or
 Melee gameplay.
 The current match rules and real Fox resources remain incomplete; see
 the [initialization format and comparison limits](docs/replays.md).
+`make-initialization --match-data /path/to/match-data.json --replay
+/path/to/game.slp --output /path/to/init.json` builds that initialization
+file from a native match-data export and the replay's own `GameStart`
+(ports, stocks, characters, stage, seed), refusing on a fighter/stage
+mismatch; see [replays.md](docs/replays.md#building-an-initialization-from-an-external-match-data-export).
+[`real_parity`](crates/cli/tests/real_parity.rs) ratchets that comparison
+against a real, independently recorded Fox-vs-Fox Final Destination replay
+once a published gameplay export is available; see
+[what each of Skirmish's three verification levels does and does not
+prove](docs/parity.md).
 
 See [headless architecture](docs/architecture.md) and
 [equivalence testing](docs/equivalence.md), plus the

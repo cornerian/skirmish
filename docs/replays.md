@@ -84,6 +84,14 @@ declared `next_frame` and continues through the selected timeline's last frame.
 An absent start frame, empty suffix, unsupported input, simulation error or
 observation difference fails; a matching prefix is not silently accepted.
 
+Add `--report /path/to/report.json` to also write the exact JSON object printed
+to stdout (the [report fields](#reports-and-regression-cases) plus
+`initialization_sha256`) to that path, so a machine-readable outcome survives
+independently of captured process output. It is written before the command's
+exit status is decided, so it is produced for `matched`, `mismatch` and `error`
+outcomes alike; only a failure before a `Report` exists (bad file, bad JSON,
+preflight checks in `match_validation::validate`) leaves it unwritten.
+
 The required initialization JSON has these fields, with no defaults:
 
 | Field | Meaning |
@@ -118,6 +126,59 @@ Library callers can pass an existing complete in-memory checkpoint to
 `skirmish_replay::match_validation::validate`, together with the `Match`, replay, port mapping
 and timeline policy. Its `next_frame` labels the first post-step observation to
 compare. Persistent checkpoint encoding is not provided.
+
+## Building an initialization from an external match-data export
+
+`make-initialization` derives most of that JSON automatically from a native
+`MatchData` export and the replay itself, instead of requiring hand-picked
+seed/port/frame values:
+
+```xonsh
+cargo run --locked --bin skirmish -- make-initialization \
+    --match-data /path/to/match-data.json \
+    --replay /path/to/game.slp \
+    --output /path/to/initialization.json
+```
+
+It reads the replay's `GameStart` once:
+
+- **Ports**: the two occupied ports, sorted ascending, map to native fighters
+  0/1 in that order (e.g. `["P1", "P3"]`). Anything other than exactly two
+  human-controlled, non-team, non-follower ports is rejected before any other
+  check runs.
+- **Characters and stage**: `match-data.json`'s `fighters[].name` and
+  `stage.name` are matched against small public Slippi/CSS external-ID tables
+  (`crates/cli/src/initialization.rs`'s `CHARACTER_EXTERNAL_IDS` and
+  `STAGE_EXTERNAL_IDS`, using the same kebab-case convention as
+  `tests/fixtures/slippi/manifest.json`'s `character`/`stage` fields) and
+  compared against the replay's recorded external character/stage IDs. Any
+  disagreement, including an unrecognized name, is a clear `character
+  mismatch` or `stage mismatch` error; characters are checked before the
+  stage. This is a metadata cross-check, not a claim that the match data's
+  physics are authentic.
+- **Stocks**: each occupied port's recorded starting stock count must equal
+  `match-data.json`'s `rules.stocks`, or make-initialization refuses; `stocks`
+  itself is not a separate `Initialization` field; it is `rules.stocks`
+  applied uniformly by `Match::new`.
+- **Seed**: `GameStart.random_seed`, unless `--seed` overrides it. Peppi
+  decodes this field unconditionally for every Slippi version the importer
+  currently accepts (2.0.0 through 3.18.0), so there is no in-range version
+  for which it is genuinely absent; `--seed` exists for a hypothetical future
+  format without the field, and for deliberately reproducing a match under a
+  different seed.
+- **`next_frame` and `warmup`**: `next_frame` is the timeline's first selected
+  frame ID. `warmup` is always `[]`: the native `Match::new` checkpoint
+  already corresponds to Melee's own pre-game state, which is also where
+  Slippi's own frame numbering starts (`peppi::frame::FIRST_INDEX`, `-123`;
+  legacy 2.0/2.1 files must advance contiguously from there, so every
+  currently-accepted replay's first frame already is `-123`; see "Accepted
+  files and memory use" above). make-initialization does not implement any
+  warmup-stepping to reach a later start, so it refuses outright if the
+  replay's first selected frame is not `-123`, rather than emitting a
+  misaligned checkpoint. (This is the same convention `crates/cli/tests/
+  replay_match.rs`'s `Recording` helper already follows for its own
+  synthetic replays: `next_frame: FIRST` where `FIRST = -123`, `warmup:
+  Vec::new()`.)
 
 ## Input and observation policy
 

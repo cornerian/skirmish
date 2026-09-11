@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use skirmish::{inventory, menus::Unlocks};
-use skirmish_cli::menu_cli;
+use skirmish_cli::{initialization, menu_cli};
 use skirmish_equivalence::{match_trace, runner, trace};
 use skirmish_replay::{match_validation, slippi};
 use std::{
@@ -48,6 +48,21 @@ enum Commands {
         initialization: PathBuf,
         #[arg(long)]
         finalized_only: bool,
+        /// Also write the JSON report (including `initialization_sha256`) here.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+    /// Build a validate-replay `Initialization` from a native `MatchData` and a completed replay.
+    MakeInitialization {
+        #[arg(long)]
+        match_data: PathBuf,
+        #[arg(long)]
+        replay: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        /// Override the replay's own recorded GameStart random seed.
+        #[arg(long)]
+        seed: Option<u32>,
     },
     /// Parse a completed Slippi replay with Peppi and summarize its timeline.
     InspectReplay {
@@ -132,6 +147,7 @@ fn main() -> Result<()> {
             path,
             initialization,
             finalized_only,
+            report,
         } => {
             let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
             let bytes = fs::read(initialization)?;
@@ -146,14 +162,39 @@ fn main() -> Result<()> {
             } else {
                 slippi::Timeline::LastRecorded
             };
-            let report =
+            let validated =
                 match_validation::validate(&replay, &mut game, &checkpoint, initial.ports, policy)?;
-            let mut output = serde_json::to_value(&report)?;
+            let mut output = serde_json::to_value(&validated)?;
             output["initialization_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            let text = serde_json::to_string_pretty(&output)?;
+            if let Some(report) = report {
+                fs::write(report, &text)?;
+            }
+            println!("{text}");
             anyhow::ensure!(
-                report.is_match(),
+                validated.is_match(),
                 "replay validation did not match; see JSON outcome"
+            );
+        }
+        Commands::MakeInitialization {
+            match_data,
+            replay,
+            output,
+            seed,
+        } => {
+            let data = serde_json::from_slice(&fs::read(match_data)?)?;
+            let replay = slippi::Replay::read(BufReader::new(File::open(replay)?))?;
+            let built = initialization::build(data, &replay, seed)?;
+            fs::write(&output, serde_json::to_string_pretty(&built)?)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "output": output,
+                    "ports": built.ports,
+                    "seed": built.seed,
+                    "next_frame": built.next_frame,
+                    "warmup_steps": built.warmup.len(),
+                }))?
             );
         }
         Commands::InspectReplay {

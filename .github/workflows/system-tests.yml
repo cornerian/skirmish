@@ -1,9 +1,9 @@
-name: System tests (Slippi file parity)
+name: System tests (Slippi replays)
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
-  slippi-parity:
+  slippi-replays:
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_DIR: /tmp/skirmish-target
@@ -11,14 +11,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-tests
-      # Real-corpus import regressions plus synthetic native-match parity fixtures.
-      # Independent whole-game Melee simulation parity is not yet covered.
-      - name: Slippi import and match parity (debug)
+      # Download the published gameplay export when the HF_TOKEN secret is
+      # configured (never on forks without it) and the lock file has been
+      # filled in by the reviewer. See docs/gameplay-export.md and
+      # tools/package_gameplay_export.py.
+      - name: Download the real-replay gameplay export
+        if: ${{ secrets.HF_TOKEN != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        shell: python
         run: |
-          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus
-      - name: Slippi import and match parity (C oracle)
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import sys
+          import tarfile
+          from pathlib import Path
+
+          lock = json.loads(Path("tests/fixtures/slippi/parity/gameplay-export.lock.json").read_text())
+          if lock["sha256"] == "pending":
+              print('::notice::gameplay-export.lock.json sha256 is still the placeholder "pending"; '
+                    "skipping the download until the reviewer publishes the export and fills it in.")
+              sys.exit(0)
+
+          url = (
+              "https://huggingface.co/datasets/maxtretikov/skirmish-datapacks/resolve/main/"
+              f"gameplay/{lock['version']}/{lock['file']}"
+          )
+          dest = Path(os.environ["RUNNER_TEMP"]) / lock["file"]
+          subprocess.run(
+              ["curl", "-fsSL", "-H", f"Authorization: Bearer {os.environ['HF_TOKEN']}", "-o", str(dest), url],
+              check=True,
+          )
+
+          digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+          if digest != lock["sha256"]:
+              sys.exit(f"downloaded {dest} sha256 {digest} does not match the lock file's {lock['sha256']}")
+          if dest.stat().st_size != lock["bytes"]:
+              sys.exit(f"downloaded {dest} is {dest.stat().st_size} bytes, expected {lock['bytes']}")
+
+          extract_dir = Path(os.environ["RUNNER_TEMP"]) / "skirmish-gameplay"
+          extract_dir.mkdir(parents=True, exist_ok=True)
+          with tarfile.open(dest) as tar:
+              tar.extractall(extract_dir, filter="data")
+
+          with open(os.environ["GITHUB_ENV"], "a") as env_file:
+              env_file.write(f"SKIRMISH_GAMEPLAY_DATA={extract_dir}\n")
+      # Real-corpus import regressions, synthetic native-match self-recorded
+      # regressions, and (when SKIRMISH_GAMEPLAY_DATA was set above)
+      # the real-replay ratchet against the published gameplay export.
+      # Independent whole-game Melee simulation parity beyond that ratchet
+      # is not yet covered; see docs/parity.md.
+      - name: Slippi import and replay regressions (debug)
         run: |
-          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --features c-oracle
-      - name: Slippi import and match parity (release, C oracle)
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --test real_parity
+      - name: Slippi import and replay regressions (C oracle)
         run: |
-          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --release --features c-oracle
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --test real_parity --features c-oracle
+      - name: Slippi import and replay regressions (release, C oracle)
+        run: |
+          cargo test --locked --workspace --test replays --test slippi_cli --test replay_match --test slippi_corpus --test real_parity --release --features c-oracle

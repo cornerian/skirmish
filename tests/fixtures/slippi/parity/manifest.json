@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "source_repository": "erickfm/slippi-public-dataset-v3.7",
+  "license": "CC0-1.0",
+  "selected_on": "2026-09-11",
+  "purpose": "Real-replay comparison target for real_parity.rs's self-recorded-versus-real ratchet, distinct from tests/fixtures/slippi/manifest.json's import-summary corpus sample.",
+  "files": [
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/15_01_20 Fox + Fox (FD).slp",
+      "file": "fox-fd.slp",
+      "bytes": 1084706,
+      "sha256": "87971fc4608e577fe5a814fc3a04dee4c0d82f99bc9a54ee16797005c5a9085e",
+      "version": "2.0.1",
+      "stage_id": 32,
+      "stage": "final-destination",
+      "players": [
+        {
+          "port": "P1",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 3778252302,
+      "first_frame": -123,
+      "last_frame": 4549,
+      "physical_frames": 4673,
+      "pairing": "fox-fd",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "87971fc4608e577fe5a814fc3a04dee4c0d82f99bc9a54ee16797005c5a9085e",
+        "bytes": 1084706,
+        "version": [2, 0, 1],
+        "stage": 32,
+        "ports": ["P1", "P4"],
+        "physical_frames": 4673,
+        "surviving_frames": 4673,
+        "discarded_frames": 0,
+        "selected_frames": 4673,
+        "first_frame": -123,
+        "last_frame": 4549,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "NoContest"
+      }
+    }
+  ]
+}

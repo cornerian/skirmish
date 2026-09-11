@@ -24,6 +24,7 @@ jobs:
               ("skirmish-cli", "replay_match"),
               ("skirmish-cli", "slippi_cli"),
               ("skirmish-cli", "slippi_corpus"),
+              ("skirmish-cli", "real_parity"),
               ("peppi-adapter", "replays"),
           }
           targets = {(package["name"], target["name"])

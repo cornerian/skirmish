@@ -1,5 +1,86 @@
 # Local validation provenance
 
+The 2026-09-11 real-replay comparison tooling batch is recorded at:
+
+`/mnt/archive/runs/skirmish-real-parity-tooling-20260911-verified`
+
+It validates formatting, strict all-target/all-feature Clippy, and the complete
+native workspace (without and with the `c-oracle` feature, debug and release)
+at 814/1113/1113 passed and 19 ignored, unchanged failure-wise from before
+this batch: every addition here is new CLI/replay-crate/workflow/doc
+plumbing, not a `src/game/**` change (owned by a parallel refactor task).
+
+`skirmish-cli make-initialization --match-data <MatchData> --replay <.slp>
+--output <Initialization>` derives ports, stage, characters, stocks and seed
+from a replay's own `GameStart` instead of requiring them by hand
+(`crates/cli/src/initialization.rs`): ports are the two occupied ports sorted
+ascending; fighter/stage names are matched against public Slippi/CSS
+external-ID tables and rejected with a clear `character mismatch`/`stage
+mismatch` error on disagreement (checked in that order); each port's starting
+stocks must equal `rules.stocks`; the seed is `GameStart.random_seed` unless
+`--seed` overrides it (Peppi decodes that field unconditionally for every
+version the importer accepts, so the override exists for a hypothetical
+future format, not any file accepted today); and `warmup` stays `[]`,
+refusing outright unless the replay's first selected frame is already `-123`,
+since no warmup-stepping is implemented. Three unit tests cover it: the
+committed real `tests/fixtures/slippi/parity/fox-fd.slp` against the
+wholly-synthetic `integration-match.json` fixture (expects the character
+mismatch), the same replay against that fixture patched to claim Fox/Final
+Destination (expects a successful build with the replay's actual ports, seed
+`3778252302` and frame `-123`), and the kebab-case slug helper. `validate-
+replay` gained `--report <path>`, writing the exact JSON also printed to
+stdout so a mismatch/error/matched outcome survives independent of captured
+process output; covered by extending the existing late-difference CLI test
+plus a new end-to-end test that chains both commands over a self-recorded
+synthetic Fox-vs-Fox Battlefield replay and asserts a matched report.
+
+`tests/fixtures/slippi/parity/fox-fd.slp` (1,084,706 bytes, sha256
+`87971fc4608e577fe5a814fc3a04dee4c0d82f99bc9a54ee16797005c5a9085e`) is a real,
+CC0-1.0 `erickfm/slippi-public-dataset-v3.7` recording (Slippi 2.0.1, stage
+32, ports P1/P4, both Fox, 4 stocks each, seed `3778252302`, 4673 frames,
+first/last frame -123/4549), copied unmodified with its own
+`tests/fixtures/slippi/parity/manifest.json`. `crates/cli/tests/
+real_parity.rs` builds an initialization from it plus `<SKIRMISH_GAMEPLAY_
+DATA>/fox-fd/match-data.json`, runs the comparison, prints the report, and
+ratchets `first_divergent_frame` against `fox-fd-baseline.json`
+(currently the replay's own first frame, `-123`, the worst possible result,
+so it never blocks until a reviewer tightens it after a real run); when the
+env var or that file is absent it prints a skip message and passes, with no
+`#[ignore]`, so the skip path itself runs in CI. The gameplay export does not
+exist yet (see `docs/gameplay-export.md`); this batch verified both of
+`make-initialization`'s paths against two throwaway stand-in directories
+built from the synthetic fixture (one unpatched, producing the expected
+character-mismatch failure; one patched to Fox/Final-Destination ids,
+producing a `mismatch` report at frame -123 that still satisfies the trivial
+baseline), neither committed.
+
+`.github/workflows/system-tests.yml` (renamed from "System tests (Slippi file
+parity)" to "System tests (Slippi replays)") adds a step, gated on `secrets.
+HF_TOKEN` being set, that downloads `gameplay/<version>/<file>` from
+`https://huggingface.co/datasets/maxtretikov/skirmish-datapacks`, verifies its
+sha256/size against `tests/fixtures/slippi/parity/gameplay-export.lock.json`,
+extracts it and exports `SKIRMISH_GAMEPLAY_DATA`; the step prints a notice and
+skips while the lock's `sha256` is still the committed placeholder
+`"pending"`. `real_parity` was added to the three system-test commands and to
+`integration-tests.yml`'s `system_targets` set (the discovery assertion still
+passes: 143 test targets, no name collisions). `tools/package_gameplay_
+export.py` (stdlib-only, `uv run --no-project`) packages a local export
+directory into that tarball and prints the lock JSON for the reviewer to
+publish; `.tar.gz` was chosen over `.tar.zst` specifically so the script needs
+no non-stdlib dependency.
+
+Self-recorded replay regression wording (`crates/cli/tests/replay_match.rs`'s
+doc comment and test names, `docs/replays.md`, `docs/testing.md`, the system
+workflow's name/steps/comments) now says "self-recorded" rather than
+"parity", to stop describing harness self-consistency as Melee evidence. The
+new `docs/parity.md` lays out the three verification levels this repository
+actually has -- function-level C-oracle equivalence, self-recorded replay
+regression, and real-replay comparison with the ratchet -- and states plainly
+what each does and does not prove; earlier validation entries that already
+used "parity" for unrelated named profiles (e.g. `docs/state-parity.md`) were
+left untouched, since this rename is about mislabeled self-recorded evidence,
+not the word itself.
+
 The 2026-09-11 Fox side-special coverage batch is recorded at:
 
 `/mnt/archive/runs/skirmish-fox-side-special-20260911-verified`
