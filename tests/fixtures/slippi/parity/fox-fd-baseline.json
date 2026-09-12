@@ -1,7 +1,7 @@
 {
   "first_divergent_frame": -51,
   "checked_frames": 72,
-  "export_version": "v2",
+  "export_version": "v3",
   "updated": "2026-09-11",
-  "note": "Measured on 2026-09-11 with gameplay export v2 (published snapshot v2-snapshot-20260911, resources_sha256 22f6f602...) after fixing the action_age/state_age reporting rule: frames -123..-52 now match (Entry, EntryStart, EntryEnd, the input lock, the Entry dead flag, and P1's EntryEnd->Fall handoff at -59 with the corrected 0-based age). The fix: `simulation::advance`'s shared end-of-frame `action_frame += 1` always runs one frame ahead of Melee's own `cur_anim_frame` (`Fighter_ChangeMotionState` synchronously lands `cur_anim_frame` on the destination's own `anim_start`, `fighter.c:1224`/`:1274`/`:1298`); `observation::observe` now reports `action_frame - 1` for every action except Dash, whose own `_Enter` (`ftCo_Dash_Enter`, `ftCo_Dash.c:48-63`) makes an extra explicit `ftAnim_8006EBA4` call the others don't. Frame -51 differs on P1 action_state: the recording restarts Fall (age resets 7->0, state stays 29) two frames before Landing at -49, Skirmish transitions straight to Landing (42) at -51 -- a new, separate divergence, not yet diagnosed. Move this forward as divergences are fixed; a regression that lowers checked_frames fails the ratchet."
+  "note": "Measured on 2026-09-11 with gameplay export v3 (sha256 54568123...; the complete Fox/FD export: every profile, the Fox specials, per-frame movement poses, all rule sets) at Skirmish caec917: frames -123..-52 match. Frame -51 differs on P1 action_state: Skirmish enters Landing on the frame the position first crosses the floor, while the game keeps falling one more frame (every landing in the recording shows the position 2.7-3.6 units below the floor for one frame before Landing). Move this forward as divergences are fixed."
 }
