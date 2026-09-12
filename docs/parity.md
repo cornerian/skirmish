@@ -71,15 +71,55 @@ without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
 **Current measurement (2026-09-11, gameplay export v5,
-`/mnt/archive/datasets/melee/skirmish-gameplay/v5-snapshot-20260911`, the
-real-replay parity loop's Dash->Run `action_frame` timing fix):** 116 frames
-match (-123 through -8) and the first divergent frame is -7, field
+`/mnt/archive/datasets/melee/skirmish-gameplay/v5-snapshot-20260911`, after
+the real-replay parity loop's Dash/Turn `action_frame` batches):** 116
+frames match (-123 through -8) and the first divergent frame is -7, field
 `position.x` (expected `-17.7748`, actual `-17.6948`, on P1's Run->KneeBend
-transition, with `action_state` itself already matching). Pack v5 publishes
-`move_id` for the specials that pack v4 was missing (`docs/ecb-load-flags.md`'s
-"Known gap" no longer blocks stepping this match through its own recorded
-inputs past frame ~71); it is otherwise identical to v4 for this fox-fd data
-through the range measured here. The previous divergence (-13, `action_state`
+transition, with `action_state` itself already matching).
+
+**Diagnosis (not a Skirmish bug -- a pack data gap, reported per this loop's
+own stop condition):** frame-by-frame position deltas through this
+transition (`-14`..`-6`: `2.1175, 2.1175, 2.1175, 2.1175, 2.09, 2.0625,
+2.035, 1.875, 1.715`) show a *constant* per-frame reduction of `0.0275`
+through Run (frames `-11`..`-8`), then a *constant* reduction of `0.16`
+starting exactly at the KneeBend/JumpSquat entry (`-8`->`-7` and `-7`->`-6`
+alike) -- `0.16` is exactly `0.08 * 2.0`, where `0.08` is Fox's own
+`movement.ground_friction` in this pack. `game::simulation::move_fighter`'s
+generic grounded fallback (used by JumpSquat, Turn, Wait, Squat and every
+other action `game::locomotion::ground_motion` doesn't own) already ports
+`ft_80084F3C` exactly: `friction = ground_friction; if |gr_vel| >
+walk_max_velocity { friction *= rules.friction_above_walk }`. Fox's
+`ground_velocity` here (~1.9-2.0) is well above `walk_max_velocity` (`1.6`
+in this pack), so the boost should apply -- but pack v5's (and v4's)
+`rules.friction_above_walk` is `1.0`, a no-op, so Skirmish applies the
+unboosted `0.08` instead of the needed `0.16`. Confirmed directly: patching
+a local copy of the pack's `match-data.json` to `friction_above_walk = 2.0`
+(not committed -- a throwaway diagnostic copy, deleted after use) moves
+`checked_frames` from 116 to 120 with no other change, isolating this as
+the sole cause of the -7 divergence. The next divergence with that patch
+applied is frame -3, field `action_age` (expected a non-integer `3.01`,
+actual `1.0`) -- a different, downstream matter (a tracked float animation
+frame during KneeBend/Jump, not yet investigated) that this diagnostic
+patch was not meant to resolve. `rules.friction_above_walk` is a single
+match-wide constant (`src/game/data.rs`), matching `ftCommonData` being
+shared across every character, so a single corrected value should apply
+universally once re-exported; this needs a live-pack data fix (the
+gameplay-export pipeline, not this repository) rather than a Skirmish code
+change, so it is reported here rather than chased further.
+
+Previously (2026-09-11, gameplay export v5, after the real-replay parity
+loop's Dash->Run `action_frame` timing fix): 116 frames matched
+(-123 through -8) and the first divergent frame was -7, `position.x`, as
+above -- unchanged by the subsequent entry-time consolidation batch
+(`docs/validation.md`), confirmed by re-measuring rather than assumed.
+
+Previously (2026-09-11, gameplay export v5, the real-replay parity loop's
+Dash->Run `action_frame` timing fix): 116 frames matched (-123 through -8),
+up from 110. Pack v5 publishes `move_id` for the specials that pack v4 was
+missing (`docs/ecb-load-flags.md`'s "Known gap" no longer blocks stepping
+this match through its own recorded inputs past frame ~71); it is otherwise
+identical to v4 for this fox-fd data through the range measured here. The
+previous divergence (-13, `action_state`
 on a Dash->Run transition, described below) is fixed: `game::dash::
 update_dash_or_run`'s and `game::locomotion`'s Dash-to-Run check compared
 `action_frame >= dash_run_frame`, one frame later than `fn_800CA5F0`'s own
