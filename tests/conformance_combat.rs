@@ -275,8 +275,14 @@ fn downward_hit() -> Match {
         down_damage: None,
         passive_frames: 4,
         down_bound_frames: 4,
+        down_bound_frames_face_up: None,
+        down_bound_frames_face_down: None,
         down_wait_frames: 4,
+        down_wait_frames_face_up: None,
+        down_wait_frames_face_down: None,
         down_stand_frames: 4,
+        down_stand_frames_face_up: None,
+        down_stand_frames_face_down: None,
     });
     data.stage.spawns[1][1] = 2.0;
     data.rules.knockback_speed = 0.15;

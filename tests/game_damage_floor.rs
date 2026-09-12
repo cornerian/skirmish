@@ -32,8 +32,14 @@ fn profile() -> skirmish::game::damage::FloorResponseRules {
         down_damage: None,
         passive_frames: 3,
         down_bound_frames: 4,
+        down_bound_frames_face_up: None,
+        down_bound_frames_face_down: None,
         down_wait_frames: 5,
+        down_wait_frames_face_up: None,
+        down_wait_frames_face_down: None,
         down_stand_frames: 3,
+        down_stand_frames_face_up: None,
+        down_stand_frames_face_down: None,
     }
 }
 
@@ -223,6 +229,37 @@ fn face_down_data() -> skirmish::game::data::MatchData {
         .unwrap()
         .orientation
         .invert = true;
+    resource
+}
+
+/// Distinct, deliberately-mismatched-from-the-shared-fallback per-orientation
+/// DownBound/DownWait/DownStand durations, with every pose vector resized to
+/// match. Face-up and face-down get different lengths from each other too,
+/// mirroring Fox's real DownWaitU/D (70 vs 90 frames, `ftmotionstates.c`)
+/// asymmetry that motivated the override fields.
+fn oriented_frame_data(face_down: bool) -> skirmish::game::data::MatchData {
+    let mut resource = if face_down {
+        face_down_data()
+    } else {
+        knockdown_data()
+    };
+    let floor = resource.rules.damage.floor_response.as_mut().unwrap();
+    floor.down_bound_frames_face_up = Some(2);
+    floor.down_bound_frames_face_down = Some(6);
+    floor.down_wait_frames_face_up = Some(3);
+    floor.down_wait_frames_face_down = Some(7);
+    floor.down_stand_frames_face_up = Some(2);
+    floor.down_stand_frames_face_down = Some(5);
+    for fighter in &mut resource.fighters {
+        let bones = fighter.bones.clone();
+        let knockdown = fighter.knockdown.as_mut().unwrap();
+        knockdown.face_up.bound_poses.resize(2, bones.clone());
+        knockdown.face_up.wait_poses.resize(3, bones.clone());
+        knockdown.face_up.stand_poses.resize(2, bones.clone());
+        knockdown.face_down.bound_poses.resize(6, bones.clone());
+        knockdown.face_down.wait_poses.resize(7, bones.clone());
+        knockdown.face_down.stand_poses.resize(5, bones);
+    }
     resource
 }
 
@@ -532,6 +569,69 @@ fn unteched_tumble_runs_bound_wait_stand_and_complete_recovery() {
             profile().down_stand_frames as usize,
         ]
     );
+}
+
+/// The source drives DownBound/DownWait/DownStand's exit from
+/// `ftAnim_IsFramesRemaining` against whichever of the U/D motion pair
+/// (`ftCo_DownBound.c`, `ftCo_Down.c`, `ftCo_DownStand.c`) the hip-orientation
+/// test selected, so face-up and face-down can run different lengths (Fox's
+/// DownWaitU/D are 70/90 frames). `down_*_frames_face_up`/`_face_down`
+/// let a pack express that split; this exercises both orientations landing
+/// with the shared field untouched and only the per-orientation overrides
+/// governing the transition timing.
+#[test]
+fn per_orientation_overrides_use_the_matching_orientation_duration() {
+    let mut face_up = downward_hit(oriented_frame_data(false));
+    let landed = until(&mut face_up, |state| state.fighters[1].grounded);
+    assert_eq!(landed.fighters[1].action, Action::DownBound);
+    assert_eq!(landed.fighters[1].prone, Some(ProneOrientation::FaceUp));
+    let mut transitions = vec![Action::DownBound];
+    let mut counts = vec![1_usize];
+    while face_up.state().fighters[1].action != Action::Wait {
+        let action = step(&mut face_up, IDLE).fighters[1].action;
+        if transitions.last() == Some(&action) {
+            *counts.last_mut().unwrap() += 1;
+        } else {
+            transitions.push(action);
+            counts.push(1);
+        }
+    }
+    assert_eq!(
+        transitions,
+        [
+            Action::DownBound,
+            Action::DownWait,
+            Action::DownStand,
+            Action::Wait,
+        ]
+    );
+    assert_eq!(&counts[..3], &[2, 3, 2]);
+
+    let mut face_down = downward_hit(oriented_frame_data(true));
+    let landed = until(&mut face_down, |state| state.fighters[1].grounded);
+    assert_eq!(landed.fighters[1].action, Action::DownBound);
+    assert_eq!(landed.fighters[1].prone, Some(ProneOrientation::FaceDown));
+    let mut transitions = vec![Action::DownBound];
+    let mut counts = vec![1_usize];
+    while face_down.state().fighters[1].action != Action::Wait {
+        let action = step(&mut face_down, IDLE).fighters[1].action;
+        if transitions.last() == Some(&action) {
+            *counts.last_mut().unwrap() += 1;
+        } else {
+            transitions.push(action);
+            counts.push(1);
+        }
+    }
+    assert_eq!(
+        transitions,
+        [
+            Action::DownBound,
+            Action::DownWait,
+            Action::DownStand,
+            Action::Wait,
+        ]
+    );
+    assert_eq!(&counts[..3], &[6, 7, 5]);
 }
 
 #[test]
@@ -1242,6 +1342,65 @@ fn malformed_floor_profiles_are_rejected_transactionally() {
         .as_mut()
         .unwrap()
         .bound_attack_window = 256.0;
+    cases.push(bad);
+    let mut bad = knockdown_data();
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_bound_frames_face_up = Some(0);
+    cases.push(bad);
+    let mut bad = knockdown_data();
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_wait_frames_face_down = Some(1_000_000);
+    cases.push(bad);
+    // An override with no matching pose-vector resize leaves the supplied
+    // poses at the shared length, so the per-orientation duration and the
+    // per-orientation pose count disagree.
+    let mut bad = knockdown_data();
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_stand_frames_face_up = Some(profile().down_stand_frames + 1);
+    cases.push(bad);
+    // Isolated from the pose-length check above: the override's own poses
+    // are resized to match, so only the invincibility-vs-orientation-stand
+    // comparison can reject this one.
+    let mut bad = recovery_data();
+    let short_stand = bad
+        .rules
+        .damage
+        .floor_response
+        .as_ref()
+        .unwrap()
+        .recovery_invincibility
+        .as_ref()
+        .unwrap()
+        .stand_frames
+        - 1;
+    bad.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_stand_frames_face_down = Some(short_stand);
+    for fighter in &mut bad.fighters {
+        let bones = fighter.bones.clone();
+        fighter
+            .knockdown
+            .as_mut()
+            .unwrap()
+            .face_down
+            .stand_poses
+            .resize(short_stand as usize, bones);
+    }
     cases.push(bad);
     let mut bad = knockdown_data();
     bad.fighters[0].knockdown = None;

@@ -105,8 +105,14 @@ fn data(angle: f32) -> MatchData {
         down_damage: None,
         passive_frames: 3,
         down_bound_frames: 4,
+        down_bound_frames_face_up: None,
+        down_bound_frames_face_down: None,
         down_wait_frames: 5,
+        down_wait_frames_face_up: None,
+        down_wait_frames_face_down: None,
         down_stand_frames: 3,
+        down_stand_frames_face_up: None,
+        down_stand_frames_face_down: None,
     });
     let response = profile();
     data.rules.damage.surface_response = Some(response.clone());

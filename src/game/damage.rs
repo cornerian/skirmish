@@ -107,9 +107,85 @@ pub struct FloorResponseRules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub down_damage: Option<DownDamageRules>,
     pub passive_frames: u32,
+    /// Shared DownBound duration. The source drives this from
+    /// `ftAnim_IsFramesRemaining` against whichever of DownBoundU/D
+    /// (`ftCo_DownBound.c`) the fighter's motion state selected, so the two
+    /// orientations' animations are free to run different lengths. This
+    /// field is the fallback when a fighter/pack supplies neither override
+    /// below.
     pub down_bound_frames: u32,
+    /// Face-up override for `down_bound_frames` (DownBoundU). `None` reuses
+    /// the shared value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_bound_frames_face_up: Option<u32>,
+    /// Face-down override for `down_bound_frames` (DownBoundD). `None`
+    /// reuses the shared value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_bound_frames_face_down: Option<u32>,
+    /// Shared DownWait duration, same per-orientation caveat as
+    /// `down_bound_frames`: Fox's DownWaitU (sub-motion 184) runs 70 frames
+    /// and DownWaitD (192) runs 90 (`ftmotionstates.c`, `ftCo_Down.c`).
     pub down_wait_frames: u32,
+    /// Face-up override for `down_wait_frames` (DownWaitU).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_wait_frames_face_up: Option<u32>,
+    /// Face-down override for `down_wait_frames` (DownWaitD).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_wait_frames_face_down: Option<u32>,
+    /// Shared DownStand duration, same per-orientation caveat
+    /// (`ftCo_DownStand.c` selects DownStandU/D from `fp->motion_id`).
     pub down_stand_frames: u32,
+    /// Face-up override for `down_stand_frames` (DownStandU).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_stand_frames_face_up: Option<u32>,
+    /// Face-down override for `down_stand_frames` (DownStandD).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_stand_frames_face_down: Option<u32>,
+}
+
+impl FloorResponseRules {
+    /// Effective DownBound duration for `orientation`, falling back to the
+    /// shared field when no per-orientation override (or no orientation,
+    /// i.e. a fighter without `KnockdownAttributes`) applies.
+    pub(crate) fn down_bound_frames_for(&self, orientation: Option<ProneOrientation>) -> u32 {
+        match orientation {
+            Some(ProneOrientation::FaceUp) => self
+                .down_bound_frames_face_up
+                .unwrap_or(self.down_bound_frames),
+            Some(ProneOrientation::FaceDown) => self
+                .down_bound_frames_face_down
+                .unwrap_or(self.down_bound_frames),
+            None => self.down_bound_frames,
+        }
+    }
+
+    /// Effective DownWait duration for `orientation`. See
+    /// `down_bound_frames_for`.
+    pub(crate) fn down_wait_frames_for(&self, orientation: Option<ProneOrientation>) -> u32 {
+        match orientation {
+            Some(ProneOrientation::FaceUp) => self
+                .down_wait_frames_face_up
+                .unwrap_or(self.down_wait_frames),
+            Some(ProneOrientation::FaceDown) => self
+                .down_wait_frames_face_down
+                .unwrap_or(self.down_wait_frames),
+            None => self.down_wait_frames,
+        }
+    }
+
+    /// Effective DownStand duration for `orientation`. See
+    /// `down_bound_frames_for`.
+    pub(crate) fn down_stand_frames_for(&self, orientation: Option<ProneOrientation>) -> u32 {
+        match orientation {
+            Some(ProneOrientation::FaceUp) => self
+                .down_stand_frames_face_up
+                .unwrap_or(self.down_stand_frames),
+            Some(ProneOrientation::FaceDown) => self
+                .down_stand_frames_face_down
+                .unwrap_or(self.down_stand_frames),
+            None => self.down_stand_frames,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -404,13 +480,25 @@ pub(crate) fn validate_knockdown_attributes(
         ));
     }
     validate_poses(&attributes.passive_poses, profile.passive_frames, fighter)?;
-    for variant in [&attributes.face_up, &attributes.face_down] {
+    for (orientation, variant) in [
+        (ProneOrientation::FaceUp, &attributes.face_up),
+        (ProneOrientation::FaceDown, &attributes.face_down),
+    ] {
         validate_ground_motion(&variant.forward, fighter)?;
         validate_ground_motion(&variant.backward, fighter)?;
         for (poses, frames) in [
-            (&variant.bound_poses, profile.down_bound_frames),
-            (&variant.wait_poses, profile.down_wait_frames),
-            (&variant.stand_poses, profile.down_stand_frames),
+            (
+                &variant.bound_poses,
+                profile.down_bound_frames_for(Some(orientation)),
+            ),
+            (
+                &variant.wait_poses,
+                profile.down_wait_frames_for(Some(orientation)),
+            ),
+            (
+                &variant.stand_poses,
+                profile.down_stand_frames_for(Some(orientation)),
+            ),
         ] {
             validate_poses(poses, frames, fighter)?;
         }
@@ -607,6 +695,17 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
                 profile.down_stand_frames,
             ]
             .into_iter()
+            .any(|frames| frames == 0 || frames >= 1_000_000)
+            || [
+                profile.down_bound_frames_face_up,
+                profile.down_bound_frames_face_down,
+                profile.down_wait_frames_face_up,
+                profile.down_wait_frames_face_down,
+                profile.down_stand_frames_face_up,
+                profile.down_stand_frames_face_down,
+            ]
+            .into_iter()
+            .flatten()
             .any(|frames| frames == 0 || frames >= 1_000_000))
     {
         return Err(Error::Data(
@@ -670,7 +769,10 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
         .into_iter()
         .any(|frames| frames >= 1_000_000)
             || invincibility.passive_frames > floor.passive_frames
-            || invincibility.stand_frames > floor.down_stand_frames
+            || invincibility.stand_frames
+                > floor.down_stand_frames_for(Some(ProneOrientation::FaceUp))
+            || invincibility.stand_frames
+                > floor.down_stand_frames_for(Some(ProneOrientation::FaceDown))
             || floor.tech_roll.is_none() && invincibility.tech_roll_frames != 0
             || floor.knockdown_options.is_none()
                 && (invincibility.missed_roll_frames != 0
@@ -1026,7 +1128,7 @@ pub(crate) fn update_animation(
     }
     if fighter.action == Action::DownBound
         && let Some(floor) = &rules.floor_response
-        && fighter.action_frame >= floor.down_bound_frames
+        && fighter.action_frame >= floor.down_bound_frames_for(fighter.prone)
     {
         let action = floor
             .knockdown_options
@@ -1044,7 +1146,7 @@ pub(crate) fn update_animation(
             .map(knockdown_action)
             .unwrap_or(Action::DownWait);
         if action == Action::DownWait {
-            fighter.down_timer = floor.down_wait_frames;
+            fighter.down_timer = floor.down_wait_frames_for(fighter.prone);
         }
         enter_recovery(fighter, action, floor);
         return;
@@ -1141,7 +1243,9 @@ pub(crate) fn update_animation(
             fighter.down_timer = fighter.down_timer.saturating_sub(1);
             (fighter.down_timer == 0).then_some(Action::DownStand)
         }
-        Action::DownStand if fighter.action_frame >= profile.down_stand_frames => {
+        Action::DownStand
+            if fighter.action_frame >= profile.down_stand_frames_for(fighter.prone) =>
+        {
             Some(Action::Wait)
         }
         _ => None,

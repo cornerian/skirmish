@@ -39,6 +39,26 @@ Each fighter then supplies one full bone pose for every Passive frame plus
 separate face-up and face-down DownBound, DownWait, DownStand, roll and get-up
 attack resources. These poses drive hurtboxes and ECBs in headless simulation.
 
+`down_bound_frames`, `down_wait_frames` and `down_stand_frames` are shared
+fallbacks. The source instead drives every one of these exits from
+`ftAnim_IsFramesRemaining` against whichever of the DownBoundU/D,
+DownWaitU/D or DownStandU/D motion pair (`ftCo_DownBound.c`, `ftCo_Down.c`,
+`ftCo_DownStand.c`) the evaluated hip orientation selected, so the two
+orientations' animations are free to run different lengths — Fox's
+DownWaitU (sub-motion 184) is 70 frames and DownWaitD (192) is 90
+(`ftmotionstates.c`). Optional `down_bound_frames_face_up`/`_face_down`,
+`down_wait_frames_face_up`/`_face_down` and
+`down_stand_frames_face_up`/`_face_down` let a pack express that split;
+each is `None` by default and falls back to the shared field, so an
+existing pack that only supplies the shared value keeps its prior
+behavior unchanged. `KnockdownAttributes`'s per-orientation `bound_poses`,
+`wait_poses` and `stand_poses` already carry their own vector length per
+orientation and are validated against the effective (override-or-shared)
+duration for that orientation; DownAttack, DownForward and DownBack were
+already unaffected by these shared fields because their durations come
+directly from the per-orientation `attack`/`forward`/`backward` resources'
+own lengths, with no separate scalar duration to split.
+
 Optional `floor_response.down_damage` supplies the strict pending-damage upper
 bound and action duration for hits during DownBound, DownWait or DownDamage.
 Both prone variants supply complete DownDamage bone poses. Damage entry still
