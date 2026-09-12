@@ -546,11 +546,27 @@ pub(crate) fn try_dash(f: &mut Fighter, p: &Parameters, input: Controller) -> bo
     true
 }
 
-fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters, input: Controller) {
+// `ftCo_Jump_Enter` and `ftCo_800CB110` (`h_init_v = fp->input.lstick[0].x *
+// ...`) are both dispatched from `ftCo_KneeBend_Anim`, an Anim callback, which
+// runs before this same frame's own controller read updates `fp->input`
+// (the same per-object ordering fact already established for the generic
+// per-frame animation advance, `observation::observe`'s general `-1` rule):
+// unlike this crate's other input reads, which are all IASA-dispatched
+// (`ftCo_Wait_IASA`'s jump-request chain that enters JumpSquat itself,
+// `ftCo_JumpAerial_CheckInput`'s own direction test below) and so already see
+// this frame's own fresh controller, both the launch velocity and the
+// direction test below read `f.previous_input`, not the `Controller` this
+// frame's caller was handed. Confirmed directly against `fox-fd.slp`: every
+// one of the recording's 64 KneeBend->Jump transitions (both ports, full
+// match) matches `jump_backward`'s pinned formula when fed the frame
+// *before* the reported Jump transition, and three of them (P4 at frame 3,
+// P1 at 775 and 2990) disagree when fed the transition frame's own stick
+// instead.
+fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters) {
     let a = &data.movement;
     let v = math::jump_velocity(
         [f.velocity[0], f.velocity[1], 0.0],
-        input.stick[0],
+        f.previous_input.stick[0],
         f.short_hop,
         1.0,
         &math::JumpAttributes {
@@ -570,11 +586,9 @@ fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters, input: Contr
     f.ecb.bottom_locked = true;
     f.locomotion.jumps_used = 1;
     f.locomotion.tilt_y_age = 254;
-    // ftCo_Jump.c:157-161: the direction test runs at the launch frame's
-    // current stick, before the motion change.
-    let backward = p
-        .jump_backward_threshold
-        .is_some_and(|threshold| math::jump_backward(input.stick[0], f.facing, threshold));
+    let backward = p.jump_backward_threshold.is_some_and(|threshold| {
+        math::jump_backward(f.previous_input.stick[0], f.facing, threshold)
+    });
     enter(f, Action::Jump);
     f.locomotion.jump_backward = backward;
 }
@@ -592,7 +606,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
     // change a ground jump's stored short-hop choice.
     match f.action {
         Action::JumpSquat if f.action_frame >= data.movement.jump_startup_frames => {
-            ground_jump(f, data, p, input)
+            ground_jump(f, data, p)
         }
         Action::Dash if f.action_frame >= p.dash_animation_frames => enter(f, Action::Wait),
         // ftCo_RunBrake_Anim (ftCo_RunBrake.c:49-77): while the script's

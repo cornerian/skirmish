@@ -44,22 +44,27 @@ fn step(game: &mut Match, controller: Controller) -> State {
         .clone()
 }
 
-/// Two-frame JumpSquat (X held both frames, for a full hop) then the launch
-/// frame with the given stick: the frame `ftCo_Jump_Enter`'s own direction
-/// test (`ftCo_Jump.c:157-161`) consults.
+/// Two-frame JumpSquat (X held both frames, for a full hop) with the given
+/// stick on its own second (last) frame -- `ftCo_Jump_Enter`'s own direction
+/// test (`ftCo_Jump.c:157-161`) is dispatched from the Anim callback, which
+/// reads `fp->input` from *before* the launch frame's own controller read
+/// (`game::locomotion::ground_jump`'s own doc comment), so this is the
+/// stick sample that actually decides the launched direction, not the
+/// launch frame's own (left neutral here).
 fn full_hop(game: &mut Match, stick_x: f32) -> State {
     step(game, stick(BUTTON_X, [0.0, 0.0]));
-    step(game, stick(BUTTON_X, [0.0, 0.0]));
-    let launched = step(game, stick(0, [stick_x, 0.0]));
+    step(game, stick(BUTTON_X, [stick_x, 0.0]));
+    let launched = step(game, buttons(0));
     assert_eq!(launched.fighters[0].action, Action::Jump);
     launched
 }
 
-/// X pressed then released before the launch frame, for a short hop.
+/// X pressed then released (with the direction-deciding stick) before the
+/// launch frame, for a short hop.
 fn short_hop(game: &mut Match, stick_x: f32) -> State {
     step(game, stick(BUTTON_X, [0.0, 0.0]));
-    step(game, buttons(0));
-    let launched = step(game, stick(0, [stick_x, 0.0]));
+    step(game, stick(0, [stick_x, 0.0]));
+    let launched = step(game, buttons(0));
     assert_eq!(launched.fighters[0].action, Action::Jump);
     launched
 }
@@ -85,7 +90,8 @@ fn until_fall(game: &mut Match) -> State {
 }
 
 #[test]
-fn ground_and_aerial_jump_direction_follows_the_launch_frames_stick_with_backward_on_equality() {
+fn ground_and_aerial_jump_direction_follows_the_direction_deciding_stick_with_backward_on_equality()
+{
     // stick_x * facing == -x78 (0.3) is exactly the boundary; the source's
     // own comparison is strict `>`, so equality selects backward.
     let cases: [(f32, bool); 4] = [(1.0, false), (-1.0, true), (-0.3, true), (-0.29, false)];
@@ -104,6 +110,36 @@ fn ground_and_aerial_jump_direction_follows_the_launch_frames_stick_with_backwar
             assert!(!launched.fighters[0].grounded);
         }
     }
+}
+
+#[test]
+fn ground_jump_direction_uses_the_previous_frames_stick_even_when_the_launch_frames_own_stick_disagrees()
+ {
+    // Facing is +1.0 throughout (the fixture's default; jumping from Wait
+    // never turns). The shape of `fox-fd.slp`'s frame 3 (`docs/state-parity.
+    // md`'s "Backward jumps"), mirrored onto this facing: the KneeBend frame
+    // before the launch holds the stick with facing (`jump_backward` would
+    // report forward), and the launch frame's own stick reverses (which
+    // would report backward if it, not the earlier frame, were consulted).
+    // The fixed behavior reports forward, confirming `ftCo_Jump_Enter` reads
+    // the earlier frame, not its own.
+    let mut game = Match::new(data(), 42).unwrap();
+    step(&mut game, stick(BUTTON_X, [1.0, 0.0]));
+    step(&mut game, stick(BUTTON_X, [0.85, 0.0]));
+    let launched = step(&mut game, stick(0, [-0.56, 0.0]));
+    assert_eq!(launched.fighters[0].action, Action::Jump);
+    assert!(!launched.fighters[0].locomotion.jump_backward);
+
+    // The mirrored disagreement (`fox-fd.slp` frame 775): the KneeBend frame
+    // before the launch already reverses against facing (backward), and the
+    // launch frame's own stick returns to facing (forward, which an unfixed
+    // "current frame" reading would have reported instead).
+    let mut game = Match::new(data(), 42).unwrap();
+    step(&mut game, stick(BUTTON_X, [1.0, 0.0]));
+    step(&mut game, stick(BUTTON_X, [-0.61, 0.0]));
+    let launched = step(&mut game, stick(0, [0.46, 0.0]));
+    assert_eq!(launched.fighters[0].action, Action::Jump);
+    assert!(launched.fighters[0].locomotion.jump_backward);
 }
 
 #[test]

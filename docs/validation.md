@@ -1,5 +1,57 @@
 # Local validation provenance
 
+The 2026-09-11 ground-jump-direction fix (the real-replay parity loop,
+`docs/parity.md`, `docs/state-parity.md`'s "Backward jumps") corrects
+`game::locomotion::ground_jump`'s direction test and launch velocity, both of
+which read `input.stick[0]` (the launch frame's own, already-updated
+controller) where decomp's `ftCo_Jump_Enter`/`ftCo_800CB110` actually read
+`fp->input.lstick[0].x` one frame stale. Both are dispatched from `ftCo_
+KneeBend_Anim`, an Anim callback -- the same per-object ordering fact already
+established for the generic per-frame animation advance
+(`observation::observe`'s general `-1` rule): Anim runs before this same
+frame's own controller read updates `fp->input`, so a fighter that changes
+its main-stick direction on its very last JumpSquat frame launches using the
+frame *before*, not its own. `ftCo_JumpAerial_CheckInput`'s identical-looking
+direction test is dispatched from an IASA chain instead
+(`ftCo_800CB870`/`ftCo_800CB8E0`, from `ftCo_Jump_IASA`/`ftCo_JumpAerial_
+IASA`'s own `RETURN_IF` chains), so it already sees the current frame's
+fresh input and needed no change -- confirmed by leaving `locomotion::
+try_aerial_jump`'s two identical calls untouched. Both fixed reads now
+consult `f.previous_input.stick[0]`; `ground_jump` no longer needs its own
+`Controller` parameter, so the call site drops it.
+
+Confirmed directly against `fox-fd.slp`: `fighter::locomotion::jump_backward`
+fed the frame before each of the recording's 64 KneeBend->Jump transitions
+(both ports, the full match) agrees with the recorded direction on every
+one; fed the transition frame's own stick instead, three disagree (P4 at
+frame 3 -- this loop's own next divergence -- and P1 at 775 and 2990, found
+by scanning the whole file for every KneeBend->Jump transition, not just the
+one this loop's own measurement reached).
+
+**Tests**: `tests/game_jump_variants.rs`'s `full_hop`/`short_hop` helpers now
+apply the direction-deciding stick to the JumpSquat frame *before* the launch
+(previously the launch frame itself), leaving the launch frame's own stick
+neutral; a new `ground_jump_direction_uses_the_previous_frames_stick_even_
+when_the_launch_frames_own_stick_disagrees` pins the exact shape of the
+recording's own disagreement (a stick reversed on the launch frame that the
+fix must ignore) in both directions. `crates/cli/tests/replay_match.rs`'s
+`file_backed_jump_variants_match_and_detect_their_first_changed_direction_
+frame` moves its `stick_x` input to the JumpSquat frame before the launch,
+and its "flip a sample, expect a mismatch" check now flips that same earlier
+frame while still expecting the mismatch to surface one frame later, at the
+launch row (whose own JumpSquat report is otherwise unaffected). `docs/
+state-parity.md`'s "Backward jumps" section, its own `## Tests` note and
+`ground_and_aerial_jump_direction_follows_the_launch_frames_stick_with_
+backward_on_equality` (renamed to `..._the_direction_deciding_stick_...`) are
+all updated to match. `cargo fmt --all -- --check`, `cargo clippy --locked
+--workspace --all-targets --all-features -- -D warnings` and `cargo test
+--locked --workspace` (912 passed/0 failed/19 ignored, one new test) all
+pass. Measured against gameplay export v6: 128 frames matched (-123 through
+4), up from 126; the new divergence is frame 5, a suspected cross-platform
+floating-point limitation in a transcendental function rather than a
+Skirmish bug (`docs/parity.md`'s current measurement). `tests/fixtures/
+slippi/parity/fox-fd-baseline.json` is updated to match.
+
 The 2026-09-11 `LandingFallSpecial`/aerial-landing `action_age` fix (the
 real-replay parity loop, `docs/parity.md`) extracts `observation::observe`'s
 inlined `state_age` computation into its own `action_age` function (unchanged

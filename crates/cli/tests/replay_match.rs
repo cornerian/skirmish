@@ -883,9 +883,13 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
     // Fighter 0 full hops from the platform floor at X=0 (button held rows
     // 0..1, so short_hop stays false); fighter 1 idles. `jump_backward_threshold`
     // is 0.3, an invented fixture value: `ftCo_Jump_Enter`'s own direction test
-    // runs at the ground jump's launch frame (row 2, where JumpSquat's
-    // `jump_startup_frames` of 2 expires) and at the aerial jump's own launch
-    // frame; both use that frame's own stick sample.
+    // (`fp->input.lstick[0].x`) is dispatched from the Anim callback, which
+    // runs before this same frame's own controller read updates `fp->input`
+    // (`game::locomotion::ground_jump`'s own doc comment), so the ground
+    // jump's launch (row 2, where JumpSquat's `jump_startup_frames` of 2
+    // expires) consults row 1's stick, not its own; the aerial jump's own
+    // launch (IASA-dispatched, unaffected) still consults that frame's own
+    // stick sample.
     let data = jump_direction_data();
     struct Case {
         name: &'static str,
@@ -927,7 +931,7 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
         let mut inputs = vec![IDLE; 30];
         inputs[0][0].buttons = BUTTON_X;
         inputs[1][0].buttons = BUTTON_X;
-        inputs[2][0].stick[0] = case.stick_x;
+        inputs[1][0].stick[0] = case.stick_x;
         inputs[case.double_jump_row][0].buttons = BUTTON_X;
         inputs[case.double_jump_row][0].stick[0] = case.stick_x;
         let recording = Recording::from_script(data.clone(), 51, inputs);
@@ -950,9 +954,11 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
 
         let bytes = recording.bytes(support::Fixture::default(), |_| {});
         matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
-        // Flipping the ground jump launch frame's own stick sample flips its
-        // reported direction, so the mismatch appears there first.
-        let row = 2;
+        // Flipping row 1's stick (the ground jump's actual direction input)
+        // does not change row 1's own JumpSquat report, so the mismatch
+        // appears one frame later, at the launch row.
+        let flip_row = 1;
+        let mismatch_row = 2;
         let flipped = -case.stick_x;
         let changed = recording.bytes(support::Fixture::default(), move |frames| {
             frames.ports[0]
@@ -960,7 +966,7 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
                 .pre
                 .joystick
                 .x
-                .set(row, Some(flipped));
+                .set(flip_row, Some(flipped));
         });
         assert!(
             matches!(
@@ -969,7 +975,7 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
                     frame,
                     checked_frames,
                     ..
-                } if frame == FIRST + row as i32 && checked_frames == row as u64
+                } if frame == FIRST + mismatch_row && checked_frames == mismatch_row as u64
             ),
             "{}",
             case.name

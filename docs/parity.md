@@ -70,14 +70,59 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, gameplay export v6,
-`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`,
-`tests/fixtures/slippi/parity/gameplay-export.lock.json` updated to
-`v6`/`skirmish-gameplay-v6.tar.gz`, after the pack's own `friction_above_walk`
-fix landed and this loop's `action_age` tracked-rate fix):** 126 frames match
-(-123 through 2) and the first divergent frame is 3, field `action_state`
-(expected `0x0019`/Jump-forward, actual `0x001a`/Jump-backward, on P4's own
-KneeBend->Jump transition).
+**Current measurement (2026-09-11, gameplay export v6, after this loop's
+ground-jump-direction fix):** 128 frames match (-123 through 4) and the
+first divergent frame is 5, field `position.x` (expected `-29.740234375`,
+actual `-29.740236282348633`, on P1's own continuing ground slide inside a
+`LandingFallSpecial` entered from an earlier air dodge).
+
+**Diagnosis (a suspected cross-platform floating-point limitation, not a
+Skirmish logic bug -- reported per this loop's own stop condition):**
+tracing `game::simulation::move_fighter`'s generic grounded fallback frame by
+frame from this `LandingFallSpecial` entry shows every intervening frame's
+`position.x` matching the recording bit-for-bit through frame 4, using a
+ground velocity that decays by exactly the expected friction each frame
+(`ft_80084F3C`'s `friction = 0.08`, doubled above `walk_max_velocity`); the
+frame-5 addition itself (`-1.1955388 + 0.08 = -1.1155387`, IEEE-754 exact,
+reproduced identically in Python) is not in question, but solving for the
+velocity decomp's own recording would need to land on the *expected* frame-5
+position gives `-1.1155376` instead -- nine ULPs away at the velocity's own
+magnitude, small enough that adding it to the much larger `position.x` had
+rounded to the *same* representable bit pattern on every earlier frame,
+until frame 5's own rounding boundary finally exposes it. This points
+upstream, to the air dodge's own launch velocity: `fighter::escape_air::
+launch_velocity` computes `force * libm::cosf(angle)`/`sinf(angle)`
+(`ftCo_EscapeAir.c`'s `inlineA0`), and `libm`'s portable, from-scratch
+`cosf`/`sinf` are not guaranteed bit-identical to the original GameCube SDK's
+own trigonometric routines -- unlike the addition/multiplication chain that
+follows, which IEEE 754 does guarantee reproduces exactly given exact
+inputs. A several-ULP error at launch, decayed and carried through the dodge
+and its landing's friction, exactly matches a discrepancy too small to
+appear until it crosses a rounding boundary many frames later. Not chased
+further in this batch: fixing it would mean matching PowerPC's own
+transcendental-function implementation bit-for-bit, not a Skirmish
+behavior or sequencing bug.
+
+Previously (2026-09-11, gameplay export v6, before this loop's ground-jump-
+direction fix): 126 frames matched (-123 through 2) and the first divergent
+frame was 3, field `action_state` (expected `0x0019`/Jump-forward, actual
+`0x001a`/Jump-backward, on P4's own KneeBend->Jump transition). Fixed:
+`ftCo_Jump_Enter`'s direction test (`ftCo_Jump.c:157-161`) and `ftCo_
+800CB110`'s launch-velocity computation are both dispatched from `ftCo_
+KneeBend_Anim`, an Anim callback, which (like the generic per-frame animation
+advance `observation::observe`'s general `-1` rule already accounts for)
+runs before this same frame's own controller read updates `fp->input` --
+unlike this crate's other input reads, which are IASA-dispatched
+(`ftCo_Wait_IASA`'s jump-request chain, `ftCo_JumpAerial_CheckInput`'s own
+identical-looking direction test) and so already see the current frame's
+fresh controller. `game::locomotion::ground_jump` now reads `f.
+previous_input.stick[0]` for both the direction test and the launch
+velocity, confirmed directly against `fox-fd.slp`: `fighter::locomotion::
+jump_backward` fed the frame *before* each of the recording's 64 KneeBend->
+Jump transitions (both ports, full match) agrees with every one, while fed
+the transition frame's own stick instead, three disagree (P4 at frame 3, P1
+at 775 and 2990). The new divergence at frame 5 is a separate, unrelated
+matter (above), reported rather than chased in this batch.
 
 Previously (2026-09-11, gameplay export v6, before this loop's `action_age`
 tracked-rate fix): the pack fix alone (below) reached frame -3, field

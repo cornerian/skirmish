@@ -32,28 +32,46 @@ reports its F id.
 ## Backward jumps
 
 `ftCo_Jump_Enter` (`ftCo_Jump.c:157-161`) selects the launched motion from
-the stick sampled at the KneeBend-to-jump transition: `msid = stick.x *
-facing > -x78 ? JumpF : JumpB` (`ftCommonData.x78`). `ftCo_JumpAerial_Enter_
-Basic` (`ftCo_JumpAerial.c:169-171`, `190-192`; the other character entries
-at `239-241` and `261-263` repeat the same test, and the Yoshi path at `214`
-is always F) uses the identical test at the aerial jump's own launch. JumpB's
-callbacks are JumpF's (`ftmotionstates.c:420-430`: Anim/IASA/Phys/Coll) and
-JumpAerialB's are JumpAerialF's (`442-452`), so the two variants differ only
-in the reported motion and animation id, never in behavior.
+`msid = fp->input.lstick[0].x * fp->facing_dir > -x78 ? JumpF : JumpB`
+(`ftCommonData.x78`). `ftCo_JumpAerial_Enter_Basic` (`ftCo_JumpAerial.c:
+169-171`, `190-192`; the other character entries at `239-241` and `261-263`
+repeat the same test, and the Yoshi path at `214` is always F) uses the
+identical test at the aerial jump's own launch. JumpB's callbacks are
+JumpF's (`ftmotionstates.c:420-430`: Anim/IASA/Phys/Coll) and JumpAerialB's
+are JumpAerialF's (`442-452`), so the two variants differ only in the
+reported motion and animation id, never in behavior.
+
+The two direction tests read `fp->input` from different points in a
+fighter's per-frame dispatch, so despite being textually identical they
+consult different frames' sticks. `ftCo_Jump_Enter` is called from
+`ftCo_KneeBend_Anim`, an *Anim* callback, which (like the generic per-frame
+animation advance `observation::observe`'s general `-1` rule already
+accounts for) runs before this same frame's own controller read updates
+`fp->input`, so it actually sees the *previous* frame's stick.
+`ftCo_JumpAerial_CheckInput` (which calls `ftCo_JumpAerial_Enter_Basic`) is
+reached through an *IASA* chain (`ftCo_800CB870`/`ftCo_800CB8E0`, called
+from `ftCo_Jump_IASA`/`ftCo_JumpAerial_IASA`'s own `RETURN_IF` chains),
+which sees the current frame's already-updated `fp->input`, matching every
+other IASA-dispatched check this crate already reads current input for
+(the Dash/Turn/Run family, `docs/validation.md`). Confirmed directly against
+`fox-fd.slp`: `fighter::locomotion::jump_backward` fed the frame *before*
+each of the recording's 64 KneeBend->Jump transitions (both ports, full
+match) agrees with every one; fed the transition frame's own stick instead,
+three disagree (P4 at frame 3, P1 at 775 and 2990).
 
 Model: `locomotion::Parameters.jump_backward_threshold: Option<f32>` (x78;
 `None` keeps every jump JumpF/JumpAerialF, matching data that never modeled
 the backward variants) and `locomotion::State.jump_backward: bool`, set by
-`ground_jump`'s own launch and by `try_aerial_jump`'s own launch from the
-stick and facing at that exact frame, and cleared for every other action by
-`simulation::enter` (mirroring how `landing_allow_interrupt` is reset there
-and immediately re-set by its own entry). The pure predicate
-`fighter::locomotion::jump_backward(stick_x, facing, threshold) -> bool` is
-the source's comparison negated, not an independent `<=`: the two agree
-everywhere except NaN, where the source's ternary (and so this predicate)
-falls to backward. Observation: `Jump` with the flag reports 26/17,
-`JumpAerial` with the flag reports 28/19; without the flag, or with the
-threshold absent, the existing 25/16 and 27/18.
+`ground_jump`'s own launch from `f.previous_input`'s stick and facing, and by
+`try_aerial_jump`'s own launch from the current frame's stick and facing,
+cleared for every other action by `simulation::enter` (mirroring how
+`landing_allow_interrupt` is reset there and immediately re-set by its own
+entry). The pure predicate `fighter::locomotion::jump_backward(stick_x,
+facing, threshold) -> bool` is the source's comparison negated, not an
+independent `<=`: the two agree everywhere except NaN, where the source's
+ternary (and so this predicate) falls to backward. Observation: `Jump` with
+the flag reports 26/17, `JumpAerial` with the flag reports 28/19; without
+the flag, or with the threshold absent, the existing 25/16 and 27/18.
 
 ## Aerial fall
 
@@ -96,9 +114,10 @@ backward double jump into the aerial fall against its own Peppi bytes
 reaches the ordinary velocity-driven apex fall before its own forward double
 jump (25/16, 29/20, 27/18 — in that row order, since the double jump here
 follows the apex rather than preceding it), and reports a Mismatch at the
-ground-jump launch row where a flipped stick sample first flips the reported
-direction. The air-dodge continuation's `FallSpecial` row now asserts 35/26
-instead of the corrected-away 31/22.
+ground-jump launch row when the *previous* row's stick sample (the one
+`ground_jump` actually reads) is flipped, even though that earlier row's own
+JumpSquat report is unaffected. The air-dodge continuation's `FallSpecial`
+row now asserts 35/26 instead of the corrected-away 31/22.
 
 ## Oracle
 
