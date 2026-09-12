@@ -204,6 +204,18 @@ fn the_laser_travels_before_hitting_and_despawns_on_contact() {
         spawn_position[0], hit_frame.fighters[1].position[0],
         "the hit happens after travel, not at the spawn position"
     );
+    // `ftColl_8007925C` (the victim's own per-item hurtbox scan,
+    // `ftcoll.c:1999-2270`) stages an item-inflicted hit onto the victim
+    // alone; nothing in that path (or `Item_8026A294`'s own reaction to it)
+    // reaches into the item's *owner* Fighter_GObj, unlike a direct
+    // fighter-vs-fighter hitbox contact (`ftColl_800763C0`), which gives
+    // both GObjs hitlag from the same contact -- a projectile's owner is a
+    // separate GObj from the projectile itself, so it takes no hitlag from
+    // its own shot connecting.
+    assert_eq!(
+        hit_frame.fighters[0].hitlag, 0.0,
+        "a projectile's owner takes no hitlag from its own shot connecting"
+    );
 }
 
 #[test]
@@ -461,9 +473,11 @@ fn a_press_during_starts_own_arm_window_arms_before_loop_is_entered() {
     // own `action_frame` resetting back down mid-Loop (not by any action
     // change) -- watch for a low frame following an already-seen high one,
     // before `SpecialNEnd` (a genuine end, no repeat) is ever reached.
-    // (A laser hit briefly freezes `action_frame` via ordinary hitlag,
-    // which this loop tolerates by only requiring monotonic *eventual*
-    // progress, not a fixed tick schedule.)
+    // (This loop only requires monotonic *eventual* progress, not a fixed
+    // tick schedule, since a hit landing this fighter's own shield/damage
+    // side could still perturb the exact tick count in other fixtures; a
+    // projectile's own owner no longer takes hitlag from its own shot
+    // connecting -- `game::damage::apply_hit`'s `attacker_takes_hitlag`.)
     let mut saw_high_frame_in_loop = false;
     let mut saw_repeat = false;
     for _ in 0..40 {

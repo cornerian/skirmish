@@ -494,6 +494,9 @@ fn step(
                                 )
                             }),
                     };
+                    // The `true` (`projectile`) argument also suppresses
+                    // this hit's own attacker hitlag; see
+                    // `damage::resolve_prepared_hit`'s own citation.
                     let accepted = damage::apply_hit(
                         data,
                         state,

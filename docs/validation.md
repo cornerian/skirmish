@@ -1,5 +1,74 @@
 # Local validation provenance
 
+The 2026-09-13 projectile-owner-hitlag fix (the real-replay parity loop on
+`fox-fd-2.slp`, `docs/parity.md`) stops a projectile's own owner from
+taking hitlag when its shot connects. Diagnosed directly against
+`fox-fd-2.slp`'s own frame -5 divergence (P1's `last_attack_landed`): a
+direct, uncommitted probe stepping the native match frame-by-frame (not
+just `validate-replay`'s own stop-on-first-difference report, which only
+ever surfaces P1's own field since it is checked before P2 in port order)
+showed P1's own `action_age` diverging starting exactly the frame Skirmish
+registers its own laser hit (frame -4 in this run): expected continues
+advancing normally (0, 1, 2...) while actual froze at 0 for at least two
+further frames. Traced to `game::damage::resolve_prepared_hit`'s own
+`state.fighters[attacker].hitlag = ...max(attacker_hitlag)` line (called,
+via `apply_hit`/`prepare_hit`, by every hit path). `ftColl_8007925C` (the
+victim fighter's own priority-13 scan of every live item's hitboxes
+against its own hurtboxes, `ftcoll.c:1999-2270`) stages an item-inflicted
+hit's damage/knockback onto the victim alone; nothing in that path, or
+`Item_8026A294`'s own reaction to it (`item.c:1768`), reaches into the
+item's *owner* `Fighter_GObj` at all -- unlike a direct fighter-vs-fighter
+hitbox contact (`ftColl_800763C0`/`Fighter_ProcessHit_8006D1EC`), which
+gives both the attacking and defending `Fighter_GObj`s hitlag from the
+same contact event. An item's owner is a separate GObj from the item
+itself, so a projectile-inflicted hit should give its owner no hitlag at
+all. `apply_hit`/`prepare_hit`/`resolve_prepared_hit` already carry a
+`projectile: bool` (threaded through `PreparedHit`, added independently
+for the Luau `on_projectile_contact` hook); `resolve_prepared_hit`'s own
+attacker-hitlag assignment now also gates on `!projectile`, alongside the
+existing zero-knockback `apply_hitlag` gate (independent conditions: even
+a projectile with real knockback, e.g. Falco's own laser, still gives its
+owner no hitlag). `game::projectile.rs`'s own call already passes `true`
+for `projectile`; `game::simulation`'s fighter-vs-fighter hit application
+and `game::grab`'s own throw-connects call keep passing `false`
+(unchanged behavior -- neither has any evidence of being wrong).
+`tests/game_fox_neutral_special.rs`'s existing
+`the_laser_travels_before_hitting_and_despawns_on_contact` now also asserts
+`hit_frame.fighters[0].hitlag == 0.0`; a second, pre-existing test's own
+comment describing the old (buggy) attacker freeze is corrected to match.
+This does not by itself move `fox-fd-2.slp`'s own baseline (`docs/
+parity.md`): the frame -4 vs -5 divergence itself -- the laser connecting
+one whole frame later than the recording shows, a genuine geometric
+shortfall in the swept hurtbox test rather than an intra-frame ordering
+artifact (`ftColl_8007925C`'s own hurtbox test is not swept at all, and
+detects and applies a hit on the same GObj-priority pass, ruling out a
+next-frame-deferred-apply explanation modeled on the Falco laser batch's
+own terrain-despawn finding) -- remains open and is reported separately.
+Once fixed, this fix's own effect becomes visible: P1's own `action_age`
+now tracks the recording exactly on every frame from the (still one-late)
+hit onward, instead of freezing.
+
+The 2026-09-14 laser muzzle-bone/ray-scale fix (the real-replay parity
+loop, `docs/fox-neutral-special.md`) fixes the frame -4/-5 geometric
+shortfall the entry above left open, by spawning the laser from its real
+position instead of the ECB midpoint and modeling the beam's own growth:
+see `game::characters::fox::neutral::drain_pending_shot`'s and
+`game::projectile::Laser::scale`'s own doc comments for the full decomp
+citation and mechanism. `specials.neutral.laser` gains `scale`/
+`muzzle_bone` as `Option` fields (both `None`, preserving prior behavior
+exactly, until the gameplay-export pack supplies them); `laser` itself is
+now `Box`ed, matching `NeutralScript`'s own precedent, since these two
+small fields were enough to overflow `game_damage_floor`'s own
+deeply-recursive stack test by growing every `MatchData` on the stack.
+Pinned by two new tests in `tests/game_fox_neutral_special.rs`. Measured
+against a local copy of the real gameplay export (muzzle_bone 67/61,
+scale 3.0 for Fox/Falco; not yet reflected in the published pack this
+loop's own baselines are pinned against, so not committed):
+`fox-fd-2.slp` still diverges at frame -11, P2's `action_state` (Turn vs
+Dash) -- an unrelated regression already present immediately after
+rebasing onto origin/main, upstream of where this fix's own effect would
+be observed. Reported rather than chased, out of this fix's own scope.
+
 The 2026-09-14 AttackAir entry-advance fix (the real-replay parity loop,
 `fox-bf.slp`, `docs/parity.md`) covers another sibling instance of the
 entry-advance bug: `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick`

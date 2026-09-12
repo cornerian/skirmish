@@ -1266,7 +1266,17 @@ pub(crate) fn resolve_prepared_hit(
     // CalcHitlag` would otherwise apply it to either side), so it stays
     // gated alongside the victim's.
     let reacted = apply_knockback;
-    if apply_hitlag {
+    // `ftColl_8007925C` (the victim fighter's own priority-13 scan of every
+    // live item's hitboxes against its own hurtboxes, `ftcoll.c:1999-2270`)
+    // stages an item-inflicted hit's damage/knockback onto the victim alone;
+    // nothing in that path (or `Item_8026A294`'s own reaction to it,
+    // `item.c:1768`) reaches into the item's *owner* `Fighter_GObj` at all --
+    // unlike a direct fighter-vs-fighter hitbox contact (`ftColl_800763C0`),
+    // which gives both GObjs hitlag from the same contact. This is
+    // independent of the zero-knockback gate above: even a projectile with
+    // real knockback (Falco's own laser, unlike Fox's) still gives its owner
+    // no hitlag, because the owner is a separate GObj from the projectile.
+    if apply_hitlag && !projectile {
         state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     }
     super::combat_history::record_hit(

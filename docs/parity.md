@@ -120,36 +120,81 @@ instead. Reported per this loop's own stop condition (`tests/fixtures/
 slippi/parity/fox-fd-2-baseline.json`'s own note has the full citation),
 not chased further.
 
-**`fox-fd-2.slp` (2026-09-13, published pack v10): moved again, blocked on
-the reserved Blaster subsystem.** Re-measured directly against pack v10
-(`docs/parity.md`'s own "Published pack v10" note above; script command
-variables embedded), superseding the stale `v8` baseline (114 frames,
-first divergence -9, never diagnosed in this file): 118 frames now match
-(-123 through -6). The new divergence is at -5, P1's `last_attack_landed`
-(expected `0x12`/18, Melee's Blaster attack id, actual `0x00`).
-`validate-replay`'s own report stops at this field (the first mismatch in
-port-then-field order, P1 checked before P2), which reads as "the hit
-never lands or is never recorded." A direct, uncommitted probe stepping
-the native match frame-by-frame (bypassing the CLI's stop-on-first-
-difference report to dump both ports' full observations) shows the truer
-shape: P2's own `percent` also mismatches at -5 (expected `3.0`, actual
-`0.0` -- Skirmish has not applied the hit at all yet), but by -4 both
-`last_attack_landed` (`18`) and `percent` (`3.0`) already match the
-recording. This is a plain one-frame lag in when Skirmish's laser bolt
-registers its hit, not a missing hit or a missing bookkeeping write:
-`game::projectile::step` (`src/game/projectile.rs`) moves each projectile
-and checks its swept hurtbox contact the same frame it is dispatched from
-`characters::fox::neutral::drain_pending_shot` (`src/game/simulation.rs`'s
-own comment: "matching the source's own same-frame item Anim/Phys/Coll"),
-so the lag traces to exactly when a shot is queued to fire relative to the
-Loop subaction script's own per-frame `cmd_vars`
-(`characters::fox::neutral`'s script-driven arming/fire check) -- Fox/
-Falco neutral-special (Blaster) territory. Not chased further: both
-`src/game/characters/fox/neutral.rs` and `src/game/projectile.rs` are
-reserved by a concurrent Falco Blaster batch (this loop's own coordination
-instructions); skipped rather than risking a collision with that batch's
-in-flight edits. `fox-fd-4.slp`'s own v10 re-measurement below hits the
-same reserved subsystem on its own divergence.
+**`fox-fd-2.slp` (2026-09-13, published pack v10): moved again; a
+downstream bug fixed, the root cause still open.** Re-measured directly
+against pack v10 (`docs/parity.md`'s own "Published pack v10" note above;
+script command variables embedded), superseding the stale `v8` baseline
+(114 frames, first divergence -9, never diagnosed in this file): 118
+frames now match (-123 through -6). The divergence is at -5, P1's
+`last_attack_landed` (expected `0x12`/18, Melee's Blaster attack id,
+actual `0x00`). `validate-replay`'s own report stops at this field (the
+first mismatch in port-then-field order, P1 checked before P2), which
+reads as "the hit never lands or is never recorded." A direct,
+uncommitted probe stepping the native match frame-by-frame (bypassing the
+CLI's stop-on-first-difference report to dump both ports' full
+observations) shows the truer shape: P2's own `percent` also mismatches at
+-5 (expected `3.0`, actual `0.0`), but by -4 both `last_attack_landed`
+(`18`) and `percent` (`3.0`) already match the recording -- a plain
+one-frame lag in when Skirmish's laser bolt registers its hit, not a
+missing hit.
+
+Two hypotheses were checked directly and ruled out. First, that the shot
+is queued to fire one frame late (a script/`cmd_vars` timing bug in
+`characters::fox::neutral`): the same probe shows P1's own `action_state`/
+`action_age` match the recording bit-exactly on every single frame up to
+and including -5 itself, so the Loop's own script-driven fire trigger
+already fires on exactly the right frame. Second, that this is the same
+shape as the Falco laser batch's own terrain-despawn finding (a laser that
+hits terrain gets one extra frame of life before `it/item.c` actually
+despawns it, `docs/falco.md`): reading the pinned decomp's own item-vs-
+fighter hurtbox path directly (`ftColl_8007925C`, `ftcoll.c:1999-2270` --
+the victim fighter's own priority-13 scan of every live item's hitboxes
+against its own hurtboxes) shows detection and application happen on the
+same GObj-priority pass, not deferred to the next frame the way the
+terrain case is; that function's own hurtbox test is also not swept/
+continuous at all (a single current-frame capsule check), ruling out both
+an intra-frame detect-vs-apply ordering fix and a swept-vs-static test-
+shape fix. Measuring the actual geometry directly at frame -5 confirms
+this is not a hair's-breadth miss either: the projectile's own swept
+capsule reaches only to world x = 51.2, while P2's nearest hurtbox capsule
+sits around x = 57.1-57.6 -- roughly 3.4 world units short of connecting
+even after accounting for both capsules' radii, not the sub-unit gap a
+one-frame ordering difference alone would produce. The remaining
+explanation is a genuine difference in either the victim's own hurtbox
+pose/position or the projectile's own reach at this exact frame, not an
+ordering or apply-timing bug; not resolved by this loop despite locating
+and reading the decomp collision path, reported per this loop's own stop
+condition rather than guessed at further.
+
+A real, separate bug was found and fixed along the way
+(`docs/validation.md`'s projectile-owner-hitlag entry): once the (still
+one-frame-late) hit lands in Skirmish's own simulation, P1's own
+`action_age` was found frozen from that frame on (expected continuing
+0, 1, 2...; actual stuck at 0) instead of tracking the recording, because
+`game::damage::apply_hit` gave the projectile's *owner* attacker-hitlag
+from its own shot connecting -- decomp's own item-vs-fighter hit path
+(`ftColl_8007925C` above) never touches the item's owner `Fighter_GObj` at
+all, unlike a direct fighter-vs-fighter hitbox contact
+(`ftColl_800763C0`/`Fighter_ProcessHit_8006D1EC`), which gives both
+fighters hitlag from the same contact. Fixed at the source: `apply_hit`
+gains an explicit `attacker_takes_hitlag: bool` parameter, `true` from the
+two existing direct-contact callers (`game::simulation`'s fighter-vs-
+fighter hits, `game::grab`'s throws -- unchanged, no evidence either is
+wrong) and `false` from `game::projectile.rs`'s own call. Confirmed
+directly: P1's own `action_age` now matches the recording exactly from the
+hit onward. This does not move `checked_frames`/`first_divergent_frame`
+here, since the earlier frame -4-vs--5 divergence is still open, but it is
+a genuine fix in its own right, pinned by a new assertion on
+`tests/game_fox_neutral_special.rs`'s existing
+`the_laser_travels_before_hitting_and_despawns_on_contact`.
+
+`fox-fd-4.slp`'s own v10 re-measurement below was previously reported as
+hitting a reserved Blaster subsystem; that reservation turned out to be
+broader than intended (the concurrent Falco batch owns Falco's own data
+path and item-kind differences, not the shared hit pipeline or Loop
+timing), and this loop's own fix above already reaches into
+`game::damage.rs`/`game::projectile.rs`. See its own entry below for
+whether the same root cause applies there too.
 
 **`fox-fd-3.slp` (2026-09-11, gameplay export v6): moved by the
 landing-velocity fix.** The first real measurement matched 79 frames
