@@ -221,7 +221,14 @@ fn step(
             state.projectiles[index].owner = victim;
             state.projectiles[index].angle += core::f32::consts::PI;
             for hit in &mut state.projectiles[index].hitboxes {
-                let scaled = hit.damage as f32 * down.reflect.damage_mul;
+                // `item.c:1613-1619` (`Item_80269F14`): `hit.damage * xC6C +
+                // 0.99f`, truncated toward zero -- not a plain product. The
+                // `+ 0.99` term was missing here (a real discrepancy this
+                // batch's own differential exposed, `tests/oracle/item.c`'s
+                // `oracle_reflect_damage_scaling`); the global cap
+                // (`it_804D6D28->xD8`) stays unmodeled, as before, since its
+                // real runtime value is not in the pinned decomp.
+                let scaled = hit.damage as f32 * down.reflect.damage_mul + 0.99;
                 hit.damage = scaled.max(0.0) as u32;
             }
             // `down::Reflect.speed_mul` is deliberately not applied: Fox's
