@@ -83,6 +83,12 @@ pub struct SideSpecial {
     pub dash: Dash,
     pub end: Phase,
     pub attributes: Attributes,
+    /// `specials.side.script` (exporter), present once the exporter supplies
+    /// it for this fighter; `None` for Falco/pre-batch fixtures, matching
+    /// `neutral::NeutralSpecial::script`'s own fallback. Boxed for the same
+    /// reason as that field -- see its own doc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<Box<SideScript>>,
 }
 
 /// A ground/air pose pair with no hitboxes (the Start and End phases have
@@ -106,6 +112,57 @@ pub struct Dash {
     /// `ft_80085134`: per-pose TransN `[z, y]`, applied unconditionally (the
     /// air variant has no root-motion gate in the source).
     pub air_trans_n: Vec<[f32; 2]>,
+}
+
+/// Ground/air pair of one phase's per-frame `SetCmdVar` (opcode 19,
+/// `ftaction.c:454-471`) trace, shared between the neutral special's own
+/// three-phase script (`neutral::NeutralScript`) and this move's own
+/// single-phase (`Dash`) script below.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptPhase {
+    pub ground: ScriptFrames,
+    pub air: ScriptFrames,
+}
+
+/// One ground/air variant's own per-frame trace, straight from the
+/// exporter's script decoder. `cmd_vars[i]` is `Some` from the frame its
+/// `SetCmdVar` instruction first executes onward (the source's own
+/// persistent register, forward-filled by the exporter across every later
+/// sampled frame; a `None` slot reads as that register's pre-`SetCmdVar`
+/// value, `0`). `allow_interrupt` is exporter-confirmed `false` throughout
+/// every phase either move uses this sidecar for.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptFrames {
+    pub cmd_vars: Vec<[Option<u32>; 4]>,
+    pub allow_interrupt: Vec<bool>,
+}
+
+/// Checks a script sidecar's per-frame vectors against the phase's own pose
+/// count, shared by the neutral and side specials' own `validate`.
+pub(crate) fn validate_script_frames(
+    frames: &ScriptFrames,
+    pose_count: usize,
+    context: &str,
+) -> Result<(), Error> {
+    if frames.cmd_vars.len() != pose_count || frames.allow_interrupt.len() != pose_count {
+        return Err(Error::Data(format!(
+            "{context} script frame count must match its phase's pose count"
+        )));
+    }
+    Ok(())
+}
+
+/// `CreateGhostItem` (`ftfoxspecials.c:61-64, 247-266`): the Dash phase's
+/// own script trace. The ghost item it gates (`cmd_vars[2] == 1` at frame 2)
+/// is confirmed hitbox-free and GFX-only (module doc) -- this sidecar exists
+/// purely so the spawn frame can be recorded/tested, not read by any
+/// gameplay logic below.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SideScript {
+    pub dash: ScriptPhase,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -219,6 +276,18 @@ pub(crate) fn validate(
         return Err(Error::Data(
             "side-special dash TransN must be finite".into(),
         ));
+    }
+    if let Some(script) = &parameters.script {
+        validate_script_frames(
+            &script.dash.ground,
+            parameters.dash.ground.frames.len(),
+            "side dash ground",
+        )?;
+        validate_script_frames(
+            &script.dash.air,
+            parameters.dash.air.frames.len(),
+            "side dash air",
+        )?;
     }
     Ok(())
 }

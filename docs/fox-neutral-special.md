@@ -79,7 +79,10 @@ Fox/Falco phases (`ftfoxspecialn.c`)
   `cmd_vars[0] != 0` sets `isBlasterLoop = true`. Nothing in this file ever
   sets `cmd_vars[0]` to a nonzero value during Start (it is zeroed at Entry
   and never reassigned here); the flag is animation-script-driven data this
-  decomp does not expose (see "Fire timing and the repeat window" below).
+  decomp does not expose on its own -- it comes from the Start subaction's
+  own `SetCmdVar` command stream instead, now decoded by the exporter and
+  consumed directly when supplied (see "Script-driven arming and fire
+  timing" below).
 - **Loop** (`ftFx_SpecialNLoop_Anim`/`_IASA`/`_Phys`/`_Coll`): the same
   physics as Start. On the last frame: if `isBlasterLoop` is true, loops
   back into Loop itself (`ftFox_SpecialN_BeginLoopTransition` +
@@ -159,37 +162,69 @@ special modeled so far
   counterpart at the same frame, preserving `is_loop`); the reverse
   direction is absent by design, matching the citation above.
 
-Fire timing and the repeat window (approximated, flagged)
------------------------------------------------------------
+Script-driven arming and fire timing
+-------------------------------------
 
-Two pieces of this move's timing are script-driven data this pinned C
-snapshot does not expose (no figatree/subaction command stream is checked
-into the decomp; only DAT-resource data, owned by the separate
-`skirmish-assets` project, would confirm them):
+Two pieces of this move's timing are script-driven data the pinned C
+snapshot alone does not expose (no figatree/subaction command stream is
+checked into the decomp; only DAT-resource data, owned by the separate
+`skirmish-assets` project, could confirm them) -- **both are now decoded**,
+by a later exporter pass than the one "Exporter's decoded values" below
+describes, and driven directly whenever a fighter's own resource supplies
+them:
 
 - **Which Loop frame fires the shot.** `cmd_vars[2]` is set to a nonzero
-  value by an animation-embedded command at some point in the Loop clip
-  (mirroring exactly how a fighter's own attack hitboxes are commands
-  embedded in *that* attack's clip -- this project's existing `Attack::
-  frames[i].hitboxes` resource already models that same class of
-  data for ordinary attacks). Absent the decoded command stream, this port
-  fires the shot on Loop's own entry frame (frame 0) of every cycle --
-  reproducing one shot per Loop cycle at the correct cadence and total
-  count, but not necessarily the exact mid-clip frame the source's own
-  accessory callback lands on. Flagged here and in
-  `characters::fox::neutral`'s own module doc for a follow-up once the
-  export below supplies real per-frame command data.
-- **The `cmd_vars[0]` repeat-arming window.** Zeroed at Entry, read by
-  `CheckLoopInput` every Start and Loop frame, but this file never assigns
-  it a nonzero value itself (also animation-script data). Since Melee's own
-  observable Blaster behavior requires *re-pressing* B each shot (holding B
-  down without releasing does not keep firing -- `pressed_buttons`, not
-  `held`, is what `CheckLoopInput` reads) and nothing in this file ever
-  arms it during Start, this port approximates `cmd_vars[0]` as **false
-  throughout Start, true throughout Loop**: a fresh B press at any point
-  during a Loop cycle arms that cycle's repeat; a fresh press during Start
-  does not. This reproduces the known mash-to-repeat behavior without
-  claiming the exact scripted window.
+  value by a `SetCmdVar` command (opcode 19, `ftaction.c:454-475`) at a
+  fixed point in the Loop clip (mirroring exactly how a fighter's own
+  attack hitboxes are commands embedded in *that* attack's clip -- this
+  project's existing `Attack::frames[i].hitboxes` resource already models
+  that same class of data for ordinary attacks). The exporter's own script
+  decoder (`skirmish-assets`) walks the Start/Loop/End subaction scripts
+  frame by frame and records each slot's value once its own `SetCmdVar`
+  first executes, forward-filled for every later sampled frame (the
+  source's own register is persistent; the exporter does not itself
+  simulate the native side's later *consumption* of it). For Fox, both the
+  ground and air Loop clips set `cmd_vars[2]` at **frame 5** -- confirmed
+  directly against a real recording, not merely the exported script: every
+  `FOX_LASER` item spawn in `tests/fixtures/slippi/parity/fox-fd-3.slp`
+  (`18_24_36 [H2O] Fox + Fox (FD).slp`, Slippi format `3.9.0`, the only one
+  of this project's four `fox-fd`-pairing recordings new enough to carry
+  item events at all) shows the shooting fighter's own recorded
+  `state_age` at exactly `5.0` on the spawn frame, for all five
+  independent instances in that file.
+- **The `cmd_vars[0]` repeat-arming window.** Zeroed only at a fresh
+  Start/AirStart entry (`ftFox_SpecialN_InitializeState`, called by
+  `ftFx_SpecialN_Enter`/`ftFx_SpecialAirN_Enter`, *not* by every internal
+  Start->Loop/Loop->Loop/Loop->End transition -- those each preserve the
+  running register, the same way `characters::fox::side`'s own
+  `gravity_delay` survives its own phase transitions), read by
+  `CheckLoopInput` every Start and Loop frame. For Fox, the Start clip sets
+  it at frame 4 (ground and air alike); the Loop clip's own frame-0 value
+  is already nonzero, inherited from Start rather than freshly re-set (a
+  press during Start's own tail, from frame 4 on, therefore already arms
+  the *first* Loop pass -- see `neutral::enter_loop`'s own
+  `preserve_armed` parameter).
+
+`characters::fox::neutral::NeutralSpecial::script: Option<Box<NeutralScript>>`
+carries this per-fighter, per-phase, per-ground/air trace (`cmd_vars: Vec<[Option<u32>; 4]>`,
+`allow_interrupt: Vec<bool>` -- exporter-confirmed `false` throughout every
+phase this move uses it for), validated to have exactly as many frames as
+that phase's own pose count. `neutral.rs`'s own `apply_script_frame`
+recovers the single frame each slot's `SetCmdVar` actually executes on by
+comparing consecutive frames of the (forward-filled) exported table --
+necessary because this move's own fire check clears its persistent
+register the same frame it fires (`ftFox_SpecialN_CreateBlasterShot`'s own
+`cmd_vars[2] = 0`), which a naive per-frame overwrite of the exported,
+still-forward-filled value would immediately re-arm on the very next
+frame, causing a spurious re-fire every remaining frame of that Loop pass.
+`script` is `None` for Falco and any pre-batch fixture; every call site
+above falls back to this move's own older approximation in that case:
+Start hard-coded as never-armed, Loop's own repeat unconditionally
+armable by any fresh press mid-cycle, and the shot fired on Loop's own
+entry frame rather than its scripted one. Neither approximation is a
+guess -- both reproduce the real cadence and per-cycle shot count -- but
+neither claims the exact scripted frame the way `script`, once supplied,
+now does.
 
 Exporter's decoded values (supersedes the invented placeholders below)
 ---------------------------------------------------------------------------
@@ -461,23 +496,35 @@ Resource and state shape
   `specials::neutral::Parameters` to this move's own
   `characters::fox::neutral::NeutralSpecial { neutral_thresholds: [f32; 2],
   start: Phase, loop_phase: Phase, end: Phase, attributes: Attributes,
-  laser: Laser }` (`Phase` reused from `characters::fox::side::Phase`,
-  matching `down.rs`'s own precedent of reusing that shape rather than
-  redeclaring an identical struct). `Attributes { angle, speed,
-  landing_lag }` (`x10`/`x14`/`x18`). `Laser { lifetime, hitbox:
-  data::Hitbox }` reuses the existing fighter `Hitbox` shape verbatim for
-  the projectile's own single capsule, rather than inventing a parallel
-  type, since every field it needs (`damage`, `angle_degrees`, `growth`,
-  `fixed`, `base`, `shield_damage`, `center`, `radius`) already exists
-  there and `bone`/`clank`/`rebound`/`element`/`group` are simply unused by
-  a projectile (`bone: 0`, `group: 0`, rest at their defaults).
-- `Fighter.fox_neutral_special: characters::fox::neutral::State { is_loop:
-  bool, pending_shot: bool }` -- `is_loop` mirrors `isBlasterLoop`;
-  `pending_shot` is this port's own signal from the per-fighter `SpecialMove`
-  dispatch (which cannot itself reach `State::projectiles`) up to
-  `simulation::advance`'s own per-frame loop (which can), read and cleared
-  once per frame immediately after the ordinary fighter update-actions/
-  animation pass, matching "item logic runs after fighters."
+  laser: Laser, script: Option<Box<NeutralScript>> }` (`Phase` reused from
+  `characters::fox::side::Phase`, matching `down.rs`'s own precedent of
+  reusing that shape rather than redeclaring an identical struct).
+  `Attributes { angle, speed, landing_lag }` (`x10`/`x14`/`x18`).
+  `Laser { lifetime, hitboxes, move_id }` reuses the existing fighter
+  `Hitbox` shape verbatim for the projectile's own capsules, rather than
+  inventing a parallel type, since every field it needs (`damage`,
+  `angle_degrees`, `growth`, `fixed`, `base`, `shield_damage`, `center`,
+  `radius`) already exists there and `bone`/`clank`/`rebound`/`element`/
+  `group` are simply unused by a projectile (`bone: 0`, `group: 0`, rest at
+  their defaults). `NeutralScript { start, loop_phase, end: ScriptPhase }`
+  (`ScriptPhase`/`ScriptFrames` also reused from `characters::fox::side`,
+  shared with `SideSpecial::script`'s own `SideScript { dash: ScriptPhase }`
+  -- see "Script-driven arming and fire timing" above); boxed because
+  `characters::Specials` is an enum over every character's full moveset, so
+  inlining this optional, sparsely-populated field would otherwise grow
+  every `MatchData` on the stack (this was caught by an unrelated,
+  deeply-recursive test overflowing its default stack purely from the size
+  increase -- see `NeutralSpecial::script`'s own doc comment).
+- `Fighter.fox_neutral_special: characters::fox::neutral::State {
+  repeat_armed: bool, fire: bool, cmd_vars: [u32; 4] }` -- `repeat_armed`
+  mirrors `isBlasterLoop`; `fire` is this port's own signal from the
+  per-fighter `SpecialMove` dispatch (which cannot itself reach
+  `State::projectiles`) up to `simulation::advance`'s own per-frame loop
+  (which can), read and cleared once per frame immediately after the
+  ordinary fighter update-actions/animation pass, matching "item logic
+  runs after fighters"; `cmd_vars` mirrors `Fighter::cmd_vars[0..4]`,
+  read only when `script` is present (see above), preserved across every
+  internal phase transition and reset only by a fresh Start/AirStart entry.
 - `State.projectiles: Vec<projectile::Projectile>`, included in checkpoints
   like every other match-state field (`State` already derives `Clone` +
   `Serialize`).
@@ -681,6 +728,23 @@ inputs, the Start->Loop transition, Loop's own repeat-vs-end decision and
 same-frame fire check (item spawn captured), and End's Wait/Fall/
 FallSpecial dispatch, over 256 proptest cases plus known-value checks.
 
+This batch adds a second oracle harness, `NeutralScriptTrace`
+(`oracle_neutral_trace_new`/`_step`/`_free`), that keeps one real `Fighter`
+alive across repeated calls (unlike every adapter above, which resets a
+fresh one per call) so a whole Start->Loop->Loop pass can be replayed
+against a synthetic per-frame script table, one real `SetCmdVar` event
+applied per step exactly as `neutral::apply_script_frame` derives it (the
+frame a slot's value first differs from the previous frame's, in the same
+forward-filled table shape the exporter emits). `script_trace_matches_
+the_real_fox_timings` drives two full Loop passes shaped like Fox's own
+real timings (Start 7 frames/`cmd_vars[0]` at frame 4, Loop 10
+frames/`cmd_vars[2]` at frame 5) and checks every simulated frame's
+`(phase, armed, fired)` against the exact citations above, including the
+repeat transition's own `isBlasterLoop` reset; `script_trace_arms_only_at_
+or_after_the_scripted_frame` fuzzes the set frame and press frame
+independently over 256 proptest cases, proving a press strictly before the
+scripted frame never arms and one on or after it always does.
+
 `tests/oracle/original/itfoxlaser.c` snapshots the laser item's own file;
 `itfoxlaser.functions.json` selects the spawn entry points
 (`it_8029C504`/`it_8029C6A4`, `normalizeAngle`), the per-frame motion
@@ -773,7 +837,14 @@ repeated hits, the grounded phases' own ground-leaves-to-`Fall` fallback,
 a real stage-line terrain despawn (a wall between the two fighters stops
 the laser well inside the blast zone, proving the real raycast rather
 than only the outer bounding box), the Slippi ids, and a checkpoint round
-trip including an in-flight projectile. `tests/
+trip including an in-flight projectile; two later additions (this batch)
+graft a synthetic `script` (shaped like Fox's own real exported timings --
+Start 7 frames/`cmd_vars[0]` at frame 4, Loop 10 frames/`cmd_vars[2]` at
+frame 5) onto that same fixture and confirm, end to end through the full
+engine: a fresh press during Start's own arm window arms the repeat before
+Loop is ever entered (impossible under the pre-script approximation, which
+hard-coded Start as never-armed), and the shot fires strictly after Loop's
+entry tick rather than coinciding with it. `tests/
 game_fox_neutral_special_reflect.rs` (a later batch) covers the shield
 bounce (a laser reflects off a shielding fighter's own shield bubble
 without dealing damage, and keeps flying), the Reflector hand-off (owner
@@ -789,19 +860,31 @@ of a real recording's own observed multi-frame flight.
 
 ## Known gaps and deviations (see inline citations above for detail)
 
-- The exact Loop frame the shot fires on, and the exact `cmd_vars[0]`
-  repeat-arming window, are both animation-script data this decomp does
-  not expose; approximated as "Loop's own entry frame" and "true
-  throughout Loop, false throughout Start" respectively. Checked again
-  against the exporter's now-delivered `specials.neutral` pack
-  (`/mnt/archive/datasets/melee/skirmish-gameplay/v2/fox-fd/match-data.json`):
-  it supplies real bone poses and hitbox values for every phase (all of
-  which already matched this document's own previously-cited numbers
-  exactly -- `angle`/`speed`/`landing_lag`/`lifetime`/`move_id`/every
-  hitbox field, byte for byte) but **no per-frame command-stream/script-
-  opcode data at all** (each frame is `{bones, hitboxes}` only), so it
-  cannot resolve this gap; still open, pending a future export pass that
-  decodes the actual animation command stream.
+- **Resolved this batch, when `script` is supplied**: the exact Loop frame
+  the shot fires on and the exact `cmd_vars[0]` repeat-arming window are
+  both now driven directly from the exporter's own decoded `SetCmdVar`
+  command-stream trace (`specials.neutral.script`; see "Script-driven
+  arming and fire timing" above), confirmed for Fox's own ground and air
+  Loop clips against a real recording's own `state_age` at the laser's
+  spawn frame (`tests/fixtures/slippi/parity/fox-fd-3.slp`, five
+  independent instances, all exactly `5.0`). `script` is `None` for Falco
+  and any fixture the exporter has not been re-run against yet; those
+  still fall back to the older approximation ("Loop's own entry frame" and
+  "true throughout Loop, false throughout Start" respectively), which
+  remains reachable code, not deleted.
+- Two of this project's four `fox-fd`-pairing real recordings
+  (`fox-fd-2.slp`, `fox-fd-4.slp`) predate Slippi's own item-event support
+  entirely (format `2.0.1`; item events were added later) and record zero
+  items throughout, so neither can independently confirm a laser spawn
+  frame at all -- only `fox-fd-3.slp` (format `3.9.0`) can, and does (see
+  above). Measuring both against a locally spliced pack (this batch's own
+  `specials.*.script` grafted onto the committed `fox-fd/match-data.json`,
+  not itself committed) for a general regression check finds their first
+  divergence unchanged in kind and far too early to ever reach Blaster
+  usage (`fox-fd-2`: frame -5, `last_attack_landed`; `fox-fd-4`: frame -30,
+  `action_state` -- both still inside the pre-"GO" window, an unrelated,
+  pre-existing gap this batch did not chase further, matching this
+  document's own established "report, don't chase" precedent elsewhere).
 - The laser's own damage/angle/knockback hitbox values are exporter-
   confirmed (see above), no longer a synthetic placeholder.
 - `ShieldBounced` vs `HitShield`'s exact dispatch conditions in the source

@@ -115,6 +115,69 @@ since the pack's own P4 shoulder press is still masked by the separate
 same-frame shield-regeneration bug fixed next; both together move it from
 96 to 100 (`fox-bf-baseline.json`).
 
+The 2026-09-12 script-driven Blaster timing batch (`docs/
+fox-neutral-special.md`'s "Script-driven arming and fire timing") replaces
+the neutral special's own approximated fire timing and Start-never-arms
+repeat gate with the exporter's newly-decoded per-frame `SetCmdVar` trace
+(`specials.neutral.script`/`specials.side.script`, `ftaction.c:454-475`
+opcode 19), when a fighter's own resource supplies it. `NeutralSpecial`/
+`SideSpecial` each gain `script: Option<Box<NeutralScript>>`/
+`Option<Box<SideScript>>` (boxed: inlining it grew every `MatchData`
+enough to overflow an unrelated, already-marginal deeply-recursive test's
+default stack -- `game_damage_floor::malformed_floor_profiles_are_
+rejected_transactionally`, which never touches Fox's specials at all;
+boxing this optional, sparsely-populated field fixed it without touching
+that test), validated to have exactly as many per-frame `cmd_vars`/
+`allow_interrupt` entries as their own phase's pose count.
+`neutral::apply_script_frame` recovers each slot's true one-shot `SetCmdVar`
+frame from the exporter's forward-filled export by comparing consecutive
+frames, since a naive per-frame overwrite would re-arm the fire flag every
+frame after the real one (the exporter does not simulate the native side's
+own same-frame consumption/clear of it). `neutral::enter_loop` gained a
+`preserve_armed` parameter: a repeat Loop pass resets `isBlasterLoop`
+(matching `FinishLoopTransition`'s own explicit reset), but the
+Start->Loop transition does not (matching `ftFox_SpecialN_
+StartAnimation`, which never touches it) -- so a press during Start's own
+arm window (real Fox: frame 4) now correctly survives into the first Loop
+pass, which the pre-script approximation (Start hard-coded as never-armed)
+could not model at all. Both approximations remain reachable, used
+whenever `script` is `None` (Falco, any not-yet-re-exported fixture).
+
+`tests/oracle/fox_neutral_special.c` gained a second, stateful oracle
+harness (`NeutralScriptTrace`) that replays a whole Start->Loop->Loop pass
+against the real decomp functions, one `SetCmdVar` event applied per
+simulated frame; `tests/fox_neutral_special_differential.rs`'s own
+`script_trace_matches_the_real_fox_timings` (a concrete trace shaped like
+Fox's real timings) and `script_trace_arms_only_at_or_after_the_scripted_
+frame` (256 proptest cases fuzzing the set/press frame) both compare
+against it. Two new native-engine tests (`tests/game_fox_neutral_
+special.rs`) graft a synthetic `script` onto the existing fixture and
+confirm end to end: a press during Start's own arm window arms the repeat
+before Loop is ever entered, and the shot fires strictly after Loop's
+entry tick, not on it.
+
+Confirmed against a real recording, not merely the exported script:
+`tests/fixtures/slippi/parity/fox-fd-3.slp` (`18_24_36 [H2O] Fox + Fox
+(FD).slp`, the only one of the four `fox-fd`-pairing recordings new enough
+to carry Slippi item events at all -- format `3.9.0`; `fox-fd-2.slp`/
+`fox-fd-4.slp` are format `2.0.1`, predating item events entirely, and
+record zero items throughout) shows every one of its five independent
+`FOX_LASER` spawns landing at exactly `state_age == 5.0` on the shooting
+fighter, matching the script's own Loop-air fire frame exactly. Measuring
+`fox-fd-2.slp`/`fox-fd-4.slp` against a locally spliced pack (this batch's
+own `specials.*.script`, from `/mnt/shared/tmp/skirmish-gameplay-cmdvars/
+fighters/fox.json`, grafted onto a local, uncommitted copy of the
+committed `fox-fd/match-data.json`) finds `fox-fd-2` first diverging at
+frame -5 (`last_attack_landed`, 118 frames checked) and `fox-fd-4` at
+frame -30 (`action_state`, 93 frames checked) -- both still inside the
+pre-"GO" window, unrelated to Blaster and not chased further; the
+committed baselines are unchanged (measured against the spliced copy only,
+never against the official pinned export).
+
+`cargo test --locked --workspace` (default and `c-oracle` features) and
+`cargo clippy --locked --workspace --all-targets --all-features -- -D
+warnings` both pass.
+
 The 2026-09-12 fast-fall stick-timer window fix (the real-replay parity
 loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::simulation::
 move_fighter`'s approximate `previous_input`-edge fast-fall heuristic with

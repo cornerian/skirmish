@@ -42,6 +42,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef M_PI
@@ -562,4 +563,103 @@ void oracle_neutral_create_blaster_shot(s32 cmd_vars2_in, f32 facing_dir_in, f32
     *out_angle = captured_launch_angle;
     *out_speed = captured_launch_speed;
     *out_kind = captured_launch_kind;
+}
+
+/* ------------------------------------------------------------------- */
+/* Script `cmd_vars` multi-frame trace (this batch): drives the REAL
+ * Start/Loop IASA+Anim callbacks across a synthetic per-frame trace, with
+ * `SetCmdVar` events (`ftaction.c:456-475`, opcode 19) applied directly to
+ * `fp->cmd_vars` exactly as the subaction script interpreter would -- at
+ * most one event per simulated frame. Unlike every oracle_neutral_* entry
+ * point above (each resets a fresh `Fighter` per call), this trace keeps
+ * one `Fighter` alive across repeated `_step` calls so a whole
+ * Start->Loop->Loop pass can be replayed and its arm/fire decisions
+ * compared frame by frame against this port's own `apply_script_frame` +
+ * arm/fire logic (`src/game/characters/fox/neutral.rs`) -- see
+ * `tests/fox_neutral_special_differential.rs`'s own `script_trace_*` tests. */
+typedef struct {
+    Fighter fp;
+    Fighter_GObj gobj;
+    ftFox_DatAttrs attrs;
+    bool ground;
+    int phase; /* 0 = Start, 1 = Loop, 2 = End. */
+} NeutralScriptTrace;
+
+NeutralScriptTrace* oracle_neutral_trace_new(bool ground, f32 angle_attr, f32 vel_attr,
+                                              s32 kind) {
+    NeutralScriptTrace* t = (NeutralScriptTrace*) calloc(1, sizeof(NeutralScriptTrace));
+    t->attrs.x10_FOX_BLASTER_ANGLE = angle_attr;
+    t->attrs.x14_FOX_BLASTER_VEL = vel_attr;
+    t->attrs.x1C_FOX_BLASTER_SHOT_ITKIND = kind;
+    reset_fighter(&t->fp, &t->attrs);
+    t->gobj.user_data = &t->fp;
+    t->ground = ground;
+    t->phase = 0;
+    reset_captures();
+    if (ground) {
+        ftFx_SpecialN_Enter(&t->gobj);
+    } else {
+        ftFx_SpecialAirN_Enter(&t->gobj);
+    }
+    return t;
+}
+
+void oracle_neutral_trace_free(NeutralScriptTrace* t) {
+    free(t);
+}
+
+/* One simulated frame. `set_slot` (0..3, or negative for none) applies a
+ * `SetCmdVar` event (`fp->cmd_vars[set_slot] = set_value`) before this
+ * frame's IASA/Anim run, mirroring the subaction script's own opcode 19
+ * executing this frame -- the caller derives `set_slot`/`set_value` from
+ * the same forward-filled script table this port's `apply_script_frame`
+ * reads, by finding the frame a slot's value first differs from the
+ * previous frame's (see that function's own doc). `frames_remaining`
+ * mirrors `ftAnim_IsFramesRemaining` for the current phase's Anim call.
+ * Returns 1 if a Start->Loop or Loop->Loop transition happened this frame.
+ * `*out_phase` reports the phase after this step (0/1/2), `*out_armed` the
+ * post-IASA/Anim `isBlasterLoop`, `*out_fired` this frame's own
+ * `it_8029C6A4_calls` (0 or 1, matching the existing adapters' own
+ * convention of returning the raw call count). */
+int oracle_neutral_trace_step(NeutralScriptTrace* t, bool pressed_b, int set_slot, s32 set_value,
+                               bool frames_remaining, int* out_phase, int* out_armed,
+                               int* out_fired) {
+    if (set_slot >= 0 && set_slot < 4) {
+        t->fp.cmd_vars[set_slot] = set_value;
+    }
+    t->fp.input.pressed_buttons = pressed_b ? HSD_PAD_B : 0;
+    reset_captures();
+    script_frames_remaining = frames_remaining;
+    int before_phase = t->phase;
+    if (t->phase == 0) {
+        if (t->ground) {
+            ftFx_SpecialNStart_IASA(&t->gobj);
+            ftFx_SpecialNStart_Anim(&t->gobj);
+        } else {
+            ftFx_SpecialAirNStart_IASA(&t->gobj);
+            ftFx_SpecialAirNStart_Anim(&t->gobj);
+        }
+        if (change_motion_state_calls > 0) {
+            t->phase = 1;
+        }
+    } else if (t->phase == 1) {
+        if (t->ground) {
+            ftFx_SpecialNLoop_IASA(&t->gobj);
+            ftFx_SpecialNLoop_Anim(&t->gobj);
+        } else {
+            ftFx_SpecialAirNLoop_IASA(&t->gobj);
+            ftFx_SpecialAirNLoop_Anim(&t->gobj);
+        }
+        if (change_motion_state_calls > 0) {
+            bool to_end = captured_msid == ftFx_MS_SpecialNEnd || captured_msid == ftFx_MS_SpecialAirNEnd;
+            t->phase = to_end ? 2 : 1;
+        }
+    }
+    /* End's own IASA is a no-op (`ftFx_SpecialNEnd_IASA`/AirN return
+     * immediately) and its Anim only re-enters Wait/Fall/FallSpecial -- out
+     * of scope for this arm/fire-only stepper. */
+    *out_phase = t->phase;
+    *out_armed = t->fp.mv.fx.SpecialN.isBlasterLoop;
+    *out_fired = it_8029C6A4_calls;
+    return before_phase != t->phase;
 }

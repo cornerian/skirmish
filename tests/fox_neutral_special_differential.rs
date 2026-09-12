@@ -74,6 +74,30 @@ unsafe extern "C" {
         out_speed: *mut f32,
         out_kind: *mut i32,
     );
+    fn oracle_neutral_trace_new(
+        ground: bool,
+        angle_attr: f32,
+        vel_attr: f32,
+        kind: i32,
+    ) -> *mut NeutralScriptTrace;
+    fn oracle_neutral_trace_free(trace: *mut NeutralScriptTrace);
+    fn oracle_neutral_trace_step(
+        trace: *mut NeutralScriptTrace,
+        pressed_b: bool,
+        set_slot: i32,
+        set_value: i32,
+        frames_remaining: bool,
+        out_phase: *mut i32,
+        out_armed: *mut i32,
+        out_fired: *mut i32,
+    ) -> i32;
+}
+
+/// Opaque handle to the C oracle's own persistent per-trace `Fighter`
+/// (`tests/oracle/fox_neutral_special.c`'s `NeutralScriptTrace`).
+#[repr(C)]
+struct NeutralScriptTrace {
+    _private: [u8; 0],
 }
 
 const MS_START_GROUND: i32 = 3000;
@@ -313,6 +337,204 @@ fn compare_create_blaster_shot(
         assert_eq!(out_kind, kind);
     } else {
         assert_eq!(fired, 0);
+    }
+}
+
+/// The test's own restatement of `neutral::apply_script_frame`
+/// (`src/game/characters/fox/neutral.rs`) -- see that function's own
+/// citation of `ftaction.c:456-475`. Kept independent of the production
+/// function (this suite's own established style: hand-derive the expected
+/// formula, then check the real extracted decomp agrees), and returns the
+/// single `(slot, value)` edge applied this frame, if any, so the caller can
+/// feed the identical event into `oracle_neutral_trace_step` -- this port's
+/// synthetic tables below never set two slots on the same frame, matching
+/// every real Fox/Falco script this batch inspected.
+fn script_edge(table: &[[Option<u32>; 4]], frame: usize) -> Option<(usize, u32)> {
+    let row = table.get(frame)?;
+    let previous = frame.checked_sub(1).and_then(|f| table.get(f));
+    for (slot, value) in row.iter().enumerate() {
+        if let Some(value) = value {
+            let is_new_assignment = match previous {
+                Some(p) => p[slot] != Some(*value),
+                None => true,
+            };
+            if is_new_assignment {
+                return Some((slot, *value));
+            }
+        }
+    }
+    None
+}
+
+/// Builds a synthetic forward-filled script table (matching the exporter's
+/// own shape): `len` frames, slot `slot` becomes `Some(value)` from frame
+/// `set_frame` onward, every other slot/frame `None`.
+fn script_table(len: usize, slot: usize, set_frame: usize, value: u32) -> Vec<[Option<u32>; 4]> {
+    let mut table = vec![[None; 4]; len];
+    for row in &mut table[set_frame..] {
+        row[slot] = Some(value);
+    }
+    table
+}
+
+/// Drives the real decomp's Start/Loop IASA+Anim across `total_ticks`
+/// simulated frames, applying `start_table`/`loop_table`'s own script edges
+/// (`script_edge`) each tick exactly as `neutral::apply_script_frame` would,
+/// and a fresh-B press on every tick listed in `press_ticks`. Returns the
+/// per-tick `(phase, armed, fired)` the oracle reports, `phase` 0/1/2
+/// matching `NeutralScriptTrace`'s own Start/Loop/End enum.
+fn run_script_trace(
+    ground: bool,
+    start_table: &[[Option<u32>; 4]],
+    loop_table: &[[Option<u32>; 4]],
+    press_ticks: &[usize],
+    total_ticks: usize,
+) -> Vec<(i32, i32, i32)> {
+    let trace = unsafe { oracle_neutral_trace_new(ground, 0.0, 7.0, 54) };
+    let mut phase = 0usize;
+    let mut frame_in_phase = 0usize;
+    let mut out = Vec::with_capacity(total_ticks);
+    for tick in 0..total_ticks {
+        let (table, len) = if phase == 0 {
+            (start_table, start_table.len())
+        } else {
+            (loop_table, loop_table.len())
+        };
+        let edge = script_edge(table, frame_in_phase);
+        let pressed = press_ticks.contains(&tick);
+        let frames_remaining = frame_in_phase + 1 < len;
+        let (mut out_phase, mut out_armed, mut out_fired) = (0, 0, 0);
+        unsafe {
+            oracle_neutral_trace_step(
+                trace,
+                pressed,
+                edge.map_or(-1, |(slot, _)| slot as i32),
+                edge.map_or(0, |(_, value)| value as i32),
+                frames_remaining,
+                &mut out_phase,
+                &mut out_armed,
+                &mut out_fired,
+            );
+        }
+        out.push((out_phase, out_armed, out_fired));
+        if frame_in_phase + 1 >= len {
+            phase = out_phase as usize;
+            frame_in_phase = 0;
+        } else {
+            frame_in_phase += 1;
+        }
+    }
+    unsafe { oracle_neutral_trace_free(trace) };
+    out
+}
+
+/// The real Fox ground timings this batch's own exported `fighters/fox.json`
+/// showed (`specials.neutral.script`): Start is 7 frames with `cmd_vars[0]`
+/// set at frame 4; Loop is 10 frames with `cmd_vars[2]` set at frame 5.
+/// Drives two full Loop passes (a fresh press during Start arms the first;
+/// arming is *not* held state -- `ftFox_SpecialN_CheckLoopInput`'s own
+/// `pressed_buttons` is a single-frame edge, so the second pass, reset by
+/// `FinishLoopTransition`, needs its own fresh press) and checks every
+/// tick's `(phase, armed, fired)` against the exact source citations:
+/// `ftFox_SpecialN_CheckLoopInput` (`cmd_vars[0] != 0 && B pressed`) and
+/// `CreateBlasterShot`/Loop's own inline check (`cmd_vars[2] != 0`, cleared
+/// the same frame it fires).
+#[test]
+fn script_trace_matches_the_real_fox_timings() {
+    let start_table = script_table(7, 0, 4, 1);
+    let loop_table = script_table(10, 2, 5, 1);
+    // Absolute ticks: Start is ticks 0..6, Loop pass 1 is ticks 7..16, Loop
+    // pass 2 is ticks 17..26. A press at tick 4 arms pass 1 (during Start's
+    // own tail); a second press at tick 20 (pass 2's own frame_in_phase 3)
+    // re-arms pass 2 after the repeat transition's reset.
+    let press_ticks = [4, 20];
+    let trace = run_script_trace(true, &start_table, &loop_table, &press_ticks, 27);
+
+    for (tick, entry) in trace[0..4].iter().enumerate() {
+        assert_eq!(entry.1, 0, "armed before cmd_vars[0] sets, tick {tick}");
+    }
+    for (tick, entry) in trace[4..16].iter().enumerate() {
+        let tick = tick + 4;
+        assert_eq!(
+            entry.1, 1,
+            "armed once cmd_vars[0] sets and B presses, tick {tick}"
+        );
+    }
+    // The Loop1->Loop2 transition (tick 16, Loop1's own last frame) resets
+    // `isBlasterLoop` for the new pass (`FinishLoopTransition`), observed
+    // here as this port's own oracle reads it *after* that same-frame reset.
+    for (tick, entry) in trace[16..20].iter().enumerate() {
+        let tick = tick + 16;
+        assert_eq!(
+            entry.1, 0,
+            "unarmed after the reset, before pass 2's own press, tick {tick}"
+        );
+    }
+    for (tick, entry) in trace[20..26].iter().enumerate() {
+        let tick = tick + 20;
+        assert_eq!(
+            entry.1, 1,
+            "re-armed by pass 2's own fresh press, tick {tick}"
+        );
+    }
+    // Tick 26 is pass 2's own last frame: armed (from tick 20's press) means
+    // it repeats into a third pass, whose own `FinishLoopTransition` resets
+    // `isBlasterLoop` the same frame -- the same reset already seen at
+    // tick 16, one pass earlier.
+    assert_eq!(
+        trace[26].1, 0,
+        "isBlasterLoop resets on the second repeat transition"
+    );
+
+    for (tick, (_, _, fired)) in trace.iter().enumerate() {
+        let expected = tick == 12 || tick == 22;
+        assert_eq!(
+            *fired != 0,
+            expected,
+            "fire only on each pass's own frame-5, tick {tick}"
+        );
+    }
+
+    for (tick, entry) in trace[0..6].iter().enumerate() {
+        assert_eq!(entry.0, 0, "still Start, tick {tick}");
+    }
+    // Tick 6 is Start's own last frame (`frame_in_phase == 6`, `len == 7`):
+    // its IASA/Anim still run against the Start table, but the reported
+    // phase already reflects this same tick's Start->Loop transition.
+    for (tick, entry) in trace[6..27].iter().enumerate() {
+        let tick = tick + 6;
+        assert_eq!(entry.0, 1, "Loop, tick {tick}");
+    }
+}
+
+// A press strictly before `cmd_vars[0]` sets never arms, no matter how
+// close to the set frame; a press on or after it always does (matching
+// `ftFox_SpecialN_CheckLoopInput`'s plain `!= 0` gate, no debounce/edge
+// subtlety of its own beyond the fresh-press check already covered by
+// `check_loop_input_matches_arbitrary_inputs`). Fuzzes the set frame and
+// press frame independently across a single Start phase (Loop never
+// entered -- `frames_remaining` stays `true` throughout, so no transition
+// muddies the read).
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn script_trace_arms_only_at_or_after_the_scripted_frame(
+        set_frame in 0usize..12,
+        press_frame in 0usize..12,
+        start_len in 13usize..20,
+    ) {
+        let start_table = script_table(start_len, 0, set_frame, 1);
+        let loop_table = script_table(1, 2, 0, 1);
+        let trace = run_script_trace(true, &start_table, &loop_table, &[press_frame], start_len - 1);
+        let expected_armed = press_frame >= set_frame;
+        prop_assert_eq!(
+            trace.last().unwrap().1 != 0,
+            expected_armed,
+            "set_frame={} press_frame={}",
+            set_frame,
+            press_frame
+        );
     }
 }
 

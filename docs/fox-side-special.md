@@ -186,6 +186,18 @@ and X-rotation from `ghostEffectPos`/`blendFrames`, a 4-deep ring buffer
 ring buffer, `cmd_vars[2]`'s creation bookkeeping and `Ft_MF_SkipRumble`
 stay entirely unmodeled.
 
+A later batch (script-driven Blaster timing) confirmed the ghost's own
+spawn frame directly, from the exporter's newly-decoded script trace:
+`CreateGhostItem` (`ftfoxspecials.c:61-64, 247-266`) spawns it when the
+Dash subaction's own `SetCmdVar` sets `cmd_vars[2] == 1`, at frame 2 for
+both ground and air. `SideSpecial::script: Option<Box<SideScript>>`
+(`SideScript { dash: characters::fox::side::ScriptPhase }`, the same
+`ScriptPhase`/`ScriptFrames` shape `neutral::NeutralScript` uses) carries
+this per-fighter, validated against `dash.ground`/`dash.air`'s own pose
+counts -- recorded for citation/testing completeness only, since the
+ghost stays confirmed hitbox-free and unmodeled above: no gameplay logic
+in `side.rs` reads it.
+
 ## Resource and state shape
 
 - `Rules.specials: Option<characters::fox::side::Rules { side_stick_threshold
@@ -201,7 +213,9 @@ stay entirely unmodeled.
   2]> }, end: { ground: Attack, air: Attack }, attributes: {
   gravity_delay, entry_speed_div, start_air_friction, start_fall_accel,
   ground_end_speed, end_ground_friction, air_end_speed, end_air_friction,
-  end_gravity_delay, end_fall_accel, freefall_mobility, landing_lag } }> }`.
+  end_gravity_delay, end_fall_accel, freefall_mobility, landing_lag },
+  script: Option<Box<SideScript>> }> }` (`script`, added later -- see
+  "Ghost item" above).
   `Attack`/`AttackFrame` is the same sampled pose-plus-hitboxes shape jabs
   and aerials use; every phase here supplies an empty hitbox list per
   frame (Start and End have none in the source, and the Dash's own hit is
