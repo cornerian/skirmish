@@ -250,6 +250,12 @@ pub struct FighterData {
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
+    /// Per-frame physics poses for movement (non-attack) actions, keyed by
+    /// the sub-motion they come from (`docs/movement-poses.md`). Absent
+    /// entirely, or absent for a given field, keeps the pre-batch behavior
+    /// for that action: the static rest pose (`bones` above) throughout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement_poses: Option<MovementPoses>,
     pub hurtboxes: Vec<Hurtbox>,
     pub jab: Attack,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -301,6 +307,153 @@ impl FighterData {
         }
         let index = super::aerial::attack_index(action)?;
         Some(&self.aerials.as_ref()?.moves[index].attack)
+    }
+}
+
+/// Per-frame physics poses for movement (non-attack) actions
+/// (`docs/movement-poses.md`), one field per sub-motion, laid out exactly
+/// like `Attack.frames[i].bones`: a `Vec<Bone>` per animation frame, same
+/// bone count and topology as `FighterData.bones` (validated by
+/// `game::validation::validate_movement_poses`, reusing
+/// `validate_animation_pose`). Every field is independently optional: a
+/// sub-motion this pack does not (yet) carry keeps `simulation::pose`'s
+/// static rest-pose fallback for the actions it would have covered, the
+/// same convention `landing_poses`/`AttackFrame` already establish for a
+/// missing resource. Bone 0 (the root joint)'s translation is `[0.0; 3]` in
+/// every supplied frame, exactly like `AttackFrame.bones[0]`: TransN root
+/// motion is applied to `Fighter.position` separately (root_translations,
+/// or a profile's own per-frame delta) and must not be baked into the pose
+/// itself, or `simulation::pose`'s `evaluate_with_root` would apply it
+/// twice.
+///
+/// Field names match the `ftCo_Submotion` id each one samples (verify
+/// against `src/melee/ft/kinds/ftCommon/forward.h`): `wait` (Wait1_0 only;
+/// every other idle sub-motion this codebase's `idle` profile can cycle to
+/// keeps the rest pose, since it has no track of its own here). `walk_slow`/
+/// `walk_middle`/`walk_fast` (WalkSlow/Middle/Fast). `turn` (Turn), `turn_run`
+/// (TurnRun), `dash` (Dash), `run` (Run), `run_brake` (RunBrake), `knee_bend`
+/// (KneeBend, i.e. `Action::JumpSquat`). `jump_f`/`jump_b` (JumpF/JumpB),
+/// `jump_aerial_f`/`jump_aerial_b` (JumpAerialF/B). `fall`/`fall_f`/`fall_b`
+/// and `fall_aerial`/`fall_aerial_f`/`fall_aerial_b` (Fall/FallF/FallB and
+/// their FallAerial counterparts): `ftCo_Fall_Anim_Inner`'s continuous
+/// air-drift blend between the neutral/forward/backward figatrees
+/// (`ftCo_Fall.c:110-172`) is not modeled by this batch, so only `fall`/
+/// `fall_aerial` (the neutral track) is ever selected; the F/B fields are
+/// validated if supplied but reserved for a future blend batch.
+/// `fall_special`/`fall_special_f`/`fall_special_b` (FallSpecial and its
+/// animation-only blend, same caveat). `landing`/`landing_fall_special`
+/// (the ordinary and FallSpecial Landing). `squat`/`squat_wait`/`squat_rv`
+/// (Squat/SquatWait/SquatRv). `pass` (Pass). `ottotto`/`ottotto_wait`
+/// (Ottotto/OttottoWait). `entry_start` (EntryStart's own figatree, distinct
+/// from `EntryRules`'s action-duration timers, `docs/match-start.md`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MovementPoses {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_slow: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_middle: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_fast: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_run: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_brake: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knee_bend: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_f: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_b: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_aerial_f: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_aerial_b: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_f: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_b: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial_f: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial_b: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special_f: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special_b: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing_fall_special: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat_wait: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat_rv: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ottotto: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ottotto_wait: Option<Vec<Vec<Bone>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_start: Option<Vec<Vec<Bone>>>,
+}
+
+impl MovementPoses {
+    /// Every field paired with its own name, for validation and for
+    /// `game::movement::pose`'s selection (kept in one place so a new field
+    /// only needs to be added here once).
+    pub(crate) fn fields(&self) -> [(&'static str, Option<&Vec<Vec<Bone>>>); 32] {
+        [
+            ("wait", self.wait.as_ref()),
+            ("walk_slow", self.walk_slow.as_ref()),
+            ("walk_middle", self.walk_middle.as_ref()),
+            ("walk_fast", self.walk_fast.as_ref()),
+            ("turn", self.turn.as_ref()),
+            ("turn_run", self.turn_run.as_ref()),
+            ("dash", self.dash.as_ref()),
+            ("run", self.run.as_ref()),
+            ("run_brake", self.run_brake.as_ref()),
+            ("knee_bend", self.knee_bend.as_ref()),
+            ("jump_f", self.jump_f.as_ref()),
+            ("jump_b", self.jump_b.as_ref()),
+            ("jump_aerial_f", self.jump_aerial_f.as_ref()),
+            ("jump_aerial_b", self.jump_aerial_b.as_ref()),
+            ("fall", self.fall.as_ref()),
+            ("fall_f", self.fall_f.as_ref()),
+            ("fall_b", self.fall_b.as_ref()),
+            ("fall_aerial", self.fall_aerial.as_ref()),
+            ("fall_aerial_f", self.fall_aerial_f.as_ref()),
+            ("fall_aerial_b", self.fall_aerial_b.as_ref()),
+            ("fall_special", self.fall_special.as_ref()),
+            ("fall_special_f", self.fall_special_f.as_ref()),
+            ("fall_special_b", self.fall_special_b.as_ref()),
+            ("landing", self.landing.as_ref()),
+            ("landing_fall_special", self.landing_fall_special.as_ref()),
+            ("squat", self.squat.as_ref()),
+            ("squat_wait", self.squat_wait.as_ref()),
+            ("squat_rv", self.squat_rv.as_ref()),
+            ("pass", self.pass.as_ref()),
+            ("ottotto", self.ottotto.as_ref()),
+            ("ottotto_wait", self.ottotto_wait.as_ref()),
+            ("entry_start", self.entry_start.as_ref()),
+        ]
     }
 }
 

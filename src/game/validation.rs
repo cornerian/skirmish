@@ -627,6 +627,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         if let Some(taunt) = &fighter.taunt {
             taunt::validate(taunt, fighter)?;
         }
+        if let Some(poses) = &fighter.movement_poses {
+            validate_movement_poses(poses, fighter)?;
+        }
         require(
             fighter
                 .trophy_scale
@@ -812,6 +815,26 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     )?;
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Validates every supplied `MovementPoses` field: each is a nonempty,
+/// bounded sequence of complete physics frames in the same layout as
+/// `Attack.frames[i].bones` (`docs/movement-poses.md`). Fields the pack
+/// omits are not required; this batch's poses are strictly additive over
+/// the static rest pose.
+fn validate_movement_poses(poses: &MovementPoses, fighter: &FighterData) -> Result<(), Error> {
+    for (name, frames) in poses.fields() {
+        let Some(frames) = frames else { continue };
+        require(
+            !frames.is_empty() && frames.len() <= 4096,
+            &format!("movement_poses.{name}: 1..4096 frames required"),
+        )?;
+        for bones in frames {
+            validate_animation_pose(bones, fighter)
+                .map_err(|e| Error::Data(format!("movement_poses.{name}: {e}")))?;
         }
     }
     Ok(())

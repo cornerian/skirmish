@@ -23,6 +23,7 @@ pub mod jab;
 pub mod landing;
 pub mod ledge;
 pub mod locomotion;
+pub mod movement;
 pub mod nudge;
 pub mod rebirth;
 pub mod shield;

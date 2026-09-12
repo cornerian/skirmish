@@ -1758,6 +1758,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else if aerial::landing_index(fighter.action).is_some() {
         aerial::landing_pose(fighter, data)
             .ok_or_else(|| Error::Data("landing pose is outside supplied samples".into()))?
+    } else if let Some(pose) = movement::pose(fighter, data) {
+        pose
     } else {
         &data.bones
     };

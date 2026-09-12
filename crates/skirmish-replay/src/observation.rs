@@ -314,6 +314,30 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
     })
 }
 
+/// The sample count of whichever `movement_poses` field backs this frame's
+/// bones for a persistent (looping) sub-motion, if any -- exactly the same
+/// selection `game::movement::pose` makes for its own field lookup, kept in
+/// sync here only for the length, not the bones themselves.
+fn looping_movement_pose_frames(
+    fighter: &game::Fighter,
+    fighter_data: &game::data::FighterData,
+) -> Option<usize> {
+    let poses = fighter_data.movement_poses.as_ref()?;
+    let frames = match fighter.action {
+        game::Action::Fall if fighter.locomotion.fall_aerial => poses.fall_aerial.as_ref(),
+        game::Action::Fall => poses.fall.as_ref(),
+        game::Action::FallSpecial => poses.fall_special.as_ref(),
+        game::Action::SquatWait => poses.squat_wait.as_ref(),
+        game::Action::OttottoWait => poses.ottotto_wait.as_ref(),
+        _ => return None,
+    }?;
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames.len())
+    }
+}
+
 pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
@@ -336,6 +360,19 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 && fighter_data.movement.run_animation.is_some()
             {
                 fighter.locomotion.run.frame
+            } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
+                // These sub-motions persist indefinitely (Fall/FallAerial,
+                // FallSpecial, SquatWait, OttottoWait), so their own figatree
+                // loops: `game::movement::loop_period` is the same wrap
+                // length `game::movement::pose` uses to pick bones, replay-
+                // confirmed against `fox-fd.slp` for Fall (state age cycles
+                // 0..=7, then restarts at 0, on the recording's own P1 Fall
+                // beginning at frame -59: age reaches 7 at -52 and reports 0
+                // again at -51, `docs/movement-poses.md`). Absent
+                // `movement_poses` (or an absent field) keeps the general
+                // rule below, unbounded, matching pre-batch behavior.
+                let age = fighter.action_frame.saturating_sub(1);
+                (age % game::movement::loop_period(frames) as u32) as f32
             } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
                 // Both are animation-less (`ftCo_SM_None`); Melee's own
                 // state_age stays -1 for the whole state, unlike EntryStart,
@@ -1544,6 +1581,55 @@ mod tests {
         assert_eq!(state_flags(&fighter)[4], 0x40);
         fighter.action = game::Action::Rebirth;
         assert_eq!(state_flags(&fighter)[4], 0);
+    }
+
+    #[test]
+    fn looping_movement_pose_frames_selects_the_active_sub_motion_and_wraps_one_short_of_the_sample_count()
+     {
+        let data: game::data::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let mut fighter_data = game.data().fighters[0].clone();
+        fighter.action = game::Action::Fall;
+
+        // Absent `movement_poses` keeps today's unwrapped `action_age`.
+        assert_eq!(looping_movement_pose_frames(&fighter, &fighter_data), None);
+
+        // A nine-sample Fall clip wraps over eight values (0..=7), matching
+        // `fox-fd.slp`'s own recorded state age: Fall begins at frame -59
+        // (age 0), reaches age 7 at -52, and reports age 0 again at -51
+        // while remaining Fall (`docs/movement-poses.md`), not age 8.
+        fighter_data.movement_poses = Some(game::data::MovementPoses {
+            fall: Some(vec![vec![]; 9]),
+            ..Default::default()
+        });
+        assert_eq!(
+            looping_movement_pose_frames(&fighter, &fighter_data),
+            Some(9)
+        );
+        assert_eq!(game::movement::loop_period(9), 8);
+
+        // `fall_aerial` selects the separate field of the same name.
+        fighter.locomotion.fall_aerial = true;
+        assert_eq!(looping_movement_pose_frames(&fighter, &fighter_data), None);
+        fighter_data.movement_poses.as_mut().unwrap().fall_aerial = Some(vec![vec![]; 5]);
+        assert_eq!(
+            looping_movement_pose_frames(&fighter, &fighter_data),
+            Some(5)
+        );
+
+        // A non-looping action (this codebase's own list) never selects.
+        fighter.action = game::Action::Landing;
+        fighter.locomotion.fall_aerial = false;
+        assert_eq!(looping_movement_pose_frames(&fighter, &fighter_data), None);
+
+        // An empty sample list is treated the same as an absent field.
+        fighter.action = game::Action::FallSpecial;
+        fighter_data.movement_poses.as_mut().unwrap().fall_special = Some(vec![]);
+        assert_eq!(looping_movement_pose_frames(&fighter, &fighter_data), None);
     }
 
     #[test]

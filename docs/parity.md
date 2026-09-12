@@ -75,15 +75,41 @@ skips, and a skip is not evidence of anything.
 `tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 72 frames
 match (-123 through -52: the Entry warp-in of both ports, the input lock,
 the dead flag, and P1's EntryEnd->Fall handoff at -59 with the corrected
-0-based `state_age`), and the first divergent frame is -51, where the
-recording restarts Fall (age resets 7->0, state stays 29) for two more
-frames before Landing begins at -49, while Skirmish transitions straight
-to Landing at -51. This is a new, separate divergence (`action_state`, not
-`action_age`) that this batch did not diagnose. The v2 pack carries Fox's
-locomotion, idle, escapes, air dodge, grab, dash attack, tilts, smashes,
-jab combo, aerials, shield, ledge and nudge profiles plus the match rules;
-the remaining profiles are being exported. The baseline file records this
-number and must move forward as divergences are fixed.
+0-based `state_age`), and the first divergent frame is still -51, field
+`action_state` (expected `0x001d`/Fall, actual `0x002a`/Landing) --
+unchanged by the movement-poses batch (`docs/movement-poses.md`).
+
+That batch spliced the v2 pack's `movement_poses` into a local copy of
+`fox-fd/match-data.json` (`/mnt/shared/tmp/skirmish-gameplay-v2-poses/`,
+not committed; `fox-fd-baseline.json` is untouched, since the published
+snapshot lacks the poses) and re-ran `make-initialization`/
+`validate-replay`: the frame and field are identical to the prior
+measurement below. `docs/movement-poses.md` explains why: Fox's exported
+`collision_box.indices` includes the skeleton's root joint (translation
+`[0.0; 3]` in every pose by this dataset's own TransN-stripping
+convention), which pins his ECB bottom to exactly `position.y` regardless
+of animation, so no per-frame pose -- however it tucks the other five
+joints -- can move his landing frame. This is a limitation of that
+dataset's `collision_box.indices` (from the earlier, separately-pinned ECB
+batch), not of the movement-poses wiring itself, which `tests/
+game_movement_poses.rs`'s synthetic (non-root-sampling) fixture confirms
+works as designed. The recording's own state-age reset at -51 (Fall's
+9-sample pose looping over an 8-frame period, not a discrete
+`Fighter_ChangeMotionState` re-entry) is diagnosed and reproduced
+(`game::movement::loop_period`, `crates/skirmish-replay/src/
+observation.rs`'s matching `action_age` branch) but does not itself affect
+ground-contact timing. The v2 pack carries Fox's locomotion, idle,
+escapes, air dodge, grab, dash attack, tilts, smashes, jab combo, aerials,
+shield, ledge, nudge and movement-pose profiles plus the match rules; the
+remaining profiles are being exported. The baseline file records the
+matched-frame count and must move forward as divergences are fixed; this
+one needs a `collision_box.indices` revisit, not a poses change, to move.
+
+Previously (2026-09-11, before the movement-poses batch): the same 72
+frames matched and the same frame/field diverged (-51, `action_state`,
+Fall vs. Landing) -- recorded here as "a new, separate divergence that
+this batch did not diagnose"; the movement-poses batch above is the
+diagnosis.
 
 Previously (before the `state_age`/`action_age` transition-frame fix,
 `docs/validation.md`): 64 frames matched (-123 through -60), and the first
