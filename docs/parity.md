@@ -189,6 +189,12 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v8 (2026-09-12):** sha256 a01a9101, 36 MB, supersedes v7:
+the special-move phase pose counts now equal the figatree frame counts (the
+earlier packs carried one spare hold pose per phase, a one-frame timing
+error for every phase whose length is its duration). With it fox-fd-2
+reaches 114 frames and fox-fd-4 93.
+
 **Published pack (2026-09-12):** gameplay export v7 (sha256 5ebf4a2d, 36 MB)
 is the complete export in the compact binary format: every Fox and Falco
 pairing (`fox-fd`, `falco-fd`, `fox-falco-fd`, `falco-fox-fd`, `fox-bf`,
