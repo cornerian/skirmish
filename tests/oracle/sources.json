@@ -438,5 +438,40 @@
   "fixture": "tests/oracle/original/math_data.c",
   "upstream": "src/MSL/math_data.c",
   "sha256": "0909d05d8ece91df08d291c8269dd63200b1f6b49da1359e2fd6a6883d029efc"
+},
+{
+  "fixture": "tests/oracle/original/ftfoxspecialn.c",
+  "upstream": "src/melee/ft/kinds/ftFox/ftfoxspecialn.c",
+  "sha256": "5fc74c49df55c24e7a219085181ce73eb96f61d4bb14c2d71895a41fe052f080"
+},
+{
+  "fixture": "tests/oracle/original/itfoxlaser.c",
+  "upstream": "src/melee/it/kinds/itfoxlaser.c",
+  "sha256": "8d16972b948f502d996558aedda92a42ca433bfc0e4e2b55821d50fbceeabc8e"
+},
+{
+  "fixture": "tests/oracle/original/item.c",
+  "upstream": "src/melee/it/item.c",
+  "sha256": "abe9d6cf23e9d4683ef8926d18d972834de3853a15f2570202c87d277ebeb214"
+},
+{
+  "fixture": "tests/oracle/original/ftfox_inlines.h",
+  "upstream": "src/melee/ft/kinds/ftFox/inlines.h",
+  "sha256": "fd4313ca59a8502695cd9fcd90c922c37bf9e50a5c8064e774b81a75772cafd1"
+},
+{
+  "fixture": "tests/oracle/original/it_kinds_inlines.h",
+  "upstream": "src/melee/it/kinds/inlines.h",
+  "sha256": "0b6bc128fefce66358115fa03af42ef94e1c8485467b291fc8a1613db86def27"
+},
+{
+  "fixture": "tests/oracle/original/ftlib.c",
+  "upstream": "src/melee/ft/ftlib.c",
+  "sha256": "0afeaa27945642dc255261d59b497ed943a025c3f6ca343cc091bc7e3dd50c92"
+},
+{
+  "fixture": "tests/oracle/original/it_26b1.c",
+  "upstream": "src/melee/it/it_26B1.c",
+  "sha256": "2ce51e2d8d40c31213605fe2735395632ceff5680a382de3c1abad8a171c62a3"
  }
 ]
