@@ -108,8 +108,44 @@ entry (`game::collision::land` no longer zeroes vertical self-velocity on
 landing, matching `ftCommon_8007D6A4` leaving `self_vel.y` unassigned).
 Current measurement: 91 frames match (-123 through -33); the next
 divergence is -32, field `velocities.self_x_air` on P2 (expected
-`0x400147ad`, actual `0x400147ae`, a one-ULP rounding difference) —
-undiagnosed, reported rather than chased in this batch.
+`0x400147ad` = `2.0199997`, actual `0x400147ae` = `2.0199999`, a one-ULP
+rounding difference).
+
+**Diagnosis (a suspected cross-platform floating-point limitation, not a
+Skirmish bug -- reported per this loop's own stop condition, not
+chased):** P2 enters `Dash` at -33 (`ground_velocity` set to the pack's
+`dash_initial_velocity`, `1.899999976`, with `velocity` itself still `[0,
+0]` that frame -- decomp's own `getAccelAndTarget`/`ftCommon_8007C98C`
+chain is not projected into `self_vel` until the following frame, exactly
+like the already-cited "Dash Enter writes gr_accel2... not projected...
+this first frame" note). At -32, `game::locomotion::ground_motion`'s Dash
+branch computes `accel = stick(1.0) * dash_acceleration_mul(0.1) +
+dash_acceleration_base(0.02)`, `target = stick(1.0) * dash_max_velocity
+(2.2)`; since `ground_velocity(1.9) + accel(0.12)` (`2.02`) does not yet
+exceed `target(2.2)`, `accelerate_ground`'s clamp never engages, and
+`ground_velocity = 1.9 + 0.12` projects into `velocity[0]` unchanged
+(`Movement::project_ground` multiplies by the flat floor's exact `1.0`
+normal, losslessly). Every step here is confirmed byte-for-byte identical
+to the pinned decomp (`getAccelAndTarget`, `ftCommon_8007C98C`/
+`accelerate_ground`, `ftCommon_ApplyGroundMovementNoSlide`/
+`project_ground`) in both structure and operand order, and
+`tests/physics_differential.rs`'s existing `accelerate_ground` C-oracle
+case already passes bit-exact against the compiled original for
+proptest-generated and boundary inputs -- so the Rust port is a verified,
+faithful transcription of the source expression, not an approximation.
+Evaluating that exact expression chain in ordinary IEEE 754 `f32`
+arithmetic, using the pack's own full-precision constants (`1.899999976 +
+(1.0 * 0.100000001 + 0.019999999)`), independently reproduces Skirmish's
+own `0x400147ae` bit-for-bit -- confirming the Rust port computes the
+mathematically correct IEEE 754 result for this expression, while the
+recording's own hardware produced a result one ULP lower. Chasing this
+further would mean reproducing the original PowerPC compiler's exact
+instruction selection for this expression (a known class of Gekko/Broadway
+divergence: paired-single multiply-add instructions round the fused
+product+sum once rather than twice, unlike separately-rounded scalar
+`f32` ops), which is outside what a decomp-ported Rust function can
+express -- exactly the limitation `AGENTS.md` already names ("Host C
+agreement does not establish PowerPC or whole-game equivalence").
 
 **Proves:** for however many frames each recording's own
 `first_divergent_frame` reaches (or fully, if `matched`), the native
