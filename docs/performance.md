@@ -2,9 +2,147 @@
 
 Measured against commit `0e48217f1d6274405a3ac774229e01cd9bc42610` on
 2026-09-11, ahead of the parallel `src/game/**`/`src/fighter/**` refactors,
-so later work can be judged against real numbers instead of intuition. This
-document only measures and reports; none of the optimizations below are
-applied here.
+so later work can be judged against real numbers instead of intuition. The
+sections below this point are the original, unmodified baseline record.
+
+## Applied in this batch (2026-09-12)
+
+Items 1-4 of the "Optimization plan" below were implemented, each as its own
+commit, against a rebased tip (`7a67a18`, several unrelated parity/character
+commits ahead of the `0e48217` baseline above -- the codebase moved under
+concurrent work while this batch was in flight, so absolute numbers here are
+not directly comparable to the baseline table above; see each commit's own
+message for a same-session before/after pair):
+
+1. `Speed up Pose::evaluate by pooling its scratch and world buffers` --
+   `collision::bones::Pose::evaluate`'s four per-call `Vec`s (`world`,
+   `scales`, `visited`, `path`) are now recycled through a thread-local pool
+   instead of freshly allocated every call. Every call still runs the full
+   topological walk and produces bit-for-bit identical output; nothing is
+   skipped or cached, only the backing allocations are reused.
+2. `Speed up hit-contact collection with a fixed two-slot array` --
+   `simulation::advance`'s unconditional `Vec::with_capacity(2)` for `hits`
+   is now a fixed `[Option<(&Hit, Hit, HitContact)>; 2]`, since at most one
+   hit per attacker is ever recorded (the inner loop `break`s on the first
+   connecting hitbox).
+3. `Speed up simulation::pose by pooling its physics-bone conversion buffer`
+   -- the same pooling technique as item 1, applied to `pose()`'s own
+   resource-to-physics `Vec<bones::Bone>` conversion (the "fifth allocation"
+   the original hot-spot-1 evidence below cites).
+4. `Speed up action-instance and staling transition queuing with bounded
+   buffers` -- `fighter::action_instance::State::pending` and
+   `game::staling::State::transitions` (both `Vec`s, drained to empty every
+   frame they are used) are now small inline arrays (4 slots, matching the
+   `hits: [Option<Hit>; 4]` convention already used on `staling::State`)
+   with a `Vec`-backed overflow past that capacity, so they are exactly
+   equivalent to the original `Vec` for any input length rather than
+   silently dropping data past an assumed maximum -- an earlier draft of
+   this change used a bare `debug_assert!`-guarded fixed array with no
+   overflow, and an existing unit test that queues five entries in a row
+   silently corrupted state specifically in `--release` builds, where
+   `debug_assert!` compiles out; the guard test now passes under both
+   profiles because the overflow path is unconditionally correct rather
+   than relying on an assertion that only fires in debug.
+
+Item 3 of the original plan below ("avoid the full `State::clone()` in
+`Match::step`") was assessed and **not applied**: `tests/
+game_controller_channels.rs` (`serde_json::to_vec(game.state())` compared
+byte-for-byte before and after a rejected input) proves "errors leave the
+match untouched" is a load-bearing invariant, not just documentation. Making
+`checkpoint()`/`restore_checkpoint()` O(1) via `Arc<State>` sharing would
+require `Match::state` itself to become `Arc`-shared; the only way to keep
+`step()`'s rollback-on-error guarantee under that scheme is to still clone a
+private working copy before mutating (the same cost as today), while
+*publishing* the successful result would add a new `Arc::new` allocation to
+every single successful step that does not exist today -- trading a rare
+operation (checkpoint/restore) getting cheaper for the hot path (every
+frame) getting one allocation *more* expensive, which regresses exactly the
+metric this task is trying to improve. Not attempted. (Items 2 and 4 above
+turned out to shrink `State::clone()` anyway, as a side effect of removing
+`Vec` fields from two of its nested structs -- see the `checkpoint_create`
+number below.) Item 5 (a small-buffer optimization for `events: Vec<Event>`)
+was not attempted either, per the original plan's own "lowest priority,
+worth revisiting after 1-3 land" framing, and this task's time budget.
+
+### Results
+
+**Allocation profile** (`cargo test --locked --release --test alloc_profile
+-- --nocapture`), the reliable metric in this section: allocation *counts*
+are exact integers from a counting allocator, not wall-clock timings, so
+unlike every timing number below they are not affected by this shared
+machine's load. Measured at three points: the pre-batch tip (`7a67a18`),
+after commit 1 alone (`Pose::evaluate` pooling only), and after all four
+commits:
+
+| Scenario | Pre-batch | +Pose::evaluate pool (commit 1) | All 4 commits |
+|---|---:|---:|---:|
+| Minimal fixture, idle, steady state | 59.910 | 37.460 | 22.685 |
+| Featured match, idle, steady state | 25.000 | 13.805 | 7.330 |
+| Featured match, full 600-frame scripted scenario | 25.965 | 9.492 | 4.020 |
+| Minimal fixture, whiffed jabs | 168.433 | 9.750 | 15.900 |
+| Minimal fixture, landed jabs | 99.667 | 36.442 | 24.525 |
+
+(allocs/frame, release profile.) Every scenario's steady-state/scripted
+numbers dropped monotonically at every stage, a 63-84% reduction end to end.
+The two jab-press scenarios are noisier: "whiffed jabs" landed unusually low
+after commit 1 alone (9.750) relative to both the pre-batch number (168.433,
+which itself carries a 11,321-allocation single-frame outlier not seen at
+any other measurement point) and the all-4-commits number (15.900) -- this
+was measured, not resolved further; the two steadier scenarios above it are
+the more trustworthy read on this specific pair. Both jab scenarios still
+end net far below their pre-batch numbers.
+
+**Criterion timing** (`cargo bench --bench match_step`): attempted, but
+**not trustworthy in this session**. This machine's own load average hit 67
+(on 8 cores/16 threads) partway through benchmarking, from unrelated
+concurrent agents' `cargo build`/`test` runs sharing the same box -- worse
+contention than the original baseline's own "shared interactive desktop"
+caveat anticipated. Repeated back-to-back pairs of the *same two commits*,
+run minutes apart, gave contradictory directions and magnitudes: one pair
+showed `minimal_fixture_idle` and `bones_pose_evaluate` improving 40-50%;
+a later pair, taken when system load was visibly heavier, showed the same
+two commits' `minimal_fixture_idle` apparently *regressing* 50%+, alongside
+40%+ swings on `sweep_capsule_capsule`/`ecb_load_and_interpolate` --
+functions this batch never touches, which is the tell that the signal was
+contention, not the code. No criterion number from this session is reported
+as a reliable before/after; re-running `cargo bench --bench match_step` on a
+quiet machine (per the original Method section's own advice) is the
+recommended follow-up before trusting any absolute µs/frame claim for this
+batch. The one number worth naming with that caveat attached:
+`checkpoint_create` dropped from 284.58 ns to 179.53 ns to 213.91-217.97 ns
+across the three measurement attempts -- directionally consistent with
+items 2 and 4 shrinking `State::clone()` (fewer `Vec` fields to allocate),
+but the spread across attempts is large enough that only the direction, not
+the magnitude, should be trusted.
+
+**Real-replay report** (behavior-neutrality proof, not a timing claim):
+`validate-replay` against `tests/fixtures/slippi/parity/fox-fd.slp` produced
+byte-identical outcomes before and after all four commits --
+`first_divergent_frame: 5`, `checked_frames: 128`, identical
+`initialization_sha256` and identical mismatched-field bit patterns -- and
+matches `fox-fd-baseline.json` (left untouched). `make-initialization`'s own
+JSON load of the 380 MB `match-data.json` was checked separately: it already
+uses `fs::read` (whole file into memory) plus `serde_json::from_slice`
+(`crates/cli/src/main.rs`), which is the faster of the two idioms the task
+flagged (`serde_json::from_reader` on a small buffered stream is normally
+*slower* than parsing an already-fully-read slice for a file this size, so
+switching to it would have been a regression, not a win). No JSON-loading
+change was made; adopting a SIMD JSON backend (`simd-json`/`sonic-rs`) was
+considered but deferred as a separate follow-up needing its own correctness
+validation, since it is a new dependency and out of proportion to this
+task's `Match::step`-focused scope.
+
+### Guard suite
+
+Full native suite (`cargo test --locked --release --tests`) and the
+C-oracle suite (`cargo test --locked --release --tests --features
+c-oracle`) both pass at the final commit: 1111 passed, 0 failed. This
+includes a regression the first draft of item 4 introduced and this task
+caught before committing: a bare `debug_assert!`-guarded fixed array
+silently dropped data past its assumed capacity specifically in `--release`
+builds (see item 4's description above) -- fixed with the unconditional
+`Vec`-backed overflow described there, re-verified green under both debug
+and release profiles.
 
 ## Method
 
