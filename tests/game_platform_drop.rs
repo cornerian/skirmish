@@ -186,6 +186,44 @@ fn shielding_drops_immediately_through_a_platform_for_digital_and_analog_shoulde
     }
 }
 
+/// `fox-bf.slp` (`docs/parity.md`): P4's `GuardOn` converts into `Pass` on
+/// its only frame, and no shield regeneration lands on that conversion
+/// frame despite the fighter no longer being `GuardOn`/`Guard` by the time
+/// the frame's shield-health update runs. `begin_pass`'s own
+/// (`ftCo_8009A184`/`ftCo_8009A228`) `Fighter_ChangeMotionState` call
+/// clears `x221A_b7` -- the flag `Fighter_ProcessHit_8006D1EC` gates
+/// regeneration on (`fighter.c:1048,2821`) -- the same as any other
+/// transition out of `GuardOn`/`Guard`. A steady digital press (unaffected
+/// by the separate entry-frame-trigger fix covered elsewhere, since the
+/// digital override reads the same value every frame either way) isolates
+/// this: with this fixture's own rules (`drain_rate` `0.2`, `drain_scales`
+/// `[0.5, 1.0]`, `maximum_health` `50.0`, `regeneration` `0.1`), the entry
+/// frame itself never runs the shield-owning Anim arm at all (`update_actions`,
+/// priority 3, only enters `GuardOn` after priority 1's Anim already ran
+/// this frame against the old, non-shielding action), so health stays
+/// `50.0`; the next, still-held frame drains against the entry frame's own
+/// press (`strength` `1.0`, loss `0.2`, `50.0 -> 49.8`); the conversion
+/// frame drains the same way again (`49.8 -> 49.6`) with regeneration
+/// correctly withheld -- an unfixed regeneration gate would add `0.1` back,
+/// landing on `49.7` instead.
+#[test]
+fn no_regeneration_lands_on_the_frame_guard_on_converts_into_pass() {
+    let mut game = Match::new(data(), 0).unwrap();
+    let mut input = IDLE;
+    input[0].buttons = BUTTON_L;
+    assert_eq!(
+        game.step(input).unwrap().fighters[0].action,
+        Action::GuardOn
+    );
+    assert_eq!(game.state().fighters[0].shield.health, 50.0);
+    assert_eq!(game.step(input).unwrap().fighters[0].shield.health, 49.8);
+
+    input[0].stick[1] = -1.0;
+    let passing = game.step(input).unwrap().fighters[0].clone();
+    assert_eq!(passing.action, Action::Pass);
+    assert_eq!(passing.shield.health, 49.6);
+}
+
 #[test]
 fn shield_entry_does_not_chain_a_drop_and_a_solid_floor_refuses_it() {
     let mut combined = IDLE;

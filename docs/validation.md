@@ -1,5 +1,71 @@
 # Local validation provenance
 
+The 2026-09-12 shield-regeneration-on-conversion-frame fix (the real-replay
+parity loop, `fox-bf.slp`, `docs/parity.md`) stops `Fighter_ProcessHit_
+8006D1EC`-equivalent regeneration (`game::shield::finish_frame`) from
+landing on the exact frame a still-active `GuardOn`/`Guard` converts
+straight into `Pass` via `begin_pass`. `Fighter_ProcessHit_8006D1EC`
+(priority 0xE, `fighter.c:908,2821`) gates regeneration on `fp->x221A_b7`,
+a flag only ever set by `GuardOn`/`Guard`/`GuardReflect`'s own entries
+(`ftCo_Guard.c:267,523,708,803,984`) and unconditionally cleared by every
+`Fighter_ChangeMotionState` call (`fighter.c:1048`) -- including the same
+one `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`'s own entry) makes.
+`fox-bf.slp`'s own P4 shows no regeneration lands on that conversion
+frame regardless: its shield health is explained in full by the passive
+drain alone.
+
+`game::shield::finish_frame` gains an explicit `was_active: bool`
+parameter in place of recomputing `active(f)` internally (the fighter's
+action by the time this runs downstream, after any of this frame's own
+transitions). Its caller, `game::simulation::advance`, still passes plain
+`active(f)` in the ordinary case, folding in a new `shield_active_into_
+pass: [bool; 2]` recorded at the exact `pass_request_after_actions`/
+`begin_pass` call site: whether the fighter was still `active()`
+immediately before that specific conversion. This is deliberately
+narrower than "skip regeneration on any exit from an active shield
+state": an existing, already-passing native test (`game_escape`'s
+`escape_clears_the_shield_and_lets_health_regenerate`) already pins
+*immediate* regeneration on the frame `Guard` converts into a roll via
+`ftCo_8009917C`/`ftCo_8009980C` -- a different `Fighter_ChangeMotionState`
+call this same unconditional `x221A_b7` clear also reaches. Broadening
+the fix to cover every exit from an active shield state (snapshotting
+`active()` once at the true start of the frame, before *any* of that
+frame's own transitions) regressed that test (`49.999992` where `50.0`
+was expected: one frame of `0.1` fixture-scale regeneration silently
+missing); the narrower, call-site-scoped flag leaves every other exit
+from `GuardOn`/`Guard`/`GuardReflect`/`GuardSetOff` (release into
+`GuardOff`, rolls, spot dodges, jumps, shield breaks) exactly as before,
+pending each transition's own independently diagnosed recording evidence
+rather than a single inferred general rule.
+
+Confirmed bit-exact against `fox-bf.slp` (together with the passive-drain
+timing fix above): P4's shield lands on `59.76071548461914` at frame -27,
+the recording's own value. Either fix alone still diverges, by a
+different amount each: without the trigger-timing fix,
+`59.83071517944336` (the conversion frame's own `1.0` trigger, loss
+`0.28`, regeneration `0.07` wrongly added back); without this
+regeneration fix, `59.79000091552734` (frame -28's own trigger, loss
+`0.2393`, regeneration `0.07` still wrongly added back).
+
+**Tests**: `game_platform_drop`'s new `no_regeneration_lands_on_the_
+frame_guard_on_converts_into_pass` isolates this fix alone with a steady
+digital press (unaffected by the separate trigger-timing fix, since the
+digital override reads the same value every frame either way), against
+the existing `shield.json` fixture's own rules: the entry frame itself
+never runs the shield-owning `Anim` arm at all, so health stays `50.0`;
+the next, still-held frame drains against the entry frame's own press
+(`50.0 -> 49.8`); the conversion frame drains the same way again (`49.8
+-> 49.6`) with regeneration correctly withheld -- an unfixed
+regeneration gate would land on `49.7` instead (`49.6 + 0.1`). The full
+existing suite, including `game_escape`'s roll-regeneration test above,
+continues to pass unmodified. `cargo fmt --check`, `cargo clippy
+--workspace --all-targets -- -D warnings` and `cargo test --workspace`
+(both default and `c-oracle` features) all pass; `SKIRMISH_GAMEPLAY_DATA=
+/mnt/archive/datasets/melee/skirmish-gameplay/v2 cargo test -p
+skirmish-cli --test real_parity` (the multi-recording ratchet) passes
+against the newly published gameplay-export pack v9, which moves
+`fox-bf-baseline.json` from `96`/`-27` to `100`/`-23`.
+
 The 2026-09-12 passive shield-drain input-timing fix (the real-replay
 parity loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::shield::
 update_animation`'s `GuardOn`/`Guard`/`GuardReflect` arm's `input.

@@ -891,6 +891,58 @@ lands on `59.72000122070312` instead. `docs/validation.md` has the full
 native-test breakdown (`game_shield`'s `passive_drain_reads_the_
 previous_frames_trigger_not_the_current_frames`).
 
+**Fixed (second of two): shield regeneration wrongly landed on the exact
+frame `GuardOn` converts into `Pass`.** `Fighter_ProcessHit_8006D1EC`
+(priority 0xE, `fighter.c:908,2821`) gates its own per-frame shield
+regeneration on `fp->x221A_b7`, a flag only ever set by `GuardOn`/`Guard`/
+`GuardReflect`'s own entries (`ftCo_Guard.c:267,523,708,803,984`) and
+unconditionally cleared by every `Fighter_ChangeMotionState` call
+(`fighter.c:1048`) -- including the same one `begin_pass`
+(`ftCo_8009A184`/`ftCo_8009A228`) makes to enter `Pass`. `fox-bf.slp`
+shows no regeneration lands on that conversion frame despite this: the
+recording's own P4 shield health is explained in full by the passive
+drain alone (`59.76071548461914`, matching the first fix above exactly),
+not by that drain plus a frame of `regeneration` (`0.1`-per-frame-scale
+in test fixtures; the real pack's own rate is `0.07`). `game::shield::
+finish_frame` gains an explicit `was_active: bool` parameter instead of
+recomputing `active(f)` internally; its caller, `simulation::advance`,
+still passes plain `active(f)` ordinarily, but folds in a new
+`shield_active_into_pass` flag recorded at the exact `pass_request_
+after_actions`/`begin_pass` call site (whether the fighter was still
+`active()` immediately before that specific conversion). This is
+deliberately narrower than "skip regeneration on any exit from an active
+shield state": an existing, already-passing native test (`game_escape`'s
+`escape_clears_the_shield_and_lets_health_regenerate`) already pins
+immediate regeneration on the frame `Guard` converts into a roll via
+`ftCo_8009917C`/`ftCo_8009980C`, a different `Fighter_ChangeMotionState`
+call this same unconditional `x221A_b7` clear also reaches; broadening the
+fix to cover that transition too regressed that test (`49.999992` where
+`50.0` was expected), so it is left alone pending its own, independently
+diagnosed recording evidence rather than generalized on inference alone.
+
+Confirmed bit-exact against `fox-bf.slp` (both fixes together): P4's
+shield lands on `59.76071548461914` at frame -27, the recording's own
+value. Either fix alone still diverges, by a different amount each:
+without the trigger fix, `59.83071517944336` (the conversion frame's own
+`1.0` trigger, loss `0.28`, regeneration `0.07` wrongly added back);
+without the regeneration fix, `59.79000091552734` (frame -28's own
+trigger, loss `0.2393`, regeneration `0.07` still wrongly added back).
+100 frames now match (`-123` through `-23`), up from 96;
+`fox-bf-baseline.json` moves to reflect this, measured against the
+now-published gameplay-export pack v9 (`/mnt/archive/datasets/melee/
+skirmish-gameplay/v2/fox-bf`, confirmed identical to the diagnostic copy
+above) rather than a local patch.
+
+**Next divergence (not pursued in this batch -- the concurrent fused-op
+audit's own area): frame -23, `position.x` on P1** (expected
+`-18.626245498657227`, actual `-17.28374481201172`), one frame after P1
+enters `Fall` (Slippi action state `29`) off a platform edge. This is
+airborne horizontal-drift physics arithmetic, the same class of function
+the concurrent `bbfaf6a` (`Cover PowerPC fused multiply-add in physics,
+damage, knockback and grab`) batch is actively disassembling
+function-by-function against the retail `main.dol`; not diagnosed further
+here to avoid duplicating or racing that work.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

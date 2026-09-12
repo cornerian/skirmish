@@ -494,12 +494,25 @@ fn start_powershield(f: &mut Fighter, r: &Rules, initialize: bool, input: Contro
 
 /// ProcessHit regenerates outside guard, and subtracts its base cost even with
 /// zero shield-damage accumulation. Hit damage is applied by `apply_contact`.
-pub(crate) fn finish_frame(f: &mut Fighter, rules: Option<&Rules>, shield_contact: bool) {
+/// `was_active` is ordinarily just `active(f)` as of this call; its caller
+/// additionally folds in whether this exact frame converted a still-active
+/// `GuardOn`/`Guard` straight into `Pass` (`simulation::advance`'s own
+/// `shield_active_into_pass`), since `fox-bf.slp` shows no regeneration
+/// lands on that conversion frame even though `begin_pass`'s own
+/// `Fighter_ChangeMotionState` call already cleared `x221A_b7` (the flag
+/// `Fighter_ProcessHit_8006D1EC` gates regeneration on) earlier the same
+/// frame.
+pub(crate) fn finish_frame(
+    f: &mut Fighter,
+    rules: Option<&Rules>,
+    shield_contact: bool,
+    was_active: bool,
+) {
     let Some(r) = rules else { return };
     if shield_contact {
         return;
     }
-    if active(f) {
+    if was_active {
         f.shield.health -= r.damage_base;
         if f.shield.health < 0.0 {
             f.shield.health = r.break_health;
