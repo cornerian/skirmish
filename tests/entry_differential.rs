@@ -57,6 +57,22 @@ unsafe extern "C" {
         out_timer: *mut i32,
         out_y: *mut f32,
     );
+    /// Chains `ftCo_Entry_Anim`'s own transition (timer == 0) directly into
+    /// `ftCo_EntryStart_Phys` within the same call -- the exact per-frame
+    /// order of the Entry -> EntryStart transition frame itself, which none
+    /// of the proptests above exercise (`oracle_entry_start_frame` models a
+    /// *steady-state* EntryStart frame, re-running `ftCo_EntryStart_Anim`'s
+    /// own decrement first, not the fresh-transition frame's `t = 1 /
+    /// start_frames`).
+    fn oracle_entry_transition_frame(
+        trophy_scale: f32,
+        scale_y: f32,
+        x4: f32,
+        start_frames: i32,
+        out_timer: *mut i32,
+        out_x20: *mut f32,
+        out_y: *mut f32,
+    );
 }
 
 /// Both NaN, or exactly the same bits: NaN payload propagation through
@@ -230,4 +246,67 @@ fn boundary_timers_and_frame_counts() {
             assert_eq!(transitioned, 0);
         }
     }
+}
+
+proptest! {
+    /// The Entry -> EntryStart transition frame itself: `ftCo_Entry_Anim`'s
+    /// transition (setting `x20`/timer fresh) followed, in the very same
+    /// call, by `ftCo_EntryStart_Phys` using that fresh state -- exactly
+    /// `game::entry::update_animation`'s `Action::Entry` arm calling
+    /// `enter_start` and then falling through to `move_fighter`'s
+    /// `Action::EntryStart` arm within the same simulated frame. Pinned
+    /// against the real-replay parity loop's own finding (docs/parity.md):
+    /// `fox-ys.slp`/`fox-fod.slp` show a real recording whose position.y at
+    /// this exact frame differs from what this formula (and the retail
+    /// `main.dol`'s own disassembled `fdivs`/`fmuls`/`fadds` sequence, and
+    /// this oracle) all agree on -- proving the gap is not a Skirmish
+    /// arithmetic bug, since Skirmish already matches the compiled decomp
+    /// source bit-exactly here.
+    #[test]
+    fn entry_transition_frame_matches_the_oracle_bit_exactly(
+        trophy_scale in prop::num::f32::ANY,
+        x4 in -1_000.0f32..1_000.0,
+        start_frames in 2u32..=2_000,
+    ) {
+        let (mut out_timer, mut out_x20, mut out_y) = (0i32, 0.0f32, 0.0f32);
+        unsafe {
+            oracle_entry_transition_frame(
+                trophy_scale, 1.0, x4, start_frames as i32,
+                &mut out_timer, &mut out_x20, &mut out_y,
+            );
+        }
+        prop_assert_eq!(out_timer as u32, start_frames - 1);
+        let amp = amplitude(trophy_scale);
+        same_float(out_x20, amp);
+        let t = start_progress(start_frames - 1, start_frames);
+        same_float(out_y, x4 + amp * t);
+    }
+}
+
+/// The exact fox-ys.slp P2 case (docs/parity.md): trophy_scale 0.9, spawn
+/// y 28.0, start_frames 30. Confirms the oracle (and therefore Skirmish,
+/// which the proptest above already ties to the oracle bit-exactly) lands
+/// on `0x41e05bff`, one ULP below the recording's own `0x41e05c00` --
+/// pinned here so the exact reported gap cannot silently drift.
+#[test]
+fn entry_transition_frame_reproduces_the_fox_ys_p2_one_ulp_gap() {
+    let (mut out_timer, mut out_x20, mut out_y) = (0i32, 0.0f32, 0.0f32);
+    unsafe {
+        oracle_entry_transition_frame(
+            0.9, // exact pack value: 0.899_999_976_158_142_1 as f64, i.e. f32(0.9)
+            1.0,
+            28.0,
+            30,
+            &mut out_timer,
+            &mut out_x20,
+            &mut out_y,
+        );
+    }
+    assert_eq!(out_timer, 29);
+    assert_eq!(out_y.to_bits(), 0x41e05bff);
+    assert_ne!(
+        out_y.to_bits(),
+        0x41e05c00,
+        "recording's own bits, not reproducible from this arithmetic"
+    );
 }

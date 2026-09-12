@@ -261,6 +261,35 @@ int oracle_entry_end_frame(s32* timer, f32 x4, f32 x20, s32 start_frames, bool f
     return exited;
 }
 
+/* Chains a fresh Entry->EntryStart transition frame's `ftCo_Entry_Anim`
+ * (timer==0, so it transitions) directly into `ftCo_EntryStart_Phys` within
+ * the same call, exactly matching the real per-frame Anim-then-Phys order
+ * for the transition frame itself -- unlike `oracle_entry_start_frame`,
+ * which re-runs `ftCo_EntryStart_Anim`'s own decrement first, appropriate
+ * for a *steady-state* EntryStart frame, not the transition frame. Added
+ * for the Yoshi's Story/Fountain of Dreams real-replay parity loop
+ * (docs/parity.md): the transition frame (`t = 1 / start_frames`) is the
+ * one case the existing proptests never chained, and it is where
+ * `fox-ys.slp`/`fox-fod.slp` show a real-replay position.y gap this
+ * function proves is not a Skirmish arithmetic bug (see
+ * `entry_transition_frame_matches_the_oracle_bit_exactly` below). */
+void oracle_entry_transition_frame(f32 trophy_scale, f32 scale_y, f32 x4, s32 start_frames,
+                                    s32* out_timer, f32* out_x20, f32* out_y) {
+    Fighter fp;
+    reset_fighter(&fp);
+    fp.mv.co.entry.timer = 0;
+    fp.mv.co.entry.x4 = x4;
+    fp.x34_scale.y = scale_y;
+    fp.co_attrs.trophy_scale = trophy_scale;
+    common_data.x6BC = start_frames;
+    Fighter_GObj gobj = {&fp};
+    ftCo_Entry_Anim(&gobj);
+    ftCo_EntryStart_Phys(&gobj);
+    *out_timer = fp.mv.co.entry.timer;
+    *out_x20 = fp.mv.co.entry.x20;
+    *out_y = fp.cur_pos.y;
+}
+
 /* `ftCo_800C6408` standalone (the EntryStart entry/init). */
 void oracle_entry_start_enter(f32 trophy_scale, f32 scale_y, s32 start_frames, s32* out_timer,
                                f32* out_x24, f32* out_x20) {

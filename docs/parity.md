@@ -1020,6 +1020,134 @@ damage, knockback and grab`) batch is actively disassembling
 function-by-function against the retail `main.dol`; not diagnosed further
 here to avoid duplicating or racing that work.
 
+## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
+
+Four more Fox-vs-Fox recordings from the same corpus, one per remaining
+tournament stage not yet covered: Yoshi's Story (`16_10_01 Fox + Fox
+(YS).slp`, P1/P2), Fountain of Dreams (`11_57_43 Fox + Fox (FoD).slp`,
+P1/P2), Dream Land (`10_26_55 Fox + Fox (DL).slp`, P3/P4), Pokemon
+Stadium (`18_54_44 Fox + Fox (PS).slp`, P1/P4), each with its own
+gameplay-export pairing against pack v10 (`/mnt/archive/datasets/melee/
+skirmish-gameplay/v10-snapshot-20260913`). Measured baselines: YS first
+diverges at frame -113 (`position.y`, P2, 1 ULP), FoD at -118
+(`position.y`, P1, 1 ULP), DL and PS both on the very first compared
+frame, -123 (`checked_frames: 0`).
+
+### Yoshi's Story / Fountain of Dreams: the Entry -> EntryStart transition frame's own 1-ULP gap is not a Skirmish bug
+
+Both YS and FoD diverge on P2/P1's own *first EntryStart frame* -- the
+exact frame `ftCo_Entry_Anim`'s transition (`entry.timer == 0`) calls
+`ftCo_800C6408` (setting `entry.timer = x6BC`, `x20`/`x24` from
+`1.497345 * (x34_scale.y * trophy_scale)`) and then, within that same
+unconditional trailing decrement, leaves `entry.timer = x6BC - 1` for
+this same frame's `ftCo_EntryStart_Phys` to use (`t = 1 / x6BC`) --
+matching `game::entry::update_animation`'s `Action::Entry` arm calling
+`enter_start` followed by `move_fighter`'s `Action::EntryStart` arm in
+the same simulated frame (`src/game/entry.rs`).
+
+For YS, P2 (slot 1, spawn `(42.0, 28.0)`) spawns 10 frames after the
+first recorded frame (`entry_delay(1) = 10`), landing the transition
+exactly on frame -113; `checked_frames: 10` in the measured baseline
+confirms every field, including `position.y`, matched bit-for-bit for
+all 10 preceding Entry frames (so the fixed spawn anchor `x4`/`y0` -- 28.0
+exactly, `0x41e00000` -- is not in question). The recorded value at -113
+is `28.044921875` (`0x41e05c00`); Skirmish computes `28.044919967651367`
+(`0x41e05bff`), one ULP low.
+
+Three independent checks agree Skirmish's arithmetic is exactly right
+here, given these inputs (`trophy_scale = 0.9` exactly -- re-confirmed
+against `fox-fd.slp`'s own already-solved `EntryEnd`-entry value below --
+`x34_scale.y = 1.0` for a standard, non-giant/tiny Fox, `y0 = 28.0`, `t =
+1 / 30` via `fdivs`):
+
+1. **The retail `main.dol` disassembly itself** (`tools/
+   ppc_precision_audit.py`, then a full Capstone dump of
+   `ftCo_EntryStart_Phys` at `0x800c6740`): the position write is two
+   separately single-rounded instructions, `fmuls f0, f0, f31` (`x28 =
+   x20 * t`) then, after a store/reload round-trip through memory,
+   `fadds f0, f1, f0` (`cur_pos.y = x4 + x28`) -- no `fmadds`, no hidden
+   double-precision retention. Replaying this exact instruction sequence
+   in `f32` (`y0 + (amplitude * t)`, each op rounded once) reproduces
+   Skirmish's own `0x41e05bff`, not the recording's `0x41e05c00`.
+2. **A new C-oracle differential**, `tests/entry_differential.rs`'s
+   `entry_transition_frame_matches_the_oracle_bit_exactly` (a proptest)
+   and `entry_transition_frame_reproduces_the_fox_ys_p2_one_ulp_gap` (the
+   exact case), calling a new `oracle_entry_transition_frame`
+   (`tests/oracle/entry.c`) that chains a fresh-transition
+   `ftCo_Entry_Anim` directly into `ftCo_EntryStart_Phys` within the same
+   call -- exactly the transition frame's own per-frame order, which
+   neither existing oracle harness covered (`oracle_entry_start_frame`
+   models a *steady-state* EntryStart frame, re-running
+   `ftCo_EntryStart_Anim`'s own decrement first, which is the wrong
+   frame's math for a fresh transition). The recompiled decomp source
+   (`ft_0C31.c` verbatim, via `entry_original.inc`) also lands on
+   `0x41e05bff`.
+3. **All later EntryStart frames match Skirmish's own formula exactly**:
+   frames -112 through -105 (`t = 2/30 .. 9/30`), checked directly
+   against `fox-ys.slp` via `py-slippi`, reproduce bit-for-bit under the
+   identical `y0 + amplitude * t` computation -- ruling out a general
+   `trophy_scale`/`x34_scale`/formula bug, since only the transition
+   frame itself (`t = 1/30`) disagrees.
+4. `trophy_scale = 0.9` was re-verified, not assumed: solving
+   `fox-fd.slp`'s own `EntryEnd`-entry value (`y = x4 + x20` at full
+   amplitude, no `t` multiply -- `docs/match-start.md`'s original
+   derivation) is sensitive enough to distinguish `0.9` from a
+   0.00005-away neighbor (`0.9` reproduces `0x41358fd0` exactly;
+   `0.9000452` lands on `0x41359017` instead), so the transition frame's
+   gap is not explained by a coarser derivation missing a small
+   `trophy_scale` error either.
+
+This is reported, not fixed: a genuine one-ULP difference with the
+function (`ftCo_EntryStart_Phys`, specifically the Entry -> EntryStart
+transition frame) and every input identified, per this loop's own stop
+condition. FoD's own divergence (frame -118, P1, spawn `(-42.0, 21.0)`,
+`entry_delay(0) = 5`) is the same class of gap on the same transition
+frame shape and was not independently re-derived beyond confirming the
+measured baseline. `fox-ys-baseline.json`/`fox-fod-baseline.json` are
+unchanged (still -113/-118); the two new oracle tests stand as
+permanent regression coverage proving Skirmish already agrees with the
+compiled decomp source here, so a future change to this arithmetic that
+accidentally "fixes" the ULP by drifting from the decomp would be
+caught.
+
+### Dream Land / Pokemon Stadium: both diverge on frame -123 itself, in the exported spawn coordinates, not the simulation
+
+Both DL and PS mismatch on the very first frame compared
+(`checked_frames: 0`), which rules out any Skirmish simulation step:
+nothing has run yet. Both trace to the exported `stage.spawns` values in
+their own `match-data.json`, checked directly against each recording's
+own first frame via `py-slippi`:
+
+- **Dream Land**: the pack's `stage.spawns` are `[[-46.599998474121094,
+  37.221500396728516], [47.38909912109375, 37.321502685546875]]`. The
+  recording shows both P3 and P4 sitting at `position.y = 37.0` exactly
+  for frames -123 through at least -121 (x already matches the pack
+  exactly for both ports). Both spawn Y values are wrong by a few tenths
+  of a unit -- not a rounding-scale gap -- and are wrong by *different*
+  amounts (`0.2215` and `0.3215`, suspiciously exactly `0.1` apart),
+  which does not look like a single shared rounding artifact so much as
+  a spawn-table decode or transform-composition bug specific to this
+  stage's export.
+- **Pokemon Stadium**: the pack's `stage.spawns` are `[[-39.999996185302734,
+  31.99999237060547], [40.0, 32.0]]`. The recording shows both P1 and P4
+  at exactly `(-40.0, 32.0)` and `(40.0, 32.0)`. Spawn index 1 is exact;
+  spawn index 0 is off by a few ULPs in *both* x and y, consistent with
+  the task's own suspicion (a transform composition applied to one
+  spawn point but not its mirror, rather than a snap the game itself
+  performs).
+
+Both point at the `skirmish-assets` exporter's stage/spawn decoding
+(`docs/gameplay-export.md`'s step 7, `GrXX.dat` -> `stage.spawns`), not
+at anything in this repository: Skirmish has not run a single frame yet
+in either case. Reported per this loop's own instructions (exporter data
+gets reported with the exact field and expected value, not patched
+locally): `fox-dl`'s `stage.spawns[0].y` and `stage.spawns[1].y` should
+both be `37.0`; `fox-ps`'s `stage.spawns[0]` should be `(-40.0, 32.0)`
+(spawn index 1 is already correct). `fox-dl-baseline.json`/
+`fox-ps-baseline.json` record today's measured `-123`/`0` and will move
+once the exporter republishes corrected spawn coordinates for these two
+stages.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
