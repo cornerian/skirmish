@@ -381,10 +381,13 @@ fn a_held_stick_produces_no_aerial_drift_while_the_input_lock_is_active() {
     }
     let locked = state.unwrap();
     assert_eq!(locked.fighters[0].action, Action::Fall);
-    // The neutral controller reaches `previous_input`, not just dispatch:
-    // nothing the pinned source's own pad-copy could have left behind is
-    // visible here either way, since no button was held.
-    assert_eq!(locked.fighters[0].previous_input, Controller::default());
+    // Only *dispatch* sees the neutral controller during the lock (the
+    // drift/facing assertions above already pin that); `previous_input`
+    // keeps tracking the real, held stick throughout, matching
+    // `fox-fd-4.slp`'s real-replay evidence (`docs/input-lock.md`,
+    // `docs/parity.md`) that a continuously-held button must not read as a
+    // fresh press once control begins.
+    assert_eq!(locked.fighters[0].previous_input, held[0]);
 }
 
 #[test]
@@ -410,6 +413,69 @@ fn the_first_controlled_frame_acts_on_the_held_stick() {
         state.fighters[0].velocity[0]
     );
     assert_eq!(state.fighters[0].previous_input, held[0]);
+}
+
+/// `docs/input-lock.md`'s "open question", resolved against `fox-fd-4.slp`
+/// (`docs/parity.md`): a stick held down from before the lock through the
+/// unlock frame must not read as a fresh press once the real controller
+/// reaches dispatch. `f.previous_input` (`game::simulation::advance`) now
+/// keeps tracking the real, un-neutralized samples throughout the lock
+/// (only *dispatch* sees the neutral controller), so the fast-fall edge
+/// check (`f.previous_input.stick[1] > -rules.fast_fall_threshold`) sees the
+/// held stick as already down on the unlock frame, not neutral.
+#[test]
+fn a_stick_held_down_through_the_input_lock_does_not_edge_trigger_fast_fall_at_unlock() {
+    let resource = locked_data();
+    let input_lock_frames = resource.rules.entry.unwrap().input_lock_frames;
+    let mut game = Match::new_with_slots(resource, 0, [0, 1]).unwrap();
+    let mut held_down = IDLE;
+    held_down[0] = Controller {
+        stick: [0.0, -1.0],
+        ..Controller::default()
+    };
+    // Slot 0 reaches ordinary Fall at step 66 (see the drift test above),
+    // well before the lock (84) lifts, so it is already falling with
+    // `velocity[1] < 0.0` -- fast-fall's other preconditions -- by unlock.
+    let mut state = None;
+    for _ in 1..=input_lock_frames {
+        state = Some(game.step(held_down).unwrap().clone());
+    }
+    let locked = state.unwrap();
+    assert_eq!(locked.fighters[0].action, Action::Fall);
+    assert!(!locked.fighters[0].fast_fall, "fast-fell before unlock");
+    // Step `input_lock_frames + 1`: the first frame the real controller
+    // reaches dispatch. The stick has been down continuously, so this must
+    // not read as a fresh press.
+    let state = game.step(held_down).unwrap();
+    assert!(
+        !state.fighters[0].fast_fall,
+        "a continuously-held stick edge-triggered fast-fall at unlock"
+    );
+}
+
+/// The contrasting case: a stick that is genuinely neutral through the lock
+/// and only pressed down on the first controlled frame is a real fresh
+/// press and must still edge-trigger fast-fall there, same as ordinary
+/// (non-locked) play -- otherwise the test above could pass merely because
+/// fast-fall never triggers at all.
+#[test]
+fn a_fresh_down_press_on_the_first_controlled_frame_still_edge_triggers_fast_fall() {
+    let resource = locked_data();
+    let input_lock_frames = resource.rules.entry.unwrap().input_lock_frames;
+    let mut game = Match::new_with_slots(resource, 0, [0, 1]).unwrap();
+    run(&mut game, input_lock_frames as usize);
+    assert_eq!(game.state().fighters[0].action, Action::Fall);
+    assert!(!game.state().fighters[0].fast_fall);
+    let mut fresh_down = IDLE;
+    fresh_down[0] = Controller {
+        stick: [0.0, -1.0],
+        ..Controller::default()
+    };
+    let state = game.step(fresh_down).unwrap();
+    assert!(
+        state.fighters[0].fast_fall,
+        "a fresh press on the first controlled frame did not trigger fast-fall"
+    );
 }
 
 #[test]

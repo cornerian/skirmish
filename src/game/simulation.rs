@@ -370,11 +370,23 @@ pub(crate) fn advance(
     // replay, decomp citation pending (see the doc): a held stick produces
     // no drift even in ordinary Fall during this window, so the gate is not
     // scoped to Entry/EntryStart/EntryEnd's own (empty) IASA callbacks --
-    // every fighter's controller is replaced by neutral for the first
-    // `input_lock_frames` frames, upstream of every other use of `inputs`
-    // this frame (dispatch, `previous_input`, hitlag sampling), matching
-    // "simulate every frame fully...each fighter's controller is replaced by
-    // a neutral Controller before input dispatch".
+    // every fighter's *dispatched* controller is replaced by neutral for the
+    // first `input_lock_frames` frames, upstream of every other use of
+    // `inputs` this frame (dispatch, hitlag sampling). `raw_inputs` keeps the
+    // real, un-neutralized samples so `previous_input` bookkeeping (below)
+    // can still track them: `fox-fd-4.slp` (a second real recording,
+    // `docs/parity.md`) held its stick down continuously from before the
+    // lock through the unlock frame, and matching `previous_input` to the
+    // neutralized `inputs` made that continuously-held input look like a
+    // fresh press exactly at unlock, wrongly edge-triggering fast-fall
+    // (`fast_fall_threshold`'s `f.previous_input.stick[1] >
+    // -rules.fast_fall_threshold` check below) on a frame the recording
+    // shows falling under ordinary gravity. This resolves `docs/
+    // input-lock.md`'s "open question" the other way from its original,
+    // explicitly-flagged guess (neutral `previous_input` throughout the
+    // lock): the real pad copy does not stop tracking during the lock, only
+    // the fighters' own dispatch does.
+    let raw_inputs = inputs;
     let inputs = match &data.rules.entry {
         Some(entry) if state.next_frame <= entry.input_lock_frames => [Controller::default(); 2],
         _ => inputs,
@@ -445,7 +457,7 @@ pub(crate) fn advance(
             } else {
                 fighter.action_frame += 1;
             }
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             frozen[player] = true;
             continue;
         }
@@ -462,7 +474,7 @@ pub(crate) fn advance(
             } else {
                 death::move_fighter(fighter, rules);
             }
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             frozen[player] = true;
             if update == death::Update::LoseStock {
                 lose_stock(data, state, player, true)?;
@@ -508,7 +520,7 @@ pub(crate) fn advance(
                 &mut state.attack_instances,
                 &mut state.action_instances,
             )?;
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             frozen[player] = true;
             continue;
         }
@@ -601,7 +613,7 @@ pub(crate) fn advance(
                 &mut state.attack_instances,
                 &mut state.action_instances,
             )?;
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             continue;
         }
         if rebirth::owns_action(fighter.action) {
@@ -624,7 +636,7 @@ pub(crate) fn advance(
                 &mut state.attack_instances,
                 &mut state.action_instances,
             )?;
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             continue;
         }
         if ledge::attached(fighter) {
@@ -642,7 +654,7 @@ pub(crate) fn advance(
                 &mut state.attack_instances,
                 &mut state.action_instances,
             )?;
-            fighter.previous_input = input;
+            fighter.previous_input = raw_inputs[player];
             continue;
         }
         if fighter.damage_elapsed >= 0 {
@@ -679,7 +691,7 @@ pub(crate) fn advance(
             &mut state.attack_instances,
             &mut state.action_instances,
         )?;
-        fighter.previous_input = input;
+        fighter.previous_input = raw_inputs[player];
     }
     let capture_previous = state.fighters.each_ref().map(|fighter| fighter.position);
     grab::release_broken_pairs(state);
