@@ -825,7 +825,10 @@ pub(crate) fn advance(
             geometry: damage::FighterContact,
         },
     }
-    let mut hits = Vec::with_capacity(2);
+    // At most one hit per attacker (the inner loop `break`s on the first
+    // connecting hitbox), so a fixed two-slot array indexed by attacker
+    // replaces the unconditional per-frame `Vec` allocation with none at all.
+    let mut hits = [None, None];
     let mut shield_touches = [false; 2];
     for attacker in 0..2 {
         let victim = 1 - attacker;
@@ -872,7 +875,7 @@ pub(crate) fn advance(
                         shield_touches[victim] = true;
                         continue;
                     }
-                    hits.push((attacker, hit, staled, HitContact::Shield));
+                    hits[attacker] = Some((hit, staled, HitContact::Shield));
                     break;
                 }
             }
@@ -917,7 +920,7 @@ pub(crate) fn advance(
                 }
             }
             if let Some(contact) = body_contact {
-                hits.push((attacker, hit, staled, contact));
+                hits[attacker] = Some((hit, staled, contact));
                 break;
             }
         }
@@ -927,7 +930,11 @@ pub(crate) fn advance(
     }
     // Preserve both action counters during a simultaneous trade before Damage
     // replaces their action; attacks that connected start hitlag on this step.
-    for &(attacker, hit, _, _) in &hits {
+    for (attacker, hit) in hits
+        .iter()
+        .enumerate()
+        .filter_map(|(attacker, hit)| Some((attacker, hit.as_ref()?.0)))
+    {
         state.fighters[attacker].hit_groups |= 1 << hit.group;
         if data.rules.clank.is_some() {
             clank::record(&mut state.fighters[attacker], hit.group, 1 - attacker)?;
@@ -935,7 +942,11 @@ pub(crate) fn advance(
     }
     let mut newly_hit = [false; 2];
     let mut shield_contact = [false; 2];
-    for (attacker, hit, staled, contact) in hits {
+    for (attacker, hit, staled, contact) in
+        hits.into_iter().enumerate().filter_map(|(attacker, hit)| {
+            hit.map(|(hit, staled, contact)| (attacker, hit, staled, contact))
+        })
+    {
         newly_hit[1 - attacker] = true;
         match contact {
             HitContact::Shield => {
