@@ -671,6 +671,76 @@ frame was -28, field `action_age` on P4 (expected `0xbf800000` = `-1.0`,
 actual `0x00000000` = `0.0`), on P4's own one-frame `GuardOn` shield-drop
 entry (immediately into `Pass` the next frame).
 
+**Fixed: GuardOn/Guard/GuardReflect's own constant `-1` `state_age`.**
+`ftCo_800923B4`/`ftCo_80092C54` (GuardOn/Guard's own entries,
+`ftCo_Guard.c:386,509,790,1012`) and `ftCo_8009388C` (GuardReflect, `:901`)
+all call `Fighter_ChangeMotionState` with `Ft_MF_SkipAnim`.
+`Fighter_ChangeMotionState` unconditionally lands `cur_anim_frame` on
+`anim_start - anim_speed` (`fighter.c:1224`) for every transition --
+`0 - 1 = -1` here -- but `Ft_MF_SkipAnim` additionally skips the generic
+per-frame animation advance (`Fighter_Spaghetti_8006AD10`'s unconditional
+`ftAnim_8006EBA4(gobj)`, `fighter.c:1684`) that brings every *other*
+action's `cur_anim_frame` back to `0` by the end of its own entry frame:
+the shield family owns no scripted animation figatree for that advance to
+move, so `state_age` stays a constant `-1` for the entire state, not just
+its entry frame -- unlike `GuardSetOff` (`Ft_MF_None`, no `SkipAnim`),
+which keeps the ordinary rule. `crates/skirmish-replay/src/observation.rs`'s
+`action_age` now reports a constant `-1.0` for `GuardOn`/`Guard`/
+`GuardReflect`, joining the existing `Entry`/`EntryEnd` constant-age
+branch as its own arm. Confirmed directly against `fox-bf.slp`: P1 holds
+`GuardOn` then `Guard` for 21 frames (1430-1450) with `state_age = -1.0`
+throughout, then `GuardSetOff` at 1451 already reports the ordinary `0.0`;
+P4's own one-frame shield-drop at -28 (the divergence this fixes) reports
+the same `-1.0` on its only frame. 96 frames now match (-123 through -28).
+
+**Current measurement:** the new first divergent frame is -27, field
+`position.y` on P4 (expected `0x41d3c2c4` = `26.47010040283203`, actual
+`0x41be669b` = `23.800100326538086`), on the same frame P4's `GuardOn`
+converts into `Pass` (falling through the platform).
+
+**Diagnosis (blocked on a gameplay-export pack-data gap, reported per this
+loop's own stop condition): `ftCommonData`'s fast-fall stick-timer window
+constant is not exported.** `ftCo_Pass_Phys`/`ft_80084DB0` calls
+`ftCommon_CheckFallFast` (`ftcommon.c:492-503`) every frame while airborne,
+the same generic check every other falling action's own Phys callback
+makes; its exact condition is `!fp->fall_fast && fp->self_vel.y < 0 &&
+fp->input.lstick[0].y <= -p_ftCommonData->x88 (fast_fall_threshold,
+already exported and modeled) && fp->x671_timer_lstick_tilt_y <
+p_ftCommonData->x8C` -- an `int` field immediately after
+`fast_fall_threshold` in `ftCommonData` (`types.h:88-89`) that is not yet
+given a name in the pinned decomp and is not present anywhere in
+`fox-bf/match-data.json`'s `rules` object (confirmed: `fast_fall_threshold`
+is exported; no sibling window field is). `fp->x671_timer_lstick_tilt_y`
+(`fighter.c:1976-2019`, already modeled at the source as
+`fighter.locomotion.tilt_y_age`, reset to the same `0xFE`/`254` sentinel by
+`game::locomotion::pass_request_after_actions` on every platform pass,
+`wall_jump::enter` and elsewhere) counts consecutive frames the stick has
+held past the vertical smash deadzone in one direction, restarting at `0`
+on a fresh press; `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`'s own
+source) reset it to `0xFE` specifically so the same down-hold that
+triggered a platform pass cannot also immediately re-trigger fast-fall.
+Traced directly against `fox-bf.slp`: P4's stick crosses the down deadzone
+at frame -28 (neutral the frame before) and is still down at -27, when
+`Pass` begins and `game::locomotion::pass_request_after_actions` already
+resets `tilt_y_age` to `254`; `game::simulation::move_fighter`'s existing
+fast-fall trigger, though, does not consult `tilt_y_age` at all --
+it approximates decomp's timer-window check with `f.previous_input.
+stick[1] > -rules.fast_fall_threshold` (a heuristic already known to be an
+approximation, `docs/input-lock.md`/this file's own `fox-fd-4.slp` entry
+above), which reads the *previous* frame's stick, sees it already past the
+threshold too (-28's own `-0.637` past `-0.6625`), and fires anyway --
+producing an extra frame of `fast_fall_velocity` (`-3.4`) instead of the
+recording's own `pass_velocity + gravity` (`-0.5 + -0.23 = -0.73`).
+Replacing the heuristic with the real mechanism only needs `tilt_y_age`
+(already tracked) to be compared against the true window constant, which
+is not exported: guessing a value is not safe here, since a too-small or
+too-large window could silently change fast-fall timing on any other
+continuously-held-stick transition into an airborne action elsewhere in
+the corpus, not just this one. Reported per this loop's own stop condition
+(pack data needed: `ftCommonData+0x8C`, adjacent to the already-exported
+`fast_fall_threshold` at `+0x88`) rather than fixed with an unverified
+constant.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

@@ -258,6 +258,21 @@ impl Recording {
                         fighter.locomotion.run.frame
                     } else if matches!(fighter.action, Action::Entry | Action::EntryEnd) {
                         -1.0
+                    } else if matches!(
+                        fighter.action,
+                        Action::GuardOn | Action::Guard | Action::GuardReflect
+                    ) {
+                        // GuardOn/Guard/GuardReflect enter with
+                        // `Ft_MF_SkipAnim` (`ftCo_Guard.c:386,509,790,901,
+                        // 1012`), which skips the generic per-frame
+                        // animation advance that otherwise brings every
+                        // other action's `cur_anim_frame` back to `0` by
+                        // the end of its own entry frame; `state_age` stays
+                        // a constant `-1` for the whole state
+                        // (`observation::action_age`'s own matching
+                        // branch), unlike `GuardSetOff` (`Ft_MF_None`, no
+                        // `SkipAnim`).
+                        -1.0
                     } else if fighter.action == Action::EntryStart {
                         let age = fighter.action_frame - 1;
                         match self.initialization.data.fighters[player].entry {

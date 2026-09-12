@@ -394,6 +394,33 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // state_age stays -1 for the whole state, unlike EntryStart,
         // which counts its own animation from 0.
         -1.0
+    } else if matches!(
+        fighter.action,
+        game::Action::GuardOn | game::Action::Guard | game::Action::GuardReflect
+    ) {
+        // `ftCo_800923B4`/`ftCo_80092C54` (GuardOn/Guard's own entries,
+        // `ftCo_Guard.c:386,509,790,1012`) and `ftCo_8009388C`
+        // (GuardReflect, `:901`) all call `Fighter_ChangeMotionState`
+        // with `Ft_MF_SkipAnim`. `Fighter_ChangeMotionState` always
+        // lands `cur_anim_frame` on `anim_start - anim_speed`
+        // (`fighter.c:1224`) regardless of that flag -- here `0 - 1 =
+        // -1` for GuardOn/Guard's own `anim_start = 0`/`anim_speed = 1`
+        // arguments, or GuardReflect's own passthrough of whatever
+        // `cur_anim_frame` already held (already `-1` from GuardOn/
+        // Guard) -- but `Ft_MF_SkipAnim` also skips the generic
+        // per-frame animation advance (`fighter.c:1684`) that would
+        // otherwise move it, unlike every other action's own entry:
+        // the shield family owns no scripted animation figatree for
+        // that advance to play. `state_age` therefore stays a constant
+        // `-1` for the whole state, not just its entry frame. Confirmed
+        // directly against `fox-bf.slp`: P1 holds GuardOn then Guard
+        // for 21 frames (1430-1450) with `state_age = -1.0` throughout,
+        // and P4's brief one-frame GuardOn shield-drop at frame -28
+        // (immediately into `Pass`) reports the same `-1.0` on its only
+        // frame; GuardSetOff (`Ft_MF_None`, no `SkipAnim`) already
+        // reports the ordinary `0.0` at frame 1451 through the general
+        // rule below, unaffected by this branch.
+        -1.0
     } else if fighter.action == game::Action::EntryStart {
         // `simulation::enter` resets `action_frame` to 0 on the
         // transition frame, but the shared per-frame tail already
@@ -1476,6 +1503,48 @@ mod tests {
                 assert_eq!(action_age(&fighter, &fighter_data), recorded, "{action:?}");
             }
         }
+    }
+
+    #[test]
+    fn guard_family_reports_a_constant_negative_one_state_age() {
+        // `ftCo_800923B4`/`ftCo_80092C54` (GuardOn/Guard's own entries,
+        // `ftCo_Guard.c:386,509,790,1012`) and `ftCo_8009388C` (GuardReflect,
+        // `:901`) all call `Fighter_ChangeMotionState` with `Ft_MF_SkipAnim`:
+        // `cur_anim_frame` lands on `anim_start - anim_speed` (`0 - 1 = -1`,
+        // `fighter.c:1224`) like every other transition, but `Ft_MF_SkipAnim`
+        // also skips the generic per-frame animation advance
+        // (`fighter.c:1684`) that would otherwise move it back to `0`, so it
+        // stays `-1` for the whole state, not just the entry frame.
+        // `fox-bf.slp` (`docs/parity.md`) confirms this directly: P1 holds
+        // GuardOn then Guard for 21 frames (1430-1450) with `state_age =
+        // -1.0` throughout, and P4's one-frame GuardOn shield-drop at frame
+        // -28 reports the same `-1.0` on its only frame.
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let fighter_data = game.data().fighters[0].clone();
+        for action in [
+            game::Action::GuardOn,
+            game::Action::Guard,
+            game::Action::GuardReflect,
+        ] {
+            fighter.action = action;
+            // action_frame is set to a large value on purpose: the generic
+            // fallback rule (`action_frame.saturating_sub(1)`) would report
+            // a completely different, non-negative number if this branch
+            // were not taken first, so a passing assertion here cannot be a
+            // coincidence of the two formulas agreeing.
+            fighter.action_frame = 40;
+            assert_eq!(action_age(&fighter, &fighter_data), -1.0, "{action:?}");
+        }
+        // GuardSetOff (`Ft_MF_None`, no `SkipAnim`) is unaffected: it keeps
+        // the ordinary general rule.
+        fighter.action = game::Action::GuardSetOff;
+        fighter.action_frame = 1;
+        assert_eq!(action_age(&fighter, &fighter_data), 0.0);
     }
 
     #[test]

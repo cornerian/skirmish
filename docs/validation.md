@@ -1,5 +1,80 @@
 # Local validation provenance
 
+The 2026-09-12 GuardOn/Guard/GuardReflect constant `state_age` fix (the
+real-replay parity loop, `fox-bf.slp`, `docs/parity.md`) corrects
+`crates/skirmish-replay/src/observation.rs`'s `action_age`: `ftCo_800923B4`/
+`ftCo_80092C54` (GuardOn/Guard's own entries, `ftCo_Guard.c:386,509,790,
+1012`) and `ftCo_8009388C` (GuardReflect, `:901`) all call `Fighter_
+ChangeMotionState` with `Ft_MF_SkipAnim`. `Fighter_ChangeMotionState`
+unconditionally lands `cur_anim_frame` on `anim_start - anim_speed`
+(`fighter.c:1224`, `0 - 1 = -1` here) for every transition, but `Ft_MF_
+SkipAnim` additionally skips the generic per-frame animation advance
+(`Fighter_Spaghetti_8006AD10`'s unconditional `ftAnim_8006EBA4(gobj)`,
+`fighter.c:1684`) that brings every *other* action's `cur_anim_frame` back
+to `0` by the end of its own entry frame: the shield family owns no
+scripted animation figatree for that advance to move, so `state_age` stays
+a constant `-1` for the whole state, not just its entry frame -- unlike
+`GuardSetOff` (`Ft_MF_None`, no `SkipAnim`), which keeps the ordinary rule.
+
+Confirmed directly against `fox-bf.slp` (`/mnt/archive/datasets/melee/
+slippi-public-dataset-v3.7/data/FOX/batch_00/18_21_03 Fox + Fox (BF).slp`,
+the first Battlefield real-replay recording, ports P1/P4): P1 holds
+GuardOn then Guard for 21 frames (1430-1450) with `state_age = -1.0`
+throughout, then GuardSetOff at 1451 already reports the ordinary `0.0`;
+P4's own one-frame GuardOn shield-drop at frame -28 (this measurement's own
+divergence) reports the same `-1.0` on its only frame before converting
+into `Pass` the next frame.
+
+**Tests**: `crates/skirmish-replay/src/observation.rs`'s new
+`guard_family_reports_a_constant_negative_one_state_age` calls the
+extracted `action_age` directly for GuardOn/Guard/GuardReflect with an
+artificially large `action_frame` (so a passing assertion cannot be a
+coincidence of the old and new formulas agreeing) and asserts GuardSetOff
+is unaffected. `crates/cli/tests/replay_match.rs`'s own harness-local
+duplicate of this formula (its own doc comment already flags it as needing
+to track `observation::observe`, the same one the landing-fall-special
+batch updated) gained the identical branch; six existing shield tests
+(`physical_l_drives_file_backed_shield_state_and_detects_its_removal`,
+`file_backed_shield_drop_matches_and_detects_the_first_changed_stick_
+frame`, `file_backed_cstick_shield_jump_matches_and_detects_the_first_
+changed_frame`, `file_backed_shield_escapes_match_and_detect_their_first_
+changed_input_frame`, `file_backed_shield_grabs_match_and_detect_their_
+first_changed_button_frame`, `file_backed_powershield_covers_reflector_
+immunity_and_guard_reflect_state`) already recorded synthetic fixtures
+starting a fighter in GuardOn and would otherwise have started failing at
+frame 0 once `observation::observe` itself changed (the harness's embedded
+"expected" value would have stayed the stale `0.0` while the freshly
+re-simulated "actual" value became the corrected `-1.0`). `cargo fmt --all
+-- --check`, `cargo clippy --locked --workspace --all-targets
+--all-features -- -D warnings` and `cargo test --locked --workspace` all
+pass.
+
+Measured against the live pack (`/mnt/archive/datasets/melee/
+skirmish-gameplay/v2/fox-bf`; this pairing has no `SKIRMISH_GAMEPLAY_DATA`
+snapshot yet): 96 frames now match (-123 through -28), up from 95 at the
+initial measurement (itself already 95, not the replay's own -123, thanks
+to origin/main's independent Walk entry-time fix landing first). The new
+first divergence is frame -27, field `position.y` on P4, on the same frame
+P4's GuardOn converts into `Pass`: `game::simulation::move_fighter`'s
+fast-fall trigger approximates decomp's own `ftCommon_CheckFallFast`
+(`fp->x671_timer_lstick_tilt_y < p_ftCommonData->x8C`, an unexported,
+not-yet-named window constant adjacent to the already-exported
+`fast_fall_threshold` at `+0x88`) with a `previous_input`-based heuristic
+that does not consult `fighter.locomotion.tilt_y_age` (already modeled at
+the source and already reset to the `254` sentinel by `game::locomotion::
+pass_request_after_actions`, matching decomp's own `x671_timer_lstick_
+tilt_y = 0xFE` reset in `begin_pass`) at all, so it wrongly re-triggers
+fast-fall on the same continuously-held down-stick that just triggered the
+platform pass. Reported per this loop's own stop condition (pack data
+needed) rather than fixed with a guessed window value; see `docs/
+parity.md`'s own "A first Battlefield recording" section for the full
+diagnosis and citation.
+
+`tests/fixtures/slippi/parity/fox-bf.slp` and its pairing, `recordings.json`
+entry and `fox-bf-baseline.json` are new in this batch, adding Battlefield
+(platforms, pass-through, ledge/teeter) to the real-replay ratchet for the
+first time; `manifest.json` gains the recording's own provenance entry.
+
 The 2026-09-12 special-entry-advance batch (the real-replay parity loop on
 `fox-fd-2.slp`/`fox-fd-4.slp`, `docs/parity.md`) fixes the `action_age`
 divergence (expected `1.0`, actual `0.0`) both recordings hit at Fox's
