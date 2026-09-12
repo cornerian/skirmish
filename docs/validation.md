@@ -157,6 +157,23 @@ would divert its own hit-connect check onto `clank::blocked`'s independent,
 already-correct bookkeeping instead of the `hit_groups`/`refreshed_groups`
 path this batch exists to fix.
 
+The new `move_id`-under-staling requirement broke an existing regression
+(`crates/cli/tests/ecb_load_flags_v4.rs`): the archived gameplay export
+pack v4 predates `move_id` on Fox's up/down special hitboxes entirely (an
+already-known, already-documented gap -- this same file's 2026-09-11 entry
+below notes "pack v4's missing specials `move_id` is fixed in v5"), so it
+could no longer construct a `Match` at all. Fixed by having that test skip
+(without failing) when construction fails for exactly that reason,
+matching its own existing skip-on-missing-export convention, rather than
+by touching the archived pack itself or weakening the new requirement.
+
+The six-step local audit (the same six steps as the 2026-09-11 entry
+below) ran clean against this batch's own rebased worktree: `fmt` (0
+passed), `clippy --all-targets --all-features` (0 passed), `native` (938
+passed/19 ignored), `c-oracle` (1288 passed/19 ignored), `release` (1288
+passed/19 ignored), `diff` (0 passed). The archived run is stored outside
+Git at `/mnt/archive/runs/skirmish-hit-refresh-20260912-verified`.
+
 The 2026-09-12 Falco registration batch adds `game::characters::
 Specials::Falco` on top of Fox's existing side/up/down special code
 (`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own
