@@ -250,6 +250,60 @@ recording) but does not localize to any single constant this loop could
 find by direct substitution (`AGENTS.md`: "Host C agreement does not
 establish PowerPC or whole-game equivalence").
 
+**Update (stick-value hypothesis, tested directly, and falsified): the
+recorded stick input and Skirmish's own `Controller.stick` are bit-identical;
+this is not an input-conversion bug.** The remaining lead from the two
+updates above is a two-ULP-lower *something* upstream of `getAccelAndTarget`'s
+own evaluation that no constant substitution reproduces; one candidate never
+directly tested until now is the stick value itself -- `fp->input.lstick[0].x`
+after the game's own pad conversion (deadzone + division by the calibrated
+max magnitude, `Fighter_8006A1BC`, `fighter.c` ~1750-1900) versus whatever
+`crates/skirmish-replay`'s `observation::controllers` feeds in from the
+replay. Checked both ends for `fox-fd-3.slp` (P2, frame -32) and
+`falco-fox-fd.slp` (P3/Falco, frame -25):
+
+- `uv run --with py-slippi python3` dumping `pre.joystick.x`/`raw_analog_x`
+  directly from both `.slp` files: P2 holds `raw_analog_x = 80`,
+  `joystick.x = 1.0` (`0x3f800000`) for frames -33 through -30; P3/Falco holds
+  `raw_analog_x = 103`, `joystick.x = 0.9375` (`0x3f700000`, a clean
+  power-of-two fraction consistent with the octagonal gate's notch
+  quantization) for frames -26 through -24.
+- `observation::controllers` (`crates/skirmish-replay/src/observation.rs:187`)
+  sets `stick = [pre.joystick.x, pre.joystick.y]` verbatim from Peppi's own
+  parsed `Pre` row -- no clamping, quantization, deadzone reapplication or
+  `as`-cast rounding of any kind before it reaches `game::Controller`.
+- Confirmed live, not just read from source: a temporary `eprintln!` in
+  `game::locomotion::ground_motion` (removed before this commit), rebuilt and
+  run through `make-initialization`/`validate-replay` against both
+  recordings, printed `stick.x_bits=0x3f800000` at Fox's frame -32 and
+  `stick.x_bits=0x3f700000` at Falco's frame -25 -- bit-for-bit identical to
+  the recordings' own `pre.joystick.x`, with `ground_velocity` bits
+  (`0x3ff33333`, `0x3fe8f5c2`) matching this doc's and `docs/math.md`'s
+  existing figures exactly.
+- Every plausible alternative processing of the recorded raw byte converges
+  on the same bits anyway, so there is no room for an ULP-level stick error
+  to hide in: Fox's `raw_analog_x = 80` is already the calibrated full-scale
+  magnitude (any linear normalization against that same magnitude, or a
+  full-deflection clamp, yields exactly `1.0`); quantizing `1.0` to the
+  nearest 1/80th is still exactly `1.0`. Re-running the exact `f32` accel
+  step (`stick * dash_acceleration_mul + dash_acceleration_base`, then
+  `ground_velocity + accel`) against the confirmed bits reproduces
+  `0x400147ae` again, not the recording's `0x400147ad` -- the same one-ULP
+  gap this doc already found by other means, now with the stick input itself
+  eliminated as a variable rather than merely assumed correct.
+
+**Takeaway: the stick input is not the source of the remaining one-ULP
+mismatch.** Both the recorded joystick float and the value Skirmish's
+replay stepper actually uses for the dash-acceleration computation are the
+same bits, confirmed at the source (Peppi's parsed pre-frame row), in the
+replay-to-`Controller` conversion (by inspection, no transform exists to
+inspect), and live (instrumented and rerun). The two-ULP-lower value the
+`skirmish-f64` batch's perturbation sweep implies still has no known origin;
+it is not the stick, and (per the update above) not `dash_initial_velocity`
+or a nearby accel constant either. Not chased further this batch: no code
+or baseline change (`fox-fd-3.slp` unchanged at -32/91; `falco-fox-fd.slp`
+unchanged at -25/98).
+
 **Proves:** for however many frames each recording's own
 `first_divergent_frame` reaches (or fully, if `matched`), the native
 simulation's observable fields agree with an authentic recording, for that
