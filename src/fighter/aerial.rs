@@ -35,7 +35,7 @@ pub fn fresh_cstick(previous: [f32; 2], current: [f32; 2], thresholds: [f32; 2])
 /// of facing. Runtime/platform.h's comparison-based ABS retains negative zero.
 /// libm replaces the target transcendental routine; numerical parity is tested.
 pub fn stick_angle([x, y]: [f32; 2]) -> f32 {
-    libm::atan2f(y, super::compat::comparison_abs(x))
+    crate::math::atan2f(y, super::compat::comparison_abs(x))
 }
 
 /// ftCo_AttackAir_GetMsidFromCStick. Only a fresh C-stick overrides the main

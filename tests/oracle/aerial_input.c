@@ -30,6 +30,13 @@ static void ftCo_LandingAir_EnterWithMsidLag(Fighter_GObj* gobj,FtMotionId msid,
     (void)gobj; captured_lag=lag;captured_motion=msid;
 }
 static void ftCo_Landing_Enter_Basic(Fighter_GObj* gobj) {(void)gobj;captured_motion=-1;}
+/* `ftCo_GetLStickAngle`/`ftCo_GetCStickAngle` call `atan2f`; renamed via
+ * macro to the game's own pinned `lbtrigf.c` port (`tests/oracle/
+ * lbtrigf_body.c`) rather than left on the host's system libm, so this
+ * adapter matches `fighter::aerial::stick_angle`'s own `crate::math::atan2f`
+ * bit-exactly instead of by tolerance. See `docs/math.md`. */
+extern float skirmish_lb_atan2f(float y, float x);
+#define atan2f skirmish_lb_atan2f
 #include "aerial_angles_original.inc"
 #include "aerial_input_original.inc"
 #include "aerial_select_original.inc"

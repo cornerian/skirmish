@@ -423,5 +423,20 @@
   "fixture": "tests/oracle/original/ftfoxspecialhi.c",
   "upstream": "src/melee/ft/kinds/ftFox/ftfoxspecialhi.c",
   "sha256": "a641804b45d66c33f3a907bb6e49aac9bb217629204143e7fbd3c780f99b42c2"
+},
+{
+  "fixture": "tests/oracle/original/trigf.c",
+  "upstream": "src/MSL/trigf.c",
+  "sha256": "0385b3fb1236b559692b492a9ba76d0ef20197e929d0277c323fb683b66808b9"
+},
+{
+  "fixture": "tests/oracle/original/lbtrigf.c",
+  "upstream": "src/melee/lb/lbtrigf.c",
+  "sha256": "1701b0d56ecaeb4e4b1bed7b4727a5b655112d7cc71fa5861de00c5b685bc57d"
+},
+{
+  "fixture": "tests/oracle/original/math_data.c",
+  "upstream": "src/MSL/math_data.c",
+  "sha256": "0909d05d8ece91df08d291c8269dd63200b1f6b49da1359e2fd6a6883d029efc"
  }
 ]

@@ -242,7 +242,7 @@ fn angle_xy(a: [f32; 3], b: [f32; 2]) -> f32 {
     // `> 0.0` is false for NaN and would have silently substituted 0.0.
     if product != 0.0 {
         let cosine = ((a[0] * b[0] + a[1] * b[1]) / product).clamp(-1.0, 1.0);
-        libm::acosf(cosine)
+        crate::math::acosf(cosine)
     } else {
         0.0
     }
@@ -270,7 +270,10 @@ fn bound_angle_gate(bound_angle_degrees: f32) -> f32 {
 /// bound decision's own shallow-floor-angle graze.
 fn redirect_from_velocity(velocity: [f32; 2]) -> (f32, f32) {
     let facing = face_stick(velocity[0]);
-    (facing, libm::atan2f(velocity[1], velocity[0] * facing))
+    (
+        facing,
+        crate::math::atan2f(velocity[1], velocity[0] * facing),
+    )
 }
 
 /// `ftFx_SpecialAirHi_AirToGround`, 418-482: the Hold-ground anim-end
@@ -303,7 +306,7 @@ fn enter_from_ground_hold(
         fighter.fox_up_special.travel_frames = a.duration;
         fighter.ground_velocity = a.speed * fighter.facing;
         fighter.fox_up_special.rotate_model =
-            libm::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
+            crate::math::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
     } else {
         // ftCommon_8007D60C's behaviorally-observable core: leave the
         // ground under the fighter's own decision, not a physical loss of
@@ -332,7 +335,7 @@ fn enter_aerial_launch(
         if stick[0].abs() > a.facing_stick_min {
             fighter.facing = face_stick(stick[0]);
         }
-        libm::atan2f(stick[1], stick[0] * fighter.facing)
+        crate::math::atan2f(stick[1], stick[0] * fighter.facing)
     } else {
         HALF_PI
     };
@@ -344,8 +347,8 @@ fn enter_aerial_launch(
     // `(facing_dir * x74) * cosf(rotateModel)` -- f32 multiplication is not
     // associative, so the grouping is kept bit-exact to the source.
     fighter.velocity = [
-        facing * (a.speed * libm::cosf(angle)),
-        a.speed * libm::sinf(angle),
+        facing * (a.speed * crate::math::cosf(angle)),
+        a.speed * crate::math::sinf(angle),
     ];
     helpers::max_out_jumps(fighter, data);
 }
@@ -548,10 +551,10 @@ impl SpecialMove for Move {
                     // kept bit-exact to the source's own grouping (see
                     // `enter_aerial_launch`'s identical note).
                     movement.animation_velocity[0] = -((fighter.facing
-                        * (accel * libm::cosf(rotate)))
+                        * (accel * crate::math::cosf(rotate)))
                         - movement.self_velocity[0]);
                     movement.animation_velocity[1] =
-                        -((accel * libm::sinf(rotate)) - movement.self_velocity[1]);
+                        -((accel * crate::math::sinf(rotate)) - movement.self_velocity[1]);
                 }
                 true
             }
@@ -591,7 +594,7 @@ impl SpecialMove for Move {
         if fighter.action == Action::SpecialHi && fighter.grounded {
             let floor_normal = fighter.floor_normal;
             fighter.fox_up_special.rotate_model =
-                libm::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
+                crate::math::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
         }
     }
 
@@ -763,14 +766,22 @@ mod tests {
     #[test]
     fn angle_xy_parallel_and_perpendicular() {
         assert_eq!(angle_xy([1.0, 0.0, 0.0], [1.0, 0.0]), 0.0);
-        // `libm::acosf(0.0)`/`libm::acosf(-1.0)` are each one ULP short of
-        // the true `HALF_PI`/`PI` (this crate's own `libm` dependency, not
-        // this port -- see `docs/fox-up-special.md`'s Oracle section), so
-        // these compare against the same `libm` call directly rather than
-        // the idealized math constant.
-        assert_eq!(angle_xy([1.0, 0.0, 0.0], [0.0, 1.0]), libm::acosf(0.0));
-        assert_eq!(angle_xy([0.0, 1.0, 0.0], [1.0, 0.0]), libm::acosf(0.0));
-        assert_eq!(angle_xy([1.0, 0.0, 0.0], [-1.0, 0.0]), libm::acosf(-1.0));
+        // `angle_xy` now calls `crate::math::acosf`, seeded from a real
+        // reciprocal-sqrt estimate rather than this decompilation project's
+        // own placeholder-derived (non-convergent) one -- see
+        // `frsqrte_newton3`'s doc comment and `docs/math.md`. Unlike the
+        // `libm` crate this replaced (each of the following one ULP short of
+        // the idealized constant -- see `docs/fox-up-special.md`'s Oracle
+        // section), it lands exactly on `FRAC_PI_2`/`PI`.
+        assert_eq!(
+            angle_xy([1.0, 0.0, 0.0], [0.0, 1.0]),
+            std::f32::consts::FRAC_PI_2
+        );
+        assert_eq!(
+            angle_xy([0.0, 1.0, 0.0], [1.0, 0.0]),
+            std::f32::consts::FRAC_PI_2
+        );
+        assert_eq!(angle_xy([1.0, 0.0, 0.0], [-1.0, 0.0]), std::f32::consts::PI);
     }
 
     /// `lbVector_AngleXY`'s own `if (lena_lenb)` is a non-zero check, not a

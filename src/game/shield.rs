@@ -647,13 +647,13 @@ pub(crate) fn recoil(f: &mut Fighter, data: &FighterData, rules: Option<&Rules>)
             -f.floor_normal[0] * f.shield.attacker_ground_push,
         ];
     } else {
-        let angle = libm::atan2f(y, x);
+        let angle = crate::math::atan2f(y, x);
         if libm::sqrtf(x * x + y * y) < r.attacker_air_decay {
             f.shield.attacker_push[0] = 0.0;
             f.knockback[1] = 0.0;
         } else {
-            f.shield.attacker_push[0] -= r.attacker_air_decay * libm::cosf(angle);
-            f.shield.attacker_push[1] -= r.attacker_air_decay * libm::sinf(angle);
+            f.shield.attacker_push[0] -= r.attacker_air_decay * crate::math::cosf(angle);
+            f.shield.attacker_push[1] -= r.attacker_air_decay * crate::math::sinf(angle);
         }
         f.shield.attacker_ground_push = 0.0;
     }

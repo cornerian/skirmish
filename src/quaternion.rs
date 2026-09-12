@@ -1,11 +1,18 @@
 //! Six HSD quaternion routines from `sysdolphin/baselib/quatlib.c`.
 //!
 //! Angles are radians. Formulas retain the reference's operation order, including
-//! its unusual interpolation of opposite quaternions. Scalar `glam` supplies
-//! vector lengths, dot products, blends, trigonometry and axis-angle conversion.
-//! The remaining formulas adapt HSD's ordering: generic quaternion multiply,
-//! Euler/matrix conversion and slerp use different groupings or branches.
-//! `libm` replaces platform math; final-bit PowerPC equivalence is unverified.
+//! its unusual interpolation of opposite quaternions. `matrix_to_euler`'s and
+//! `interpolate`'s `atan2f`/`sinf`/`acosf` calls use `crate::math`'s ports of
+//! the game's own trigonometry (`docs/math.md`); `acosf` is seeded from a real
+//! reciprocal-sqrt estimate rather than this decompilation project's own
+//! placeholder-derived (non-convergent) one -- see `crate::math`'s
+//! `frsqrte_newton3` doc comment. `from_euler`'s `sin_cos` still comes from
+//! `glam` (not yet ported: it is `Vec3`-shaped, not a single-scalar
+//! `libm`-style call), and `from_matrix`/`from_axis_angle`'s vector lengths
+//! still use `libm::sqrtf`/`glam` (`sqrtf` itself is out of scope for this
+//! batch; see `docs/math.md`). The remaining formulas adapt HSD's ordering:
+//! generic quaternion multiply, Euler/matrix conversion and slerp use
+//! different groupings or branches.
 
 use glam::{Quat, Vec2, Vec3, Vec4};
 
@@ -53,14 +60,14 @@ pub fn matrix_to_euler(m: &Matrix) -> Vector {
     // The unsuffixed C threshold is double precision.
     if f64::from(len) > 1e-5 {
         [
-            libm::atan2f(m[2][1], m[2][2]),
-            libm::atan2f(-m[2][0], len),
-            libm::atan2f(m[1][0], m[0][0]),
+            crate::math::atan2f(m[2][1], m[2][2]),
+            crate::math::atan2f(-m[2][0], len),
+            crate::math::atan2f(m[1][0], m[0][0]),
         ]
     } else {
         [
-            libm::atan2f(-m[1][2], m[1][1]),
-            libm::atan2f(-m[2][0], len),
+            crate::math::atan2f(-m[1][2], m[1][1]),
+            crate::math::atan2f(-m[2][0], len),
             0.0,
         ]
     }
@@ -115,11 +122,11 @@ pub fn interpolate(p: Quaternion, q: Quaternion, t: f32) -> Quaternion {
     let cosine = p.dot(q);
     let (sp, sq) = if 1.0 + cosine > 1e-10 {
         if 1.0 - cosine > 1e-10 {
-            let theta = libm::acosf(cosine);
-            let sine = libm::sinf(theta);
+            let theta = crate::math::acosf(cosine);
+            let sine = crate::math::sinf(theta);
             (
-                libm::sinf((1.0 - t) * theta) / sine,
-                libm::sinf(t * theta) / sine,
+                crate::math::sinf((1.0 - t) * theta) / sine,
+                crate::math::sinf(t * theta) / sine,
             )
         } else {
             ((1.0 - f64::from(t)) as f32, t)
@@ -128,8 +135,8 @@ pub fn interpolate(p: Quaternion, q: Quaternion, t: f32) -> Quaternion {
         let t = if t < 0.5 { t } else { t - 0.5 };
         let doubled = 2.0 * t;
         (
-            libm::sinf((std::f64::consts::FRAC_PI_2 * f64::from(1.0 - doubled)) as f32),
-            libm::sinf((std::f64::consts::FRAC_PI_2 * f64::from(doubled)) as f32),
+            crate::math::sinf((std::f64::consts::FRAC_PI_2 * f64::from(1.0 - doubled)) as f32),
+            crate::math::sinf((std::f64::consts::FRAC_PI_2 * f64::from(doubled)) as f32),
         )
     };
     (p * sp + q * sq).to_array()

@@ -8,8 +8,11 @@ pub fn launch_velocity(stick: [f32; 2], deadzone: [f32; 2], force: f32) -> [f32;
     if stick[0].abs() < deadzone[0] && stick[1].abs() < deadzone[1] {
         return [0.0, 0.0];
     }
-    let angle = libm::atan2f(stick[1], stick[0]);
-    [force * libm::cosf(angle), force * libm::sinf(angle)]
+    let angle = crate::math::atan2f(stick[1], stick[0]);
+    [
+        force * crate::math::cosf(angle),
+        force * crate::math::sinf(angle),
+    ]
 }
 
 /// `ftCo_EscapeAir_Phys` while the script has not raised its skip-decay flag:

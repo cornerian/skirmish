@@ -116,11 +116,14 @@ pub fn directional_influence(
             if x * stick[1] - y * stick[0] < 0.0 {
                 deflection = -deflection;
             }
-            let mut angle = libm::atan2f(y, x);
+            let mut angle = crate::math::atan2f(y, x);
             let magnitude = libm::sqrtf(x * x + y * y);
             let scale = max_angle_degrees * DEGREES_TO_RADIANS;
             angle += scale * deflection;
-            return [magnitude * libm::cosf(angle), magnitude * libm::sinf(angle)];
+            return [
+                magnitude * crate::math::cosf(angle),
+                magnitude * crate::math::sinf(angle),
+            ];
         }
     }
     velocity
@@ -133,11 +136,14 @@ pub fn directional_influence(
 pub fn decay_air_knockback(velocity: [f32; 2], decay: f32) -> [f32; 2] {
     let [x, y] = velocity;
     if x != 0.0 || y != 0.0 {
-        let angle = libm::atan2f(y, x);
+        let angle = crate::math::atan2f(y, x);
         if libm::sqrtf(x * x + y * y) < decay {
             [0.0; 2]
         } else {
-            [x - decay * libm::cosf(angle), y - decay * libm::sinf(angle)]
+            [
+                x - decay * crate::math::cosf(angle),
+                y - decay * crate::math::sinf(angle),
+            ]
         }
     } else {
         velocity
@@ -305,7 +311,7 @@ pub fn positional_launch(
     let angle_degrees = if abs_dx < 1e-5 {
         0
     } else {
-        (libm::atanf(dy / abs_dx) * RADIANS_TO_DEGREES) as i32
+        (crate::math::atanf(dy / abs_dx) * RADIANS_TO_DEGREES) as i32
     };
     PositionalLaunch {
         direction,
@@ -347,6 +353,11 @@ pub struct GroundLaunch {
 
 /// `lbVector_Angle`, including its tiny-vector fallthrough and cosine clamp.
 /// The original is three-dimensional; the damage transition supplies z = 0.
+/// `acosf` uses `crate::math::acosf`, seeded from a real reciprocal-sqrt
+/// estimate rather than this decompilation project's own placeholder-derived
+/// (and non-convergent) one; `sqrt` is still `f32::sqrt` (`libm::sqrtf`'s
+/// hardware `frsqrte`-estimate equivalent is out of scope for this batch;
+/// see `docs/math.md`).
 #[allow(clippy::manual_clamp)] // Two ordered source comparisons preserve NaN.
 pub fn vector_angle(a: [f32; 2], b: [f32; 2]) -> f32 {
     let length_product = (a[0] * a[0] + a[1] * a[1]).sqrt() * (b[0] * b[0] + b[1] * b[1]).sqrt();
@@ -358,7 +369,7 @@ pub fn vector_angle(a: [f32; 2], b: [f32; 2]) -> f32 {
         if cosine < -1.0 {
             cosine = -1.0;
         }
-        cosine.acos()
+        crate::math::acosf(cosine)
     } else {
         0.0
     }

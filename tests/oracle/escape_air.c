@@ -52,6 +52,23 @@ static void ftCommon_8007EBAC(Fighter* fp, uint32_t a, uint32_t b)
 static void ft_80084DB0(Fighter_GObj* gobj) { (void) gobj; fell = 1; }
 void ftCo_80099A9C(Fighter_GObj* gobj, int timer);
 
+/* `ftCommon_8007D9D4` (`escape_air_angle_original.inc`) and inlineA0
+ * (`escape_air_original.inc`) call `atan2f`/`cosf`/`sinf`; renamed via macro
+ * to the game's own pinned MSL/lb ports (`tests/oracle/trigf_body.c`/
+ * `lbtrigf_body.c`) rather than left on the host's system libm, so this
+ * adapter matches `fighter::escape_air::launch_velocity`'s own
+ * `crate::math` calls -- exactly for `atan2f`, within a documented few-ULP
+ * tolerance for `cosf`/`sinf` (shipped fused, unlike this pinned,
+ * `-ffp-contract=off` body; `docs/math.md`'s fused-multiply-add finding) --
+ * instead of the old, much looser `libm`-vs-oracle tolerance. See
+ * `docs/math.md` and `tests/escape_air_differential.rs`. */
+extern float skirmish_lb_atan2f(float y, float x);
+extern float skirmish_msl_cosf(float x);
+extern float skirmish_msl_sinf(float x);
+#define atan2f skirmish_lb_atan2f
+#define cosf skirmish_msl_cosf
+#define sinf skirmish_msl_sinf
+
 #include "escape_air_angle_original.inc"
 #include "escape_air_original.inc"
 

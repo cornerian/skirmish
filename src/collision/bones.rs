@@ -252,9 +252,9 @@ impl Drop for Pose {
 pub fn srt(local: LocalTransform, parent_scale: Option<Vector>) -> Matrix {
     let [sx, sy, sz] = local.scale;
     let [rx, ry, rz] = local.rotation;
-    let (sin_x, cos_x) = (libm::sinf(rx), libm::cosf(rx));
-    let (sin_y, cos_y) = (libm::sinf(ry), libm::cosf(ry));
-    let (sin_z, cos_z) = (libm::sinf(rz), libm::cosf(rz));
+    let (sin_x, cos_x) = (crate::math::sinf(rx), crate::math::cosf(rx));
+    let (sin_y, cos_y) = (crate::math::sinf(ry), crate::math::cosf(ry));
+    let (sin_z, cos_z) = (crate::math::sinf(rz), crate::math::cosf(rz));
     let (x0, mut x1, mut x2) = (sx, sx, sx);
     let (mut y0, y1, mut y2) = (sy, sy, sy);
     let (mut z0, mut z1, z2) = (sz, sz, sz);

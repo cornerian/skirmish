@@ -118,9 +118,16 @@ fn folded_horizontal_angles_and_signed_zeros_match_source() {
         );
     }
     assert_eq!(stick_angle([-1.0, 1.0]), stick_angle([1.0, 1.0]));
+    // The game's own `atan2f` (`lbtrigf.c`) is not the standard library
+    // convention here: for `x == 0` (either sign) it returns `copysign(PI/2,
+    // y)` unconditionally (its final branch copies only `y`'s sign onto a
+    // bit-pattern `PI/2`), rather than distinguishing `x`'s sign to produce
+    // `PI` for `atan2(+0, -0)`. Confirmed bit-exactly against the pinned
+    // oracle above and by `crate::math`'s own full-domain differential
+    // tests; see `docs/math.md`.
     assert_eq!(
         stick_angle([-0.0, 0.0]).to_bits(),
-        core::f32::consts::PI.to_bits()
+        core::f32::consts::FRAC_PI_2.to_bits()
     );
 }
 

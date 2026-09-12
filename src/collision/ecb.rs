@@ -111,7 +111,10 @@ impl State {
             (source.back, -source.front)
         };
         if source.angle != 0.0 {
-            let (sin, cos) = (libm::sinf(source.angle), libm::cosf(source.angle));
+            let (sin, cos) = (
+                crate::math::sinf(source.angle),
+                crate::math::cosf(source.angle),
+            );
             let (old_top, old_bottom, old_right, old_left) = (top, bottom, right, left);
             // The source uses horizontal midpoint as the side points' y input.
             let middle = 0.5 * (old_right + old_left);

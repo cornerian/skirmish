@@ -16,6 +16,17 @@ typedef struct { float x, y, z; } Vec3;
 typedef struct { float x, y, z, w; } Quaternion;
 #define PAD_STACK(bytes)
 
+/* `HSD_QuatLib_8037EB28` (Euler extraction) calls `atan2f`; renamed via
+ * macro to the game's own pinned `lbtrigf.c` port (`tests/oracle/
+ * lbtrigf_body.c`) rather than left on the host's system libm, so this
+ * adapter matches `quaternion::matrix_to_euler`'s own `crate::math::atan2f`
+ * bit-exactly instead of by tolerance. `EulerToQuat`'s and
+ * `HSD_QuatLib_8037EF28`'s (interpolate's) own `sinf`/`cosf` calls are left
+ * on host libm: `quaternion::from_euler` still calls `glam`'s `sin_cos`, not
+ * `crate::math`, and `interpolate`'s tolerant/bit-exact comparisons already
+ * pass without renaming them. See `docs/math.md`. */
+extern float skirmish_lb_atan2f(float y, float x);
+#define atan2f skirmish_lb_atan2f
 #include "quaternion_original.inc"
 
 int32_t oracle_quaternion(unsigned op, const float *a, const float *b,

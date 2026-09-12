@@ -177,8 +177,29 @@ neutral special, per-orientation knockdown and ledge snap data embedded.
 The recordings list's baselines were measured against the live export that
 v7 snapshots, so CI's ratchet applies to all of them.
 
-**Current measurement (2026-09-11, gameplay export v6, after this loop's
-ground-jump-direction fix):** 128 frames match (-123 through 4) and the
+**Current measurement (2026-09-12, gameplay export v6, after the msl-trig
+batch, `docs/math.md`):** unchanged -- 128 frames match (-123 through 4) and
+the first divergent frame is still 5, field `position.x` (expected
+`-29.740234375`, actual `-29.740236282348633`), identical to the
+previous measurement's own values below. `fighter::escape_air::
+launch_velocity` and every other fighter/common trigonometry call site now
+use ported copies of the game's own `sinf`/`cosf`/`tanf`/`atan2f`/`atanf`/
+`acosf`/`asinf` (`src/math.rs`) instead of the portable `libm` crate the
+previous measurement's own diagnosis suspected -- but the divergence
+persists at the exact same frame with the exact same bits, so that
+diagnosis is not confirmed by this measurement. `docs/math.md`'s
+fused-multiply-add finding has the full trail, including which operations
+are fused: not guessed from this measurement (an earlier revision's
+approach, and documented there as a cautionary finding in its own right),
+but read directly from a Capstone disassembly of the retail `main.dol`,
+cross-checked against a sibling batch's independent tool
+(`skirmish-fma`'s `tools/ppc_fma_audit.py`). Porting every fused operation
+exactly as the retail binary computes it still ties, not improves on, this
+measurement. The true cause of the frame-5 divergence remains open; not
+chased further in this batch, per this loop's own stop condition.
+
+Previously (2026-09-11, gameplay export v6, after this loop's
+ground-jump-direction fix): 128 frames match (-123 through 4) and the
 first divergent frame is 5, field `position.x` (expected `-29.740234375`,
 actual `-29.740236282348633`, on P1's own continuing ground slide inside a
 `LandingFallSpecial` entered from an earlier air dodge).

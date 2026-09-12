@@ -10,6 +10,7 @@ pub mod fighter;
 pub mod game;
 pub mod id;
 pub mod inventory;
+pub mod math;
 pub mod quaternion;
 pub mod random;
 pub mod spline;

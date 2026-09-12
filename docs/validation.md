@@ -358,6 +358,117 @@ fixes (see its own entries below and `docs/parity.md`'s current
 measurement), confirmed unaffected by re-running the full `real_parity`
 ratchet, which passes for every recording.
 
+The 2026-09-12 msl-trig batch (`docs/math.md`) replaces `libm`-based
+`sinf`/`cosf`/`tanf`/`atan2f`/`atanf`/`acosf`/`asinf` at every fighter/
+common-code call site with ports of the game's own pinned decompilation
+(`src/MSL/trigf.c`/`math_data.c`, `src/melee/lb/lbtrigf.c`), in a new
+`src/math.rs`. Every function's control flow and constants come from that
+decompiled C, but which individual operations are *fused* (a single
+correctly-rounded PowerPC `fmadds`/`fmsubs`/`fnmadds`/`fnmsubs`, not two
+separately-rounded operations) does not come from the C at all -- a
+decompiler reconstructs value-equivalent C, not instruction-equivalent C, so
+the exact fusion is invisible there. This batch settles it by disassembling
+the retail `main.dol` directly (Capstone, PowerPC big-endian, each pinned
+function's address resolved through the DOL's own section table and
+`config/GALE01/symbols.txt`), cross-checked against a sibling batch's own,
+independently-built tool for exactly this (`skirmish-fma`'s `tools/
+ppc_fma_audit.py`); the two agree on every fused instruction in every
+function ported here. An earlier revision of this batch guessed the fusion
+from real-replay measurement alone instead (fuse a chain, remeasure, keep
+what ties or improves the baseline) and, despite reproducing the right
+final bits for `fox-fd.slp`'s specific inputs, got the fusion shape itself
+wrong in more than one place -- recorded in `docs/math.md` as a cautionary
+finding about measurement's limits: it cannot distinguish "the right
+fusion" from "a fusion that happens to agree with one recording."
+
+The disassembly also settles `acosf`/`asinf`'s biggest open question. Both
+depend on `__frsqrte`; this decompilation project's own `placeholder.h`
+defines the *host-tooling* stand-in for that macro as plain `sqrt`, not a
+reciprocal-square-root estimate, so seeding the following Newton-Raphson
+refinement with it (as the pinned oracle does) does not converge except
+very close to `x == 1` -- confirmed directly (`asinf(0.9999)` used to
+return roughly `2.7°` instead of the true `~89.2°`). Disassembly shows the
+retail binary instead calls `frsqrte`, the real PowerPC estimate
+instruction; `placeholder.h`'s stand-in is exactly what its name says, a
+decompiler convenience, never real hardware behavior here. `acosf`/`asinf`
+now seed the same, disassembly-confirmed Newton refinement from an accurate
+`1/sqrt(x)` instead (the exact hardware estimate table itself remains out
+of scope, like `sqrtf` generally), converging to the same result real
+hardware's estimate-then-three-Newton-steps would -- confirmed by sweeping
+`-0.999..=0.999` against `std`'s `acos`/`asin` (worst disagreement around
+`5e-7`) -- and are now wired to their real call sites
+(`fighter::damage::vector_angle`, `game::characters::fox::up::angle_xy`,
+`quaternion::interpolate`).
+
+Measured against `fox-fd.slp`: porting every fused operation exactly as the
+retail binary's own instructions compute it ties the existing real-replay
+baseline exactly (same frame, same bits) -- a plain, fully-unfused port of
+the same algorithm regresses it by one frame instead (a different mismatch,
+rejected: this project's ratchet does not accept a lower
+`first_divergent_frame`). Tying, not improving, means the pre-batch
+suspicion that `libm`'s `cosf`/`sinf` caused the frame-5 divergence
+(`tests/fixtures/slippi/parity/fox-fd-baseline.json`'s own note) is not
+confirmed: the divergence is unchanged after replacing every fighter/common
+trigonometry call site with a disassembly-verified port of the game's own
+algorithm, so its true cause remains open.
+
+A shared static-library naming hazard, found and fixed in the same batch:
+this project's C oracle is one shared static library across every
+`*_differential.rs` test, and Rust's own `std` links the platform C library
+by the same symbol names its trig methods use (`f32::sin`/`cos`/`tan`/
+`asin`/`acos`/`atan`/`atan2` call `sinf`/`cosf`/... via FFI). Defining
+same-named strong `sinf`/`cosf`/... in the oracle silently replaced `std`'s
+own calls process-wide once both were linked into the same test binary --
+caught because a `math.rs` unit test comparing this port against `x.asin()`
+"ground truth" started comparing the port against itself under
+`--features c-oracle`. `tests/oracle/trigf_body.c`/`lbtrigf_body.c` rename
+the pinned bodies to process-unique names before including the pinned
+`.inc`, and `tests/oracle/trig.c`'s `oracle_*` wrappers call those renamed
+symbols; a few existing adapters (`escape_air.c`, `aerial_input.c`,
+`quaternion.c`) additionally rename the specific trig calls their own pinned
+functions make, so they compare against the game's real algorithm too;
+`ground_launch.c`/`lbvector.c`-based adapters do not, so `vector_angle`'s
+new, real `acosf` is compared there against host `libm`'s instead -- two
+different, both-reasonably-accurate implementations, handled with a small
+tolerance and (at the rare exact quadrant-boundary input where the two
+disagree on which branch `ground_launch` itself takes, amplified across
+`knockback`/`floor_normal` magnitudes spanning dozens of orders of
+magnitude) a narrow, explicitly-justified exclusion -- see "Tests" below.
+
+**Tests**: `tests/math_differential.rs` (new) covers all seven ported
+functions, NaN-safe; `atan2f`/`atanf` differ from the pinned, unfused oracle
+by a small, fixed ULP bound over the full binary32 domain (no ambiguity
+left once the fusion is read from disassembly rather than guessed); `sinf`/
+`cosf` use an absolute bound and `tanf` a combined relative/absolute bound,
+each over a bounded domain no real stick angle approaches, since a raw ULP
+bound is the wrong tool near either function's own zero crossings/poles
+(explained in place); a `full_domain_never_panics` liveness check covers the
+true full-`u32`-domain the bounded checks trade away. `acosf`/`asinf` are
+compared against `std`'s accurate `acos`/`asin` instead of the oracle (whose
+placeholder-seeded iteration is not real hardware behavior). `src/math.rs`'s
+own unit tests include a dedicated `acosf`/`asinf` near-domain-edge accuracy
+check. Several existing tests tightened, corrected, or gained a narrow,
+justified exclusion to reflect the game's real algorithm rather than host
+`libm`: `tests/escape_air_differential.rs`'s launch-velocity comparison
+(previously tolerant of `libm`-vs-oracle rounding, now a much tighter,
+documented bound); `tests/aerial_differential.rs`'s stick-angle selection
+(now passes without any tolerance) and its own hardcoded `atan2f(0.0, -0.0)
+== PI` expectation, corrected to `FRAC_PI_2` (the game's own `atan2f` is not
+the standard-library convention for `x == 0`, either sign -- its final
+branch copies only `y`'s sign onto a bit-pattern `PI/2`, not `PI`, confirmed
+against the pinned oracle); `tests/quaternion_differential.rs`'s
+`matrix_to_euler` pole-case expectation, similarly corrected;
+`tests/bones_differential.rs`'s and `tests/damage_differential.rs`'s
+rotation/angle tolerances, widened with an absolute floor; and
+`tests/ground_launch_differential.rs`'s angle comparison and exact-boundary
+exclusion described above.
+
+See `docs/math.md` for the full account: the disassembly methodology, what
+was ported and from where, the `acosf`/`asinf` finding, the
+fused-multiply-add findings (including what the earlier measurement-only
+guess got wrong), and the real-replay measurement (unchanged at frame
+5/128 -- `docs/parity.md`'s own entry has the provenance).
+
 The 2026-09-11 ground-jump-direction fix (the real-replay parity loop,
 `docs/parity.md`, `docs/state-parity.md`'s "Backward jumps") corrects
 `game::locomotion::ground_jump`'s direction test and launch velocity, both of
