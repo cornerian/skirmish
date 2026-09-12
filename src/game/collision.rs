@@ -435,7 +435,22 @@ pub(crate) fn resolve(
             None
         };
         if let Some(contact) = contact {
-            let bottom = add(f.position, f.ecb.current.bottom);
+            // mpColl_80046904's `ecb_unlocked = coll->ecb.bottom.y > 0.0F`,
+            // forwarded as `mpColl_80044838_Floor`'s `ignore_bottom`: a raw
+            // (unanchored, airborne-flags) ECB bottom that samples *above*
+            // the fighter's own position -- exactly the ordinary case for a
+            // falling pose, since `load_joints` only clamps the bottom to be
+            // no lower than 0, never forces it negative -- rests `position`
+            // itself on the floor instead of resting the ECB's bottom point
+            // on it. Skipping this (always using `position + ecb.bottom`)
+            // lands the fighter with position.y offset by the ECB's own
+            // height above the floor instead of at the floor.
+            let unlocked = f.ecb.current.bottom[1] > 0.0;
+            let bottom = if unlocked {
+                f.position
+            } else {
+                add(f.position, f.ecb.current.bottom)
+            };
             if let Some(projection) = stage
                 .project_floor(contact.line_id, bottom)
                 .map_err(physics)?
@@ -443,6 +458,10 @@ pub(crate) fn resolve(
                 f.position[1] += projection.vertical_delta;
                 f.ground_line = Some(projection.line_id);
                 f.floor_normal = projection.normal;
+            } else if unlocked {
+                f.position = [contact.position[0], contact.position[1]];
+                f.ground_line = Some(contact.line_id);
+                f.floor_normal = contact.normal;
             } else {
                 f.position = [
                     contact.position[0] - f.ecb.current.bottom[0],
