@@ -442,6 +442,50 @@ extrapolation the side/up/down batches already flagged (no figatree table
 exists in the pinned decomp for character-specific motion states); this is
 the same open question those docs raised, not a new one.
 
+Real-replay cross-check (item 5 of the export requirements, done directly)
+------------------------------------------------------------------------------
+
+Dumped `FOX_LASER`/`FOX_BLASTER` item frames (py-slippi, `Game(path).frames[i].items`)
+from `/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/
+18_24_36 [H2O] Fox + Fox (FD).slp` (no `owner` field in this py-slippi
+version's parsed `Item`; correlated by proximity/timing instead). Confirms,
+independent of source-reading:
+
+- **Speed**: a grounded neutral shot's `velocity` is exactly `(7.0, 0.0)`
+  every frame of its flight (`x14_FOX_BLASTER_VEL == 7.0`).
+- **Motion**: `position` advances by exactly `velocity` every frame with no
+  drift or scaling, confirming the plain `position += velocity` model.
+- **Lifetime**: first-observed `timer` is `34.0`, decrementing by exactly
+  `1.0` every frame -- consistent with a 35-frame lifetime and matching
+  `FoxLaserAttr`'s own `// [35]` comment on `lifetime` exactly.
+  the item's `damage` field jumps from unset to `3` on the frame it
+  disappears early (before its timer reaches zero), and the corresponding
+  fighter's own `post.damage` (percent) increases by `3.0` the same frame:
+  **the laser's own hit damage is 3%**, a real, confirmed value (matches
+  Melee community knowledge of Blaster's damage, now independently
+  verified from a real replay rather than assumed).
+- **On hit**: the item disappears from the frame's item list outright (no
+  post-hit "spent" sub-state observed) -- consistent with "no piercing,
+  destroyed after one hit."
+- **Open question, not resolved**: several later shots in the same
+  replay have non-axis-aligned velocities (e.g. `(0.414, 6.988)`,
+  `(1.761, 6.775)`) rather than the fixed-per-facing angle
+  `ftFox_SpecialN_PrepareBlasterShot` (`fp->facing_dir == 1.0F ? x10 : PI -
+  x10`) would predict from source alone. This batch could not locate the
+  actual code path that varies the shot angle (Melee community knowledge
+  describes an up/down-stick "Blaster angling" tech; the cited source
+  function shows no stick read at all, so either a different function
+  computes the real angle or this batch mis-traced the call graph). Flagged
+  as an open discrepancy between the read source and observed real
+  behavior; **this implementation models the fixed-per-facing angle only**,
+  matching what was actually read in the decomp, not the observed angling.
+  The synthetic fixture below uses the confirmed `speed = 7.0`,
+  `lifetime = 35`, `damage = 3` values from this replay rather than
+  invented numbers; every other hitbox field (angle/growth/base/
+  weight-independent knockback/hitlag/shield damage/size) remains
+  genuinely invented pending the exporter, and is flagged as such at its
+  point of use.
+
 Slippi observation plan for items
 -------------------------------------
 
