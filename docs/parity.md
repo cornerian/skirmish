@@ -169,6 +169,14 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack (2026-09-12):** gameplay export v7 (sha256 5ebf4a2d, 36 MB)
+is the complete export in the compact binary format: every Fox and Falco
+pairing (`fox-fd`, `falco-fd`, `fox-falco-fd`, `falco-fox-fd`, `fox-bf`,
+`fox-dl`, `fox-ys`, `fox-fod`, `fox-ps`) as `match-data.bin`, with the
+neutral special, per-orientation knockdown and ledge snap data embedded.
+The recordings list's baselines were measured against the live export that
+v7 snapshots, so CI's ratchet applies to all of them.
+
 **Current measurement (2026-09-11, gameplay export v6, after this loop's
 ground-jump-direction fix):** 128 frames match (-123 through 4) and the
 first divergent frame is 5, field `position.x` (expected `-29.740234375`,
