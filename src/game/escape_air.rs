@@ -114,10 +114,16 @@ fn frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a AirDodgeFra
     if fighter.action != Action::EscapeAir {
         return None;
     }
+    // `fighter.action_frame` matches Melee's own `cur_anim_frame` (`ftCo_
+    // 80099A9C`'s extra `ftAnim_8006EBA4` advance is modeled at the source
+    // in `try_air_dodge`, `action_frame = 1` at entry, the same as `game::
+    // locomotion::start_dash`/`start_turn`), which is 1 on the entry frame
+    // that runs sample 0's script; `frames` is 0-indexed by sample, so this
+    // reads one behind `action_frame`.
     data.escape_air
         .as_ref()?
         .frames
-        .get(fighter.action_frame as usize)
+        .get(fighter.action_frame.saturating_sub(1) as usize)
 }
 
 /// Physics bones for the current EscapeAir or LandingFallSpecial sample.
@@ -177,7 +183,14 @@ pub(crate) fn try_air_dodge(
     }
     fighter.velocity = math::launch_velocity(input.stick, rules.deadzone, rules.force);
     super::simulation::enter(fighter, Action::EscapeAir);
-    // Ft_MF_None clears fast fall; ftAnim_8006EBA4 runs sample 0's script.
+    // `ftCo_80099A9C` calls `ftAnim_8006EBA4(gobj)` immediately after
+    // `Fighter_ChangeMotionState`, the same extra advance `ftCo_Dash_Enter`/
+    // `ftCo_Turn_Enter` make; modeled at the source like `game::locomotion::
+    // start_dash`/`start_turn` (`action_frame = 1`, not `0`, at entry) rather
+    // than as an observation-layer exception. This same call runs sample 0's
+    // script.
+    fighter.action_frame = 1;
+    // Ft_MF_None clears fast fall.
     fighter.fast_fall = false;
     fighter.body_state = parameters
         .frames
@@ -204,7 +217,10 @@ pub(crate) fn update_animation(
     };
     match fighter.action {
         Action::EscapeAir => {
-            if fighter.action_frame as usize >= parameters.frames.len() {
+            // See `frame`'s own comment: `action_frame` is one ahead of the
+            // 0-indexed sample it selects.
+            let sample = fighter.action_frame.saturating_sub(1) as usize;
+            if sample >= parameters.frames.len() {
                 // ftCo_80096900(1, 1, false, x340, x344) with Ft_MF_KeepFastFall
                 // and ftCommon_UseAllJumps.
                 let fast_fall = fighter.fast_fall;
@@ -215,7 +231,7 @@ pub(crate) fn update_animation(
                     .as_ref()
                     .map_or(fighter.locomotion.jumps_used, |p| p.max_jumps);
             } else {
-                fighter.body_state = parameters.frames[fighter.action_frame as usize].body_state;
+                fighter.body_state = parameters.frames[sample].body_state;
             }
         }
         Action::LandingFallSpecial => {

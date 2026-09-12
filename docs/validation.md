@@ -1,5 +1,33 @@
 # Local validation provenance
 
+The 2026-09-12 EscapeAir entry-advance fix (the real-replay parity loop
+on `fox-fd-4.slp`, `docs/parity.md`) covers another sibling instance of
+the entry-advance bug: `ftCo_80099A9C` (the air dodge's entry, reached
+from `ftCo_80099A58`'s fresh L/R check) calls `ftAnim_8006EBA4(gobj)`
+immediately after `Fighter_ChangeMotionState`, the identical extra
+advance `ftCo_Dash_Enter`/`ftCo_Squat_Enter` make. Fixed at the source
+the same way: `escape_air::try_air_dodge` now sets `fighter.action_frame
+= 1` (not `0`) right after `simulation::enter(fighter, Action::EscapeAir)`.
+
+Unlike Dash/Turn/Squat, EscapeAir's own physics/pose sampling indexes a
+supplied per-frame sample array directly by `action_frame`
+(`escape_air::frame`, `update_animation`'s `Action::EscapeAir` arm), and
+that array's own convention (`try_air_dodge`'s pre-existing comment,
+"`ftAnim_8006EBA4` runs sample 0's script") already treated Melee's
+`cur_anim_frame == 1` as sample index `0` -- i.e. `frames[cur_anim_frame
+- 1]`. Setting `action_frame` to match `cur_anim_frame` directly (instead
+of leaving it one behind, as the unfixed code effectively did) therefore
+needs the sample lookups themselves to gain the matching `- 1`: both
+`escape_air::frame` and the `Action::EscapeAir` bounds/index arm in
+`update_animation` now index by `action_frame.saturating_sub(1)` rather
+than `action_frame` directly. `tests/game_air_dodge.rs`'s existing sample-
+content tests (intangibility windows, the FallSpecial hand-off frame
+count, velocity-decay-by-sample) all pass unchanged with this
+compensating shift, confirming the effective sample sequence is
+preserved; only the one test that pinned the entry frame's own
+`action_frame` (`1`) needed updating, to `2` (`start_squat`'s own entry
+pin, `fighter::action_frame` plus the shared end-of-frame `+= 1`).
+
 The 2026-09-12 Squat entry-advance fix (the real-replay parity loop on
 `fox-fd-2.slp`/`fox-fd-4.slp`, `docs/parity.md`) covers a sibling instance
 of the entry-advance bug the 2026-09-12 special-entry-advance batch fixed

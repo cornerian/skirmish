@@ -77,7 +77,12 @@ fn fresh_physical_l_or_r_dodges_from_jump_fall_and_double_jump_only() {
     let launched = jump(&mut from_jump, true);
     let dodged = idle(&mut from_jump, buttons(BUTTON_L));
     assert_eq!(dodged.fighters[0].action, Action::EscapeAir);
-    assert_eq!(dodged.fighters[0].action_frame, 1);
+    // `ftCo_80099A9C`'s own extra `ftAnim_8006EBA4` advance (see `try_air_
+    // dodge`'s comment) means this entry frame's `action_frame` already
+    // matches Melee's own `cur_anim_frame` of 1, one ahead of the `action_
+    // frame` this crate reports after `simulation::advance`'s shared
+    // end-of-frame increment (`observation::action_age`'s general rule).
+    assert_eq!(dodged.fighters[0].action_frame, 2);
     assert!(!dodged.fighters[0].fast_fall);
     assert_eq!(dodged.fighters[0].velocity, [0.0, 0.0]);
     assert_eq!(dodged.fighters[0].position, launched.fighters[0].position);
