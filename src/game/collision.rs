@@ -336,6 +336,21 @@ pub(crate) fn resolve(
                 )
             {
                 simulation::enter(f, Action::Fall);
+                // ftCo_Fall_Enter (ftCo_Fall.c:47-70) locks the ECB bottom
+                // whenever Fall is entered while `ground_or_air` was still
+                // Ground, i.e. exactly this "just walked/ran off an edge"
+                // transition (a jump or an already-airborne fall-through
+                // reaching Fall does not take this branch, matching the
+                // source's own condition): ftCommon_8007D5D4 (ftcommon.c:515)
+                // sets `ecb_lock = 10` and locks `x130_flags`'s bottom bit,
+                // so `mpColl_LoadECB_JObj`'s six-joint sample stops moving
+                // the ECB's bottom edge for the next ten `Fighter_procMap`
+                // collision callbacks -- it stays at the last grounded
+                // bottom while the falling pose's own (higher) sampled
+                // bottom would otherwise report the character's true
+                // in-air silhouette immediately.
+                f.ecb_lock = 10;
+                f.ecb.bottom_locked = true;
             }
         }
         let floor_query = Query {

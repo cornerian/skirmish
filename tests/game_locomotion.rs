@@ -503,6 +503,51 @@ fn late_air_jump_relocks_the_ecb_and_keeps_its_action_past_the_apex() {
     assert_eq!(game.state().fighters[0].action, Action::JumpAerial);
 }
 
+// ftCo_Fall_Enter (ftCo_Fall.c:47-70): entering Fall while `ground_or_air`
+// was still Ground (i.e. walking/dashing off an edge, not jumping or
+// falling from an already-airborne state) locks the ECB bottom for ten
+// `Fighter_procMap` callbacks via `ftCommon_8007D5D4` (ftcommon.c:515-525),
+// same as the grounded-jump-launch and platform-drop paths already covered
+// above/in game_platform_drop.rs. Unlike the jump case (whose lock is set
+// during an earlier-priority per-frame callback and so is already visible
+// to this same frame's `fp->ecb_lock--` in `Fighter_procMap`, landing on 9
+// immediately), this transition is detected inside the floor collision
+// check itself -- the same call that *is* `Fighter_procMap`'s `coll_cb` --
+// which runs after that frame's decrement, so the fresh 10 survives this
+// frame untouched and only starts counting down next frame.
+#[test]
+fn dashing_off_an_edge_locks_the_ecb_bottom_for_ten_frames() {
+    let mut data = data();
+    // Move this player's spawn right next to the (unmoved) floor's right
+    // edge, so a single dash frame's initial speed carries it past that
+    // edge; the second player's spawn/floor bound are untouched.
+    data.stage.spawns[0] = [data.stage.floor.right - 2.0, 0.0];
+    let mut game = Match::new(data, 42).unwrap();
+    assert_eq!(game.state().fighters[0].ecb_lock, 0);
+    assert!(!game.state().fighters[0].ecb.bottom_locked);
+    let mut left_ground = None;
+    for _ in 0..10 {
+        let state = step(&mut game, 0, [1.0, 0.0]);
+        if !state.fighters[0].grounded {
+            left_ground = Some(state);
+            break;
+        }
+    }
+    let left_ground = left_ground.expect("dash did not walk off the shortened floor");
+    assert_eq!(left_ground.fighters[0].action, Action::Fall);
+    assert_eq!(left_ground.fighters[0].ecb_lock, 10);
+    assert!(left_ground.fighters[0].ecb.bottom_locked);
+    let next = step(&mut game, 0, [0.0; 2]);
+    assert_eq!(next.fighters[0].ecb_lock, 9);
+    assert!(next.fighters[0].ecb.bottom_locked);
+    for _ in 0..8 {
+        step(&mut game, 0, [0.0; 2]);
+    }
+    let unlocked = step(&mut game, 0, [0.0; 2]);
+    assert_eq!(unlocked.fighters[0].ecb_lock, 0);
+    assert!(!unlocked.fighters[0].ecb.bottom_locked);
+}
+
 #[test]
 fn a_gradual_up_tilt_misses_the_tap_jump_window() {
     let mut game = game();

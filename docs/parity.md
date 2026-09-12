@@ -70,7 +70,30 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, gameplay export v2, private dataset
+**Current measurement (2026-09-11, ECB-timing batch, gameplay export v2 with
+`movement_poses` spliced in, `/mnt/shared/tmp/skirmish-gameplay-v2-ecb/`, via
+`make-initialization`/`validate-replay` against the same
+`tests/fixtures/slippi/parity/fox-fd.slp`):** 72 frames match and the first
+divergent frame is still -51, field `action_state` (expected `0x001d`/Fall,
+actual `0x002a`/Landing) — unchanged, confirming this batch's diagnosis
+(`docs/ecb-timing.md`) rather than a regression. This batch fixed one real,
+separate, decomp-cited ECB bug in the same area (`ftCo_Fall_Enter`/
+`ftCommon_8007D5D4`'s ten-frame bottom lock was not applied when a fighter
+loses ground support and falls without jumping — see `docs/ecb-timing.md`
+and the new `dashing_off_an_edge_locks_the_ecb_bottom_for_ten_frames` test in
+`tests/game_locomotion.rs`), and re-verified, by direct decomp derivation and
+by runtime instrumentation of the affected frames, the movement-poses
+batch's own diagnosis below: Fox's real, disc-decoded `collision_box.indices`
+genuinely includes a joint that's provably always exactly `position.y`
+(joint 0, verified channel-less in the real FigaTree by the exporter), and
+the decomp's own ECB clamp (`mpColl_LoadECB_JObj`'s `if (bottom_y < 0)
+bottom_y = 0`) forces the ECB bottom to equal `position.y` on every frame
+as a mathematical consequence, independent of any lock/timing fix Skirmish
+could apply. `docs/ecb-timing.md` records the full derivation, the ruled-out
+alternative mechanisms, and why this remains a data limitation of the
+already-pinned ECB batch rather than a fixable Skirmish behavior bug.
+
+Previously (2026-09-11, gameplay export v2, private dataset
 `cornerian/skirmish-datapacks`, pinned by
 `tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 72 frames
 match (-123 through -52: the Entry warp-in of both ports, the input lock,

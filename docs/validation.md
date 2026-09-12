@@ -1,5 +1,41 @@
 # Local validation provenance
 
+The 2026-09-11 ECB-timing investigation batch (`docs/ecb-timing.md`) fixed
+one real, decomp-cited bug: `ftCo_Fall_Enter`/`ftCommon_8007D5D4`'s ten-frame
+ECB bottom lock was applied on grounded-jump-launch, aerial-jump and
+platform-pass-through transitions into Fall, but not on the plain "lost
+ground support, falls without jumping" transition (`src/game/collision.rs`,
+the branch that calls `simulation::enter(f, Action::Fall)` after
+`f.grounded = false`). Fixed with a new test,
+`dashing_off_an_edge_locks_the_ecb_bottom_for_ten_frames`
+(`tests/game_locomotion.rs`), which also pins the asymmetry between a
+jump's lock (visible to that same frame's `advance_ecb_lock`, reading back
+as 9) and this collision-detected lock (set after that frame's
+`advance_ecb_lock`, reading back as 10) that the decomp's own call order
+requires. No pinned function's arithmetic changed (`collision/ecb.rs`'s
+`State` methods, already faithful to `mpColl_LoadECB_JObj`/
+`mpCollInterpolateECB`/`mpCollCheckBounding`, are untouched), so no new
+C-oracle differential was needed.
+
+This same investigation confirmed, independently of the movement-poses
+batch below, that `fox-fd.slp`'s -51-vs.-49 landing divergence is not
+fixable by this or any other purely Skirmish-side ECB timing/lock
+correction: Fox's real, disc-decoded `collision_box.indices` include a
+joint (index 0) whose real FigaTree track is verified channel-less (always
+`[0,0,0]` local translation), and the decomp's own clamp
+(`mpColl_LoadECB_JObj`'s `if (bottom_y < 0) bottom_y = 0`) forces the ECB
+bottom to equal `position.y` on every frame as a mathematical consequence
+of that data, independent of locking or frame order. Confirmed both by
+derivation from the decomp and by runtime instrumentation of the real
+simulation against the recording (temporary, removed before committing).
+See `docs/ecb-timing.md` for the full chain of reasoning, the ruled-out
+alternative mechanisms, and `docs/parity.md`'s updated measurement entry.
+The full archived audit (`python3 /mnt/archive/runs/skirmish-ecb-response-
+20260909/validation.py /mnt/shared/tmp/skirmish-ecb-timing
+/mnt/archive/runs/skirmish-ecb-timing-20260911-verified
+/mnt/shared/tmp/skirmish-target-ecb-timing-audit`) is recorded at that
+archive path.
+
 The 2026-09-11 `state_age`/`action_age` transition-frame fix (the real-replay
 parity loop, `docs/parity.md`) validates formatting, strict all-target/
 all-feature Clippy and the complete native workspace test suite (`cargo test
