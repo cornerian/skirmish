@@ -1104,6 +1104,20 @@ P4's own air dodge entering `EscapeAir` -- already fixed above (a
 concurrent `fox-fd-4.slp` loop independently found and fixed the same
 `ftCo_80099A9C` entry-advance bug this same day); re-measured below.
 
+**Re-measured against the newly-published gameplay-export pack v10**
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/
+fox-bf`, identical numbers to pack v9, confirming this is a pure
+pack-version bump and not a behavior change): 137 frames now match
+(`-123` through `13`), up from 109; `fox-bf-baseline.json` moves to
+reflect this. The new first divergence is frame 14, field `position.x`
+on P4 (expected `33.07349395751953`, actual `33.836673736572266`, a
+`0.76`-unit gap), on the frame P4 enters Fox's own aerial neutral
+special (Blaster, Slippi action state `344`, `SpecialAirNStart`) -- the
+concurrent script-driven Blaster-timing batch's own area (`docs/
+parity.md`'s own commit history: "Cover the script-driven Blaster
+timing..."), not pursued further here to avoid duplicating or racing
+that work.
+
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 
 Four more Fox-vs-Fox recordings from the same corpus, one per remaining

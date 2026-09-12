@@ -51,6 +51,21 @@ grace frame. Recorded here for whoever picks up that diagnosis next.
 Full citations, the difference table, and every test: `docs/falco.md`'s
 own "Falco's neutral special (Laser): now wired" section.
 
+The 2026-09-13 `fox-bf.slp` re-measurement against gameplay-export pack
+v10 (the real-replay parity loop, `docs/parity.md`) confirms the
+concurrent `fox-fd-4.slp` loop's EscapeAir entry-advance fix (this file's
+own next entry, below) also resolves this recording's own frame -14
+`action_age` divergence: `cargo run -p skirmish-cli -- make-
+initialization`/`validate-replay` against pack v10 (`/mnt/archive/
+datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-bf`)
+reproduces byte-identical numbers to pack v9 (`137` frames matching,
+first divergence at frame `14`), confirming the pack switch is a pure
+version bump and not a behavior change. `fox-bf-baseline.json` moves
+from `v9`/`-14`/`109` to `v10`/`14`/`137`. The new first divergence
+(frame 14, `position.x` on P4, on the frame P4 enters Fox's own aerial
+neutral special) belongs to the concurrent script-driven Blaster-timing
+batch and is not pursued here.
+
 The 2026-09-12 EscapeAir entry-advance fix (the real-replay parity loop
 on `fox-fd-4.slp`, `docs/parity.md`) covers another sibling instance of
 the entry-advance bug: `ftCo_80099A9C` (the air dodge's entry, reached
