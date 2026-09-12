@@ -225,6 +225,12 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v10 (2026-09-13):** sha256 e4189b85, 36 MB, supersedes v9:
+the specials' per-frame script command variables (`specials.neutral.script`,
+`specials.side.script`) are embedded for Fox and Falco, so the Blaster's
+arming and fire timing come from the script (fox-fd-2 reaches 118 frames
+with it).
+
 **Published pack v9 (2026-09-12):** sha256 2481ab51, 36 MB, supersedes v8:
 `rules.fast_fall_window` (4 frames, `ftCommonData` +0x8C) is embedded in
 every pairing, so the exact fast-fall check applies; on Battlefield the
