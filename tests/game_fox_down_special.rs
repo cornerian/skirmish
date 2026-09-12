@@ -10,7 +10,9 @@ mod conformance;
 #[path = "support/fox_down_special.rs"]
 mod down_special_resources;
 
-use skirmish::game::{Action, BUTTON_B, Controller, Match, characters::Specials, data::MatchData};
+use skirmish::game::{
+    Action, BUTTON_B, Controller, Event, Match, characters::Specials, data::MatchData,
+};
 
 fn down_special_mut(
     fighter: &mut skirmish::game::data::FighterData,
@@ -345,6 +347,96 @@ fn every_phase_survives_a_checkpoint_round_trip() {
     assert_eq!(game.state(), &expected);
 }
 
+/// Reflector's Start-phase hit: the gameplay export pack
+/// (`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/
+/// fox-fd/match-data.json`, `fighters[0].specials.down.start.ground`) shows
+/// a real script-embedded hitbox on frames 0 and 1 of the 5-pose Start set,
+/// clear on every later frame. Every numeric field below is the pack's own
+/// value verbatim (`angle_degrees: 0.0` is the pack's own literal value, not
+/// a placeholder); `bone` is adapted from the pack's own bone 3 to bone 1,
+/// this suite's shared two-bone synthetic skeleton having no equivalent
+/// (see `tests/game_fox_up_special.rs`'s identical adaptation for Fire
+/// Fox's own Travel hitbox), and `clank`/`rebound` are forced off (the pack
+/// reports `clank: true`, `rebound: false`; `rules.clank` is not configured
+/// by this move's own test profile, out of this batch's scope -- see that
+/// same file's `travel_hitbox` doc for why).
+fn reflector_start_hitbox() -> skirmish::game::data::Hitbox {
+    skirmish::game::data::Hitbox {
+        clank: false,
+        rebound: false,
+        element: Default::default(),
+        group: 0,
+        bone: 1,
+        center: [0.0, 0.0, 0.0],
+        radius: 7.999_488,
+        damage: 5,
+        shield_damage: 0,
+        angle_degrees: 0.0,
+        growth: 100,
+        fixed: 0,
+        base: 0,
+    }
+}
+
+#[test]
+fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
+    // Reproduced locally (like `tests/game_fox_up_special.rs`'s own Hold/
+    // Travel hitbox regressions) rather than edited into the shared
+    // `fixtures/game/fox-down-special.json` (used by every other test in
+    // this file, whose own step counts -- "Start is 4 frames" -- are tuned
+    // to that fixture's short, hitbox-free stand-in).
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
+    resource.rules.knockback_speed = 0.0;
+    {
+        let p = down_special_mut(&mut resource.fighters[0]);
+        for attack in [&mut p.start.ground, &mut p.start.air] {
+            attack.move_id = Some(21);
+            for (index, frame) in attack.frames.iter_mut().enumerate() {
+                frame.hitboxes = if index < 2 {
+                    vec![reflector_start_hitbox()]
+                } else {
+                    vec![]
+                };
+            }
+        }
+    }
+    let mut game = Match::new(resource, 0).unwrap();
+    // Start's entry frame (0) is sampled by this very step (the same
+    // same-frame cascade `tests/game_fox_up_special.rs`'s Travel regression
+    // documents): the pack's own hitbox already connects here.
+    let entry = game.step(input(0, down(-0.8))).unwrap();
+    assert_eq!(entry.fighters[0].action, Action::SpecialLwStart);
+    assert!(
+        entry.events.iter().any(|event| matches!(
+            event,
+            Event::Hit {
+                attacker: 0,
+                victim: 1,
+                ..
+            }
+        )),
+        "Reflector's Start hitbox must connect on its own entry frame"
+    );
+    // 5 damage per the pack's own value; no staling is configured. This
+    // engine's shared per-attacker `hit_groups` bitmask (see the up-special
+    // suite's own `hold_charge_hits_a_nearby_opponent_...` doc) blocks frame
+    // 1's own copy of the same hitbox from connecting a second time absent a
+    // `clear_hits`-style re-enable, matching every other continuous hitbox
+    // in this engine; frames 2..4 carry none at all regardless.
+    for _ in 0..3 {
+        let state = game.step(input(0, held_b())).unwrap();
+        assert!(
+            !state
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::Hit { .. })),
+            "no further hit should land through the rest of Start"
+        );
+    }
+    assert_eq!(game.state().fighters[1].percent, 5.0);
+}
+
 #[test]
 fn invalid_down_special_resources_are_rejected() {
     let mut resource = data();
@@ -365,6 +457,20 @@ fn invalid_down_special_resources_are_rejected() {
         .ground
         .frames
         .clear();
+    assert!(Match::new(resource, 0).is_err());
+
+    // `specials::helpers::validate_hitboxes` (this batch's own validation
+    // gap-closer, `docs/fox-down-special.md`'s "Hitboxes" section): an
+    // out-of-range hitbox group (>= 16) on Start's own pose is rejected the
+    // same way every other move kind's hitboxes already were.
+    let mut resource = data();
+    let mut hitbox = reflector_start_hitbox();
+    hitbox.group = 99;
+    down_special_mut(&mut resource.fighters[0])
+        .start
+        .ground
+        .frames[0]
+        .hitboxes = vec![hitbox];
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();

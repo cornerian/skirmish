@@ -1,5 +1,73 @@
 # Local validation provenance
 
+The 2026-09-11 special-move script-hitbox batch covers the hitboxes Fox's
+up/down special scripts embed that earlier specials batches modeled with
+empty hitbox lists: Fire Fox's Hold-phase charge pulse (frames 20/22/24/
+26/28/30/32 of the 44-pose Hold set, bone 0, 2 damage, angle 70) and
+Travel's own continuous hit (every one of the pack's 31 sampled frames,
+bone 58, 14 damage, angle 80, clank/rebound both reported `true` in the
+source data), and Reflector's Start-phase hit (frames 0/1 of the 5-pose
+Start set, bone 3, 5 damage, angle 0). All three were confirmed by
+`ftfoxspecialhi.c`/`ftfoxspeciallw.c` themselves creating no hitbox directly
+(the schedule is script/DAT-embedded, an `ftaction.c` hitbox-opcode table
+this codebase already processes generically through `game::hitboxes::
+update_tracks`/`AttackFrame.hitboxes`), sourced from the gameplay export
+pack (`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/
+fox-fd/match-data.json`). No pipeline code changed to make the hitboxes
+connect -- `FighterData::attack` -> `specials::attack` -> each move's own
+`attack()` already routed `Action::SpecialHi{,Hold}`/`SpecialLwStart` into
+the ordinary hit-scan/damage pipeline every other move kind uses; only
+supplying real `Hitbox` data (in dedicated native-test resources, not the
+shared synthetic fixtures those two files' other tests depend on) was
+needed. `characters::fox::{up,down}::validate` gained a shared
+`specials::helpers::validate_hitboxes` call (bone/group bounds, finite/
+nonnegative geometry, damage/growth/fixed/base ranges, an integral 0..=362
+angle, and the transformed-shape sanity check every other move kind's
+hitboxes already got from `validation.rs`'s own generic chain, which does
+not itself walk Fox's specials) -- deliberately narrower than that generic
+chain in two respects: no `move_id`-under-staling requirement (the real
+export pack does not populate it for every phase of these two moves yet,
+a separate, pre-existing gap this batch does not fix) and no
+`rules.clank`-gate for the `clank`/`rebound` bits (this helper has no
+match-wide `Rules` access). Attacker-side hitlag needed no change either:
+neither pinned C file ever touches a hitlag field, so the ordinary,
+already-generic per-attacker `hitlag` freeze in `damage::apply_hit`/
+`simulation::advance` applies unmodified. Native regressions
+(`tests/game_fox_up_special.rs`, `tests/game_fox_down_special.rs`) place a
+stationary second fighter in reach and drive a real `Match` through
+Controller input, confirming Hold's pulse connects exactly at frame 20 (and
+does not independently reconnect at 22 through 32, since this engine's
+shared per-attacker `hit_groups` bitmask is cleared only by a fresh
+`simulation::enter`, not a hitbox slot's own disable/re-enable cycle within
+one action -- the same rule every continuous/repeating hitbox in this
+codebase already lives under, absent a `jab`-style `clear_hits` script flag
+`Attack`/`AttackFrame` does not have), Travel's hit connects on its own
+entry frame, and Reflector's Start hit connects on its own entry frame for
+5 damage. A third self-recorded replay regression
+(`crates/cli/tests/replay_match.rs::
+firefox_hold_charge_hitbox_self_recorded_replay_matches`) exercises the
+Hold pulse through the file-backed Peppi round-trip harness, alongside the
+existing grounded/aerial Fire Fox pair -- self-consistency evidence, not
+Melee parity. No C-oracle differential was added: hit resolution arithmetic
+(`combat::knockback`/`hitlag`/`initial_hitstun`) is already oracle-pinned
+and generic over `Hitbox` fields (`tests/combat_differential.rs`), and this
+batch supplies new data through that existing pipeline rather than new
+arithmetic. `docs/fox-up-special.md`/`docs/fox-down-special.md` each gained
+a "Hitboxes" section (removing the up special's own now-outdated "Travel's
+hitboxes stay empty" note) citing the exact pack values, the bone-index
+adaptations the shared two-bone synthetic skeleton required (Travel's bone
+58 -> 1, Reflector's bone 3 -> 1; Hold's own bone 0 needed none), and the
+`hit_groups` scope boundary above.
+
+The six-step local audit (`fmt`, `clippy --all-targets -- -D warnings`,
+`cargo test --workspace`, `cargo test --workspace --features c-oracle`,
+`cargo test --workspace --release --features c-oracle`, `git diff --check`)
+ran clean against this batch's own worktree; the archived run is stored
+outside Git at `/mnt/archive/runs/skirmish-specials-hitboxes-20260912-verified`,
+matching the archived-audit convention `skirmish-rust-port-20260909-v2` and
+its successors established -- see `validation.json` there for exact
+pass/ignored counts and timings.
+
 The 2026-09-11 ground-jump-direction fix (the real-replay parity loop,
 `docs/parity.md`, `docs/state-parity.md`'s "Backward jumps") corrects
 `game::locomotion::ground_jump`'s direction test and launch velocity, both of

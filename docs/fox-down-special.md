@@ -212,6 +212,52 @@ cycle rather than a separate asset.
   called from every Loop/Turn/Hit Phys callback) is an unconditional no-op:
   there is nothing to collide against without projectiles.
 
+## Hitboxes (script-embedded, Start's own hit)
+
+Like the up special's Hold/Travel hitboxes, Reflector's own hit belongs to
+the animation script (the `ftaction.c` hitbox opcode this codebase already
+processes generically, `game::hitboxes::update_tracks`), not to a
+`SetAllHitboxes`-style call inside `ftfoxspeciallw.c` itself -- reading the
+whole pinned file confirms no such call exists there either, exactly like
+the up special. The schedule comes from the same gameplay export pack:
+`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/fox-fd/
+match-data.json`, `fighters[0].specials.down.start.{ground,air}`: a single
+hitbox (bone 3, centered on the bone, no offset, radius `7.9995`, damage 5,
+angle 0 degrees, growth 100, base/fixed/shield damage 0, clank `true`,
+rebound `false`) active on frames 0 and 1 of the 5-pose Start set, clear on
+frames 2 through 4. `move_id` 21. Loop/Turn/Hit/End have none in the pack
+(this move's real damage is entirely Start's own reflector spin-up hit).
+
+No code change was needed in `down.rs` for this, for the identical reason
+`up.rs` needed none: `attack()` already returns `&parameters.start.*` for
+`Action::SpecialLwStart`/`SpecialAirLwStart`, and the shared dispatch chain
+(`FighterData::attack` -> `specials::attack` -> this move's own `attack()`)
+already routes into the ordinary hit-scan/damage pipeline. Validation
+gained the same `specials::helpers::validate_hitboxes` call `up::validate`
+now also uses (see `docs/fox-up-special.md`'s own "Hitboxes" section for
+what it checks and the two things it deliberately does not, for the same
+reasons here). Neither `ftfoxspeciallw.c` nor anything it calls touches a
+hitlag field, so the attacker's own hitlag on a connecting hit is the
+ordinary, already-generic engine rule -- no special-casing needed or added.
+
+**Native test**
+(`tests/game_fox_down_special.rs::reflector_start_hits_a_nearby_opponent_on_
+the_pack_documented_frames`) builds the pack's schedule locally (like the up
+special's own regressions, not edited into the shared `fixtures/game/
+fox-down-special.json`, whose short poses back every other test's own
+step counts -- `"Start is 4 frames"`) and places a stationary second fighter
+in reach. The hit connects on Start's own entry frame (frame 0 is already
+sampled the instant `Action::SpecialLwStart`/`SpecialAirLwStart` is
+entered, the identical same-frame cascade `docs/fox-up-special.md`'s Travel
+regression documents) and deals 5 damage as the pack reports; frame 1's own
+copy of the identical hitbox does not independently connect a second time,
+for the same shared per-attacker `hit_groups` reason `docs/fox-up-special.
+md`'s own Hold pulse doc explains (only cleared by a fresh `simulation::
+enter`, not a hitbox slot's own re-enable within the same action). No
+C-oracle differential was added: hit resolution arithmetic is already
+oracle-pinned and generic over `Hitbox` fields, and this batch supplies new
+data through that existing pipeline, not new arithmetic.
+
 ## C-oracle coverage
 
 `tests/oracle/original/ftfoxspeciallw.c` pins the whole file (sha256 in

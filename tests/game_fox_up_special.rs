@@ -17,7 +17,7 @@ mod up_special_resources;
 
 use skirmish::collision::stage;
 use skirmish::game::{
-    Action, BUTTON_B, Controller, Match,
+    Action, BUTTON_B, Controller, Event, Match,
     characters::Specials,
     data::{MatchData, StageGeometry},
 };
@@ -581,6 +581,16 @@ fn invalid_up_special_resources_are_rejected() {
         .pop();
     assert!(Match::new(resource, 0).is_err());
 
+    // `specials::helpers::validate_hitboxes` (this batch's own validation
+    // gap-closer, `docs/fox-up-special.md`'s "Hitboxes" section): an
+    // out-of-range hitbox group (>= 16) on Hold's own pose is rejected the
+    // same way every other move kind's hitboxes already were.
+    let mut resource = data();
+    let mut hitbox = travel_hitbox();
+    hitbox.group = 99;
+    up_special_mut(&mut resource.fighters[0]).hold.ground.frames[0].hitboxes = vec![hitbox];
+    assert!(Match::new(resource, 0).is_err());
+
     // `fighter.specials = None` while `rules.specials` stays set is itself
     // rejected (the side special's own validation, shared with this move,
     // requires a motion for every fighter whenever the common rules
@@ -742,4 +752,122 @@ fn fall_special_landing_uses_this_move_s_own_landing_lag_not_the_common_one() {
     assert_eq!(state.fighters[0].action, Action::LandingFallSpecial);
     assert!(state.fighters[0].grounded);
     approx(state.fighters[0].aerial.landing_rate, 1.525);
+}
+
+use up_special_resources::{hold_attack_with_pack_hitboxes, travel_hitbox};
+
+#[test]
+fn hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames() {
+    // The schedule below reproduces the pack's own periodic pulse (frames
+    // 20/22/24/26/28/30/32), and the first of those frames does connect
+    // exactly on schedule -- but this engine's shared per-attacker
+    // `hit_groups` bitmask (`src/game/simulation.rs`, `source.hit_groups &
+    // (1 << hit.group) != 0`) is only cleared by a fresh `simulation::enter`
+    // (a whole new action), not by a hitbox slot merely cycling through a
+    // disabled frame and back on within the *same* action. Every other
+    // continuous/repeating hitbox already in this codebase (any attack with
+    // more than one active frame and no dedicated re-enable mechanism) is
+    // bound by the identical rule; only `jab`'s own `clear_hits` script flag
+    // opts a specific frame out of it (`tests/game_jab.rs::clear_hits_lets_
+    // third_jabs_group_hit_the_victim_twice`), and `Attack`/`AttackFrame`
+    // (the generic shape this move's own Hold/Travel hitboxes use) has no
+    // such field. Reproducing pulses 2 through 7 as independently
+    // connecting hits would need that same per-frame re-enable mechanism
+    // added to the specials pipeline, which is a distinct feature this batch
+    // does not add -- the frames after 20 are still exercised here (no
+    // spurious hit fires on any of them, matching this engine's own actual,
+    // already-tested behavior for a continuous hitbox with no clear_hits).
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
+    resource.rules.knockback_speed = 0.0;
+    let bones = resource.fighters[0].bones.clone();
+    let hold = hold_attack_with_pack_hitboxes(&bones);
+    {
+        let p = up_special_mut(&mut resource.fighters[0]);
+        p.hold.ground = hold.clone();
+        p.hold.air = hold;
+    }
+    let mut game = Match::new(resource, 0).unwrap();
+    let entry = game.step(input(0, up_stick(0.9))).unwrap();
+    assert_eq!(entry.fighters[0].action, Action::SpecialHiHold);
+    // `frame_before` is the pose actually sampled by the *next* `step` call
+    // (the frame this same, already-returned state reports, matching every
+    // other same-frame-cascade note in this suite: a state's own
+    // `action_frame` is one ahead of the pose it was itself computed from).
+    let mut frame_before = entry.fighters[0].action_frame;
+    let mut hit_frames = Vec::new();
+    loop {
+        let state = game.step(IDLE).unwrap();
+        if state.fighters[0].action != Action::SpecialHiHold {
+            break;
+        }
+        if state.events.iter().any(|event| {
+            matches!(
+                event,
+                Event::Hit {
+                    attacker: 0,
+                    victim: 1,
+                    ..
+                }
+            )
+        }) {
+            hit_frames.push(frame_before);
+        }
+        frame_before = state.fighters[0].action_frame;
+    }
+    assert_eq!(hit_frames, vec![20]);
+    // One pulse at 2 damage; no staling is configured for this profile.
+    assert_eq!(game.state().fighters[1].percent, 2.0);
+}
+
+#[test]
+fn travel_hits_a_nearby_opponent_every_frame_matching_the_pack_s_continuous_hitbox() {
+    // The base fixture's own 2-pose Travel loop (independent of the
+    // `travel_frames` countdown that actually governs the move's real
+    // duration, see `docs/fox-up-special.md`) stays untouched apart from
+    // installing the pack's own hitbox on both existing poses -- since the
+    // pack itself reports the identical hitbox on every one of its own 31
+    // sampled frames, a shorter looping pose with the hitbox on every one of
+    // *its* frames reproduces the same "never clears while Travel runs"
+    // fact exactly.
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
+    resource.rules.knockback_speed = 0.0;
+    {
+        let p = up_special_mut(&mut resource.fighters[0]);
+        for attack in [&mut p.travel.ground, &mut p.travel.air] {
+            attack.move_id = Some(20);
+            for frame in &mut attack.frames {
+                frame.hitboxes = vec![travel_hitbox()];
+            }
+        }
+        // A long, slow, constant-velocity travel keeps the fighter's own
+        // hitbox in reach for several real frames instead of overshooting
+        // the stationary opponent in one step.
+        p.attributes.speed = 1.0;
+        p.attributes.duration = 20.0;
+        p.attributes.duration_end = 1000.0;
+    }
+    let mut game = Match::new(resource, 0).unwrap();
+    game.step(input(0, up_stick(0.9))).unwrap();
+    // The hitbox is already active on Travel's own entry frame (frame 0), so
+    // the connecting hit shows up on this very transition step -- the same
+    // step `update_animation`'s Hold-anim-end dispatch (`enter_from_ground_
+    // hold`) enters `Action::SpecialHi` and the later hitbox sweep in this
+    // same `advance()` call already reads the new action's frame 0.
+    let state = step_until_action_change(&mut game, directional([0.9, -0.5]), 60);
+    assert_eq!(state.fighters[0].action, Action::SpecialHi);
+    assert!(
+        state.events.iter().any(|event| matches!(
+            event,
+            Event::Hit {
+                attacker: 0,
+                victim: 1,
+                ..
+            }
+        )),
+        "Travel's continuous hitbox must connect on its own entry frame"
+    );
+    // 14 damage per the pack's own value; no staling is configured.
+    assert_eq!(state.fighters[1].percent, 14.0);
 }

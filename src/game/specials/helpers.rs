@@ -4,9 +4,65 @@
 //! re-deriving the same gravity, friction, conversion and exit arithmetic.
 
 use crate::{
+    collision::bones::BoneCapsule,
     fighter::{Movement, aerial as landing_math},
-    game::{Action, Fighter, data::FighterData, simulation},
+    game::{
+        Action, Error, Fighter,
+        data::{Attack, FighterData},
+        simulation,
+        validation::{validate_animation_pose, validate_shape},
+    },
 };
+
+/// Every physics/hitbox frame of `attack` against `fighter`'s own skeleton
+/// and hurtboxes: the pose/topology check every move kind already runs
+/// (`validate_animation_pose`), plus the same per-hitbox field bounds and
+/// transformed-geometry sanity check the generic jab/aerial/tilt/smash/
+/// neutral-special chain applies (`validation.rs`'s own hitbox loop) --
+/// bone/group bounds, finite/nonnegative geometry, damage/growth/fixed/base
+/// ranges, and an integral 0..=362 launch angle. Deliberately narrower than
+/// that generic chain in two respects, both intentional: it does not require
+/// `attack.move_id` even when staling is enabled (real gameplay-export packs
+/// for Fox's up/down specials do not yet populate it on every phase, and
+/// this batch is scoped to the hitboxes themselves, not that separate,
+/// pre-existing gap), and it does not gate `clank`/`rebound` on
+/// `rules.clank` (this function has no match-wide `Rules` access, unlike
+/// `validation.rs`'s own top-level pass; a future clank-focused batch that
+/// wires `rules.clank` up for these moves can add that gate here too).
+pub(crate) fn validate_hitboxes(attack: &Attack, fighter: &FighterData) -> Result<(), Error> {
+    let finite = |v: f32| v.is_finite() && v.abs() <= 1_000_000.0;
+    for frame in &attack.frames {
+        let pose = validate_animation_pose(&frame.bones, fighter)?;
+        if frame.hitboxes.len() > 4 {
+            return Err(Error::Data("at most four hitboxes per frame".into()));
+        }
+        if !(frame.hurtbox_states.is_empty()
+            || frame.hurtbox_states.len() == fighter.hurtboxes.len())
+        {
+            return Err(Error::Data(
+                "attack hurtbox state samples must be empty or complete".into(),
+            ));
+        }
+        for hit in &frame.hitboxes {
+            if !(hit.bone < frame.bones.len()
+                && hit.group < 16
+                && hit.center.iter().copied().all(finite)
+                && (0.0..=1_000_000.0).contains(&hit.radius)
+                && hit.damage <= 999
+                && (-1000..=1000).contains(&hit.shield_damage)
+                && hit.growth <= 1000
+                && hit.fixed <= 1000
+                && hit.base <= 1000
+                && (0.0..=362.0).contains(&hit.angle_degrees)
+                && hit.angle_degrees.fract() == 0.0)
+            {
+                return Err(Error::Data("invalid or unsupported hitbox".into()));
+            }
+            validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
+        }
+    }
+    Ok(())
+}
 
 /// A countdown before gravity starts pulling a phase down, ticked every
 /// frame it is nonzero (`ftFx_SpecialSStart_Phys`'s pattern): count down,

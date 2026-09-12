@@ -26,7 +26,6 @@ use crate::{
         data::{Attack, FighterData, Rules as MatchRules, StageGeometry},
         simulation,
         specials::{SpecialMove, helpers},
-        validation::validate_animation_pose,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -143,9 +142,10 @@ pub(crate) fn validate(
                 "down special requires 1..4096 physics samples per phase".into(),
             ));
         }
-        for frame in &attack.frames {
-            validate_animation_pose(&frame.bones, fighter)?;
-        }
+        // Start's own hit (`docs/fox-down-special.md`'s gameplay-export
+        // citation) is a real script-embedded hitbox; every phase is
+        // checked uniformly since the shape is the same either way.
+        helpers::validate_hitboxes(attack, fighter)?;
     }
     Ok(())
 }

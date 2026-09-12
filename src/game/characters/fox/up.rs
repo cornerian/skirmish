@@ -9,9 +9,10 @@
 //! pinned for the oracle, the wall/ceiling mid-Travel redirect, the
 //! shallow-floor-graze sub-case of the landing bound decision, ground
 //! Travel's own per-frame `rotateModel` re-derivation, `FallSpecial`'s own
-//! stored `landing_lag` argument, and what stays unmodeled (the visual
-//! model-rotation bone itself, Travel's empty hitboxes, and the
-//! already-unreachable `x21F8` callback).
+//! stored `landing_lag` argument, Hold's/Travel's own script-embedded
+//! hitboxes (its own "Hitboxes" section), and what stays unmodeled (the
+//! visual model-rotation bone itself and the already-unreachable `x21F8`
+//! callback).
 
 use super::side;
 use crate::{
@@ -21,7 +22,6 @@ use crate::{
         data::{Attack, FighterData, Rules as MatchRules},
         simulation,
         specials::{SpecialMove, helpers},
-        validation::validate_animation_pose,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -174,9 +174,11 @@ pub(crate) fn validate(
                 "up special requires 1..4096 physics samples per phase".into(),
             ));
         }
-        for frame in &attack.frames {
-            validate_animation_pose(&frame.bones, fighter)?;
-        }
+        // Hold's charge pulse and Travel's own continuous hit are real
+        // script-embedded hitboxes (`docs/fox-up-special.md`'s own
+        // gameplay-export citation); every phase is checked uniformly since
+        // the shape is the same `Attack`/`AttackFrame` either way.
+        helpers::validate_hitboxes(attack, fighter)?;
     }
     if parameters.bound.transn_y.len() != parameters.bound.pose.frames.len()
         || parameters.bound.exit_flags.len() != parameters.bound.pose.frames.len()

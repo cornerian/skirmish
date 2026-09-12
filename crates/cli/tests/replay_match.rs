@@ -3327,6 +3327,65 @@ fn physical_b_drives_file_backed_fox_air_firefox_into_fall_special() {
     ));
 }
 
+/// Self-recorded regression for the pack-derived Hold charge hitbox
+/// (`docs/fox-up-special.md`'s "Hitboxes" section): a connecting hit against
+/// a nearby second fighter during Hold's own charge, replayed byte-for-byte
+/// through this crate's own Peppi-backed pipeline like the pair above --
+/// again self-consistency evidence, not Melee parity (`docs/parity.md`).
+#[test]
+fn firefox_hold_charge_hitbox_self_recorded_replay_matches() {
+    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
+    data.rules.knockback_speed = 0.0;
+    let bones = data.fighters[0].bones.clone();
+    let hold = fox_up_special_support::hold_attack_with_pack_hitboxes(&bones);
+    match data.fighters[0].specials.as_mut() {
+        Some(skirmish::game::characters::Specials::Fox { up: Some(up), .. }) => {
+            up.hold.ground = hold.clone();
+            up.hold.air = hold;
+        }
+        _ => panic!("fixture is missing its up-special resource"),
+    }
+    let mut inputs = vec![IDLE; 25];
+    inputs[0][0].buttons = BUTTON_B;
+    inputs[0][0].stick[1] = 0.9;
+    let recording = Recording::from_script(data, 7, inputs);
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialHiHold
+    );
+    // The pack's own pulse (frame 20 of Hold's 44-pose set) connects well
+    // within this recording's own 25 frames.
+    assert!(recording.states.iter().any(|s| matches!(
+        s.events.as_slice(),
+        [Event::Hit {
+            attacker: 0,
+            victim: 1,
+            ..
+        }]
+    )));
+    assert!(recording.states.last().unwrap().fighters[1].percent > 0.0);
+
+    let bytes = recording.bytes(support::Fixture::default(), |_| {});
+    matched(&recording.compare(&bytes), FIRST, recording.inputs.len());
+    // Remove the entry press entirely: the fighter stays in Wait instead of
+    // ever charging (and thus never connects the hit), diverging from the
+    // very first recorded frame.
+    let changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.pre.buttons.set(0, Some(0));
+        frames.ports[0].leader.pre.buttons_physical.set(0, Some(0));
+        frames.ports[0].leader.pre.joystick.y.set(0, Some(0.0));
+    });
+    assert!(matches!(
+        recording.compare(&changed).outcome,
+        Outcome::Mismatch {
+            frame: FIRST,
+            checked_frames: 0,
+            ..
+        }
+    ));
+}
+
 fn entry_replay_data() -> MatchData {
     let mut data: MatchData = serde_json::from_str(include_str!(
         "../../../tests/fixtures/game/integration-match.json"

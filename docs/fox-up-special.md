@@ -223,10 +223,85 @@ exotic-edge-case) gameplay; all four are now implemented:
   passes `None`, preserving its already-audited behavior unchanged (its
   own `FallSpecial` exit predates this resource).
 
+## Hitboxes (script-embedded, Hold's charge pulse and Travel's continuous hit)
+
+Neither `ftFx_SpecialHiHold_*`/`ftFx_SpecialHi_*`/`ftFx_SpecialAirHi_*` ever
+calls a `SetAllHitboxes`-style function directly -- the hitboxes belong to
+the *animation script* itself (the `ftaction.c` hitbox opcode this codebase
+already processes generically for every other move, `game::hitboxes::
+update_tracks`, driven by `AttackFrame.hitboxes`), which is why the pinned C
+file "creates none" despite the move dealing real damage in the actual
+game: the create/clear timing lives in the DAT resource's own script, not
+in this file. The real schedule was previously unknown to this port (the
+"Unmodeled" note this section replaces said so); the gameplay export pack
+now supplies it directly:
+`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/fox-fd/
+match-data.json`, `fighters[0].specials.up.{hold,travel}.{ground,air}`.
+
+- **Hold's own charge pulse**: a single hitbox (bone 0, center `[0, 7.812,
+  0]`, radius `8.2026`, damage 2, angle 70 degrees, growth/base 40, no
+  shield damage, not clank, not rebound) active on exactly frames 20, 22,
+  24, 26, 28, 30 and 32 of the 44-pose Hold set (ground and air identical),
+  clear on every frame in between and outside that window -- the charge's
+  own periodic "spark". `move_id` 20.
+- **Travel's own hit**: a single hitbox (bone 58, centered on the bone, no
+  offset, radius `3.9997`, damage 14, angle 80 degrees, growth/base 60,
+  shield damage 5, clank and rebound both `true`) active on every one of
+  the pack's own 31 sampled frames (ground and air identical) -- it never
+  clears while Travel runs. `move_id` 20.
+- No code changes were needed in this file to make either of these real:
+  `attack()` already returns `&parameters.hold.*`/`&parameters.travel.*` for
+  their own `Action`s, and `FighterData::attack` -> `specials::attack` ->
+  this move's own `attack()` already routes into the shared hit-scan/damage
+  pipeline (`simulation::advance`, `damage::apply_hit`) exactly like jab,
+  tilt or a smash -- only supplying real `Hitbox` data does. Validation
+  gained a matching gap-closer: `specials::helpers::validate_hitboxes` (also
+  used by `down.rs`) runs the same per-hitbox field/geometry checks the
+  generic jab/aerial/tilt/smash/neutral-special chain already runs
+  (`validation.rs`), which previously skipped Fox's up/down specials
+  entirely (they had nothing to check while every hitbox list was empty).
+  Deliberately narrower in two respects: no `attack.move_id` requirement
+  under staling (the real export pack does not yet populate it on every
+  phase -- `bound.pose`, for one -- and this batch is scoped to the
+  hitboxes, not that separate gap) and no `rules.clank`-gate for the
+  `clank`/`rebound` bits (this helper has no match-wide `Rules` access).
+- **Attacker-side hitlag**: neither `ftfoxspecialhi.c` nor any function it
+  calls ever touches a hitlag-related field (confirmed by reading the whole
+  pinned file), so the ordinary, already-generic engine rule applies
+  unchanged: connecting a hit freezes the attacker's own `action_frame`
+  advancement for `combat::hitlag(damage, false, 1.0, ...)` frames, exactly
+  like every other attack in this codebase (`src/game/damage.rs::apply_hit`,
+  `simulation::advance`'s per-fighter hitlag gate) -- Fire Fox gets no
+  special exemption, and none was needed.
+- **Native tests**
+  (`tests/game_fox_up_special.rs::hold_charge_hits_a_nearby_opponent_at_the_
+  pack_documented_pulse_frames`/`travel_hits_a_nearby_opponent_every_frame_
+  matching_the_pack_s_continuous_hitbox`) build the pack's own schedule
+  locally (not edited into the shared `fixtures/game/fox-up-special.json`,
+  whose short, hitbox-free poses back every other test in that file) and
+  place a stationary second fighter in reach. Travel's hit connects on its
+  own entry frame (frame 0's hitbox is already active the instant
+  `Action::SpecialHi` is entered, the same same-frame cascade this move's
+  Hold-anim-end launch already relies on). Hold's own pulse connects exactly
+  at frame 20 and deals 2 damage as the pack reports; pulses 22 through 32
+  do not independently connect a second time, because this engine's shared
+  per-attacker `hit_groups` bitmask (`src/game/simulation.rs`) is only
+  cleared by a fresh `simulation::enter` (a new action), not by a hitbox
+  slot cycling through a disabled frame and back on within the *same*
+  action -- exactly the rule every other continuous/repeating hitbox in
+  this codebase already lives under (only `jab`'s own `clear_hits` script
+  flag opts a specific frame out of it, a field `Attack`/`AttackFrame` does
+  not have). Reproducing independently-connecting pulses would need that
+  same per-frame re-enable mechanism added to the specials pipeline, which
+  is a distinct feature this batch does not add; the test still exercises
+  (and asserts the absence of a spurious hit on) every frame from 20 through
+  Hold's own end. No C-oracle differential was added for this data: hit
+  resolution arithmetic (`combat::knockback`/`hitlag`/`initial_hitstun`) is
+  already oracle-pinned and generic over `Hitbox` fields
+  (`tests/combat_differential.rs`), and this batch supplies new data through
+  that existing, already-verified pipeline rather than new arithmetic.
+
 ## Unmodeled
-- Travel's hitboxes stay empty: the pinned `ftfoxspecialhi.c` creates none
-  directly, and this batch does not extract an animation-embedded hitbox
-  table.
 - The visual model-rotation bone itself (`ftFox_SpecialHi_RotateModel`'s
   own `ftPartSetRotX` call): rendering only, unlike the `rotateModel`
   *state* it reads, which this batch's follow-up now keeps continuously
@@ -327,3 +402,16 @@ dedicated functional test, matching the side special batch's own
 precedent (its `ledge_catchable` gain for three aerial phases has no
 dedicated ledge-grab test either) -- exercising the full ledge resource
 fixture is mostly testing the shared ledge system, not this move.
+
+This follow-up (the "Hitboxes" section above) adds the real gameplay-export
+hitbox schedule for Hold and Travel, exercised by
+`hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames`/
+`travel_hits_a_nearby_opponent_every_frame_matching_the_pack_s_continuous_
+hitbox`, and `crates/cli/tests/replay_match.rs::
+firefox_hold_charge_hitbox_self_recorded_replay_matches` (a third
+self-recorded regression alongside the grounded/aerial pair above, this one
+driving a real connecting hit through the same file-backed replay
+machinery). `src/game/specials/helpers.rs::validate_hitboxes`'s own field
+bounds are exercised indirectly through `invalid_up_special_resources_are_
+rejected`'s existing pattern (an out-of-range field now rejected the same
+way every other move kind's hitboxes already were).

@@ -880,7 +880,9 @@ fn validate_bones(bones: &[Bone]) -> Result<Pose, Error> {
         .map_err(|e| Error::Data(e.to_string()))
 }
 
-fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
+/// Shared with `characters::fox::{up,down}::validate`'s own per-hitbox
+/// geometry check (the same reason as it needing `validate_animation_pose`).
+pub(crate) fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
     let shape = shape
         .transform(pose, 1.0)
         .map_err(|e| Error::Data(e.to_string()))?;
