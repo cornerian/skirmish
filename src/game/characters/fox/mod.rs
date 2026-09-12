@@ -6,12 +6,12 @@
 //! behavioral one.
 //!
 //! To add one of Fox's queued specials: write its own file next to `side.rs`
-//! implementing `specials::SpecialMove`, add it to [`MOVES`] below (ahead of
-//! [`specials::neutral::Move`] if the source also checks it first), and add
-//! its state/animation ids to [`slippi_ids`]. Nothing outside this file
-//! needs to change.
+//! implementing `specials::SpecialMove`, add it to [`MOVES`] below in the
+//! source's own dispatch priority, and add its state/animation ids to
+//! [`slippi_ids`]. Nothing outside this file needs to change.
 
 pub mod down;
+pub mod neutral;
 pub mod side;
 pub mod up;
 
@@ -22,17 +22,15 @@ use crate::game::{Action, specials};
 /// CheckInput` is checked after `SpecialS`; aerial: the side branch already
 /// defers to the up special whenever the stick clears the vertical
 /// threshold, so this order reproduces both dispatch priorities), then the
-/// up special, then the shared neutral shell, then the down special (the
-/// source's own grounded chain checks SpecialS, SpecialHi, SpecialN, then
-/// SpecialLw in that fixed order; down.rs's own module doc explains why the
-/// aerial dispatcher's different real order does not require a different
-/// Rust iteration order here).
-pub(crate) const MOVES: &[&dyn specials::SpecialMove] = &[
-    &side::MOVE,
-    &up::MOVE,
-    &specials::neutral::MOVE,
-    &down::MOVE,
-];
+/// up special, then Blaster (`neutral`, Fox's own dedicated module -- the
+/// shared generic shell is retired for Fox, see `docs/
+/// fox-neutral-special.md`), then the down special (the source's own
+/// grounded chain checks SpecialS, SpecialHi, SpecialN, then SpecialLw in
+/// that fixed order; down.rs's own module doc explains why the aerial
+/// dispatcher's different real order does not require a different Rust
+/// iteration order here).
+pub(crate) const MOVES: &[&dyn specials::SpecialMove] =
+    &[&side::MOVE, &up::MOVE, &neutral::MOVE, &down::MOVE];
 
 /// External Slippi CSS character ids that play this move set: Fox (2) and
 /// Falco (20, `crates/cli/src/initialization.rs`'s `CHARACTER_EXTERNAL_IDS`).
@@ -55,8 +53,18 @@ pub(crate) const CHARACTER_IDS: [u8; 2] = [2, 20];
 pub(crate) fn slippi_ids(action: Action) -> Option<(u32, u32)> {
     use Action::*;
     Some(match action {
-        SpecialN => (341, 295),
-        SpecialAirN => (344, 298),
+        // `ftFx_MS_SpecialNStart == ftCo_MS_Count`, confirmed by counting
+        // backward from the side special's own confirmed `ftCo_MS_Count +
+        // 6 == 347`; Loop/End and the air trio follow in source
+        // declaration order (341..346). Animation indices 296/297/299/300
+        // continue the same unverified -46 offset the 295/298 endpoints
+        // already established; see `docs/fox-neutral-special.md`.
+        SpecialNStart => (341, 295),
+        SpecialNLoop => (342, 296),
+        SpecialNEnd => (343, 297),
+        SpecialAirNStart => (344, 298),
+        SpecialAirNLoop => (345, 299),
+        SpecialAirNEnd => (346, 300),
         // `ftFx_MS_SpecialSStart` is `ftCo_MS_Count + 6`; Start/Dash/End
         // follow it in source declaration order (347..352). The animation
         // indices are an unverified extrapolation: see docs/fox-side-

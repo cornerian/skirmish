@@ -11,13 +11,17 @@
 
 pub mod fox;
 
-use super::{Action, specials::SpecialMove, specials::neutral};
+use super::{Action, specials::SpecialMove};
 use serde::{Deserialize, Serialize};
 
 /// A fighter's special-move resources, tagged by which character's move set
 /// they belong to. Each variant carries every one of that character's moves
-/// as its own `Option`, including the shared neutral shell (`neutral`),
-/// since even the shared shell's ground/air poses are per-character data.
+/// as its own `Option`. `neutral` on both variants is Fox's own dedicated
+/// Blaster resource (`characters::fox::neutral::NeutralSpecial`), not the
+/// generic shared shell (`game::specials::neutral`, retired outright -- see
+/// `docs/fox-neutral-special.md`); Falco's own Laser reuses the identical
+/// type (same source file, same attribute shape, see below), but stays
+/// `None` in every export so far.
 ///
 /// `Falco` carries the exact same field types as `Fox` rather than its own
 /// resource shapes: `ftFc_Init_MotionStateTable` (`ftfalco.c:23-370`) points
@@ -37,10 +41,10 @@ use serde::{Deserialize, Serialize};
 /// difference, not a behavioral one, and duplicating `fox::side::
 /// SideSpecial`/`fox::up::UpSpecial`/`fox::down::DownSpecial` as
 /// Falco-specific types would just be copies with no distinct fields.
-/// Falco's own neutral special (Laser, `It_Kind_Falco_Laser`) is not wired
-/// here: `fighters/falco.json`'s `specials` carries no `neutral` block from
-/// the exporter yet (neither does Fox's own export), so this stays `None`
-/// until a pack supplies it.
+/// `ftfoxspecialn.c` (Blaster) has an equivalent `FTKIND_FALCO` branch
+/// (`foxSFX`/`falcoSFX` in `ftFox_SpecialN_FireBlasterShot`) picking only
+/// cosmetic SFX, so `fox::neutral::NeutralSpecial` is reused verbatim here
+/// too, for the same reason.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "character")]
 pub enum Specials {
@@ -53,7 +57,7 @@ pub enum Specials {
     #[serde(alias = "fox")]
     Fox {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        neutral: Option<neutral::Parameters>,
+        neutral: Option<fox::neutral::NeutralSpecial>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         side: Option<fox::side::SideSpecial>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,7 +72,7 @@ pub enum Specials {
     #[serde(alias = "falco")]
     Falco {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        neutral: Option<neutral::Parameters>,
+        neutral: Option<fox::neutral::NeutralSpecial>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         side: Option<fox::side::SideSpecial>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,7 +83,7 @@ pub enum Specials {
 }
 
 impl Specials {
-    pub(crate) fn neutral(&self) -> Option<&neutral::Parameters> {
+    pub(crate) fn fox_neutral(&self) -> Option<&fox::neutral::NeutralSpecial> {
         match self {
             Specials::Fox { neutral, .. } | Specials::Falco { neutral, .. } => neutral.as_ref(),
         }

@@ -776,7 +776,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         // character id; `None` there (an unregistered character, or a
         // special this build has no id table for) falls through to the
         // same "unresolved" result `Eliminated` reports below.
-        SpecialN | SpecialAirN | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
+        SpecialNStart | SpecialNLoop | SpecialNEnd | SpecialAirNStart | SpecialAirNLoop
+        | SpecialAirNEnd | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
         | SpecialAirS | SpecialAirSEnd | SpecialHiHold | SpecialHiHoldAir | SpecialHi
         | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
@@ -844,7 +845,7 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         // same registry entry that resolved its state id above; the Fox
         // side-special indices there are flagged as an unverified
         // extrapolation, not a confirmed figatree table.
-        341 | 344 | 347..=352 | 353..=369 => {
+        341..=369 => {
             let (_state, animation) = game::characters::slippi_ids(character, fighter.action)?;
             animation
         }
@@ -1583,17 +1584,23 @@ mod tests {
         assert_eq!(action_state(&fighter, Some(2)), Some(256));
         assert_eq!(animation_index(&fighter, Some(2)), Some(221));
 
-        fighter.action = game::Action::SpecialN;
-        assert_eq!(action_state(&fighter, Some(2)), Some(341));
-        assert_eq!(animation_index(&fighter, Some(2)), Some(295));
-        // Falco (external CSS id 20, not to be confused with his internal
-        // fighter kind 22) resolves through the same table as Fox
-        // (`game::characters::fox::CHARACTER_IDS`'s own doc).
-        assert_eq!(action_state(&fighter, Some(20)), Some(341));
-        assert_eq!(animation_index(&fighter, Some(20)), Some(295));
-        fighter.action = game::Action::SpecialAirN;
-        assert_eq!(action_state(&fighter, Some(2)), Some(344));
-        assert_eq!(animation_index(&fighter, Some(2)), Some(298));
+        for (action, state, animation) in [
+            (game::Action::SpecialNStart, 341, 295),
+            (game::Action::SpecialNLoop, 342, 296),
+            (game::Action::SpecialNEnd, 343, 297),
+            (game::Action::SpecialAirNStart, 344, 298),
+            (game::Action::SpecialAirNLoop, 345, 299),
+            (game::Action::SpecialAirNEnd, 346, 300),
+        ] {
+            fighter.action = action;
+            assert_eq!(action_state(&fighter, Some(2)), Some(state));
+            assert_eq!(animation_index(&fighter, Some(2)), Some(animation));
+            // Falco (external CSS id 20, not to be confused with his internal
+            // fighter kind 22) resolves through the same table as Fox
+            // (`game::characters::fox::CHARACTER_IDS`'s own doc).
+            assert_eq!(action_state(&fighter, Some(20)), Some(state));
+            assert_eq!(animation_index(&fighter, Some(20)), Some(animation));
+        }
 
         for (action, state, animation) in [
             (game::Action::SpecialSStart, 347, 301),
@@ -1623,7 +1630,7 @@ mod tests {
         fighter.action = game::Action::Eliminated;
         assert_eq!(action_state(&fighter, Some(2)), None);
         assert_eq!(animation_index(&fighter, Some(2)), None);
-        fighter.action = game::Action::SpecialN;
+        fighter.action = game::Action::SpecialNStart;
         assert_eq!(action_state(&fighter, None), None);
         assert_eq!(animation_index(&fighter, None), None);
     }

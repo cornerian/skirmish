@@ -16,12 +16,11 @@
 //! module, `simulation`, `collision`, `edge` or `ledge` needs to change.
 
 pub mod helpers;
-pub mod neutral;
 
 use super::{
     Action, Controller, Error, Fighter, characters,
     data::{Attack, FighterData, Rules},
-    tilt,
+    landing, tilt,
 };
 use crate::fighter::{Movement, edge::Mode};
 
@@ -228,7 +227,13 @@ fn all_moves() -> &'static [&'static dyn SpecialMove] {
 }
 
 /// The grounded chains that may open a fresh special this frame: ordinary
-/// standing locomotion, or the Wait/Taunt chain's own interruptible frames.
+/// standing locomotion, the Wait/Taunt chain's own interruptible frames, or
+/// ordinary Landing's own interruptible window (`ftCo_Landing_IASA`'s
+/// `RETURN_IF`s reach the same common `ftCo_SpecialS_CheckInput`/
+/// `ftCo_Attack100_CheckInput` dispatch chain every other grounded action
+/// above already opens through; confirmed against a real recording where a
+/// B press during Landing's interrupt window enters `SpecialN` directly
+/// from `Landing`, `docs/fox-neutral-special.md`).
 fn grounded_chain_open(fighter: &Fighter, data: &FighterData) -> bool {
     fighter.grounded
         && (matches!(
@@ -245,7 +250,7 @@ fn grounded_chain_open(fighter: &Fighter, data: &FighterData) -> bool {
         ) || matches!(
             tilt::interrupt_chain(fighter, data),
             Some(tilt::Chain::Wait) | Some(tilt::Chain::Taunt)
-        ))
+        ) || landing::interruptible(fighter, data))
 }
 
 /// The aerial chains that may open a fresh special this frame: an ordinary

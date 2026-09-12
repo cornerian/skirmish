@@ -296,19 +296,20 @@ mapped actor:
 The report's `fields` array follows the replay version, so fields absent from an
 older Slippi schema are visible rather than silently claimed. The refactored
 action enum collapses some original motion states. Those actions map to one
-documented common-state ID. Fox's current neutral-special shell and side-
-special profile both map using GameStart character metadata (gated on
-character 2 only, matching the neutral shell's own precedent -- Falco 22
-shares the side-special code but is not mapped here); every other
+documented common-state ID. Fox's own Blaster and side-
+special profiles both map using GameStart character metadata (gated on
+character 2 only -- Falco 22 shares both moves' own code but is not mapped
+here); every other
 character-specific special and internal elimination remain unmapped and
 therefore produce an action-state mismatch. The inactive respawn interval maps
 to Melee's common `Sleep` state 11 and its absent animation. Zelda/Sheik
 transformations are also unimplemented, so a post-frame internal character
 change produces a character mismatch. Action-instance retention covers the
-implemented common motion families and Fox neutral-special startup. Luigi and
-held-item metadata branches in the original callback remain outside the native
-fighter model. Animation-index mapping covers the same resolved common actions
-and Fox startup states. Refactored directional jump actions use their
+implemented common motion families and Fox's Blaster (one shared identity
+across its whole Start->Loop->...->End sequence, `fighter::action_instance`).
+Luigi and held-item metadata branches in the original callback remain
+outside the native fighter model. Animation-index mapping covers the same
+resolved common actions and Fox's own Blaster/side-special states. Refactored directional jump actions use their
 canonical first animation, and the original randomized Wait animation changes
 are not scheduled yet; Walk does too unless the optional walk-speed profile
 is present, in which case its animation follows the tracked Slow/Middle/Fast
@@ -321,8 +322,17 @@ follows `Fighter::x221F_b1`: it begins immediately for ordinary blast deaths,
 after disappearance for star/screen deaths, persists through the inactive
 respawn delay, and clears on rebirth. The selected sleep bit follows
 `Fighter::x221F_b3` only during that inactive respawn delay.
-Nonempty item and dynamic stage-event records are
-rejected as unsupported simulation. Equality of the selected fields does not
+Nonempty item and dynamic stage-event records in a real file are still
+rejected as unsupported simulation: the native simulation now models one
+item kind (Fox's Blaster laser, `game::projectile`, `docs/
+fox-neutral-special.md`), but the file-backed replay comparison harness
+does not yet diff its own `State.projectiles` against a real file's own
+item-frame block (`type`/`state`/`position`/`velocity`/`owner`) -- this
+batch's own self-recorded regression (`crates/cli/tests/replay_match.rs`)
+instead asserts the native `Event`/`Projectile` state directly, which this
+engine fully controls. Extending the file-backed comparison itself to
+diff real item fields is the concrete next step, not yet done. Equality of
+the selected fields does not
 establish equality of hidden state, complete frame behavior or Melee gameplay.
 The match remains an experimental ruleset with incomplete character resources;
 the current Fox subset cannot validate arbitrary real Fox matches.

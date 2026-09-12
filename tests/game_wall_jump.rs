@@ -2,7 +2,7 @@
 
 #[path = "support/aerial.rs"]
 mod aerial_resources;
-#[path = "support/special.rs"]
+#[path = "support/fox_neutral_special.rs"]
 mod special_resources;
 use aerial_resources::conformance as support;
 
@@ -181,11 +181,11 @@ fn startup_and_sampled_motion_replay_bit_exactly_from_a_checkpoint() {
 #[test]
 fn ordinary_wall_jump_dispatches_supported_air_actions_after_startup() {
     for (buttons, expected) in [
-        (BUTTON_B, Action::SpecialAirN),
+        (BUTTON_B, Action::SpecialAirNStart),
         (BUTTON_A, Action::AttackAirN),
         (BUTTON_X, Action::JumpAerial),
         (BUTTON_A | BUTTON_X, Action::AttackAirN),
-        (BUTTON_A | BUTTON_B, Action::SpecialAirN),
+        (BUTTON_A | BUTTON_B, Action::SpecialAirNStart),
     ] {
         let mut resource = data();
         let mut aerial = aerial_resources::data();

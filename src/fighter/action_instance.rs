@@ -34,7 +34,10 @@ fn change(previous: u8, id: &mut u16, identity: u8, counter: &mut Counter) {
 }
 
 /// Low bytes of the common motion flags retained by Skirmish's actions. Fox's
-/// current neutral-special shell uses the character table's startup identity.
+/// Blaster (all six `SpecialN*`/`SpecialAirN*` phases) shares a single
+/// identity across the whole Start->Loop->...->End sequence, matching the
+/// source's own `ftFx_SpecialNIndex` family (one continuous Slippi
+/// `instance_id` through a held-B repeat).
 pub fn motion_identity(action: Action, prone: Option<ProneOrientation>, slow_ledge: bool) -> u8 {
     use Action::*;
     match action {
@@ -59,7 +62,8 @@ pub fn motion_identity(action: Action, prone: Option<ProneOrientation>, slow_led
         AttackAirB | LandingAirB => 14,
         AttackAirHi | LandingAirHi => 15,
         AttackAirLw | LandingAirLw => 16,
-        SpecialN | SpecialAirN => 17,
+        SpecialNStart | SpecialNLoop | SpecialNEnd | SpecialAirNStart | SpecialAirNLoop
+        | SpecialAirNEnd => 17,
         Pass => 111,
         FlyReflectWall => 107,
         Passive | PassiveStandF | PassiveStandB => 110,
@@ -130,7 +134,7 @@ mod tests {
             (AttackAirB, 14),
             (AttackAirHi, 15),
             (AttackAirLw, 16),
-            (SpecialN, 17),
+            (SpecialNStart, 17),
             (Pass, 111),
             (FlyReflectWall, 107),
             (Passive, 110),
@@ -146,7 +150,9 @@ mod tests {
         }
         assert_eq!(id(AttackAirN, None), id(LandingAirN, None));
         assert_eq!(id(Squat, None), id(SquatWait, None));
-        assert_eq!(id(SpecialN, None), id(SpecialAirN, None));
+        assert_eq!(id(SpecialNStart, None), id(SpecialAirNStart, None));
+        assert_eq!(id(SpecialNStart, None), id(SpecialNLoop, None));
+        assert_eq!(id(SpecialNStart, None), id(SpecialAirNEnd, None));
         assert_ne!(id(AttackAirF, None), id(AttackAirB, None));
         assert_ne!(
             id(DownBound, Some(ProneOrientation::FaceUp)),

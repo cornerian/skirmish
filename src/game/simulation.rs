@@ -49,6 +49,7 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Res
                 &mut attack_instances,
             )?,
         ],
+        projectiles: vec![],
         rng_seed: seed,
         attack_instances,
         action_instances,
@@ -115,6 +116,7 @@ fn spawn(
         fox_side_special: characters::fox::side::State::default(),
         fox_up_special: characters::fox::up::State::default(),
         down_special: characters::fox::down::State::default(),
+        fox_neutral_special: characters::fox::neutral::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -220,6 +222,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // preserves across phase changes explicitly around this reset, the same
     // pattern as `fox_side_special` above.
     fighter.down_special = characters::fox::down::State::default();
+    // Blaster keeps no whole-move state across a `simulation::enter` at
+    // all: `repeat_armed` is freshly re-evaluated every Loop cycle, and a
+    // mid-move ground<->air conversion never happens for this move (see
+    // `characters::fox::neutral`'s own module doc), so there is nothing to
+    // preserve around this reset, unlike the other three specials above.
+    fighter.fox_neutral_special = characters::fox::neutral::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
@@ -726,6 +734,27 @@ pub(crate) fn advance(
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
+    // Item logic runs after fighters, at its own GObj priority: any pending
+    // shot from this frame's own fighter dispatch (`characters::fox::
+    // neutral`) spawns now, then every active projectile (a freshly
+    // spawned one included, matching the source's own same-frame item
+    // Anim/Phys/Coll run) advances once.
+    for player in 0..2 {
+        if let Some(projectile) = characters::fox::neutral::drain_pending_shot(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            player,
+            &mut state.attack_instances,
+        ) {
+            let projectile_kind = projectile.kind;
+            state.projectiles.push(projectile);
+            state.events.push(Event::ProjectileSpawned {
+                owner: player,
+                projectile_kind,
+            });
+        }
+    }
+    projectile::advance(data, state, &poses)?;
     ledge::scan(
         data,
         state,

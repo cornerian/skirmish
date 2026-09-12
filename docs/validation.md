@@ -1,5 +1,73 @@
 # Local validation provenance
 
+The 2026-09-12 Fox neutral special (Blaster) batch (`docs/fox-neutral-
+special.md`) replaces the shared single-phase neutral-B shell
+(`game::specials::neutral`, retired outright -- no character variant could
+reach it once Fox has his own dedicated Start/Loop/End state machine) with
+`game::characters::fox::neutral` and adds the minimal generic
+fired-projectile system it needs (`game::projectile`, `State.projectiles`).
+Six new `Action` variants (`SpecialNStart/Loop/End`, `SpecialAirNStart/
+Loop/End`) replace the shell's single `SpecialN`/`SpecialAirN` pair
+throughout the codebase (`fighter::action_instance::motion_identity`,
+`crates/skirmish-replay::observation`, and the unrelated feature tests that
+had borrowed the pair as a "some neutral-special action" stand-in).
+`game::specials::grounded_chain_open` also gains `Landing`'s own
+interrupt window (confirmed against a real recording where a B press
+during it enters `SpecialN` directly from `Landing`) -- a shared-framework
+fix, not specific to this move.
+
+Numeric values are a mix of confirmed and invented data, cited individually
+in the design note: `angle`/`speed`/`landing_lag` and `FoxLaserAttr`'s
+`lifetime` come from the exporter's own disc read (`fighters/fox.json`);
+laser speed (`7.0`), lifetime (`35` frames) and damage (`3`) are
+independently cross-checked against a real recording (`/mnt/archive/
+datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/18_24_36
+[H2O] Fox + Fox (FD).slp`, dumped via `py-slippi`); the laser's four
+hitbox offsets/sizes come from the exporter's own item-script decode
+(`0.003906`-scaled raw integers, not the mathematically nicer `1/256`);
+knockback growth/base/weight-independent are confirmed `0` (a laser
+flinches without pushing); the fire-timing (which Loop frame fires) and
+the `cmd_vars[0]` repeat-arming window are approximated, not decomp-visible
+at all (animation-script data); the mid-flight ground-contact landing
+velocity threshold (`ftCo_800D0EC8`) is not modeled (a conservative
+always-ordinary-Landing simplification, since guessing its value was
+refused). The Reflector hand-off (`owner` swap, `angle += pi`, no
+`speed_mul`, `damage_mul` gated on `max_damage`) and the shield bounce
+(a true `lbVector_Mirror`-style velocity mirror across the contact normal,
+not a fixed reversal) were both corrected during the batch after an initial
+misreading, verified against the exact decomp call chain and a real
+recording's own observed reflected-shot velocity.
+
+**Tests**: `tests/game_fox_neutral_special.rs` (10 new tests: strict
+threshold entry, aerial entry, repeat/no-repeat Loop cycling, laser
+travel/hit/despawn, staling, ground-leaves-to-Fall, Slippi ids, checkpoint
+round trip). `crates/cli/tests/replay_match.rs`'s neutral-special
+regression is rewritten against the real Blaster fixture (previously
+borrowed the retired shell plus Fox's own jab hitboxes as a stand-in) to
+assert a spawned laser travels before hitting, matching a real recording's
+own observed multi-frame flight. `cargo fmt --all` and `cargo clippy
+--workspace --lib --tests --bins --exclude renderer -- -D warnings` are
+clean; `cargo test --workspace --exclude renderer --tests --lib` passes
+(all prior tests plus the new ones, 0 failed). The full six-step local
+audit (`fmt`, `clippy --all-targets --all-features -- -D warnings`,
+`native`, `c-oracle` debug, `c-oracle` release, `git diff --check`) also
+ran clean, all six steps exit 0 (924 native/1268 c-oracle passed, 19
+ignored, 0 failed) -- recorded against this batch's own commit, one commit
+before the concurrent Falco registration batch below merged in; re-running
+it against the fully composed tree was not repeated, since the two
+batches touch disjoint behavior (this one Fox's neutral special and the
+generic projectile system, the other Falco's character registration) and
+the rebase merge itself introduced no new conflicts beyond mechanical
+line-adjacency (resolved by hand, `git diff --check` clean). No C-oracle
+differential harness was added this batch for `ftfoxspecialn.c`/the laser
+item's motion functions (unlike every other special covered so far) --
+explicitly flagged as the primary remaining gap, not silently skipped: the
+harness's own hand-written struct adapters need to be built correctly
+against the `Fighter`/`Item` layouts and this batch's remaining time did
+not allow doing that with confidence. The native Rust behavior is instead
+verified by the tests above, the real-recording cross-checks in the design
+note, and code review against the cited decomp functions.
+
 The 2026-09-12 Falco registration batch adds `game::characters::
 Specials::Falco` on top of Fox's existing side/up/down special code
 (`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own

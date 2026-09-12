@@ -137,6 +137,16 @@ special modeled so far
   suppress it, either `ft_8008A2BC` (direct `Wait` re-entry, no lag) when
   `self_vel.y > ftCo_800D0EC8(fp)` (a fast-fall/landing velocity threshold)
   or `ftCo_Landing_Enter_Basic` (the ordinary landing-lag entry) otherwise.
+  `ftCo_800D0EC8`'s own fast-fall-velocity threshold is not modeled
+  anywhere else in this codebase yet (`escape_air::land`'s own citation
+  notes it treats the analogous `FallSpecial`/`EscapeAir` landing branch as
+  always taking the "`x10` set" path, i.e. it never evaluates this same
+  comparison either) and this batch could not obtain its real value without
+  guessing, which the task brief forbids; this port always takes the
+  ordinary-landing-lag branch (`ftCo_Landing_Enter_Basic`) for a mid-flight
+  ground contact and never the instant-`Wait` branch, a conservative
+  simplification (never grants an unearned lag-free landing) rather than a
+  guessed threshold.
   **No ledge-catch scan of any kind** -- unlike every other Fox aerial
   special modeled so far, `SpecialAirNStart/Loop/End` are not
   ledge-catchable. This is the ground-contact-triggered landing path,
@@ -181,7 +191,76 @@ into the decomp; only DAT-resource data, owned by the separate
   does not. This reproduces the known mash-to-repeat behavior without
   claiming the exact scripted window.
 
-Where the hitbox numbers live (export requirement)
+Exporter's decoded values (supersedes the invented placeholders below)
+---------------------------------------------------------------------------
+
+The exporter read the disc directly and reports (full citations in its own
+`docs/gameplay-export.md`, values mirrored into
+`/mnt/archive/datasets/melee/skirmish-gameplay/v2/fighters/fox.json` under
+`specials.neutral`):
+
+- **`ftFox_DatAttrs` Blaster fields** (`ftFox/types.h:76-89`): `angle =
+  0.0` rad, `velocity = 7.0` (matches this batch's own real-recording
+  cross-check above exactly), `landing_lag = 0.0` (so Fox's own End-air
+  natural-clip-end exit *always* takes the `ftCo_Fall_Enter` branch, never
+  `FallSpecial`, for Fox specifically -- Falco's own attributes are not
+  yet exported and may differ), `shot_item_kind = 54` (`It_Kind_Fox_
+  Laser`, a data label with no gameplay effect in an engine with only one
+  projectile kind modeled).
+- **`FoxLaserAttr`** (ten floats, reached from `ftDataFox.x48_items[0]`
+  inside `PlFx.dat`, *not* `ItCo.dat` as this batch had guessed):
+  `[35, 3, 0, 0, 0, 0, 0, 0, 0, 1]`. `+0` lifetime `35` (confirmed, matches
+  this batch's own cross-check); `+4 = 3.0` is `max_scale`, a visual
+  beam-length clamp consumed only by `Item_UpdateRayAnimation` (`itfoxlaser.
+  c:89`), not gameplay -- omitted from this port's own resource schema as
+  visual-only, matching the project's existing precedent for GFX-only
+  fields; `+8..+20` are `0.0` with no reader anywhere in `melee/it/`; `+24
+  = 1.0` also has no reader (unknown, unmodeled).
+- **The laser's own hitboxes**: from the item state table `it_803F67D0`,
+  state 0 only (state 1 is the Throw-finisher cosmetic gun,
+  `ftfoxspecialn.c:614-628`, unrelated, and stays a separate two-hitbox
+  shape of its own, damage `2`, element `2` -- not modeled, this port never
+  reaches `ftFx_Throw_Anim`'s own grab-throw code path). **Four** hitboxes
+  (ids 0..3, corrected from an initial two-hitbox report), staggered along
+  the item's own local `-X` axis to cover the growing beam
+  (`Item_UpdateRayAnimation`, `itfoxlaser.c:83-90`, `max_scale = 3.0`): id 0
+  `x = -0.7812` size `1.1718` (raw `-200`/`300`), id 1 `x = -3.6442978`
+  size `1.1718` (raw `-933`/`300`), id 2 `x = -6.5073957` size `1.1718`
+  (raw `-1666`/`300`), id 3 `x = -14.0616` size `1.5624` (raw `-3600`/`400`)
+  -- the exporter's own literal per-item scale constant is `0.003906`, not
+  the mathematically nicer `1/256` (`0.00390625`): the ROM's own float
+  constant is what a bit-exact reproduction needs, so these are `raw *
+  0.003906`, not `raw / 256`. All four `y = z = 0`. Every one of the four:
+  damage `3` (confirmed by this batch's own real-recording cross-check),
+  angle `361` (Sakurai angle -- already a recognized special case in
+  `fighter::damage`, not new code this batch needs to add), knockback
+  growth/base/weight-independent all `0` (**zero knockback is real**: a
+  laser flinches its target without pushing it), shield damage `0`,
+  element Normal. Facing mirrors with
+  `item->facing_dir` like everything else ray-shaped. What this batch had
+  mis-hypothesized as a "hitlag multiplier" field is actually a per-victim
+  re-hit cooldown (confirmed value `16`, `lb/lbcollision.c:1837,1863-1866,
+  1948-1952`) irrelevant here since this port's own laser always despawns
+  after its first hit anyway (no piercing, already modeled); hitlag itself
+  comes from the ordinary generic `ftCommon_CalcHitlag`, already the
+  existing damage pipeline's own behavior through `damage::apply_hit`, not
+  something this move needs its own field for. A short tail of non-hitbox
+  item commands (opcodes 14/1/12) follows the four hitboxes in the item's
+  own command stream and is not decoded; presumed GFX/SFX, unmodeled.
+- **Spawn position**: resolved, and *not* the hold-joint bone this batch
+  had assumed. `Item_InitRaySpawnPosition` (`it/kinds/inlines.h:210-214`)
+  sets the item's actual drawn/hit position (`spawn.pos`) via `it_8026BB68`
+  = `ftLib_80086990` (`ft/ftlib.c:449-453`): `owner.cur_pos + (0, 0.5 *
+  (ecb.top.y + ecb.bottom.y), 0)` -- the fighter's own live ECB vertical
+  midpoint, no bone lookup at all. The `RThumbNb` hold joint this batch
+  had used only seeds `spawn.prev_pos` (the ray-cast anchor for the first
+  frame's terrain check), never the position that is actually drawn or hit-
+  tested. **This batch's implementation was corrected to match**: no bone
+  index resource field is needed at all, since the spawn position is
+  derived purely from `fighter.position`/`fighter.depth`/`fighter.ecb`,
+  already-modeled fields.
+
+Where the hitbox numbers live (export requirement, superseded above)
 -----------------------------------------------------
 
 Unlike every fighter attack this codebase already exports, **the laser's
@@ -304,29 +383,67 @@ damage pipeline with the item's own knockback, no item pickup):
   capsule_matrix` (the same call `simulation::advance`'s own fighter loop
   makes for a fighter's melee hitbox against a shield) to detect contact
   with an active shield. On contact, mirrors `Item_BounceRayOffShield`
-  (`lbVector_Mirror` against the shield's own contact normal, then
-  `angle = atan2(vel.y, vel.x)`): the laser survives, reverses off the
-  shield, and keeps its own owner (so it can still hit its original owner
-  back if the shield-holder is a second projectile-eligible target in a
-  future multi-projectile match, though today's two-player-only pipeline
-  makes that moot). `itFoxLaser_Logic94_HitShield`'s own separate,
-  simpler "destroy on shield contact" callback exists in the same logic
-  table; this batch could not confirm which of `ShieldBounced`/`HitShield`
-  the source actually dispatches to for a live shield vs. a different
-  circumstance (post-hitstun shield stagger, a broken shield, etc.) without
-  deeper `item.c` archaeology than this batch's time budget allowed, so
-  only the bounce behavior is modeled; flagged as an open question, not a
-  silent guess presented as fact.
+  (`inlines.h:177-191`): `lbVector_Mirror(&vel, &contact_normal)` -- a true
+  reflection of the incoming velocity vector across the shield's own
+  contact normal at the touched point (`v' = v - 2(v . n)n`), *not* a fixed
+  angle reversal -- then `angle = atan2(vel.y, vel.x)` re-derives the ray's
+  own angle field from the mirrored vector for `Item_UpdateRayAnimation`'s
+  next-frame recompute. Confirmed against a real recording, not assumed:
+  `/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/
+  18_24_36 [H2O] Fox + Fox (FD).slp`, spawn_id 5, shows a `FOX_LASER` first
+  observed already at velocity `(0.414, 6.988)` (magnitude exactly `7.0`,
+  same speed, oblique direction) with the frame's own fighter states
+  showing *neither* fighter in a Reflector-range action state anywhere in
+  the preceding ~20 frames, while the fighter nearest the laser's own
+  position is frozen at a constant position for several consecutive frames
+  (consistent with hitlag from a just-blocked hit, not Reflector's own
+  active window) -- the coordinating conversation's initial hypothesis
+  that this was a Reflector redirect was checked against the source
+  (`ftColl_80077464`/`Item_80269F14`/`itFoxLaser_Logic94_Reflected`, see
+  "Reflector collision" below) and does not reproduce an oblique vector
+  from a purely horizontal input at all (a `Reflector` hit only ever adds
+  `pi`, which negates a horizontal vector, it does not rotate it); a true
+  normal-mirror shield bounce does, and fits the surrounding state evidence
+  better. The laser survives, keeps its own owner, and keeps flying.
+  `itFoxLaser_Logic94_HitShield`'s own separate, simpler "destroy on
+  shield contact" callback exists in the same logic table
+  (`Item_80269DC8`, `item.c:1535-1574`: an angle-gated branch this batch
+  did not fully reproduce, see the citation there); only the bounce
+  behavior is modeled here, flagged as a remaining simplification, not a
+  silent guess. Shield health depletion from item contact (if any --
+  `shield::apply_contact`'s existing fighter-vs-fighter path also applies
+  attacker-side hitlag/push, which does not fit a ranged, hitlag-free
+  projectile at all, so this batch does not reuse it for a bounce) is left
+  unmodeled; the bounce affects the projectile's own velocity only.
 - **Reflector collision**: if the projectile's swept capsule intersects a
   fighter whose `fighter.shield.reflecting` bit is set (the *existing*
   field `characters::fox::down`'s own Reflector already sets on every Loop/
   Turn/Hit entry, previously documented as having "no effect in this
   engine -- there are no projectiles to reflect", see `docs/
-  fox-down-special.md`), the laser flips `owner` to that fighter, reverses
-  its facing/angle by `pi` and resets its visual scale
-  (`itFoxLaser_Logic94_Reflected`/`Item_ResetRayAfterReflection`), and
-  keeps flying. **This is the first gameplay effect the `reflecting` bit
-  has ever had in this codebase.**
+  fox-down-special.md`), against that fighter's own `down::Reflect`
+  bone/offset/size geometry (previously kept "for resource-shape
+  completeness/validation" only, per that same doc), and the laser's own
+  damage does not exceed `down::Reflect.max_damage`
+  (`ftColl_80077464`, `ftcoll.c:747-845`: `fp->ReflectAttr.x1A30_maxDamage`
+  gates whether `item->xC64_reflectGObj` is ever set at all -- above the
+  threshold, nothing in this batch's own read of the source resolves what
+  happens instead, left as an open gap, not modeled), then: `owner` swaps
+  to the reflecting fighter (`Item_80269F14`, `item.c:1576-1625`), the
+  laser's own angle reverses by a plain `angle += pi`
+  (`Item_ResetRayAfterReflection`, *not* a recompute toward the reflector's
+  position or facing), and its stored damage is scaled by
+  `down::Reflect.damage_mul` (`item.c:1614`: `hit.damage * xC6C + 0.99`,
+  truncated, capped at a global maximum this port does not model). **Speed
+  is deliberately *not* rescaled by `down::Reflect.speed_mul`**: reading
+  `itFoxLaser_Logic94_Reflected` (`itfoxlaser.c:115-125`) directly shows it
+  never touches the item's own speed field, unlike its sibling ray item's
+  own reflect callback (`itLGunRay_Logic35_Reflected`, `itlgunray.c:106-116`,
+  which explicitly does `speed *= xC70`) -- Fox's laser and the L-Gun-Ray
+  item diverge here in the source itself, not a simplification this port
+  introduced. **This is the first gameplay effect the `reflecting` bit and
+  `down::Reflect`'s own geometry/`damage_mul` fields have ever had in this
+  codebase**; `speed_mul` remains a validated-but-inert field, exactly as
+  before, now for a source-confirmed reason instead of an assumed one.
 - **Staling**: the laser stales as `FtMoveId_SpecialN` (a single fixed move
   identity shared by every laser regardless of which Blaster phase fired
   it, matching the task brief); this port allocates one `staling::Entry`
@@ -370,7 +487,10 @@ Resource and state shape
   (see "What else changes" below).
 - New `Event` variants for observation/replay-debugging convenience:
   `ProjectileSpawned { owner, kind }`, `ProjectileHit { owner, victim }`,
-  `ProjectileReflected { owner }`, `ProjectileDespawned { owner }`.
+  `ProjectileReflected { owner }`. A natural lifetime/off-stage despawn is
+  not itself an event (nothing outside the projectile's own state changes),
+  matching how an ordinary attack's hitbox disappearing at the end of its
+  own clip is not an event either.
 
 What moves, what doesn't (retiring the shared shell for Fox)
 ----------------------------------------------------------------
@@ -391,6 +511,22 @@ trivially; `fighter::special::neutral_input` (the actual retained decomp
 boundary, independent of the shell) is untouched and still covered by its
 own existing oracle differential (`special_differential.rs`), since Fox's
 new dedicated module calls that same pure function directly.
+
+`game::specials::grounded_chain_open` gains Landing's interrupt window
+--------------------------------------------------------------------------
+
+A real recording (`tests/fixtures/slippi/parity/fox-fd-4.slp`) shows P2
+pressing B during `Landing`'s own interrupt window and entering `SpecialN`
+(341) directly from `Landing`, not from `Wait`. `game::specials::
+grounded_chain_open` (the shared eligibility gate every registered special,
+including this move, dispatches through) previously listed only ordinary
+standing locomotion and the Wait/Taunt interruptible chain; `ftCo_Landing_
+IASA`'s own `RETURN_IF`s reach the same common `ftCo_SpecialS_CheckInput`/
+`ftCo_Attack100_CheckInput` dispatch chain those other actions already open
+through, so this is a shared-framework fix (not specific to Blaster),
+gated on the existing `landing::interruptible` predicate (`fighter.grounded
+&& action == Landing && landing_allow_interrupt && action_frame >=
+normal_landing_lag`), already modeled for the squat-cancel window.
 
 What else changes (mechanical, not this move's own behavior)
 -------------------------------------------------------------

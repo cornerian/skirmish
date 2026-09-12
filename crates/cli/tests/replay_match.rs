@@ -29,6 +29,8 @@ mod escape_air_support;
 mod escape_support;
 #[path = "../../../tests/support/fox_down_special.rs"]
 mod fox_down_special_support;
+#[path = "../../../tests/support/fox_neutral_special.rs"]
+mod fox_neutral_special_support;
 #[path = "../../../tests/support/fox_side_special.rs"]
 mod fox_side_special_support;
 #[path = "../../../tests/support/fox_up_special.rs"]
@@ -45,8 +47,6 @@ mod ledge_support;
 mod run_support;
 #[path = "../../../tests/support/smash.rs"]
 mod smash_support;
-#[path = "../../../tests/support/special.rs"]
-mod special_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
 mod support;
 #[path = "../../../tests/support/taunt.rs"]
@@ -447,26 +447,56 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
 }
 
 #[test]
-fn physical_b_drives_file_backed_neutral_special_and_detects_its_removal() {
-    let mut data = special_support::profile(aerial_support::conformance::data());
-    data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
-    let mut inputs = vec![IDLE; 8];
+fn physical_b_drives_file_backed_neutral_special_and_fires_a_traveling_laser() {
+    let mut data = fox_neutral_special_support::profile(aerial_support::conformance::data());
+    data.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
+    let mut inputs = vec![IDLE; 12];
     inputs[0][0].buttons = BUTTON_B;
     let recording = Recording::from_script(data, 7, inputs);
-    assert_eq!(recording.states[0].fighters[0].action, Action::SpecialN);
-    assert!(recording.states.iter().any(|state| {
-        state.events.iter().any(|event| {
-            matches!(
-                event,
-                Event::Hit {
-                    attacker: 0,
-                    victim: 1,
-                    damage: 10.0,
-                    ..
-                }
-            )
+    assert_eq!(
+        recording.states[0].fighters[0].action,
+        Action::SpecialNStart
+    );
+    // The laser is not an instant melee hitbox: it spawns from fighter 0,
+    // travels for at least one frame, and only then hits fighter 1.
+    let spawn_frame = recording
+        .states
+        .iter()
+        .position(|state| {
+            state
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::ProjectileSpawned { owner: 0, .. }))
         })
-    }));
+        .expect("the laser must spawn once Loop is entered");
+    assert!(
+        !recording.states[spawn_frame].projectiles.is_empty(),
+        "the spawned laser must be tracked in match state"
+    );
+    let hit_frame = recording
+        .states
+        .iter()
+        .position(|state| {
+            state.events.iter().any(|event| {
+                matches!(
+                    event,
+                    Event::ProjectileHit {
+                        owner: 0,
+                        victim: 1
+                    }
+                )
+            })
+        })
+        .expect("the laser must eventually hit fighter 1");
+    assert!(
+        hit_frame > spawn_frame,
+        "the hit must land strictly after the spawn frame, proving travel time"
+    );
+    assert!(recording.states[hit_frame].fighters[1].percent > 0.0);
+    assert!(
+        recording.states[hit_frame].projectiles.is_empty(),
+        "the laser despawns on its first hit (no piercing)"
+    );
 
     let bytes = recording.bytes(support::Fixture::default(), |_| {});
     matched(&recording.compare(&bytes), FIRST, recording.inputs.len());

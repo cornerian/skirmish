@@ -1,46 +1,42 @@
 # Neutral specials
 
-`game::specials::neutral` (framework wiring, `src/game/specials/neutral.rs`)
-implements the shared shell described below; `game::specials` (`src/game/
-specials/mod.rs`) owns the dispatch every move -- this one and Fox's side
-special -- shares. `fighters[].specials`' `neutral` entry (a per-character
-`Specials` variant, `game::characters::Specials`) supplies paired ground and
-air physics animations for a fighter's neutral special. Each animation is the
-same sampled `Attack` resource used by jabs, aerials and ledge attacks: every
-frame owns a complete bone pose and up to four bone-attached hitboxes. The
-pair must have equal frame counts so
-terrain conversion can retain the current animation frame.
+Fox's neutral special (Blaster) is `game::characters::fox::neutral`
+(`src/game/characters/fox/neutral.rs`), covered in full in
+`docs/fox-neutral-special.md`: a Start/Loop/End state machine, repeatable
+while B is pressed, that fires a generic fired-projectile
+(`game::projectile`, `src/game/projectile.rs`) laser through the ordinary
+damage/shield/reflect pipeline. `fighter::special::neutral_input` (below)
+is the shared entry gate every character's own neutral special uses,
+Fox's included.
 
-A fresh physical B press selects the action only when both main-stick axes are
-strictly inside `neutral_thresholds`. Grounded locomotion states enter
-`SpecialN`; ordinary jump/fall states enter `SpecialAirN`. Special selection
-and released wall-tech actions enter `SpecialAirN`. Airborne Damage, DamageFall
-and reflected wall/ceiling actions also enter it after hitstun reaches zero. Special selection
-precedes catch, shield, ordinary attack and aerial dispatch. Frozen wall tech or
-active hitstun blocks the action, and a B press held through release must be
-rearmed. Holding B cannot restart the move after it finishes; returning through
-a released frame rearms the input edge.
-
-Both variants use the ordinary ground or air physics path. Walking off an edge
-changes to `SpecialAirN`, and landing changes to `SpecialN`, retaining the frame
-while installing the paired pose. Animation completion returns to `Wait` on the
-ground or `Fall` in the air. Hitboxes use the shared sweep, clank, staling,
-shield and damage pipeline. All action, input history, hitbox tracking and
-animation state is included in match checkpoints.
+The generic single-phase shared shell this codebase previously used as a
+placeholder for any character's neutral special (`game::specials::neutral`)
+is retired: with Fox now on his own dedicated Blaster implementation,
+`characters::Specials` has no remaining variant that could reach it, so it
+was removed outright rather than kept as untested, unreachable code (see
+`docs/fox-neutral-special.md`'s "What moves, what doesn't" section). A
+future second character that only needs a plain single-phase neutral
+special can re-add an equivalent small shell.
 
 `fighter::special::neutral_input` is an exact boundary retained from
-`ftCo_800D67C4`. `special_differential` compiles that complete function from its
-pinned C snapshot and compares arbitrary button, stick and threshold values.
-`game_special` covers both player slots, strict thresholds, competing-input
-priority, release/repress behavior, sampled combat contact, air physics,
-landing conversion, checkpoints and invalid resources. Both neutral-special
-conformance scenarios now run normally.
+`ftCo_800D67C4`: a fresh B press with both main-stick axes strictly inside
+`neutral_thresholds`. `special_differential` compiles that complete
+function from its pinned C snapshot and compares arbitrary button, stick
+and threshold values -- unaffected by the shell's retirement, since Fox's
+own dedicated module calls this same pure function directly.
 
-This profile provides the shared neutral-B action shell. Authentic character
-callbacks still need character-specific resources and state for projectiles,
-charge storage, capture, transformation, RNG use and other effects. Up
-specials and direct special-to-special interrupt rules remain separate
-work. Omitting the profile leaves B accepted but without an action.
+# Projectiles
+
+`game::projectile` (`src/game/projectile.rs`) is the minimal generic
+fired-projectile system Blaster's laser needs: spawn, per-frame motion,
+lifetime/despawn, and hurtbox/shield/reflect collision producing the
+ordinary damage pipeline with the item's own knockback. `State.projectiles`
+holds every in-flight instance, included in checkpoints. See
+`docs/fox-neutral-special.md` for the full design, citations and known
+gaps (the fire-timing approximation, the terrain-despawn simplification,
+and the shield/Reflector interaction citations, including the first real
+gameplay effect the Reflector's own `down::Reflect` geometry and
+`fighter.shield.reflecting` bit have had in this codebase).
 
 # Fox/Falco side special (Illusion/Phantasm)
 

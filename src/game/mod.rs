@@ -25,6 +25,7 @@ pub mod ledge;
 pub mod locomotion;
 pub mod movement;
 pub mod nudge;
+pub mod projectile;
 pub mod rebirth;
 pub mod shield;
 mod simulation;
@@ -189,8 +190,22 @@ pub enum Action {
     EntryStart,
     /// Slippi 324, state age -1. `ftCo_EntryEnd_Anim`/`_Phys`.
     EntryEnd,
-    SpecialN,
-    SpecialAirN,
+    /// Slippi 341 (`ftFx_MS_SpecialNStart == ftCo_MS_Count`, confirmed
+    /// against `ftFox/forward.h`'s own declaration order: Neutral precedes
+    /// Side, whose own `SpecialSStart` is confirmed `ftCo_MS_Count + 6`).
+    /// `ftFx_SpecialN_Enter`. `docs/fox-neutral-special.md`.
+    SpecialNStart,
+    /// Slippi 342. `ftFox_SpecialN_BeginLoopTransition`'s ground call site.
+    SpecialNLoop,
+    /// Slippi 343. Entered from Loop's own Anim callback when the repeat
+    /// flag was not armed this cycle.
+    SpecialNEnd,
+    /// Slippi 344. `ftFx_SpecialAirN_Enter`.
+    SpecialAirNStart,
+    /// Slippi 345. `ftFox_SpecialN_BeginLoopTransition`'s air call site.
+    SpecialAirNLoop,
+    /// Slippi 346. Air counterpart of `SpecialNEnd`.
+    SpecialAirNEnd,
     /// Slippi 347 (`ftFx_MS_SpecialSStart = ftCo_MS_Count + 6`, confirmed
     /// against `ftFox/forward.h`). Animation 301 is an unverified
     /// extrapolation; see `observation::animation_index`.
@@ -332,6 +347,7 @@ pub struct Fighter {
     pub fox_side_special: characters::fox::side::State,
     pub fox_up_special: characters::fox::up::State,
     pub down_special: characters::fox::down::State,
+    pub fox_neutral_special: characters::fox::neutral::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,
@@ -473,6 +489,17 @@ pub enum Event {
         player: usize,
         line: usize,
     },
+    ProjectileSpawned {
+        owner: usize,
+        projectile_kind: projectile::ProjectileKind,
+    },
+    ProjectileHit {
+        owner: usize,
+        victim: usize,
+    },
+    ProjectileReflected {
+        owner: usize,
+    },
     Knockout {
         player: usize,
         stocks: u8,
@@ -499,6 +526,9 @@ pub struct State {
     pub phase: Phase,
     pub stage: stage_motion::State,
     pub fighters: [Fighter; 2],
+    /// In-flight fired projectiles (`game::projectile`), included in
+    /// checkpoints like every other match-state field.
+    pub projectiles: Vec<projectile::Projectile>,
     pub rng_seed: u32,
     pub attack_instances: crate::fighter::stale::InstanceCounter,
     /// Independent `plAttack_80037B08` sequence for fighter/item actions.

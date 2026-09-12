@@ -58,7 +58,7 @@ mod ledge_support;
 mod run_support;
 #[path = "../tests/support/smash.rs"]
 mod smash_support;
-#[path = "../tests/support/special.rs"]
+#[path = "../tests/support/fox_neutral_special.rs"]
 mod special_support;
 #[path = "../tests/support/taunt.rs"]
 mod taunt_support;

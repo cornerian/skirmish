@@ -8,7 +8,7 @@ mod aerial_resources;
 mod grab_resources;
 #[path = "support/ledge.rs"]
 mod ledge_resources;
-#[path = "support/special.rs"]
+#[path = "support/fox_neutral_special.rs"]
 mod special_resources;
 use aerial_resources::conformance as support;
 

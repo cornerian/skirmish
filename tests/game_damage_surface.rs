@@ -2,7 +2,7 @@
 //! Exact mirror arithmetic is covered separately against the original C body.
 #[path = "support/aerial.rs"]
 mod aerial_resources;
-#[path = "support/special.rs"]
+#[path = "support/fox_neutral_special.rs"]
 mod special_resources;
 
 use skirmish::{
@@ -553,7 +553,7 @@ fn reflected_fast_fall_waits_for_hitstun_and_replays() {
 #[test]
 fn reflected_damage_air_inputs_wait_for_hitstun_and_replay() {
     for (buttons, stick, expected) in [
-        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_B, [0.0; 2], Action::SpecialAirNStart),
         (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
         (BUTTON_X, [0.0; 2], Action::JumpAerial),
     ] {
@@ -575,7 +575,7 @@ fn reflected_damage_air_inputs_wait_for_hitstun_and_replay() {
 #[test]
 fn damage_fall_air_inputs_wait_for_hitstun_and_replay() {
     for (buttons, stick, expected) in [
-        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_B, [0.0; 2], Action::SpecialAirNStart),
         (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
         (BUTTON_X, [0.0; 2], Action::JumpAerial),
     ] {
@@ -621,7 +621,7 @@ fn damage_fall_fast_fall_waits_for_hitstun_and_replays() {
 #[test]
 fn airborne_damage_inputs_wait_for_hitstun_and_replay() {
     for (buttons, stick, expected) in [
-        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_B, [0.0; 2], Action::SpecialAirNStart),
         (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
         (BUTTON_X, [0.0; 2], Action::JumpAerial),
     ] {
@@ -1056,11 +1056,11 @@ fn jump_input_on_the_freeze_release_frame_does_not_convert_the_wall_tech() {
 #[test]
 fn released_wall_tech_dispatches_supported_air_actions_in_source_priority() {
     for (buttons, stick, expected) in [
-        (BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_B, [0.0; 2], Action::SpecialAirNStart),
         (BUTTON_A, [0.0, 1.0], Action::AttackAirHi),
         (BUTTON_X, [0.0; 2], Action::JumpAerial),
         (BUTTON_A | BUTTON_X, [0.0, 1.0], Action::AttackAirHi),
-        (BUTTON_A | BUTTON_B, [0.0; 2], Action::SpecialAirN),
+        (BUTTON_A | BUTTON_B, [0.0; 2], Action::SpecialAirNStart),
     ] {
         let mut game = released_neutral_wall_tech(interrupt_data(0.0));
         let mut input = IDLE;
@@ -1092,7 +1092,7 @@ fn frozen_wall_tech_blocks_air_actions_and_requires_a_fresh_edge_after_release()
     step(&mut game);
     assert_eq!(
         step_with(&mut game, held).fighters[1].action,
-        Action::SpecialAirN
+        Action::SpecialAirNStart
     );
 }
 

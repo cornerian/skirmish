@@ -425,6 +425,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 ));
             }
         }
+        if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_neutral()) {
+            characters::fox::neutral::validate(parameters, fighter)?;
+        }
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
             (Some(_), None) => {
@@ -721,16 +724,6 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 )?;
             }
         }
-        let neutral_special = fighter.specials.as_ref().and_then(|s| s.neutral());
-        if let Some(p) = neutral_special {
-            require(
-                p.neutral_thresholds
-                    .into_iter()
-                    .all(|threshold| threshold.is_finite() && threshold > 0.0 && threshold <= 1.0)
-                    && p.ground.frames.len() == p.air.frames.len(),
-                "specials require valid neutral thresholds and paired frame counts",
-            )?;
-        }
         for attack in core::iter::once(&fighter.jab)
             .chain(
                 fighter
@@ -739,11 +732,6 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     .flat_map(|p| p.moves.iter().map(|m| &m.attack)),
             )
             .chain(fighter.ledge.iter().map(|p| &p.attack.attack))
-            .chain(
-                neutral_special
-                    .into_iter()
-                    .flat_map(|p| [&p.ground, &p.air]),
-            )
             .chain(
                 fighter
                     .knockdown
