@@ -252,6 +252,72 @@ fn slippi_ids_cover_all_six_phases() {
 }
 
 #[test]
+fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
+    // A real stage-line raycast (`it_8026E9A4`), not merely the stage's own
+    // outer bounding box: place a wall between the two fighters, well
+    // inside the blast zone, and confirm the laser despawns against it
+    // instead of reaching fighter 1 (see `game::projectile::step`'s own
+    // terrain-despawn citation).
+    use skirmish::collision::stage;
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
+    resource.stage.geometry = Some(skirmish::game::data::StageGeometry {
+        lines: vec![
+            stage::Line {
+                start: [-100.0, 0.0],
+                end: [100.0, 0.0],
+                flags: stage::ENABLED | stage::FLOOR,
+                material_flags: stage::LEDGE as u16,
+                ..Default::default()
+            },
+            // A vertical wall at x=7, between the two fighters, spanning
+            // well past the laser's own flight height.
+            stage::Line {
+                start: [7.0, -5.0],
+                end: [7.0, 20.0],
+                flags: stage::ENABLED | stage::LEFT_WALL,
+                ..Default::default()
+            },
+        ],
+        joints: vec![stage::Joint {
+            flags: stage::ENABLED,
+            bounds_min: [-100.0, -5.0],
+            bounds_max: [100.0, 20.0],
+            floor: 0..1,
+            left_wall: 1..2,
+            ..Default::default()
+        }],
+    });
+    let mut game = Match::new(resource, 0).unwrap();
+    game.step(input(0, press_b())).unwrap();
+    game.step(IDLE).unwrap();
+    let spawn_state = game.step(IDLE).unwrap().clone();
+    assert!(spawned_this_frame(&spawn_state, 0));
+
+    let mut despawned_at_wall = false;
+    for _ in 0..10 {
+        let state = game.step(IDLE).unwrap().clone();
+        assert!(
+            !hit_this_frame(&state, 0, 1),
+            "the wall must stop the laser before it ever reaches fighter 1"
+        );
+        if state.projectiles.is_empty() {
+            despawned_at_wall = true;
+            break;
+        }
+        assert!(
+            state.projectiles[0].position[0] < 7.5,
+            "the laser must not pass through the wall: {:?}",
+            state.projectiles[0].position
+        );
+    }
+    assert!(
+        despawned_at_wall,
+        "the laser must despawn against the wall, not merely at the blast zone"
+    );
+}
+
+#[test]
 fn checkpoint_round_trip_preserves_the_move_and_in_flight_projectiles() {
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];

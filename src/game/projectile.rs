@@ -17,7 +17,13 @@ use super::{
     data::{Hitbox, MatchData},
     shield, staling,
 };
-use crate::{collision::bones::Pose, fighter::combat::Capsule};
+use crate::{
+    collision::{
+        bones::Pose,
+        stage::{Query, Stage, Surface},
+    },
+    fighter::combat::Capsule,
+};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -132,10 +138,11 @@ pub(crate) fn advance(
     data: &MatchData,
     state: &mut State,
     poses: &[Pose; 2],
+    stage: &Stage<'_>,
 ) -> Result<(), super::Error> {
     let mut index = 0;
     while index < state.projectiles.len() {
-        match step(data, state, poses, index)? {
+        match step(data, state, poses, stage, index)? {
             Outcome::Despawn => {
                 state.projectiles.remove(index);
             }
@@ -154,6 +161,7 @@ fn step(
     data: &MatchData,
     state: &mut State,
     poses: &[Pose; 2],
+    stage: &Stage<'_>,
     index: usize,
 ) -> Result<Outcome, super::Error> {
     let owner = state.projectiles[index].owner;
@@ -169,14 +177,60 @@ fn step(
     state.projectiles[index].position[1] += vy;
     state.projectiles[index].facing = if vx >= 0.0 { 1.0 } else { -1.0 };
 
-    // Terrain despawn: approximated as leaving the stage's own outer bounding
-    // box, not a true swept ray-vs-terrain-line cast (`it_8026E9A4`); see
-    // docs/fox-neutral-special.md.
-    let [left, right, bottom, top] = data.stage.blast;
-    let [x, y] = [
+    // Terrain despawn: a real swept ray-vs-stage-line cast (`it_8026E9A4` ->
+    // `mpCheckAllRemap` -> `mpCheckMultiple`, checking floor|ceiling|
+    // left-wall|right-wall, `checks & 0xF`), reusing the exact pinned line-
+    // intersection/remap primitives `collision::stage::Stage` already
+    // exposes for fighters' own ECB collision (the same `sweep` call
+    // `collision::resolve` makes) rather than the stage's outer bounding
+    // box alone. `mpCheckAllRemap`'s own `checks & 0x10` bit additionally
+    // selects the "Remap" floor/ceiling/wall variants, which track a line's
+    // *previous* frame position for moving platforms; this codebase's own
+    // moving-platform remap plumbing (`collision::resolve`'s
+    // `previous_geometry` parameter) is not threaded through the projectile
+    // system, so a moving platform is checked at its current position only
+    // -- exact for the (much more common) static-geometry case, and a
+    // documented simplification otherwise (see docs/fox-neutral-special.md).
+    // `mpCheckMultiple`'s own full line-array scan is not itself pinned as a
+    // C-oracle differential: it requires the complete stage collision-line
+    // data set the way `ledge_snap.c`'s own adapter already declines to
+    // reproduce for the analogous `mpCheckMultiple` obstruction scan.
+    let previous_xy = [previous_position[0], previous_position[1]];
+    let current_xy = [
         state.projectiles[index].position[0],
         state.projectiles[index].position[1],
     ];
+    let hit_terrain = [
+        Surface::Floor,
+        Surface::Ceiling,
+        Surface::LeftWall,
+        Surface::RightWall,
+    ]
+    .into_iter()
+    .try_fold(false, |hit, surface| {
+        if hit {
+            return Ok(true);
+        }
+        stage
+            .sweep(
+                surface,
+                Query {
+                    from: previous_xy,
+                    to: current_xy,
+                    ..Default::default()
+                },
+            )
+            .map(|contact| contact.is_some())
+    })
+    .map_err(|e: crate::collision::stage::StageError| super::Error::Physics(e.to_string()))?;
+    if hit_terrain {
+        return Ok(Outcome::Despawn);
+    }
+    // The stage's own outer bounding box remains a cheap secondary net for a
+    // shot that flies clean off the arena without ever crossing a line
+    // (open blast zones beyond the stage's own collision geometry).
+    let [left, right, bottom, top] = data.stage.blast;
+    let [x, y] = current_xy;
     if x < left || x > right || y < bottom || y > top {
         return Ok(Outcome::Despawn);
     }

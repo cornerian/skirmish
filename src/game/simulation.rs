@@ -754,7 +754,7 @@ pub(crate) fn advance(
             });
         }
     }
-    projectile::advance(data, state, &poses)?;
+    projectile::advance(data, state, &poses, &stage)?;
     ledge::scan(
         data,
         state,
