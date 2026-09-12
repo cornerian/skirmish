@@ -154,6 +154,10 @@ impl State {
     /// mpColl_LoadECB_JObj with six supplied world samples, then LoadECB's
     /// lock/normalize behavior. Flags retain raw source bits: 4 omits padding,
     /// 8 narrows width, 1 anchors bottom, and 16 requests a two-unit height.
+    /// The caller picks the value per collision entry point, the same as the
+    /// source (`docs/ecb-load-flags.md`; `game::collision::sample`'s
+    /// `load_flags`); this function has no notion of a single "the" flags
+    /// value for a resource pack.
     pub fn load_joints(
         &mut self,
         world: [[f32; 2]; 6],

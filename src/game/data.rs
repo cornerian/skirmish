@@ -78,6 +78,12 @@ pub enum CollisionBox {
     Bones {
         indices: [usize; 6],
         parameters: ecb::JointParameters,
+        /// Unused: `mpColl_LoadECB_inline`'s flags argument varies per
+        /// collision entry point in the source (`mpColl_LoadECB_inline(coll,
+        /// 6)` airborne, `(coll, 5)` grounded, ...), not per resource pack.
+        /// `game::collision::sample` computes the authoritative value from
+        /// the collision path itself (see `docs/ecb-load-flags.md`); this
+        /// field is kept only so existing/exported packs still deserialize.
         flags: u32,
     },
 }

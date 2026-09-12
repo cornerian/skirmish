@@ -110,17 +110,67 @@ pub(crate) fn sample(f: &mut Fighter, data: &FighterData, pose: &Pose) -> Result
         CollisionBox::Bones {
             indices,
             parameters,
-            flags,
+            flags: _,
         } => {
             let mut world = [[0.0; 2]; 6];
             for (point, &index) in world.iter_mut().zip(indices) {
                 let matrix = pose.world_matrix(index).map_err(physics)?;
                 *point = [matrix[0][3], matrix[1][3]];
             }
-            f.ecb.load_joints(world, f.position, parameters, *flags);
+            f.ecb
+                .load_joints(world, f.position, parameters, load_flags(f.grounded));
         }
     }
     Ok(())
+}
+
+/// `mpColl_LoadECB_inline`'s flags argument (`mp/mpcoll.c`), chosen per
+/// collision path rather than read from the resource pack (the resource's own
+/// `CollisionBox::Bones.flags` is unused; see its doc comment). Every
+/// `sample` call site in this codebase (the ordinary per-frame collision at
+/// the bottom of the main loop, the hitlag/rebirth/ledge-attach/grab-capture
+/// variants) samples the same fighter's own ECB for the same purpose, so the
+/// only input the flags need is whether that fighter is currently grounded:
+/// - airborne: `ft_CheckGroundAndLedge`'s `mpColl_800473CC` (mpcoll.c:2752-
+///   2757) and `ft_80083090_inline`/`ft_800831CC`'s `mpColl_80047AC8`/
+///   `mpColl_80047E14` (2802-2837, ft_081B.c:641-694) all pass
+///   `mpColl_LoadECB_inline(coll, 6)`: 0x4 (`CollisionFlagAir_CanGrabLedge`,
+///   skip the two-unit padding) | 0x2 (unread by the loader itself --
+///   `CollisionFlagAir_PlatformPassCallback` only matters to the sweep, see
+///   below).
+/// - grounded: `ft_800827A0`'s `mpColl_8004B2DC` (4010-4015) passes
+///   `mpColl_LoadECB_inline(coll, 5)`: 0x4 (still no padding) | 0x1 (anchor
+///   the bottom to 0, `CollisionFlagAir_StayAirborne`'s bit reused here with
+///   an unrelated loader-side meaning).
+///
+/// The narrow-width (9, `ft_800843FC`'s `mpColl_8004B5C4`) and two-unit-
+/// height (0x12, the special-state entry points at 2823/2852/2878/2897/2916)
+/// variants exist for fighter states this codebase does not yet model as
+/// collision paths distinct from ordinary grounded/airborne movement;
+/// `load_joints` already accepts any flags value, so adding such a path only
+/// needs its own call to this function's pattern, not a loader change.
+///
+/// Bit 0x2 (`CollisionFlagAir_PlatformPassCallback`) governs a different
+/// parameter in the source: the sweep engine `mpColl_80046904`'s own `flags`
+/// (the "mode" `i` passed to `inline0`/`inline1`, chosen independently of the
+/// loader's flags at each entry point -- e.g. `ft_80083090_inline` passes
+/// loader-flags 6 but sweep-mode 2 or 6 depending on ledge cooldown, while
+/// `ft_CheckGroundAndLedge` passes the same loader-flags 6 but sweep-mode 0
+/// or 4, never setting bit 0x2). When set, it installs the fighter's own
+/// floor callback (`mpColl_804D64A0`) so `mpColl_80044628_Floor` can let a
+/// one-way platform pass instead of always counting it as ground
+/// (`mpcoll.c:1396-1462`); this codebase already ports exactly that
+/// substitution as `escape_air::platforms_land` (FallSpecial's stick-down
+/// pass-through, `ftCo_80099A58`) feeding `stage::sweep_filtered` in
+/// `resolve`'s floor query below, and the `skip_floor` field already ports
+/// the unconditional platform-index skip (`floor_skip`) that applies
+/// regardless of this bit. The grounded mode argument (`ft_800827A0`'s `2`)
+/// is a wholly separate "clamp/teeter" selector into `mpColl_8004ACE4`
+/// (3848-3967, `flags & 1`/`flags & 2`), already ported as `floor_end_clamp`'s
+/// `Mode` enum (`docs/edges.md`'s "Ground collision modes" table). No sweep
+/// code change is needed for this batch; both are already correct.
+fn load_flags(grounded: bool) -> u32 {
+    if grounded { 5 } else { 6 }
 }
 
 pub(crate) fn initialize(
