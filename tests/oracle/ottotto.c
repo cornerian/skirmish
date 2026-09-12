@@ -225,10 +225,14 @@ void oracle_ottotto_iasa(uint32_t scripted, uint8_t *out_calls, uint8_t *out_cou
     Fighter fighter = { 0 };
     Fighter_GObj gobj = { &fighter };
     ftCo_Ottotto_IASA(&gobj);
-    for (uint8_t i = 0; i < call_count && i < 16; i++) {
+    /* `out_calls` is caller-sized to `sizeof call_log` (32); the chain is 19
+     * checks long today, so this never truncates, but the bound tracks
+     * `call_log`'s own capacity instead of a count that would need updating
+     * alongside every future check added to the chain above. */
+    for (uint8_t i = 0; i < call_count && i < sizeof call_log; i++) {
         out_calls[i] = call_log[i];
     }
-    *out_count = call_count < 16 ? call_count : 16;
+    *out_count = call_count < sizeof call_log ? call_count : (uint8_t) sizeof call_log;
     *out_fired = fired_code;
 }
 

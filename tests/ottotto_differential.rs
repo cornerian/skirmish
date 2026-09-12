@@ -50,7 +50,10 @@ fn expected_trace(answers: u32) -> (Vec<u8>, u8) {
 
 fn compare_iasa(answers: u32) {
     let (expected_calls, expected_fired) = expected_trace(answers);
-    let mut out_calls = [0u8; 16];
+    // Sized to the C shim's own `call_log` capacity (`tests/oracle/ottotto.c`),
+    // not the 19-entry `ORDER` alone, so neither side silently truncates if
+    // the chain grows again.
+    let mut out_calls = [0u8; 32];
     let mut out_count = 0u8;
     let mut out_fired = 0u8;
     // SAFETY: the adapter owns all C state; every out-pointer is a live buffer.
