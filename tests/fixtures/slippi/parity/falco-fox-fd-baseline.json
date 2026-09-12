@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -30,
+  "checked_frames": 93,
+  "export_version": "v2",
+  "updated": "2026-09-12",
+  "note": "Measured on 2026-09-12 against /mnt/archive/datasets/melee/skirmish-gameplay/v2 (the falco-fox-fd pairing, first Falco-carrying export), registering Falco as a playable character (game::characters::Specials::Falco) so make-initialization accepts fighters/falco.json-shaped packs at all. This is the first parity measurement for any Falco recording; no prior baseline exists to compare against. 93 frames match (-123 through -31, the pre-game Entry warp-in); the first divergence is frame -30, P4 (Fox, the second fighter in this pairing; P3/Falco stays correct through this frame), field action_age (expected 0x3f800000 = 1.0, actual 0x00000000 = 0.0). Not chased further in this batch: both fighters' entry.start_frames are 11 (identical) and rules.entry.start_frames/end_frames are 30/30 (identical to fox-fd's own, already-passing pairing), and real_parity_fox_fd_4.rs's own P2/P4 (non-P1) pairing matches all the way through frame 4, so this is not simply a port-seating artifact either. Likely a pre-existing Entry/action_age edge case this batch's recording happens to exercise (a mixed-character pairing, unlike every previously tested same-character one) rather than something specific to Falco's own move data, but that is a hypothesis, not a diagnosis. Move this forward once the divergence is actually diagnosed and fixed."
+}

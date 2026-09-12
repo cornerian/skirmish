@@ -49,6 +49,51 @@
         "timeline": "last_recorded",
         "end_method": "NoContest"
       }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/12_45_21 Falco + [HAMB] Fox (FD).slp",
+      "file": "falco-fox-fd.slp",
+      "bytes": 2243314,
+      "sha256": "12b634ca7091fc358af21ab5b4c158fc95998c29623f0c46f44bb9fb0b7fcc5c",
+      "version": "2.0.1",
+      "stage_id": 32,
+      "stage": "final-destination",
+      "players": [
+        {
+          "port": "P3",
+          "character_id": 20,
+          "character": "falco",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 3754030234,
+      "first_frame": -123,
+      "last_frame": 9543,
+      "physical_frames": 9667,
+      "pairing": "falco-fox-fd",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "12b634ca7091fc358af21ab5b4c158fc95998c29623f0c46f44bb9fb0b7fcc5c",
+        "bytes": 2243314,
+        "version": [2, 0, 1],
+        "stage": 32,
+        "ports": ["P3", "P4"],
+        "physical_frames": 9667,
+        "surviving_frames": 9667,
+        "discarded_frames": 0,
+        "selected_frames": 9667,
+        "first_frame": -123,
+        "last_frame": 9543,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
     }
   ]
 }

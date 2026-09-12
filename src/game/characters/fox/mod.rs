@@ -1,5 +1,9 @@
 //! Fox's registry entry: which special moves he plays, in dispatch
 //! priority order, and the Slippi state/animation ids his phases report.
+//! Falco plays the exact same moves through the exact same registry entry
+//! (`CHARACTER_IDS`, `slippi_ids`) -- see `game::characters::Specials`'s own
+//! doc for why the decomp makes this a data-only difference, not a
+//! behavioral one.
 //!
 //! To add one of Fox's queued specials: write its own file next to `side.rs`
 //! implementing `specials::SpecialMove`, add it to [`MOVES`] below (ahead of
@@ -30,16 +34,24 @@ pub(crate) const MOVES: &[&dyn specials::SpecialMove] = &[
     &down::MOVE,
 ];
 
-/// External Slippi character ids that play Fox's move set. Falco (22)
-/// shares Fox's own source file for these moves but keeps its own
-/// attributes; this profile follows the neutral shell's existing precedent
-/// of only gating Fox (2) at the observation layer, so 22 is documented
-/// here without being included below.
-pub(crate) const CHARACTER_IDS: [u8; 1] = [2];
+/// External Slippi CSS character ids that play this move set: Fox (2) and
+/// Falco (20, `crates/cli/src/initialization.rs`'s `CHARACTER_EXTERNAL_IDS`).
+/// Falco's own internal fighter kind is a different number, `FTKIND_FALCO`
+/// (22, `ft/forward.h:112`) -- not to be confused with the external CSS id
+/// this table keys on -- and shares Fox's own source file for these moves
+/// (`ftFc_Init_MotionStateTable`, `ftfalco.c:23-370`, points every one of
+/// Falco's `ftFx_MS_Special*` entries at the identical Fox callbacks) while
+/// keeping its own attributes (`game::characters::Specials::Falco`'s doc).
+pub(crate) const CHARACTER_IDS: [u8; 2] = [2, 20];
 
 /// The Slippi action-state id and its (possibly extrapolated) animation
 /// index for one of Fox's own motion states, or `None` when `action` is not
-/// one of them (the caller falls back to the common table).
+/// one of them (the caller falls back to the common table). Also used for
+/// Falco (`CHARACTER_IDS`'s own doc): `ftFc_Init_MotionStateTable` gives
+/// Falco the identical `ftFx_MS_Special*` state ids used below, so no
+/// separate Falco table exists; the animation indices carry the same
+/// unverified extrapolation this module already flags for Fox, now assumed
+/// (not separately confirmed) to extend to Falco's own figatree too.
 pub(crate) fn slippi_ids(action: Action) -> Option<(u32, u32)> {
     use Action::*;
     Some(match action {

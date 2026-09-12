@@ -1586,6 +1586,11 @@ mod tests {
         fighter.action = game::Action::SpecialN;
         assert_eq!(action_state(&fighter, Some(2)), Some(341));
         assert_eq!(animation_index(&fighter, Some(2)), Some(295));
+        // Falco (external CSS id 20, not to be confused with his internal
+        // fighter kind 22) resolves through the same table as Fox
+        // (`game::characters::fox::CHARACTER_IDS`'s own doc).
+        assert_eq!(action_state(&fighter, Some(20)), Some(341));
+        assert_eq!(animation_index(&fighter, Some(20)), Some(295));
         fighter.action = game::Action::SpecialAirN;
         assert_eq!(action_state(&fighter, Some(2)), Some(344));
         assert_eq!(animation_index(&fighter, Some(2)), Some(298));
@@ -1601,8 +1606,13 @@ mod tests {
             fighter.action = action;
             assert_eq!(action_state(&fighter, Some(2)), Some(state));
             assert_eq!(animation_index(&fighter, Some(2)), Some(animation));
-            // Only Fox is gated in the observation layer, matching the
-            // neutral-special shell's own precedent (Falco 22 unmapped).
+            assert_eq!(action_state(&fighter, Some(20)), Some(state));
+            assert_eq!(animation_index(&fighter, Some(20)), Some(animation));
+            // Only registered characters are gated in the observation layer,
+            // matching the neutral-special shell's own precedent (Dr. Mario,
+            // external CSS id 22, is not registered and stays unmapped; do
+            // not confuse this with Falco's own *internal* fighter kind,
+            // which is also numbered 22).
             assert_eq!(action_state(&fighter, Some(22)), None);
             assert_eq!(action_state(&fighter, None), None);
         }

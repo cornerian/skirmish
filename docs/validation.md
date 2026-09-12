@@ -1,5 +1,58 @@
 # Local validation provenance
 
+The 2026-09-12 Falco registration batch adds `game::characters::
+Specials::Falco` on top of Fox's existing side/up/down special code
+(`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own
+motion-state entries points at the identical Fox callbacks
+(`ftFc_Init_MotionStateTable`, `ftfalco.c:23-370`), and `ftFc_Init_
+LoadSpecialAttrs`/`ftFx_Init_OnLoadForFalco` (`ftfox.c:481-484,503-506`)
+load Falco's own `PlFc.dat` attributes through the same `ftFox_DatAttrs`
+shape Fox's own load uses, so `Specials::Falco` reuses `fox::side::
+SideSpecial`/`fox::up::UpSpecial`/`fox::down::DownSpecial` verbatim rather
+than duplicating them. `game::characters::fox::CHARACTER_IDS` gains
+Falco's external Slippi id (20, alongside Fox's 2), correcting a stale
+comment that had conflated it with Falco's unrelated *internal* fighter
+kind (`FTKIND_FALCO`, 22); an identical mix-up in an `observation.rs` test
+comment is also fixed. `Specials`' `#[serde(tag = "character")]` gains a
+`#[serde(alias = "fox")]`/`#[serde(alias = "falco")]` on both variants, so
+both the standalone `fighters/fox.json` sample's capitalized `"Fox"` and
+every pack that also carries a Falco fighter's lowercase `"fox"`/`"falco"`
+deserialize. Falco's neutral special (Laser) is not wired: no exported
+pack supplies `specials.neutral` data for either character yet. See
+`docs/falco.md` for the full citation trail and `docs/parity.md`'s "A
+first Falco recording" section for the real-replay measurement.
+
+**Tests**: `tests/game_falco_specials.rs` (a Falco fighter loads, plays
+each of the three shared specials, and resolves the same Slippi ids as Fox
+for external id 20); `crates/skirmish-replay/src/observation.rs`'s
+existing specials test gains matching Falco (20) assertions.
+`crates/cli/tests/real_parity_falco_fox_fd.rs` ratchets a real Falco-vs-Fox
+Final Destination recording (`tests/fixtures/slippi/parity/
+falco-fox-fd.slp`, ports P3/P4) against `falco-fox-fd-baseline.json`,
+skipping without `SKIRMISH_GAMEPLAY_DATA`. `cargo fmt --all -- --check`,
+`cargo clippy --locked --workspace --all-targets --all-features -- -D
+warnings` and `cargo test --locked --workspace` (926 passed/0 failed/19
+ignored) all pass. First parity measurement for any Falco recording (the
+`falco-fox-fd` pairing, gameplay export v2): 93 frames match (-123 through
+-31, the pre-game Entry warp-in); the first divergent frame is -30, P4
+(Fox), field `action_age` (expected `1.0`, actual `0.0`) -- reported, not
+diagnosed or fixed, in this batch; see `falco-fox-fd-baseline.json`'s own
+note for what was ruled out.
+
+The local audit is recorded at:
+
+`/mnt/archive/runs/skirmish-falco-20260912-verified`
+
+It validates the composed tree (base revision `08d51950fa48b9b85ce7d88
+145d08a22f0979105`) with formatting, strict all-target/all-feature
+Clippy, native workspace tests, original-C differential tests in debug
+and release modes, and a clean `git diff --check`. All six steps exit 0:
+`fmt` (0 passed), `clippy` (0 passed), `native` (926 passed/19 ignored),
+`c-oracle` (1270 passed/19 ignored), `release` (1270 passed/19 ignored),
+`diff` (0 passed). No Falco-specific gameplay behavior was added; this
+batch is registration and data-shape wiring on top of already-tested Fox
+move code, described above.
+
 The 2026-09-11 special-move script-hitbox batch covers the hitboxes Fox's
 up/down special scripts embed that earlier specials batches modeled with
 empty hitbox lists: Fire Fox's Hold-phase charge pulse (frames 20/22/24/

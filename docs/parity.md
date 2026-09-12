@@ -395,6 +395,39 @@ one frame before the recording's own ordinary gravity-only fall.
 un-neutralized samples throughout the lock (only dispatch sees the neutral
 controller); see `docs/input-lock.md` for the full diagnosis and citation.
 
+## A first Falco recording: `falco-fox-fd.slp`
+
+The first recording to carry a Falco fighter,
+`tests/fixtures/slippi/parity/falco-fox-fd.slp` (`12_45_21 Falco + [HAMB]
+Fox (FD).slp`, same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus,
+`batch_00`, Slippi 2.0.1, ports P3/P4, Falco first), is ratcheted by
+`crates/cli/tests/real_parity_falco_fox_fd.rs` against its own baseline,
+`tests/fixtures/slippi/parity/falco-fox-fd-baseline.json`, following
+`fox-fd-4.slp`'s own precedent above (a standalone file, not folded into
+`real_parity.rs`, until the shared recordings list lands). It uses the
+`falco-fox-fd` pairing's own export (`/mnt/archive/datasets/melee/
+skirmish-gameplay/v2`), the first to carry a `fighters/falco.json` pack, and
+exercises Falco's own registration (`game::characters::Specials::Falco`,
+`docs/falco.md`) end to end: `make-initialization` accepting that pack, and
+Falco's external Slippi id (20) resolving through the shared Fox move table.
+
+**Current measurement (2026-09-12, gameplay export v2, the Falco
+registration batch):** 93 frames match (-123 through -31, the pre-game
+Entry warp-in) and the first divergent frame is -30, field `action_age`
+(expected `1.0`, actual `0.0`, for P4/Fox).
+
+**Diagnosis (not chased further in this batch):** both fighters' own
+`entry.start_frames` are 11 (identical), and `rules.entry`'s `start_frames`/
+`end_frames` (30/30) match `fox-fd`'s own already-passing pairing, so this
+is not an obvious Falco-data mismatch. It is also not simply a
+non-P1-seating artifact: `real_parity_fox_fd_4.rs`'s own P2/P4 pairing
+matches all the way through frame 4. The most likely remaining explanation
+is a pre-existing Entry/`action_age` edge case that this batch's recording
+happens to be the first to exercise (the first mixed-character pairing
+measured this way; every previously tested recording is a same-character
+mirror match) -- but that is a hypothesis, not a diagnosis, and is reported
+here rather than fixed.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
