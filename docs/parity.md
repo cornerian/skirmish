@@ -864,6 +864,33 @@ than chased, and does not move `fox-bf-baseline.json` (which tracks the
 unchanged by this fix) -- it will move once the exporter publishes
 `fast_fall_window` for real, without any further Skirmish code change.
 
+**The exporter published gameplay-export pack v9 with `fast_fall_window`
+embedded for real** (`/mnt/archive/datasets/melee/skirmish-gameplay/v2/
+fox-bf`, identical to the throwaway diagnostic copy above), unblocking
+continued work on the frame -27 `shield` divergence without a local patch.
+It turned out to be two separate, independent root causes stacked on the
+same frame, not one.
+
+**Fixed (first of two): the passive shield-drain arithmetic read the
+wrong frame's own trigger.** `ftCo_800925A4` (`Guard`/`GuardOn`'s own
+`Anim` callback, `ftCo_Guard.c:394-433`) reads `fp->input.triggers[0]`,
+but that field is only refreshed for the current frame by `Fighter_
+Spaghetti_8006AD10` (priority 3, `fighter.c:1790-1839`), which runs
+*after* `Fighter_8006A360` (priority 1, `fighter.c:898`) already
+dispatched the destination action's own `Anim` callback this same frame:
+the passive drain always operates on the previous frame's own processed
+trigger, one frame stale, unlike the priority-3 IASA/transition checks
+that see the fresh value. `game::shield::update_animation`'s own
+`GuardOn`/`Guard`/`GuardReflect` arm now reads `f.previous_input.
+shield_pressure()` instead of `input.shield_pressure()`. Confirmed
+bit-exact against `fox-bf.slp`: P4's trigger rises `0.8928571343421936`
+(frame -28) then `1.0` (frame -27, the conversion frame); reading frame
+-28's own value for frame -27's drain lands on `59.76071548461914`, the
+recording's own value bit-for-bit, where the conversion frame's own `1.0`
+lands on `59.72000122070312` instead. `docs/validation.md` has the full
+native-test breakdown (`game_shield`'s `passive_drain_reads_the_
+previous_frames_trigger_not_the_current_frames`).
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

@@ -281,8 +281,20 @@ pub(crate) fn update_animation(
                         &mut f.shield.powershield_timer,
                     );
                 }
+                // `Fighter_8006A360` (priority 1, the anim_cb host) calls
+                // `ftCo_GuardOn_Anim`/`ftCo_Guard_Anim` -- and so
+                // `ftCo_800925A4`'s own `fp->input.triggers[0]` read --
+                // before `Fighter_Spaghetti_8006AD10` (priority 3) refreshes
+                // `fp->input.{lstick,cstick,triggers,held_buttons}[0]` for
+                // this frame (`fighter.c:1790-1839`, `HSD_GObj_SetupProc`
+                // priorities `fighter.c:898,900`): the passive shield-drain
+                // arithmetic always reads last frame's trigger, one frame
+                // stale, unlike the IASA/action-transition checks that run
+                // after the refresh. `f.previous_input` already holds that
+                // value here, set from this match's own raw input only
+                // later in `simulation::advance`.
                 f.shield.strength = math::strength(
-                    input.shield_pressure(),
+                    f.previous_input.shield_pressure(),
                     r.analog_deadzone,
                     f.shield.strength,
                 );

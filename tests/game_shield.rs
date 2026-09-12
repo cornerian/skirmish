@@ -145,6 +145,50 @@ fn analog_strength_changes_health_decay_and_releasing_keeps_previous_strength() 
     assert_eq!(released.fighters[1].shield.strength, 1.0);
 }
 
+/// `Fighter_8006A360` (priority 1, the anim_cb host) calls
+/// `ftCo_GuardOn_Anim`/`ftCo_Guard_Anim` -- and so `ftCo_800925A4`'s own
+/// read of `fp->input.triggers[0]` -- before `Fighter_Spaghetti_8006AD10`
+/// (priority 3) refreshes `fp->input.triggers[0]` for the frame
+/// (`fighter.c:1790-1839`, `HSD_GObj_SetupProc` priorities
+/// `fighter.c:898,900`): the passive per-frame shield-health drain always
+/// reads the previous frame's own trigger, confirmed bit-exact against
+/// `fox-bf.slp`'s own P4 (`docs/parity.md`). This fixture's rules
+/// (`analog_deadzone` `0.2`, `drain_rate` `0.2`, `drain_scales`
+/// `[0.5, 1.0]`): the entry frame never runs the shield-owning Anim arm at
+/// all (`update_actions`, priority 3, only enters `GuardOn` after priority
+/// 1's Anim already ran this frame against the old, non-shielding action),
+/// so health stays `50.0`; the next, still-held frame drains against the
+/// entry frame's own `1.0` trigger (`strength` `1.0`, loss `0.2`,
+/// `50.0 -> 49.8`); dropping to `0.6` still drains at the *previous*
+/// frame's `1.0` rate on the very frame it changes (`49.8 -> 49.6`, not
+/// `49.65`), only catching up to `0.6`'s own rate (`strength` `0.5`, loss
+/// `0.15`) the frame after (`49.6 -> 49.449997`).
+#[test]
+fn passive_drain_reads_the_previous_frames_trigger_not_the_current_frames() {
+    let analog = |trigger: f32| Controller {
+        trigger,
+        ..Default::default()
+    };
+    let mut game = Match::new(data(), 42).unwrap();
+    assert_eq!(
+        step(&mut game, 0, analog(1.0)).fighters[1].action,
+        Action::GuardOn
+    );
+    assert_eq!(game.state().fighters[1].shield.health, 50.0);
+    assert_eq!(
+        step(&mut game, 0, analog(1.0)).fighters[1].shield.health,
+        49.8
+    );
+    assert_eq!(
+        step(&mut game, 0, analog(0.6)).fighters[1].shield.health,
+        49.6
+    );
+    assert_eq!(
+        step(&mut game, 0, analog(0.6)).fighters[1].shield.health,
+        49.449997
+    );
+}
+
 #[test]
 fn blocked_hit_reduces_only_shield_health_freezes_stun_then_pushes_both_players() {
     let mut game = shield_hit(data());

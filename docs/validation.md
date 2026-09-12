@@ -1,5 +1,54 @@
 # Local validation provenance
 
+The 2026-09-12 passive shield-drain input-timing fix (the real-replay
+parity loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::shield::
+update_animation`'s `GuardOn`/`Guard`/`GuardReflect` arm's `input.
+shield_pressure()` read with `f.previous_input.shield_pressure()`.
+`Fighter_8006A360` (priority 1, `HSD_GObj_SetupProc(gobj, &Fighter_
+8006A360, 1)`, `fighter.c:898`) calls the destination action's own
+`anim_cb` (`ftCo_GuardOn_Anim`/`ftCo_Guard_Anim`, and so `ftCo_800925A4`'s
+own read of `fp->input.triggers[0]`) before `Fighter_Spaghetti_8006AD10`
+(priority 3, `fighter.c:900`) refreshes `fp->input.{lstick,cstick,
+triggers,held_buttons}[0]` for the frame from the raw pad/CPU state
+(`fighter.c:1790-1839`): the passive shield-health drain always reads the
+previous frame's own processed trigger, one frame stale, unlike the IASA/
+action-transition checks dispatched afterward at priority 3 that already
+see the frame's own fresh value. `f.previous_input` (set from this
+match's own raw input only later in `simulation::advance`, after
+`update_animation` already ran) already holds exactly that value.
+
+Confirmed bit-exact directly against `fox-bf.slp`: P4's shoulder trigger
+rises `0.8928571343421936` (frame -28, `GuardOn`'s only frame) then
+`1.0` (frame -27, the same frame `GuardOn` converts into `Pass`); reading
+frame -28's own trigger for frame -27's drain (`strength` `0.8469387888908386`,
+`drain_rate` `0.14000000059604645`, `drain_scales` `[0.10000000149011612,
+2.0]`) computes a loss of `0.23928572237491608` from `60.0`, landing on
+`59.76071548461914` -- the recording's own value bit-for-bit -- where
+reading frame -27's own `1.0` trigger instead computes a loss of `0.28`,
+landing on `59.72000122070312`.
+
+**Tests**: `game_shield`'s new `passive_drain_reads_the_previous_frames_
+trigger_not_the_current_frames` pins four consecutive synthetic frames
+against the existing `shield.json` fixture's own rules (`analog_deadzone`
+`0.2`, `drain_rate` `0.2`, `drain_scales` `[0.5, 1.0]`): the entry frame
+itself never runs the shield-owning `Anim` arm at all (`update_actions`,
+priority 3, only enters `GuardOn` after priority 1's `Anim` already ran
+this frame against the old, non-shielding action), so health stays
+`50.0`; the next, still-held frame drains against the entry frame's own
+`1.0` trigger (`50.0 -> 49.8`); dropping to `0.6` still drains at the
+*previous* frame's `1.0` rate on the very frame it changes (`49.8 ->
+49.6`, not `49.65`), only catching up to `0.6`'s own rate the frame after
+(`49.6 -> 49.449997`). `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -- -D warnings` and `cargo test --workspace` (both default
+and `c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v9 (`/mnt/archive/
+datasets/melee/skirmish-gameplay/v2/fox-bf`, the first pack to embed
+`fast_fall_window`): this fix alone does not move the checked-frame count,
+since the pack's own P4 shoulder press is still masked by the separate
+same-frame shield-regeneration bug fixed next; both together move it from
+96 to 100 (`fox-bf-baseline.json`).
+
 The 2026-09-12 fast-fall stick-timer window fix (the real-replay parity
 loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::simulation::
 move_fighter`'s approximate `previous_input`-edge fast-fall heuristic with
