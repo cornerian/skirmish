@@ -212,6 +212,51 @@
         "timeline": "last_recorded",
         "end_method": "NoContest"
       }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/14_56_00 [C2] Fox + Fox (FD).slp",
+      "file": "fox-fd-4.slp",
+      "bytes": 2114091,
+      "sha256": "708496538529d59d0713ebf161d10ce1a0c834e513682993ba37c01f298061f8",
+      "version": "2.0.1",
+      "stage_id": 32,
+      "stage": "final-destination",
+      "players": [
+        {
+          "port": "P2",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 3710915339,
+      "first_frame": -123,
+      "last_frame": 8986,
+      "physical_frames": 9110,
+      "pairing": "fox-fd",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "708496538529d59d0713ebf161d10ce1a0c834e513682993ba37c01f298061f8",
+        "bytes": 2114091,
+        "version": [2, 0, 1],
+        "stage": 32,
+        "ports": ["P2", "P4"],
+        "physical_frames": 9110,
+        "surviving_frames": 9110,
+        "discarded_frames": 0,
+        "selected_frames": 9110,
+        "first_frame": -123,
+        "last_frame": 8986,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
     }
   ]
 }

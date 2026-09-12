@@ -54,27 +54,29 @@ real, human-played Fox-vs-Fox Final Destination recordings from the CC0-1.0
 `erickfm/slippi-public-dataset-v3.7` corpus. Neither the replays nor the
 gameplay export's resources come from Skirmish's own simulator.
 
-**The ratchet now spans three independent recordings**, not one:
+**The ratchet now spans four independent recordings**, not one:
 [`fox-fd.slp`](../tests/fixtures/slippi/parity/manifest.json) (the original
-recording; ports P1/P4), `fox-fd-2.slp` (ports P1/P2) and `fox-fd-3.slp`
+recording; ports P1/P4), `fox-fd-2.slp` (ports P1/P2), `fox-fd-3.slp`
 (ports P2/P4, the only one recorded on a newer Slippi client, 3.9.0, which
 reports a few extra observation fields such as `velocities.self_y` that
-2.0.1 does not). All three are Fox-vs-Fox Final Destination matches, so all
-three currently initialize from the same `fox-fd` pairing's
-`match-data.json` regardless of which two ports played them — the pack's
-spawns are assigned by participant order, not by which physical port a
-player sat at. `recordings.json` lists each recording's file, sha256,
-ports, stage and its own baseline file
+2.0.1 does not) and `fox-fd-4.slp` (ports P2/P4, added by a concurrent
+batch and folded in here; see "A second real recording" below). All four
+are Fox-vs-Fox Final Destination matches, so all four currently initialize
+from the same `fox-fd` pairing's `match-data.json` regardless of which two
+ports played them — the pack's spawns are assigned by participant order,
+not by which physical port a player sat at. `recordings.json` lists each
+recording's file, sha256, ports, stage and its own baseline file
 (`tests/fixtures/slippi/parity/<id>-baseline.json`); `real_parity.rs`
 iterates the list and checks every recording before failing, so a
 regression on one recording is reported alongside any others rather than
 masking them. `fox-fd`'s own baseline file, numbers and update history are
 unchanged by this generalization — the original real-replay parity loop
 (the "main loop") continues to own and ratchet `fox-fd-baseline.json`
-exactly as before; `fox-fd-2-baseline.json` and `fox-fd-3-baseline.json` are
-new, independent baselines for the two added recordings, owned by a second,
-distinct parity loop (`docs/validation.md`) that deliberately stays clear of
-whatever the main loop above is currently chasing on `fox-fd.slp`.
+exactly as before; `fox-fd-2-baseline.json`, `fox-fd-3-baseline.json` and
+`fox-fd-4-baseline.json` are independent baselines for the added
+recordings, owned by a second, distinct parity loop (`docs/validation.md`)
+that deliberately stays clear of whatever the main loop above is currently
+chasing on `fox-fd.slp`.
 
 **`fox-fd-2.slp` (2026-09-11, gameplay export v6): blocked on a pack-data
 gap, not chased further.** The first real measurement matched 92 frames
@@ -94,7 +96,9 @@ specials::neutral::Move::update_actions` bails out immediately when
 air poses and `neutral_thresholds`) is entirely absent. This is a pack-data
 gap (the gameplay-export pipeline, not Skirmish code), reported per this
 loop's own stop condition and left at this baseline rather than chased
-further; the next divergence past it is undiagnosed.
+further; the next divergence past it is undiagnosed. `fox-fd-4.slp` (added
+by a concurrent batch, see "A second real recording" below) hits the exact
+same pack-data gap on its own equivalent divergence.
 
 **`fox-fd-3.slp` (2026-09-11, gameplay export v6): moved by the
 landing-velocity fix.** The first real measurement matched 79 frames
@@ -399,16 +403,15 @@ reported 0.
 A second, independently recorded Fox-vs-Fox Final Destination match,
 `tests/fixtures/slippi/parity/fox-fd-4.slp` (`14_56_00 [C2] Fox + Fox
 (FD).slp`, same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus,
-`batch_00`, Slippi 2.0.1, ports P2/P4), is ratcheted separately by
-`crates/cli/tests/real_parity_fox_fd_4.rs` against its own baseline,
-`tests/fixtures/slippi/parity/fox-fd-4-baseline.json`, rather than being
-folded into `real_parity.rs`'s single-recording harness: a concurrent batch
-is generalizing that harness into a shared recordings list, and this
-recording is meant to move into that list once it lands, not duplicate the
-harness in the meantime. It reuses the same `fox-fd/match-data.json` export
-`fox-fd.slp` does, unchanged: the pack is Fox-vs-Fox-on-FD data and spawns
-follow participant order, not recorded port numbers, so any two-Fox FD
-recording works against it regardless of physical ports.
+`batch_00`, Slippi 2.0.1, ports P2/P4). It has since been folded into the
+shared `tests/fixtures/slippi/parity/recordings.json` ratchet described
+above (its standalone `real_parity_fox_fd_4.rs` harness is removed;
+`crates/cli/tests/real_parity.rs` now covers it against the same
+`fox-fd-4-baseline.json`), rather than staying a fifth separate test file.
+It reuses the same `fox-fd/match-data.json` export `fox-fd.slp` does,
+unchanged: the pack is Fox-vs-Fox-on-FD data and spawns follow participant
+order, not recorded port numbers, so any two-Fox FD recording works
+against it regardless of physical ports.
 
 **Current measurement (2026-09-11, gameplay export v6,
 `/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`, after
@@ -417,24 +420,35 @@ match (-123 through -39) and the first divergent frame is -38, field
 `action_state` (expected `0x0155`/341 = `Action::SpecialN`, actual
 `0x002a`/42 = `Action::Landing`, for P2).
 
-**Diagnosis (not fixed in this batch -- an unmodeled system, reported per
-this loop's own stop condition):** the recording shows P2 pressing B out of
-`Landing` once its interrupt window opens (`game::landing::interruptible`)
-and entering Fox's neutral special (Blaster, `Action::SpecialN`, already
-mapped to Slippi state 341 by `game::characters::fox`). Skirmish instead
-keeps P2 in `Landing`: `game::specials::grounded_chain_open` (`src/game/
-specials/mod.rs`) does not list `Action::Landing` among its eligible ground
-chains for opening a fresh special (only `Wait`/`Walk`/`Dash`/`Run`/
-`RunBrake`/`Turn`/`Squat`/`SquatWait`/`SquatRv`, or whatever
-`tilt::interrupt_chain` itself returns `Some(Chain::Wait)`/`Some(Chain::
-Taunt)` for -- which does call `landing::interruptible` internally, but
-evidently is not satisfied on this frame). Fixing this touches Fox's
-neutral-special ("Blaster") action family, which this loop's own
-instructions name explicitly as an unmodeled-system stop condition, and a
-live concurrent worktree (`skirmish-blaster`) is already reserved for
-exactly that area (checked out at this same commit, no divergent commits
-yet, per this loop's instruction to check for other loops' current areas
-before duplicating work). Reported here rather than fixed.
+**Diagnosis (not fixed in this batch -- a pack-data gap, reported per this
+loop's own stop condition):** the recording shows P2 pressing B out of
+`Landing` once its interrupt window opens and entering Fox's neutral
+special (Blaster, `Action::SpecialN`, already mapped to Slippi state 341 by
+`game::characters::fox`). Skirmish instead keeps P2 in `Landing`. Traced
+directly (the second real-replay parity loop, working the same finding
+independently on `fox-fd-2.slp`'s equivalent divergence): every eligibility
+check the dispatch actually runs is satisfied on this frame --
+`game::specials::grounded_chain_open` reaches `Action::Landing` through
+`tilt::interrupt_chain`'s `landing::interruptible` arm (not through its own
+literal `Wait`/`Walk`/`Dash`/`Run`/`RunBrake`/`Turn`/`Squat` family list, as
+an earlier pass through this diagnosis guessed; `landing::interruptible`
+itself is confirmed satisfied here: grounded, `Action::Landing`,
+`landing_allow_interrupt` set, `action_frame` well past
+`normal_landing_lag`), and `fighter::special::neutral_input`'s fresh-B-
+press/neutral-stick test also passes (confirmed via direct instrumentation
+of the recorded input samples). The special still does not start because
+`game::specials::neutral::Move::update_actions` bails out immediately when
+`data.specials.as_ref().and_then(|s| s.neutral())` is `None` -- and pack
+v6's `fox-fd/match-data.json` fighter entry's `specials` object has only
+`character`, `down`, `side` and `up` keys; `neutral` (Fox's Blaster ground/
+air poses and `neutral_thresholds`) is entirely absent from the export.
+This is a gameplay-export pack-data gap, not a Skirmish eligibility or
+dispatch bug: no code change here can start a special whose own resource
+parameters were never exported. A live concurrent worktree
+(`skirmish-blaster`) is already reserved for Fox's neutral special, so the
+actual pack/implementation work is left to it; both `fox-fd-2.slp` and
+`fox-fd-4.slp` are blocked on the same gap and will move together once it
+is filled.
 
 **Previously (2026-09-11, gameplay export v6, before the input-lock
 `previous_input` fix):** 84 frames matched (-123 through -40) and the first

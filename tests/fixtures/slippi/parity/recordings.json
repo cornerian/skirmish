@@ -31,6 +31,16 @@
       "ports": ["P2", "P4"],
       "stage": "final-destination",
       "stage_id": 32
+    },
+    {
+      "id": "fox-fd-4",
+      "file": "fox-fd-4.slp",
+      "pairing": "fox-fd",
+      "baseline": "fox-fd-4-baseline.json",
+      "sha256": "708496538529d59d0713ebf161d10ce1a0c834e513682993ba37c01f298061f8",
+      "ports": ["P2", "P4"],
+      "stage": "final-destination",
+      "stage_id": 32
     }
   ]
 }
