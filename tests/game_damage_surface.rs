@@ -750,9 +750,14 @@ fn ceiling_reflection_can_chain_into_wall_during_reflect_lockout() {
 
 #[test]
 fn every_reflected_surface_action_lands_cleans_response_state_and_replays() {
-    for (angle, action, surface) in [
-        (0.0, Action::FlyReflectWall, stage::Surface::LeftWall),
-        (90.0, Action::FlyReflectCeiling, stage::Surface::Ceiling),
+    for (angle, action, surface, landing_velocity_y) in [
+        (0.0, Action::FlyReflectWall, stage::Surface::LeftWall, -0.6),
+        (
+            90.0,
+            Action::FlyReflectCeiling,
+            stage::Surface::Ceiling,
+            -2.0,
+        ),
     ] {
         let mut resource = data(angle);
         resource.fighters[1].movement.gravity = 0.2;
@@ -768,7 +773,11 @@ fn every_reflected_surface_action_lands_cleans_response_state_and_replays() {
         assert!(fighter.grounded);
         assert_eq!(fighter.action, Action::DownBound);
         assert_eq!(fighter.action_frame, 1);
-        assert_eq!(fighter.velocity, [0.0; 2]);
+        // `ftCommon_8007D6A4` sets `gr_vel` from `self_vel.x` but never
+        // assigns `self_vel.y`, so this landing frame's own fall velocity
+        // survives unchanged (`docs/parity.md`'s fox-fd-3.slp finding);
+        // each case falls a different number of frames before landing.
+        assert_eq!(fighter.velocity, [0.0, landing_velocity_y]);
         assert_eq!(fighter.knockback, [0.0; 2]);
         assert_eq!(fighter.last_damage_surface, None);
         assert_eq!(fighter.reflect_lockout, 0);
@@ -1115,10 +1124,10 @@ fn ceiling_tech_does_not_dispatch_wall_tech_air_interrupts() {
 
 #[test]
 fn every_surface_tech_action_lands_cleans_shared_state_and_replays() {
-    for (angle, buttons, expected_action) in [
-        (0.0, BUTTON_L, Action::PassiveWall),
-        (0.0, BUTTON_L | BUTTON_X, Action::PassiveWallJump),
-        (90.0, BUTTON_L, Action::PassiveCeiling),
+    for (angle, buttons, expected_action, landing_velocity_y) in [
+        (0.0, BUTTON_L, Action::PassiveWall, -0.6),
+        (0.0, BUTTON_L | BUTTON_X, Action::PassiveWallJump, -2.0),
+        (90.0, BUTTON_L, Action::PassiveCeiling, -2.0),
     ] {
         let mut resource = tech_data(angle);
         resource.fighters[1].movement.gravity = 0.2;
@@ -1141,7 +1150,10 @@ fn every_surface_tech_action_lands_cleans_shared_state_and_replays() {
         assert!(landed.grounded);
         assert_eq!(landed.action, Action::Landing);
         assert_eq!(landed.action_frame, 1);
-        assert_eq!(landed.velocity[1], 0.0);
+        // Same one-gravity-step-or-more survival as the reflected-surface
+        // test above: `ftCommon_8007D6A4` never assigns `self_vel.y`, so
+        // this landing frame's own fall velocity, not zero, is expected.
+        assert_eq!(landed.velocity[1], landing_velocity_y);
         assert_eq!(landed.surface_tech, Default::default());
         assert_eq!(landed.wall_jump.used, 0);
         assert!(!landed.wall_jump.active);

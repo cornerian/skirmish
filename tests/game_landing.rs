@@ -247,6 +247,37 @@ fn the_animation_still_ends_in_wait_without_input() {
     assert_eq!(state.fighters[0].action, Action::Wait);
 }
 
+/// `ftCommon_8007D6A4` (reached from `ftCo_Landing_Enter` via
+/// `ftCommon_8007D7FC`, the same callback every ordinary landing call site
+/// in `ft_081B.c` reaches through `ftCo_Landing_Enter_Basic`) sets `gr_vel`
+/// from `self_vel.x` on landing but never assigns `self_vel.y`: the
+/// vertical self-velocity this same frame's own fall physics computed
+/// survives the landing, exactly as `tests/fixtures/slippi/parity/
+/// fox-fd-3.slp` records (P2's `velocities.self_y` at its own landing
+/// frame, -2.53, one more gravity step past the previous frame's -2.3, not
+/// the zero a full stop would report -- `docs/validation.md`).
+#[test]
+fn ordinary_landing_keeps_this_frames_fall_velocity_unzeroed() {
+    let resource = data();
+    let gravity = resource.fighters[0].movement.gravity;
+    let mut game = Match::new(resource, 42).unwrap();
+    step(&mut game, stick(BUTTON_X, [0.0, 0.0]));
+    let mut falling = 0.0_f32;
+    for _ in 0..40 {
+        let state = step(&mut game, buttons(0));
+        if state.fighters[0].action == Action::Landing {
+            assert_eq!(state.fighters[0].action_frame, 1);
+            assert_ne!(state.fighters[0].velocity[1], 0.0);
+            assert_eq!(state.fighters[0].velocity[1], falling - gravity);
+            return;
+        }
+        if !state.fighters[0].grounded {
+            falling = state.fighters[0].velocity[1];
+        }
+    }
+    unreachable!("the short hop must land within forty steps");
+}
+
 #[test]
 fn landing_allow_interrupt_is_true_only_for_the_ordinary_landing() {
     let landed = enter_landing(&mut Match::new(data(), 42).unwrap());

@@ -189,6 +189,69 @@ matching the archived-audit convention `skirmish-rust-port-20260909-v2` and
 its successors established -- see `validation.json` there for exact
 pass/ignored counts and timings.
 
+The 2026-09-11 landing-velocity fix (the second real-replay parity loop,
+`tests/fixtures/slippi/parity/fox-fd-3.slp`, `docs/parity.md`) removes an
+extra reset `game::collision::land` made on every landing that the pinned
+decomp never makes. Every ordinary and tech landing call site
+(`ft_081B.c`'s `ft_80082B1C`/`ft_80082C74`/`ft_80082D40`/`ft_80082F28`, and
+`ftCo_PassiveStand.c`'s `ftCo_800989D4` for a floor tech) reaches
+`ftCo_Landing_Enter_Basic`/`ftCo_Landing_Enter`, which calls `ftCommon_
+8007D7FC` -> `ftCommon_8007D6A4`: that function sets `gr_vel = self_vel.x`
+and flips `ground_or_air` to `GA_Ground`, but never assigns `self_vel.y` --
+the vertical self-velocity this same frame's own fall physics already
+computed survives the landing frame untouched. Confirmed directly against
+`fox-fd-3.slp`: P2's recorded `velocities.self_y` at its own landing frame
+(-44) is -2.53, one more gravity step past the previous frame's -2.3 (a
+constant -0.23/frame trend through the fall), not the zero a hard stop
+would report. `collision::land`'s `f.velocity[1] = 0.0;` (an unattributed
+line from the crate's earliest history, `1a0077f4`, predating decomp-
+citation discipline) had no such license. Removed it; the very next
+grounded frame overwrites both self-velocity axes regardless
+(`Movement::project_ground`, `ftCommon_ApplyGroundMovementNoSlide`, fully
+replaces `self_velocity` from `ground_velocity`/`floor_normal` every
+grounded frame that reaches it), so this only changes what a fighter's
+landing frame itself reports, not any later physics.
+
+**Tests**: a new `tests/game_landing.rs` regression,
+`ordinary_landing_keeps_this_frames_fall_velocity_unzeroed`, pins a short
+hop's landing frame velocity against the immediately preceding airborne
+frame's own velocity minus gravity, confirming it is neither zero nor an
+independently-reset value. Three existing tests asserted the old
+(incorrect) zero and needed their pinned values corrected to the frame's
+real fall velocity instead: `tests/game_air_dodge.rs`'s
+`a_downward_dodge_lands_directly_and_slides_with_ground_friction`
+(`LandingFallSpecial`, one decay step past `entry`'s own velocity, matching
+its existing `ground_velocity` assertion's identical pattern on the other
+axis); `tests/game_damage_floor.rs`'s
+`buffered_neutral_tech_stops_launch_and_recovers_for_input` and
+`directional_floor_tech_rolls_use_sampled_root_motion_and_bone_ecbs`
+(`Passive`/`PassiveStandF`/`PassiveStandB`, one gravity step, `-0.2`, from
+a purely vertical downward hit); `tests/game_damage_surface.rs`'s
+`every_reflected_surface_action_lands_cleans_response_state_and_replays`
+and `every_surface_tech_action_lands_cleans_shared_state_and_replays`
+(`DownBound`/`PassiveWall`/`PassiveWallJump`/`PassiveCeiling`, `-0.6` or
+`-2.0` depending on how many frames each reflected/tech path falls before
+landing). No C-oracle differential was added: this removes a line with no
+decomp counterpart rather than porting new pinned arithmetic, the same
+rationale `docs/input-lock.md` used for its own non-decomp-cited gate.
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --
+-D warnings` and `cargo test --workspace` (911 passed/0 failed/19 ignored,
+up from 910/0/19 immediately before this fix, one net test added) all pass.
+
+Measured against gameplay export pack v6 (`v6-snapshot-20260911`) on
+`fox-fd-3.slp`: `checked_frames` went from 79 to 91 (frames -123 through
+-33); the next divergence is -32, field `velocities.self_x_air` on P2
+(expected `0x400147ad`, actual `0x400147ae`, a one-ULP rounding
+difference) -- a separate, unrelated arithmetic-ordering matter, reported
+rather than chased in this batch. `tests/fixtures/slippi/parity/
+fox-fd-3-baseline.json` is updated accordingly; `docs/parity.md` records
+the same measurement. This fix is against a separate recording than the
+main loop's own `fox-fd.slp`; the main loop's `fox-fd.slp` first-divergent-
+frame area has continued to move independently through its own concurrent
+fixes (see its own entries below and `docs/parity.md`'s current
+measurement), confirmed unaffected by re-running the full `real_parity`
+ratchet, which passes for every recording.
+
 The 2026-09-11 ground-jump-direction fix (the real-replay parity loop,
 `docs/parity.md`, `docs/state-parity.md`'s "Backward jumps") corrects
 `game::locomotion::ground_jump`'s direction test and launch velocity, both of

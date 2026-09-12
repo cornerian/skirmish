@@ -72,17 +72,40 @@ masking them. `fox-fd`'s own baseline file, numbers and update history are
 unchanged by this generalization — the original real-replay parity loop
 (the "main loop") continues to own and ratchet `fox-fd-baseline.json`
 exactly as before; `fox-fd-2-baseline.json` and `fox-fd-3-baseline.json` are
-new, independent baselines for the two added recordings, each starting from
-that recording's own first real measurement against gameplay export v6
-(`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`):
-`fox-fd-2.slp` matches 92 frames (-123 through -32), diverging at -31 on
-P1's `action_state` (expected `0x0155`/`SpecialN` i.e. Fox's neutral
-special "Blaster", actual `0x002a`/`Landing`); `fox-fd-3.slp` matches 79
-frames (-123 through -45), diverging at -44 on P2's `velocities.self_y`
-(expected `-2.53`, actual `0.0`). Neither has been diagnosed yet; see
-`docs/validation.md` as a second, distinct parity loop worked on
-`fox-fd-2.slp` and `fox-fd-3.slp` in turn, deliberately staying clear of
+new, independent baselines for the two added recordings, owned by a second,
+distinct parity loop (`docs/validation.md`) that deliberately stays clear of
 whatever the main loop above is currently chasing on `fox-fd.slp`.
+
+**`fox-fd-2.slp` (2026-09-11, gameplay export v6): blocked on a pack-data
+gap, not chased further.** The first real measurement matched 92 frames
+(-123 through -32) and diverged at -31, P1's `action_state` (expected
+`0x0155`/`SpecialN` i.e. Fox's neutral special "Blaster", actual
+`0x002a`/`Landing`). Diagnosis: P1 presses B (a fresh press, confirmed via
+the recording's own pre-frame input samples) while grounded in an
+interruptible Landing (`action_frame` 19, well past `normal_landing_lag`,
+`landing_allow_interrupt` set) — every eligibility check `game::specials::
+grounded_chain_open`/`tilt::interrupt_chain`/`landing::interruptible` and
+`fighter::special::neutral_input`'s own fresh-press/stick-neutral test
+already agree the special should start. It does not, because `game::
+specials::neutral::Move::update_actions` bails out immediately when
+`data.specials.as_ref().and_then(|s| s.neutral())` is `None` — and pack v6's
+`fox-fd/match-data.json` fighter entry's `specials` object has only
+`character`, `down`, `side` and `up` keys; `neutral` (Fox's Blaster ground/
+air poses and `neutral_thresholds`) is entirely absent. This is a pack-data
+gap (the gameplay-export pipeline, not Skirmish code), reported per this
+loop's own stop condition and left at this baseline rather than chased
+further; the next divergence past it is undiagnosed.
+
+**`fox-fd-3.slp` (2026-09-11, gameplay export v6): moved by the
+landing-velocity fix.** The first real measurement matched 79 frames
+(-123 through -45) and diverged at -44, P2's `velocities.self_y` (expected
+`-2.53`, actual `0.0`) — fixed by `docs/validation.md`'s landing-velocity
+entry (`game::collision::land` no longer zeroes vertical self-velocity on
+landing, matching `ftCommon_8007D6A4` leaving `self_vel.y` unassigned).
+Current measurement: 91 frames match (-123 through -33); the next
+divergence is -32, field `velocities.self_x_air` on P2 (expected
+`0x400147ad`, actual `0x400147ae`, a one-ULP rounding difference) —
+undiagnosed, reported rather than chased in this batch.
 
 **Proves:** for however many frames each recording's own
 `first_divergent_frame` reaches (or fully, if `matched`), the native

@@ -460,7 +460,13 @@ fn buffered_neutral_tech_stops_launch_and_recovers_for_input() {
     let fighter = &landed.fighters[1];
     assert_eq!(fighter.action, Action::Passive);
     assert_eq!(fighter.action_frame, 1);
-    assert_eq!(fighter.velocity, [0.0; 2]);
+    // `ftCommon_8007D6A4` (reached through the tumble ground-contact's own
+    // `ftCommon_8007D7FC` call, same as ordinary Landing) sets `gr_vel`
+    // from `self_vel.x` but never assigns `self_vel.y`, so the vertical
+    // fall velocity this landing frame's own physics computed (one gravity
+    // step, `-0.2`, from a purely vertical downward hit) survives the
+    // landing unchanged (`docs/parity.md`'s fox-fd-3.slp finding).
+    assert_eq!(fighter.velocity, [0.0, -0.2]);
     assert_eq!(fighter.knockback, [0.0; 2]);
     assert!(landed.events.contains(&Event::Landed { player: 1 }));
 
@@ -490,7 +496,10 @@ fn directional_floor_tech_rolls_use_sampled_root_motion_and_bone_ecbs() {
         assert_eq!(fighter.action, action);
         assert_eq!(fighter.action_frame, 1);
         assert_eq!(fighter.facing, -1.0);
-        assert_eq!(fighter.velocity, [0.0; 2]);
+        // Same one-gravity-step survival as the neutral tech above: a
+        // purely vertical downward hit lands with `self_vel.y == -0.2`,
+        // not zero.
+        assert_eq!(fighter.velocity, [0.0, -0.2]);
         assert!(landed.events.contains(&Event::Landed { player: 1 }));
         let checkpoint = game.checkpoint();
         let mut expected = Vec::new();

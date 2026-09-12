@@ -704,7 +704,20 @@ fn land(
     // to touch (grounded, velocity, jumps_used, wall-jump timers, ...).
     let pre_landing = f.clone();
     f.contacts[0] = f.ground_line;
-    f.velocity[1] = 0.0;
+    // `ftCommon_8007D6A4` (run from `ftCo_Landing_Enter` via `ftCommon_
+    // 8007D7FC`, the callback every ordinary landing call site in
+    // `ft_081B.c` reaches through `ftCo_Landing_Enter_Basic`) sets
+    // `gr_vel = self_vel.x` and flips `ground_or_air`, but never assigns
+    // `self_vel.y`: the vertical self-velocity computed by this same
+    // frame's fall integration survives the landing untouched (confirmed
+    // against `fox-fd-3.slp`'s recorded `velocities.self_y`, which still
+    // reports that fall value, not zero, on the frame a fighter lands).
+    // The very next grounded frame overwrites both self-velocity axes
+    // regardless (`Movement::project_ground` fully replaces them from
+    // `ground_velocity`/`floor_normal`, matching `ftCommon_
+    // ApplyGroundMovementNoSlide`), so leaving this frame's Y velocity
+    // alone only changes what gets reported for this one frame, not any
+    // later physics.
     f.knockback = [0.0; 2];
     f.ground_knockback = 0.0;
     f.ground_velocity = f.velocity[0];

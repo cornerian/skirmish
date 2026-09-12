@@ -292,7 +292,13 @@ fn a_downward_dodge_lands_directly_and_slides_with_ground_friction() {
     assert_eq!(landed.fighters[0].action, Action::LandingFallSpecial);
     assert!(landed.fighters[0].grounded);
     assert_eq!(landed.fighters[0].ground_velocity, launch[0] * 0.25);
-    assert_eq!(landed.fighters[0].velocity[1], 0.0);
+    // `ftCommon_8007D6A4` (reached via `ftCo_Landing_Enter`, `ftCo_
+    // LandingFallSpecial_Enter_Basic`'s own callback) sets `gr_vel` from
+    // `self_vel.x` but never assigns `self_vel.y`, so this decayed fall
+    // velocity survives the landing frame unchanged, matching this same
+    // frame's other axis one decay step past `entry`'s own velocity
+    // (`docs/parity.md`'s fox-fd-3.slp finding).
+    assert_eq!(landed.fighters[0].velocity[1], launch[1] * 0.25);
     let sliding = idle(&mut game, buttons(BUTTON_X));
     assert_eq!(sliding.fighters[0].action, Action::LandingFallSpecial);
     assert_eq!(sliding.fighters[0].ground_velocity, launch[0] * 0.25 - 0.2);

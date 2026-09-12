@@ -1,7 +1,7 @@
 {
-  "first_divergent_frame": -44,
-  "checked_frames": 79,
+  "first_divergent_frame": -32,
+  "checked_frames": 91,
   "export_version": "v6",
   "updated": "2026-09-11",
-  "note": "Initial measurement establishing the ratchet for fox-fd-3.slp (2026-09-11, gameplay export v6, v6-snapshot-20260911, same fox-fd pack as fox-fd.slp: a Fox-vs-Fox Final Destination match applies regardless of which two ports play it). Frames -123..-45 match (79 frames); the first divergence is at frame -44, field velocities.self_y on P2 (expected -2.53, actual 0.0), a field this recording's newer Slippi version (3.9.0) reports that fox-fd.slp's 2.0.1 does not. Not yet diagnosed by this loop."
+  "note": "Measured on 2026-09-11 with gameplay export v6 (v6-snapshot-20260911) at the real-replay parity loop's landing-velocity fix (docs/validation.md): frames -123..-33 match, up from -123..-45 (79 frames). Fixed: game::collision::land unconditionally zeroed the vertical self-velocity on every landing, but ftCommon_8007D6A4 (reached from ftCo_Landing_Enter via ftCommon_8007D7FC, the callback every ordinary and tech landing call site reaches) sets gr_vel from self_vel.x and flips ground_or_air, but never assigns self_vel.y -- the vertical fall velocity this same frame's own physics computed survives the landing untouched, confirmed against this recording's own velocities.self_y (-2.53, one more gravity step past the previous frame's -2.3, not zero). Removed the erroneous zero; the next grounded frame's Movement::project_ground fully replaces both self-velocity axes from ground_velocity regardless, so this only changed what gets reported on the landing frame itself. Frame -32 now differs on P2 velocities.self_x_air (expected 0x400147ad, actual 0x400147ae, a one-ULP rounding difference), an unrelated arithmetic-ordering matter. Move this forward as divergences are fixed."
 }
