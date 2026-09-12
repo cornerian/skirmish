@@ -220,7 +220,10 @@ holds. Tested with a throwaway, uncommitted copy of both `fox-fd`'s and
 `dash_initial_velocity` field lowered by exactly those two ULP, re-measured
 against both recordings with `make-initialization`/`validate-replay`.
 
-This falsifies the hypothesis rather than confirming it: `fox-fd-3.slp`
+This falsifies the hypothesis rather than confirming it. **Takeaway: the
+recording's own entry-frame value confirms `dash_initial_velocity` is
+already correct, and no single constant in this chain explains the
+recording's one-ULP-lower result.** `fox-fd-3.slp`
 diverges *earlier* against the patched pack (`checked_frames` 91 -> 90,
 `first_divergent_frame` -32 -> -33) on a *new* field at the Dash entry
 frame itself, `velocities.self_x_ground`, expected `0x3ff33333` (the
