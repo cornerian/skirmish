@@ -199,6 +199,12 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v9 (2026-09-12):** sha256 2481ab51, 36 MB, supersedes v8:
+`rules.fast_fall_window` (4 frames, `ftCommonData` +0x8C) is embedded in
+every pairing, so the exact fast-fall check applies; on Battlefield the
+first divergence moves from position at -27 to the shield health on the
+same frame.
+
 **Published pack v8 (2026-09-12):** sha256 a01a9101, 36 MB, supersedes v7:
 the special-move phase pose counts now equal the figatree frame counts (the
 earlier packs carried one spare hold pose per phase, a one-frame timing
