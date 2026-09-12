@@ -264,6 +264,19 @@ impl Recording {
                             Some(animation) => age.min(animation.start_frames - 1) as f32,
                             None => age as f32,
                         }
+                    } else if matches!(
+                        fighter.action,
+                        Action::LandingFallSpecial
+                            | Action::LandingAirN
+                            | Action::LandingAirF
+                            | Action::LandingAirB
+                            | Action::LandingAirHi
+                            | Action::LandingAirLw
+                    ) {
+                        // `observation::observe`'s own new tracked-rate
+                        // branch: these landings play at `aerial.
+                        // landing_rate`, not 1.0.
+                        fighter.aerial.landing_elapsed
                     } else {
                         fighter.action_frame.saturating_sub(1) as f32
                     };

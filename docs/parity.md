@@ -70,9 +70,43 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, gameplay export v5,
+**Current measurement (2026-09-11, gameplay export v6,
+`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`,
+`tests/fixtures/slippi/parity/gameplay-export.lock.json` updated to
+`v6`/`skirmish-gameplay-v6.tar.gz`, after the pack's own `friction_above_walk`
+fix landed and this loop's `action_age` tracked-rate fix):** 126 frames match
+(-123 through 2) and the first divergent frame is 3, field `action_state`
+(expected `0x0019`/Jump-forward, actual `0x001a`/Jump-backward, on P4's own
+KneeBend->Jump transition).
+
+Previously (2026-09-11, gameplay export v6, before this loop's `action_age`
+tracked-rate fix): the pack fix alone (below) reached frame -3, field
+`action_age` (expected a non-integer `3.01`, actual `1.0`) on P1's
+KneeBend->LandingFallSpecial transition (an air-dodge landing immediately out
+of a short hop). Diagnosis: `ftCo_LandingFallSpecial_Enter`'s own anim-speed
+argument to `Fighter_ChangeMotionState` is `(0.1F + fp->x2EC) / landing_lag`
+(`ftCo_Landing.c:111`), not `1.0` -- `fp->x2EC` is the character's own cached
+FallSpecial animation-frame count (`fighter.c:836`) and `landing_lag` is
+`ftCommonData`'s `x344` (`escape_air::Rules::landing_lag`), so Melee's
+`cur_anim_frame` advances at that computed rate, not one frame per game
+frame. The ordinary aerial landings (`LandingAirN`/`F`/`B`/`Hi`/`Lw`) scale
+the same way through the L-cancel divisor (`game::aerial::land`). Skirmish
+already tracks this rate at the source (`fighter.aerial.landing_elapsed`/
+`landing_rate`, `game::aerial.rs`, `game::escape_air.rs`) but
+`observation::observe`'s `action_age` fell through to the generic
+`action_frame`-based rule (the same one Walk/Run needed their own tracked-
+float branch for) instead of reading it. Fixed: `observation::observe` now
+reads `fighter.aerial.landing_elapsed` directly for those six actions,
+confirmed directly against `fox-fd.slp`: P1's air-dodge landing enters
+`LandingFallSpecial` at frame -4 already reporting `state_age = 0.0`, then
+`3.01`, `6.02`, `9.03` on -3, -2 and -1, a constant rate of `3.01` rather
+than the generic rule's `1.0`. The new divergence at frame 3 is a separate,
+unrelated subsystem (P4's own jump-direction selection), reported rather
+than chased in this batch.
+
+Previously (2026-09-11, gameplay export v5,
 `/mnt/archive/datasets/melee/skirmish-gameplay/v5-snapshot-20260911`, after
-the real-replay parity loop's Dash/Turn `action_frame` batches):** 116
+the real-replay parity loop's Dash/Turn `action_frame` batches): 116
 frames match (-123 through -8) and the first divergent frame is -7, field
 `position.x` (expected `-17.7748`, actual `-17.6948`, on P1's Run->KneeBend
 transition, with `action_state` itself already matching).
@@ -96,16 +130,14 @@ unboosted `0.08` instead of the needed `0.16`. Confirmed directly: patching
 a local copy of the pack's `match-data.json` to `friction_above_walk = 2.0`
 (not committed -- a throwaway diagnostic copy, deleted after use) moves
 `checked_frames` from 116 to 120 with no other change, isolating this as
-the sole cause of the -7 divergence. The next divergence with that patch
-applied is frame -3, field `action_age` (expected a non-integer `3.01`,
-actual `1.0`) -- a different, downstream matter (a tracked float animation
-frame during KneeBend/Jump, not yet investigated) that this diagnostic
-patch was not meant to resolve. `rules.friction_above_walk` is a single
+the sole cause of the -7 divergence. `rules.friction_above_walk` is a single
 match-wide constant (`src/game/data.rs`), matching `ftCommonData` being
 shared across every character, so a single corrected value should apply
-universally once re-exported; this needs a live-pack data fix (the
+universally once re-exported; this needed a live-pack data fix (the
 gameplay-export pipeline, not this repository) rather than a Skirmish code
-change, so it is reported here rather than chased further.
+change. Gameplay export v6 republished with `rules.friction_above_walk =
+2.0` (confirmed byte-identical to this diagnostic patch), superseding this
+entry.
 
 Previously (2026-09-11, gameplay export v5, after the real-replay parity
 loop's Dash->Run `action_frame` timing fix): 116 frames matched

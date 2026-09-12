@@ -338,6 +338,126 @@ fn looping_movement_pose_frames(
     }
 }
 
+/// Slippi's `state_age`: usually `fp->cur_anim_frame`, but not the same
+/// float for every action (see the per-branch comments below).
+fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -> f32 {
+    // Slippi's state_age for Walk/Run is fp->cur_anim_frame, a float
+    // animation frame (Walk's restarts on each Slow/Middle/Fast
+    // retype, Run's wraps at the Run figatree's length); without
+    // walk_animation/run_animation, Walk/Run keep the pre-batch
+    // integer action_frame.
+    if fighter.action == game::Action::Walk && fighter_data.movement.walk_animation.is_some() {
+        fighter.locomotion.walk.frame
+    } else if fighter.action == game::Action::Run && fighter_data.movement.run_animation.is_some() {
+        fighter.locomotion.run.frame
+    } else if matches!(
+        fighter.action,
+        game::Action::LandingFallSpecial
+            | game::Action::LandingAirN
+            | game::Action::LandingAirF
+            | game::Action::LandingAirB
+            | game::Action::LandingAirHi
+            | game::Action::LandingAirLw
+    ) {
+        // These landings play their figatree at a tracked rate other
+        // than 1.0: `ftCo_LandingFallSpecial_Enter`'s own anim-speed
+        // argument to `Fighter_ChangeMotionState` is `(0.1 +
+        // fp->x2EC) / landing_lag` (`ftCo_Landing.c:111`), and the
+        // ordinary aerial landings (`LandingAirN`/`F`/`B`/`Hi`/`Lw`)
+        // scale the same way through the L-cancel divisor
+        // (`game::aerial::land`). `cur_anim_frame` is therefore the
+        // tracked float `fighter.aerial.landing_elapsed`
+        // (`game::aerial::update_animation`/`land`), not the integer
+        // `action_frame` the general rule below assumes -- the same
+        // kind of exception Walk/Run's tracked animation frame is
+        // above. Confirmed directly against `fox-fd.slp`: P1's
+        // air-dodge landing enters `LandingFallSpecial` at frame -4
+        // already reporting `state_age = 0.0` on its own transition
+        // frame, then `3.01`, `6.02`, `9.03` on -3, -2 and -1 -- a
+        // constant per-frame rate of `3.01`, not `1.0`.
+        fighter.aerial.landing_elapsed
+    } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
+        // These sub-motions persist indefinitely (Fall/FallAerial,
+        // FallSpecial, SquatWait, OttottoWait), so their own figatree
+        // loops: `game::movement::loop_period` is the same wrap
+        // length `game::movement::pose` uses to pick bones, replay-
+        // confirmed against `fox-fd.slp` for Fall (state age cycles
+        // 0..=7, then restarts at 0, on the recording's own P1 Fall
+        // beginning at frame -59: age reaches 7 at -52 and reports 0
+        // again at -51, `docs/movement-poses.md`). Absent
+        // `movement_poses` (or an absent field) keeps the general
+        // rule below, unbounded, matching pre-batch behavior.
+        let age = fighter.action_frame.saturating_sub(1);
+        (age % game::movement::loop_period(frames) as u32) as f32
+    } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
+        // Both are animation-less (`ftCo_SM_None`); Melee's own
+        // state_age stays -1 for the whole state, unlike EntryStart,
+        // which counts its own animation from 0.
+        -1.0
+    } else if fighter.action == game::Action::EntryStart {
+        // `simulation::enter` resets `action_frame` to 0 on the
+        // transition frame, but the shared per-frame tail already
+        // increments it once more before this same frame's state is
+        // externally observed (the general rule below); Slippi's
+        // state_age here is additionally the tracked *animation*
+        // frame (the character's own EntryStart figatree), not the
+        // 30-frame action duration: it advances 0..`entry.
+        // start_frames - 1` then holds there for the rest of
+        // EntryStart, confirmed directly against `fox-fd.slp` (Fox
+        // holds at 10, an 11-frame figatree); when `fighter_data.
+        // entry` is absent, the age is left uncapped (today's
+        // approximation).
+        let age = fighter.action_frame - 1;
+        match fighter_data.entry {
+            Some(animation) => age.min(animation.start_frames - 1) as f32,
+            None => age as f32,
+        }
+    } else {
+        // `Fighter_ChangeMotionState` (`fighter.c:933-1230`)
+        // synchronously lands `cur_anim_frame` on the destination
+        // motion's own `anim_start` (typically 0) via its internal
+        // `ftAnim_8006E9B4` call (`fighter.c:1224`, `:1274`/
+        // `:1298`) at the moment of transition; the generic
+        // per-frame animation advance (`Fighter_Spaghetti_
+        // 8006AD10`'s unconditional `ftAnim_8006EBA4(gobj)` at
+        // `fighter.c:1684`) runs once per frame *before* that
+        // frame's own `anim_cb`/command dispatch, so it only ever
+        // advances whichever action was already current before any
+        // transition this same frame triggers -- a fighter that
+        // changes (or restarts) action this frame gets no further
+        // advance until *next* frame's own call. `simulation::
+        // advance`'s shared, unconditional end-of-frame
+        // `action_frame += 1` does not know this, so the reported
+        // `action_frame` is always one frame ahead of Melee's own
+        // `cur_anim_frame`; subtracting 1 here recovers the
+        // replay-verified 0-based count on the transition frame and
+        // the correct count on every frame after it (confirmed
+        // directly against `fox-fd.slp`: P1 Fall at -59, Landing at
+        // -49, Run at -13 and KneeBend at -7 all report age 0 on
+        // their own transition frame, then count up normally).
+        // `ftCo_Dash_Enter` and, the same way, `ftCo_Turn_Enter`/
+        // `ftCo_Turn_Enter_Smash` (`ftCo_Dash.c:48-63`, `ftCo_
+        // Turn.c:49-62,173-188`) each call `ftAnim_8006EBA4(gobj)` a
+        // second, explicit time immediately after `Fighter_
+        // ChangeMotionState` -- an extra advance most `_Enter`s
+        // (confirmed absent from `ftCo_Fall_Enter`/`ftCo_Landing_
+        // Enter`/`ftCo_Run_Enter_Full`/`ftCo_KneeBend_Enter`, and
+        // from `ftCo_TurnRun_Enter`, `ftCo_TurnRun.c:44-51`, which
+        // changes motion state but does not make it) don't make.
+        // `game::locomotion::start_dash`/`start_turn` model that
+        // extra call at the source (`action_frame = 1`, not `0`, at
+        // entry) rather than as an observation-layer exception, so
+        // this general rule already produces the replay-verified
+        // age of 1 -- not 0 -- on Dash's and Turn's own entry frame
+        // (confirmed directly against `fox-fd.slp`: P1 enters Dash
+        // at frame -37 already reporting `state_age = 1.0`; the same
+        // dash-dance recording re-enters Turn at -30 and -25 and
+        // Dash at -29 and -24, all likewise already 1.0) without
+        // needing its own branch here.
+        fighter.action_frame.saturating_sub(1) as f32
+    }
+}
+
 pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
@@ -347,103 +467,10 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 .locomotion
                 .as_ref()
                 .map_or(2, |parameters| parameters.max_jumps);
-            // Slippi's state_age for Walk/Run is fp->cur_anim_frame, a float
-            // animation frame (Walk's restarts on each Slow/Middle/Fast
-            // retype, Run's wraps at the Run figatree's length); without
-            // walk_animation/run_animation, Walk/Run keep the pre-batch
-            // integer action_frame.
-            let action_age = if fighter.action == game::Action::Walk
-                && fighter_data.movement.walk_animation.is_some()
-            {
-                fighter.locomotion.walk.frame
-            } else if fighter.action == game::Action::Run
-                && fighter_data.movement.run_animation.is_some()
-            {
-                fighter.locomotion.run.frame
-            } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
-                // These sub-motions persist indefinitely (Fall/FallAerial,
-                // FallSpecial, SquatWait, OttottoWait), so their own figatree
-                // loops: `game::movement::loop_period` is the same wrap
-                // length `game::movement::pose` uses to pick bones, replay-
-                // confirmed against `fox-fd.slp` for Fall (state age cycles
-                // 0..=7, then restarts at 0, on the recording's own P1 Fall
-                // beginning at frame -59: age reaches 7 at -52 and reports 0
-                // again at -51, `docs/movement-poses.md`). Absent
-                // `movement_poses` (or an absent field) keeps the general
-                // rule below, unbounded, matching pre-batch behavior.
-                let age = fighter.action_frame.saturating_sub(1);
-                (age % game::movement::loop_period(frames) as u32) as f32
-            } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
-                // Both are animation-less (`ftCo_SM_None`); Melee's own
-                // state_age stays -1 for the whole state, unlike EntryStart,
-                // which counts its own animation from 0.
-                -1.0
-            } else if fighter.action == game::Action::EntryStart {
-                // `simulation::enter` resets `action_frame` to 0 on the
-                // transition frame, but the shared per-frame tail already
-                // increments it once more before this same frame's state is
-                // externally observed (the general rule below); Slippi's
-                // state_age here is additionally the tracked *animation*
-                // frame (the character's own EntryStart figatree), not the
-                // 30-frame action duration: it advances 0..`entry.
-                // start_frames - 1` then holds there for the rest of
-                // EntryStart, confirmed directly against `fox-fd.slp` (Fox
-                // holds at 10, an 11-frame figatree); when `fighter_data.
-                // entry` is absent, the age is left uncapped (today's
-                // approximation).
-                let age = fighter.action_frame - 1;
-                match fighter_data.entry {
-                    Some(animation) => age.min(animation.start_frames - 1) as f32,
-                    None => age as f32,
-                }
-            } else {
-                // `Fighter_ChangeMotionState` (`fighter.c:933-1230`)
-                // synchronously lands `cur_anim_frame` on the destination
-                // motion's own `anim_start` (typically 0) via its internal
-                // `ftAnim_8006E9B4` call (`fighter.c:1224`, `:1274`/
-                // `:1298`) at the moment of transition; the generic
-                // per-frame animation advance (`Fighter_Spaghetti_
-                // 8006AD10`'s unconditional `ftAnim_8006EBA4(gobj)` at
-                // `fighter.c:1684`) runs once per frame *before* that
-                // frame's own `anim_cb`/command dispatch, so it only ever
-                // advances whichever action was already current before any
-                // transition this same frame triggers -- a fighter that
-                // changes (or restarts) action this frame gets no further
-                // advance until *next* frame's own call. `simulation::
-                // advance`'s shared, unconditional end-of-frame
-                // `action_frame += 1` does not know this, so the reported
-                // `action_frame` is always one frame ahead of Melee's own
-                // `cur_anim_frame`; subtracting 1 here recovers the
-                // replay-verified 0-based count on the transition frame and
-                // the correct count on every frame after it (confirmed
-                // directly against `fox-fd.slp`: P1 Fall at -59, Landing at
-                // -49, Run at -13 and KneeBend at -7 all report age 0 on
-                // their own transition frame, then count up normally).
-                // `ftCo_Dash_Enter` and, the same way, `ftCo_Turn_Enter`/
-                // `ftCo_Turn_Enter_Smash` (`ftCo_Dash.c:48-63`, `ftCo_
-                // Turn.c:49-62,173-188`) each call `ftAnim_8006EBA4(gobj)` a
-                // second, explicit time immediately after `Fighter_
-                // ChangeMotionState` -- an extra advance most `_Enter`s
-                // (confirmed absent from `ftCo_Fall_Enter`/`ftCo_Landing_
-                // Enter`/`ftCo_Run_Enter_Full`/`ftCo_KneeBend_Enter`, and
-                // from `ftCo_TurnRun_Enter`, `ftCo_TurnRun.c:44-51`, which
-                // changes motion state but does not make it) don't make.
-                // `game::locomotion::start_dash`/`start_turn` model that
-                // extra call at the source (`action_frame = 1`, not `0`, at
-                // entry) rather than as an observation-layer exception, so
-                // this general rule already produces the replay-verified
-                // age of 1 -- not 0 -- on Dash's and Turn's own entry frame
-                // (confirmed directly against `fox-fd.slp`: P1 enters Dash
-                // at frame -37 already reporting `state_age = 1.0`; the same
-                // dash-dance recording re-enters Turn at -30 and -25 and
-                // Dash at -29 and -24, all likewise already 1.0) without
-                // needing its own branch here.
-                fighter.action_frame.saturating_sub(1) as f32
-            };
             FighterObservation {
                 port: ports[index],
                 action_state: action_state(fighter, Some(characters[index])),
-                action_age,
+                action_age: action_age(fighter, fighter_data),
                 position: fighter.position,
                 direction: fighter.facing,
                 percent: fighter.percent,
@@ -1406,6 +1433,47 @@ mod tests {
             );
             assert_eq!(fighter.hitlag.unwrap().to_bits(), native.hitlag.to_bits());
             assert_eq!(fighter.animation_index, animation_index(native, Some(2)));
+        }
+    }
+
+    #[test]
+    fn landing_fall_special_and_aerial_landings_report_the_tracked_animation_rate() {
+        // `ftCo_LandingFallSpecial_Enter`'s anim-speed argument to
+        // `Fighter_ChangeMotionState` is `(0.1F + fp->x2EC) / landing_lag`
+        // (`ftCo_Landing.c:111`), not `1.0`; the ordinary aerial landings
+        // scale the same way through the L-cancel divisor
+        // (`game::aerial::land`). `fox-fd.slp`'s own air-dodge landing
+        // (`docs/parity.md`'s current measurement) enters
+        // `LandingFallSpecial` at frame -4 reporting `state_age = 0.0`, then
+        // `3.01`, `6.02`, `9.03` on the next three frames -- a tracked float
+        // (`fighter.aerial.landing_elapsed`), not the generic
+        // `action_frame`-based rule every other action here uses.
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let fighter_data = game.data().fighters[0].clone();
+        for action in [
+            game::Action::LandingFallSpecial,
+            game::Action::LandingAirN,
+            game::Action::LandingAirF,
+            game::Action::LandingAirB,
+            game::Action::LandingAirHi,
+            game::Action::LandingAirLw,
+        ] {
+            fighter.action = action;
+            // action_frame is set to a large value on purpose: the generic
+            // fallback rule (`action_frame.saturating_sub(1)`) would report
+            // a completely different number if this branch were not taken
+            // first, so a passing assertion here cannot be a coincidence of
+            // the two formulas agreeing.
+            fighter.action_frame = 40;
+            for recorded in [0.0_f32, 3.01, 6.02, 9.03] {
+                fighter.aerial.landing_elapsed = recorded;
+                assert_eq!(action_age(&fighter, &fighter_data), recorded, "{action:?}");
+            }
         }
     }
 

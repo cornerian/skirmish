@@ -1,5 +1,57 @@
 # Local validation provenance
 
+The 2026-09-11 `LandingFallSpecial`/aerial-landing `action_age` fix (the
+real-replay parity loop, `docs/parity.md`) extracts `observation::observe`'s
+inlined `state_age` computation into its own `action_age` function (unchanged
+behavior, needed so a unit test can exercise it without a full `Match`) and
+adds one more exception to it: `Action::LandingFallSpecial` and the five
+`Action::LandingAirN`/`F`/`B`/`Hi`/`Lw` actions now report
+`fighter.aerial.landing_elapsed`, the tracked float the game already advances
+at `fighter.aerial.landing_rate` (`game::aerial.rs`, `game::escape_air.rs`),
+instead of falling through to the generic `action_frame`-based rule the
+Walk/Run/movement-pose/Entry exceptions already precede. `ftCo_
+LandingFallSpecial_Enter`'s own anim-speed argument to `Fighter_
+ChangeMotionState` is `(0.1F + fp->x2EC) / landing_lag` (`ftCo_Landing.c:
+111`), not `1.0`: `fp->x2EC` is the character's own cached FallSpecial
+animation-frame count (`fighter.c:836`) and `landing_lag` is `ftCommonData`'s
+`x344` (`escape_air::Rules::landing_lag`), so decomp's `cur_anim_frame`
+advances at that computed rate every frame, not one integer per game frame;
+the ordinary aerial landings scale the same way through the L-cancel divisor
+(`game::aerial::land`). Confirmed directly against `fox-fd.slp`: P1's
+air-dodge landing enters `LandingFallSpecial` at frame -4 already reporting
+`state_age = 0.0` on its own transition frame, then `3.01`, `6.02`, `9.03` on
+-3, -2 and -1 -- a constant rate of `3.01`, not `1.0`.
+
+**Tests**: `crates/skirmish-replay/src/observation.rs`'s new
+`landing_fall_special_and_aerial_landings_report_the_tracked_animation_rate`
+calls the extracted `action_age` directly for all six actions with an
+artificially large `action_frame` (so a passing assertion cannot be a
+coincidence of the old and new formulas agreeing) and the recording's own
+`0.0`/`3.01`/`6.02`/`9.03` values for `fighter.aerial.landing_elapsed`.
+`crates/cli/tests/replay_match.rs`'s own harness-local duplicate of this
+formula (its own doc comment already flags it as needing to track
+`observation::observe`) gained the same branch; three of its existing tests
+(`file_backed_air_dodges_match_and_detect_their_first_changed_trigger_frame`,
+`file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_
+diverges`, `physical_b_drives_file_backed_fox_air_illusion_into_landing_
+fall_special`) already exercised air-dodge and L-cancelled aerial landings
+and would otherwise have started failing once `observation::observe` itself
+changed. `cargo fmt --all -- --check`, `cargo clippy --locked --workspace
+--all-targets --all-features -- -D warnings` and `cargo test --locked
+--workspace` (911 passed/0 failed/19 ignored, one new test) all pass.
+
+This batch lands alongside the independently-fixed gameplay-export pack:
+`rules.friction_above_walk` moved from `1.0` (a no-op) to `2.0`
+(`ftCommonData` +0x6C, `ft_80084F3C`) in the republished export
+(`v6-snapshot-20260911`, `tests/fixtures/slippi/parity/gameplay-export.
+lock.json` updated to `v6`). Measured together against the published v6
+pack: 126 frames matched (-123 through 2), up from 116 against v5 -- the
+friction fix alone reaches frame -3 (`action_age`, the divergence this
+batch's own fix resolves); both together reach frame 3, `action_state`, on
+P4's own Jump-direction selection (`docs/parity.md`'s current measurement).
+`tests/fixtures/slippi/parity/fox-fd-baseline.json` is updated to match
+(`first_divergent_frame: 3`, `checked_frames: 126`, `export_version: "v6"`).
+
 The 2026-09-11 Dash/Turn entry-time consolidation (the real-replay parity
 loop) moves the fix below -- and the observation-layer Dash/Turn exception
 before it -- to their common source, rather than patching each downstream
