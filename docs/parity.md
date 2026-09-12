@@ -120,6 +120,29 @@ instead. Reported per this loop's own stop condition (`tests/fixtures/
 slippi/parity/fox-fd-2-baseline.json`'s own note has the full citation),
 not chased further.
 
+**`fox-fd-2.slp` (2026-09-13, published pack v10): moved again, blocked on
+the reserved Blaster subsystem.** Re-measured directly against pack v10
+(`docs/parity.md`'s own "Published pack v10" note above; script command
+variables embedded), superseding the stale `v8` baseline (114 frames,
+first divergence -9, never diagnosed in this file): 118 frames now match
+(-123 through -6). The new divergence is at -5, P1's `last_attack_landed`
+(expected `0x12`/18, Melee's Blaster attack id, actual `0x00`). Traced:
+the recording's own P2 `damage` jumps `0.0` -> `3.0` on this exact frame,
+matching Skirmish's own `percent` field (checked earlier in the field
+order, and not itself reported as a mismatch) -- so the laser hitbox does
+connect and deal damage via `game::damage::apply_hit`; only the
+attacker-side bookkeeping field (`fighter::combo::last_attack_landed`, set
+by `game::combat_history::record_hit`, reached from `game::projectile.rs`'s
+`HitContact::Fighter` handling with `move_id` sourced from
+`fighters[0].specials.neutral.laser.move_id`, confirmed present and equal
+to `18` in the v10 pack) does not end up `18` by end of frame. Not chased
+further: the whole call chain runs through `src/game/characters/fox/
+neutral.rs` and `src/game/projectile.rs`, the exact two files a concurrent
+Falco Blaster batch is already reserved on (this loop's own coordination
+instructions); skipped rather than risking a collision with that batch's
+in-flight edits. `fox-fd-4.slp`'s own v10 re-measurement below hits the
+same reserved subsystem on its own divergence.
+
 **`fox-fd-3.slp` (2026-09-11, gameplay export v6): moved by the
 landing-velocity fix.** The first real measurement matched 79 frames
 (-123 through -45) and diverged at -44, P2's `velocities.self_y` (expected
@@ -762,6 +785,24 @@ the resulting -20 divergence (EscapeAir's own `action_age`, the identical
 missing-entry-advance shape in `ftCo_80099A9C`) was fixed last, reaching
 106 frames. `docs/validation.md`'s entry-advance table and
 `fox-fd-4-baseline.json`'s own note have the full per-fix citations.
+
+**Current measurement (2026-09-13, published pack v10): moved again,
+blocked on the reserved Blaster subsystem.** Re-measured directly against
+pack v10 (script command variables embedded, `docs/parity.md`'s own
+"Published pack v10" note above): 110 frames now match (-123 through -14).
+The new divergence is still P2's `action_age`, still mid-`SpecialNLoop`
+(state 342), now at frame -13 (expected `9.0`, actual `8.0`) -- the same
+one-frame-lag shape the v9 baseline's own divergence showed, just later in
+the loop's own per-shot cycle: the script data changed exactly when each
+cycle's own `action_frame` resets, moving where the lag first becomes
+visible, without fixing the lag itself. Not diagnosed further this loop:
+`Action::SpecialNLoop`'s own script-driven re-arm/fire cadence lives
+entirely in `src/game/characters/fox/neutral.rs`, one of the two files
+(with `src/game/projectile.rs`) a concurrent Falco Blaster batch is
+already reserved on (this loop's own coordination instructions); skipped
+rather than risking a collision with that batch's in-flight edits --
+`fox-fd-2.slp`'s own v10 re-measurement above hits the same reserved
+subsystem on its own divergence.
 
 ## A first Falco recording: `falco-fox-fd.slp`
 
