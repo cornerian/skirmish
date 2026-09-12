@@ -203,6 +203,50 @@ frame, not this expression's own evaluation order -- a concrete lead for
 whichever future batch picks this up, not chased further here. No baseline
 change (`fox-fd-3.slp` unchanged at -32/91).
 
+**Update (the real-replay parity loop, picking up the lead above): tested
+directly, and falsified.** The `skirmish-f64` batch's own perturbation
+sweep pointed at `ftCo_Dash_Enter`/`ftCommon_800804A0` -- the Dash-entry
+velocity computation itself -- as the source of the two-ULP-lower incoming
+`ground_velocity` the recording implies. This dash is entered from a dead
+stop (`ground_velocity = 0.0`, confirmed exact by three static frames of
+`position.x` beforehand), so `ftCo_Dash_Enter`'s entry computation
+(`ftCo_Dash.c:61-66`) reduces to `mv.co.dash.x0 = facing_dir *
+dash_initial_velocity` exactly (the `- gr_vel` term subtracts an exact
+`0.0`, a lossless no-op) -- meaning the lead's own two-ULP-lower value
+*is* `dash_initial_velocity` itself, `0x3ff33331` (`1.899999737739563`)
+rather than the pack's `0x3ff33333` (`1.899999976158142`), if the lead
+holds. Tested with a throwaway, uncommitted copy of both `fox-fd`'s and
+`falco-fox-fd`'s `match-data.json` (deleted after use) with every
+`dash_initial_velocity` field lowered by exactly those two ULP, re-measured
+against both recordings with `make-initialization`/`validate-replay`.
+
+This falsifies the hypothesis rather than confirming it: `fox-fd-3.slp`
+diverges *earlier* against the patched pack (`checked_frames` 91 -> 90,
+`first_divergent_frame` -32 -> -33) on a *new* field at the Dash entry
+frame itself, `velocities.self_x_ground`, expected `0x3ff33333` (the
+pack's original, unpatched value) actual `0x3ff33331` (the patch) -- the
+recording's own entry-frame `ground_velocity` independently confirms the
+pack's existing `dash_initial_velocity` is already exactly right, not two
+ULP high; the two-ULP gap the sweep found is real but does not originate
+at this specific read. Solving the *opposite* direction -- what `accel`
+value (not `gr_vel`) would reproduce `0x400147ad` given the
+now-confirmed-correct `gr_vel = 0x3ff33333` -- needs `accel = 0x3df5c270`
+(`0.11999976634979248`) against the computed `0x3df5c290`
+(`0.12000000476837158`, from `stick * dash_acceleration_mul +
+dash_acceleration_base`, unchanged): a 32-ULP gap, far too large for a
+single nearby constant's own export precision (`dash_acceleration_mul` or
+`dash_acceleration_base` swept independently by several ULP each stays
+pinned to the same `0x400147ae` result, `accel`'s own magnitude being too
+coarse at this scale to move the sum's rounding by a mere ULP or two on
+either input alone). Neither `dash_initial_velocity` nor an accompanying
+accel constant is the explanation; the actual mechanism behind the
+recording's own one-ULP-lower result remains unexplained. Not chased
+further this batch: the sweep's own two-ULP figure is real (some earlier
+value in the chain does need to be that much lower to reproduce the
+recording) but does not localize to any single constant this loop could
+find by direct substitution (`AGENTS.md`: "Host C agreement does not
+establish PowerPC or whole-game equivalence").
+
 **Proves:** for however many frames each recording's own
 `first_divergent_frame` reaches (or fully, if `matched`), the native
 simulation's observable fields agree with an authentic recording, for that
