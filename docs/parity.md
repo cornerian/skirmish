@@ -340,6 +340,61 @@ divergent frame was -59, where P1 leaves EntryEnd for Fall: Skirmish
 reported the new action's age as 1 on that frame while the recording
 reported 0.
 
+## A second real recording: `fox-fd-4.slp`
+
+A second, independently recorded Fox-vs-Fox Final Destination match,
+`tests/fixtures/slippi/parity/fox-fd-4.slp` (`14_56_00 [C2] Fox + Fox
+(FD).slp`, same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus,
+`batch_00`, Slippi 2.0.1, ports P2/P4), is ratcheted separately by
+`crates/cli/tests/real_parity_fox_fd_4.rs` against its own baseline,
+`tests/fixtures/slippi/parity/fox-fd-4-baseline.json`, rather than being
+folded into `real_parity.rs`'s single-recording harness: a concurrent batch
+is generalizing that harness into a shared recordings list, and this
+recording is meant to move into that list once it lands, not duplicate the
+harness in the meantime. It reuses the same `fox-fd/match-data.json` export
+`fox-fd.slp` does, unchanged: the pack is Fox-vs-Fox-on-FD data and spawns
+follow participant order, not recorded port numbers, so any two-Fox FD
+recording works against it regardless of physical ports.
+
+**Current measurement (2026-09-11, gameplay export v6,
+`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`, after
+the real-replay parity loop's input-lock `previous_input` fix):** 85 frames
+match (-123 through -39) and the first divergent frame is -38, field
+`action_state` (expected `0x0155`/341 = `Action::SpecialN`, actual
+`0x002a`/42 = `Action::Landing`, for P2).
+
+**Diagnosis (not fixed in this batch -- an unmodeled system, reported per
+this loop's own stop condition):** the recording shows P2 pressing B out of
+`Landing` once its interrupt window opens (`game::landing::interruptible`)
+and entering Fox's neutral special (Blaster, `Action::SpecialN`, already
+mapped to Slippi state 341 by `game::characters::fox`). Skirmish instead
+keeps P2 in `Landing`: `game::specials::grounded_chain_open` (`src/game/
+specials/mod.rs`) does not list `Action::Landing` among its eligible ground
+chains for opening a fresh special (only `Wait`/`Walk`/`Dash`/`Run`/
+`RunBrake`/`Turn`/`Squat`/`SquatWait`/`SquatRv`, or whatever
+`tilt::interrupt_chain` itself returns `Some(Chain::Wait)`/`Some(Chain::
+Taunt)` for -- which does call `landing::interruptible` internally, but
+evidently is not satisfied on this frame). Fixing this touches Fox's
+neutral-special ("Blaster") action family, which this loop's own
+instructions name explicitly as an unmodeled-system stop condition, and a
+live concurrent worktree (`skirmish-blaster`) is already reserved for
+exactly that area (checked out at this same commit, no divergent commits
+yet, per this loop's instruction to check for other loops' current areas
+before duplicating work). Reported here rather than fixed.
+
+**Previously (2026-09-11, gameplay export v6, before the input-lock
+`previous_input` fix):** 84 frames matched (-123 through -40) and the first
+divergent frame was -39, field `position.y` (expected `5.2149`, actual
+`3.1949`, for P4). Fixed: `docs/input-lock.md`'s "open question" -- P4 in
+this recording holds its stick down continuously from before the pre-"GO"
+input lock through its unlock frame (-39), and the lock's original
+neutral-`previous_input` implementation made that continuously-held input
+read as a fresh press exactly at unlock, wrongly edge-triggering fast-fall
+one frame before the recording's own ordinary gravity-only fall.
+`game::simulation::advance` now keeps `previous_input` tracking the real,
+un-neutralized samples throughout the lock (only dispatch sees the neutral
+controller); see `docs/input-lock.md` for the full diagnosis and citation.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

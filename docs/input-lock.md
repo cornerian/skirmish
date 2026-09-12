@@ -212,3 +212,37 @@ this is exporter/pack data, not simulator logic, and is left for whoever
 owns that data next. `fox-fd-baseline.json` is left unmoved (still -123);
 moving it is a future batch's call once `position.x` (or whatever the
 next-found field is) is fixed.
+
+## Open question resolved (2026-09-11, real-replay parity loop, `fox-fd-4.slp`)
+
+The "open question" above -- whether the real pad copy leaves a non-neutral
+`previous_input` behind at the unlock frame -- is answered by a second real
+recording, `tests/fixtures/slippi/parity/fox-fd-4.slp` (`14_56_00 [C2] Fox +
+Fox (FD).slp`, same corpus, ports P2/P4, `docs/parity.md`). Unlike `fox-fd.slp`
+(whose P4 happens to go neutral on the stick at -40, one frame before its own
+unlock at -39, so the original neutral-`previous_input` guess was never
+exercised there), `fox-fd-4.slp`'s P4 holds the stick down continuously from
+-46 through and past its unlock frame, also -39. The recording shows P4
+continuing an ordinary gravity-only fall at -39->-38 (`position.y` steps by a
+constant, accelerating amount matching every other frame of that fall), but
+Skirmish reported a much larger drop there: `game::simulation`'s fast-fall
+edge check (`!f.fast_fall && f.velocity[1] < 0.0 && input.stick[1] <=
+-threshold && f.previous_input.stick[1] > -threshold`) read `previous_input`
+as the neutral controller this batch's original implementation left behind
+for every locked frame, so a stick that had been held down since before the
+lock read as a fresh press exactly at unlock, wrongly entering fast-fall a
+frame early. Confirmed directly: patching `game::simulation::advance` to
+keep `previous_input` tracking the real, un-neutralized samples throughout
+the lock (only *dispatch* still sees the neutral controller) moved
+`fox-fd-4.slp`'s `checked_frames` from 84 to 85 (`first_divergent_frame`
+from -39 to -38) with no other change, isolating this as the sole cause.
+
+This means the real pad copy does *not* stop tracking during the lock --
+only the fighters' own dispatch does -- the opposite of this batch's
+original, explicitly-flagged default. `game::simulation::advance` now
+captures `raw_inputs` before the neutralization and uses it for every
+`fighter.previous_input` assignment in the function; dispatch (`inputs`)
+is unchanged. The decomp gate for the lock itself is still not found (the
+search above remains current); this only resolves which of the two readings
+of "neutral for the locked frames" the pad copy takes, not the lock's own
+citation.
