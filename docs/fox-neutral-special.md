@@ -631,43 +631,44 @@ expose, per item-frame: `id` (a per-item spawn-order identifier), `type`
 sub-state byte), `position`/`velocity` (both f32 pairs), `damage_taken`,
 `expiration_timer`, `spawn_id`, `missile_type`/`turnip_type`/`is_launched`/
 `charge_power` (character-specific unions, irrelevant here), and `owner`
-(added in a later Slippi version; `-1` when absent/unowned). This batch
-adds an `observation::items` query returning, per active `Projectile`:
-`kind` (mapped to peppi's own external item-type id the same way
-`characters::fox::slippi_ids` maps action states), `position`, `velocity`
-(derived from `angle`/`speed`), and `owner` (this engine's own 0/1 player
-index, mapped the same way action-state owner attribution already works
-elsewhere). `state`/`expiration_timer`/`spawn_id`/`id` are not modeled this
-batch (no multi-instance id allocation scheme exists yet for a system that,
-today, only ever has Blaster's own single-projectile-per-owner shape) and
-are left as an explicit gap for whichever future batch needs concurrent
-same-owner projectiles or true item ids. `crates/cli`'s own replay
-comparison harness is *not* extended to diff these fields against a real
-Slippi file's item block in this batch -- that requires the file-backed
-comparison pipeline (`docs/replays.md`) to grow an item-aware diff pass
-mirroring its existing per-fighter-post diff, which is a second, separable
-piece of work; this batch's own self-recorded regression instead asserts
-the *native* `Event`/`Projectile` state directly (spawn, travel, hit),
-which this port fully controls and can assert exactly, and documents the
-real-Slippi-item-diff work as the concrete next step in `docs/replays.md`.
+(added in a later Slippi version; `-1` when absent/unowned). **This batch
+does not add an `observation::items` query or any other item-observation
+code** -- an earlier draft of this document planned one, but it was not
+implemented; `State.projectiles` (`kind`/`owner`/`position`/`angle`/
+`speed`/`facing`/`lifetime`/`hitboxes`) already carries everything such a
+query would need, so a future batch can add it as a small, low-risk
+follow-up. `crates/cli`'s own replay comparison harness is *not* extended
+to diff these fields against a real Slippi file's item block either --
+that requires the file-backed comparison pipeline (`docs/replays.md`) to
+grow an item-aware diff pass mirroring its existing per-fighter-post diff,
+a second, separable piece of work; this batch's own self-recorded
+regression instead asserts the *native* `Event`/`Projectile` state
+directly (spawn, travel, hit), which this port fully controls and can
+assert exactly, and documents the real-Slippi-item-diff work as the
+concrete next step in `docs/replays.md`.
 
 Tests
 --------
 
-`fighter::characters::fox::neutral` (pure arithmetic, if any is added
-beyond what already exists) and `game::projectile` unit-test motion,
-lifetime countdown, the shield-bounce reflection formula and the
-Reflector hand-off in isolation from the full `Match` pipeline.
-`tests/game_fox_neutral_special.rs` covers: strict-threshold entry
-matching the retired shell's own conformance (both slots, competing
-inputs, release/repress rearming -- migrated from `tests/game_special.rs`
-rather than dropped), Start -> Loop -> End with and without a repeat press,
-the laser actually spawning and traveling, a real hit applying damage/
-knockback/hitstun through the ordinary pipeline, staling across repeated
-hits, a shield bounce, a Reflector hand-off (owner flips, the reflected
-laser can hit its original owner), lifetime despawn, the asymmetric ground-
-leaves-to-Fall / air-lands-to-Wait-or-Landing conversions, the Slippi ids,
-and a checkpoint round trip including in-flight projectiles.
+`tests/game_fox_neutral_special.rs` (a fresh file, replacing rather than
+literally migrating `tests/game_special.rs`'s own coverage of the shared
+shell) covers: strict-threshold grounded entry, aerial entry, Start ->
+Loop -> End with and without a repeat press (the laser actually spawning,
+per cycle), a real hit applying damage through the ordinary pipeline and
+despawning the laser on contact (no piercing), staling across three
+repeated hits, the grounded phases' own ground-leaves-to-`Fall` fallback,
+the Slippi ids, and a checkpoint round trip including an in-flight
+projectile. **Not covered by an automated test in this batch**: the
+shield-bounce velocity mirror and the Reflector hand-off (owner swap,
+`angle += pi`, `damage_mul`) -- both are implemented and cited above
+against the exact decomp call chain and (for the shield bounce) a real
+recording's own observed reflected velocity, but no integration test
+exercises either path yet; flagged as a concrete follow-up rather than a
+silently assumed pass. `crates/cli/tests/replay_match.rs`'s own Blaster
+regression is rewritten to fire a real laser at a fighter placed out of
+immediate range and assert the hit lands strictly after the spawn frame
+(proving travel, not an instant melee-style connect), matching the shape
+of a real recording's own observed multi-frame flight.
 
 ## Known gaps and deviations (see inline citations above for detail)
 
