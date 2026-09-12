@@ -522,30 +522,31 @@ match (-123 through -26) and the first divergent frame is -25, field
 `position.x` (expected `0xc26121ec` = `-56.28312683105469`, actual
 `0xc26121eb` = `-56.28312301635742`, a 1-ULP difference, for P3/Falco).
 
-**Diagnosis (a suspected cross-platform floating-point limitation, not a
-Skirmish logic bug -- reported per this loop's own stop condition):** P3
-(Falco) enters Dash at frame -27 and is still in Dash at -25 (`action_age`
-3.0, matching); the diverging field is `position.x` alone, moved by
-`ftCo_Dash_Phys`'s ordinary friction/acceleration step
-(`getAccelAndTarget`/`ftCommon_8007C98C`, `fighter::locomotion::
-accelerate`/`Movement::accelerate_ground`). Tracing the exact bit patterns
-the native simulation itself produces (a temporary debug trace, not
-committed) through frames -27..-25 and replaying each step against
-`tests/physics_differential.rs`'s existing c-oracle harness (a temporary,
-uncommitted probe, not a new permanent test) shows every step already
-agrees with the host-compiled decomp C bit-for-bit on these exact inputs:
-the entry's own initial-velocity delta, frame -26's `accelerate_ground`
-call (`gr_vel=1.9` in, `0x3fe8f5c2` out, host C agrees), and frame -25's own
-call (`gr_vel=0x3fe8f5c2` in, host C agrees with Rust's result too). With
-the complete translated arithmetic chain confirmed bit-identical to
-decomp's own C on this exact sequence, the remaining 1-ULP gap against the
-real GameCube recording is not explained by a Skirmish translation bug;
-the most likely remaining explanation is the PowerPC Gekko/Broadway FPU's
-own rounding behavior on this multiply/add sequence differing from strict
-host IEEE-754 by one ULP, the same category (if a different mechanism) as
-`fox-fd.slp`'s own frame-5 `position.x` entry below (there attributed to
-`libm`'s trig not matching the GameCube SDK bit-for-bit). Not chased
-further in this batch.
+**Diagnosis (pending the fused-op audit, not a Skirmish logic bug --
+reported per this loop's own stop condition):** P3 (Falco) enters Dash at
+frame -27 and is still in Dash at -25 (`action_age` 3.0, matching); the
+diverging field is `position.x` alone, moved by `ftCo_Dash_Phys`'s ordinary
+friction/acceleration step (`getAccelAndTarget`/`ftCommon_8007C98C`,
+`fighter::locomotion::accelerate`/`Movement::accelerate_ground`). Tracing
+the exact bit patterns the native simulation itself produces (a temporary
+debug trace, not committed) through frames -27..-25 and replaying each step
+against `tests/physics_differential.rs`'s existing c-oracle harness (a
+temporary, uncommitted probe, not a new permanent test) shows every step
+already agrees with the host-compiled decomp C bit-for-bit on these exact
+inputs: the entry's own initial-velocity delta, frame -26's
+`accelerate_ground` call (`gr_vel=1.9` in, `0x3fe8f5c2` out, host C agrees),
+and frame -25's own call (`gr_vel=0x3fe8f5c2` in, host C agrees with Rust's
+result too). This is the same class of divergence as `fox-fd-3.slp`'s own
+frame -32 `velocities.self_x_air` case (also a one-ULP difference on a
+Dash frame's `getAccelAndTarget`/`ftCommon_8007C98C`/`accelerate_ground`
+chain, also verified bit-exact against host-compiled C): a sibling batch
+(`skirmish-fma`) is checking the retail binary's own disassembly for a
+fused multiply-add in `ftCommon_8007C98C`/the ground-acceleration chain,
+which would explain a systematic one-ULP gap between host-compiled
+(separately-rounded) C and the original PowerPC Gekko/Broadway FPU
+(which can round a fused product+sum once instead of twice) without any
+Skirmish translation bug. Pending that audit's result, not chased further
+in this batch.
 
 Previously (2026-09-12, gameplay export v2, the Falco registration batch):
 93 frames matched (-123 through -31, the pre-game Entry warp-in) and the
