@@ -152,3 +152,67 @@ and, when the variable or directory is absent, skip with a printed message
 rather than fail (so the repository never needs the ISO). Never copy the
 export into either git repository.
 
+## Compact binary pack: `match-data.bin` (2026-09-12)
+
+`<pairing>/match-data.json` is `skirmish::game::data::MatchData` in plain
+JSON and, for `fox-fd` in gameplay export v6
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/`), is
+379,662,106 bytes (~380 MB) -- most of a CI job's wall time against this
+export goes to parsing that file. JSON stays the exporter's source of
+truth (never regenerated from the binary form, always hand-inspectable);
+`skirmish pack convert <json> <bin>` (`crates/cli/src/pack.rs`) adds a
+lossless binary sibling, `match-data.bin`, that every loader accepting a
+`--match-data` path (`make-initialization`, the `real_parity*` tests' data
+discovery, `skirmish_cli::pack::discover_match_data`) prefers automatically
+when present, falling back to `.json` unchanged. `skirmish pack verify
+<json> <bin>` decodes both independently and asserts they produce the
+exact same `MatchData` value -- this is what the packaging step below runs
+before trusting a converted pack.
+
+**Format.** An 18-byte header (magic `SKPK`, a format version, a copy of
+`MatchData.schema` for a cheap sanity check, and the payload length)
+followed by the `MatchData` value encoded as CBOR (RFC 8949, via the
+`ciborium` crate) using `MatchData`'s own, unmodified `Serialize`/
+`Deserialize` derive -- see `crates/cli/src/pack.rs`'s module doc for why
+CBOR, not `bincode`/`postcard`: `MatchData` contains internally tagged
+enums and a `#[serde(flatten)]` field, which require a self-describing
+format (`deserialize_any` support) that `bincode`/`postcard` explicitly do
+not provide, and several `Option` fields use `skip_serializing_if`, which
+silently desyncs a positional binary encoding the moment a field is
+omitted. CBOR keeps map keys and tags on the wire like JSON does, so the
+existing derive round-trips unmodified, while still writing every number
+as fixed-width binary (an `f32` is 4 raw IEEE-754 bytes, never re-parsed
+decimal text) with no text-syntax overhead.
+
+**Measured (fox-fd, gameplay export v6, this machine, release build unless
+noted; a shared, noisy machine, so treat the load-time numbers as
+directional):**
+
+| | `match-data.json` | `match-data.bin` |
+|---|---|---|
+| Size | 379,662,106 bytes | 62,931,104 bytes (16.6%, 6.03x smaller) |
+| In-process decode into `MatchData` (interleaved runs, min of 9) | ~0.4-1.3 s | ~0.5-0.6 s, consistently 1.2-1.4x faster |
+| `make-initialization` + `validate-replay` wall time | ~1.8 s | ~1.8 s, unchanged |
+
+The end-to-end `make-initialization`/`validate-replay` pipeline time is
+essentially unchanged because its dominant cost is elsewhere: `make-
+initialization` still writes a full `Initialization` (JSON, embedding the
+entire `MatchData` again) that `validate-replay` reads back, and neither of
+those steps changed format in this batch -- only the `--match-data` input
+itself did. The `.bin` sibling's win is the ~6x smaller file (less to
+store, less to download in CI) and a real but modest decode-time
+improvement, not a change to the whole pipeline's cost.
+
+**Packaging.** `tools/package_gameplay_export.py --skirmish-cli <built
+skirmish binary>` now converts every pairing's `match-data.json` to
+`match-data.bin` (into a temporary staging directory; the source export
+directory itself is never modified) and packages only `match-data.bin`,
+each pairing's own `manifest.json`, and the top-level `manifest.json`/
+`rules.json`/`stages/*.json` -- the top-level duplicate `match-data.json`
+(historically also written at the export root, identical to a pairing's
+own copy) and any other large sidecar dump are dropped, since nothing
+downstream reads them. `.github/workflows/system-tests.yml`'s extraction
+step is unchanged: it just untars whatever the lock file points at, and
+`real_parity*`'s data discovery already prefers `.bin` over `.json`,
+whichever the tarball contains.
+

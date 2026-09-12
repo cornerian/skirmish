@@ -162,7 +162,12 @@ once a recording's first divergence is reached — each report's
 `checked_frames` is a matched *prefix*, not a summary of the whole file. It
 is also gated on real data: without `SKIRMISH_GAMEPLAY_DATA` (see
 `docs/gameplay-export.md`) this test skips entirely, and a skip is not
-evidence of anything.
+evidence of anything. Since 2026-09-12 the data discovery under
+`SKIRMISH_GAMEPLAY_DATA/<pairing>/` prefers a compact `match-data.bin` over
+`match-data.json` when both are present (`docs/gameplay-export.md`'s
+"Compact binary pack" section); either file decodes to the identical
+`MatchData`, so this changes CI download/load time only, never any of the
+measurements below.
 
 **Current measurement (2026-09-11, gameplay export v6, after this loop's
 ground-jump-direction fix):** 128 frames match (-123 through 4) and the

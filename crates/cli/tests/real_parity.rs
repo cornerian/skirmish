@@ -12,23 +12,24 @@
 //! Skirmish's own simulator.
 //!
 //! Export layout (produced by `skirmish-assets`, consumed here):
-//! `<SKIRMISH_GAMEPLAY_DATA>/<pairing>/match-data.json` plus a sibling
-//! `manifest.json` recording the export's own provenance, for each
-//! `<pairing>` (currently just `fox-fd`; every recording in
-//! `recordings.json` is a Fox-vs-Fox Final Destination match, so all three
-//! currently share that one pairing's pack regardless of which two ports
-//! played it — spawns are assigned by participant order, not port).
-//! `match-data.json` is a native `skirmish::game::data::MatchData` for that
-//! matchup; `make-initialization` cross-checks its fighter/stage names
-//! against each replay's own recorded external IDs (see
-//! `crates/cli/src/initialization.rs`).
+//! `<SKIRMISH_GAMEPLAY_DATA>/<pairing>/match-data.json` (or its compact
+//! `match-data.bin` sibling, preferred when present -- see
+//! `skirmish_cli::pack`) plus a sibling `manifest.json` recording the
+//! export's own provenance, for each `<pairing>` (currently just
+//! `fox-fd`; every recording in `recordings.json` is a Fox-vs-Fox Final
+//! Destination match, so all three currently share that one pairing's pack
+//! regardless of which two ports played it — spawns are assigned by
+//! participant order, not port). Either file decodes to a native
+//! `skirmish::game::data::MatchData` for that matchup; `make-initialization`
+//! cross-checks its fighter/stage names against each replay's own recorded
+//! external IDs (see `crates/cli/src/initialization.rs`).
 //!
 //! `SKIRMISH_GAMEPLAY_DATA` is unset in ordinary CI and locally until the
 //! export is published (see `docs/gameplay-export.md`'s "Durable location"
 //! section); this test then prints a skip message and passes, without
 //! `#[ignore]`, so the skip path itself always runs in CI. Once the
-//! directory and a given entry's pairing's `match-data.json` exist, the
-//! full comparison runs for that recording and its own
+//! directory and a given entry's pairing's `match-data.{json,bin}` exist,
+//! the full comparison runs for that recording and its own
 //! `first_divergent_frame` is ratcheted against its own baseline file
 //! (`tests/fixtures/slippi/parity/<id>-baseline.json`, named in
 //! `recordings.json`): the recorded frame must not get worse (earlier) than
@@ -39,6 +40,7 @@
 //! one regression is reported alongside any others rather than hiding them.
 use serde::Deserialize;
 use serde_json::Value;
+use skirmish_cli::pack;
 use std::{env, fs, path::PathBuf, process::Command};
 
 const FIXTURES: &str = concat!(
@@ -63,19 +65,18 @@ struct Recording {
 /// ratchet is satisfied (including a pack-not-yet-published skip), `Err`
 /// describing the regression otherwise.
 fn check_recording(root: &str, recording: &Recording) -> Result<(), String> {
-    let match_data_path = PathBuf::from(root)
-        .join(&recording.pairing)
-        .join("match-data.json");
-    if !match_data_path.is_file() {
+    let pairing_dir = PathBuf::from(root).join(&recording.pairing);
+    let Some(match_data_path) = pack::discover_match_data(&pairing_dir) else {
         println!(
-            "skip: {} does not exist for recording {:?}; SKIRMISH_GAMEPLAY_DATA={root} is set, \
-             but the {} export has not landed there yet.",
-            match_data_path.display(),
+            "skip: neither match-data.bin nor match-data.json exists under {} for recording \
+             {:?}; SKIRMISH_GAMEPLAY_DATA={root} is set, but the {} export has not landed there \
+             yet.",
+            pairing_dir.display(),
             recording.id,
             recording.pairing
         );
         return Ok(());
-    }
+    };
 
     let replay_path = PathBuf::from(FIXTURES).join(&recording.file);
     let baseline_path = PathBuf::from(FIXTURES).join(&recording.baseline);

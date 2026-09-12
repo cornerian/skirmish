@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use skirmish::{inventory, menus::Unlocks};
-use skirmish_cli::{initialization, menu_cli};
+use skirmish_cli::{initialization, menu_cli, pack};
 use skirmish_equivalence::{match_trace, runner, trace};
 use skirmish_replay::{match_validation, slippi};
 use std::{
@@ -54,6 +54,8 @@ enum Commands {
     },
     /// Build a validate-replay `Initialization` from a native `MatchData` and a completed replay.
     MakeInitialization {
+        /// A `MatchData` file, either `.json` or the compact `.bin` pack
+        /// format (see `skirmish pack`); dispatched on the extension.
         #[arg(long)]
         match_data: PathBuf,
         #[arg(long)]
@@ -63,6 +65,13 @@ enum Commands {
         /// Override the replay's own recorded GameStart random seed.
         #[arg(long)]
         seed: Option<u32>,
+    },
+    /// Convert between the gameplay export's `match-data.json` and the
+    /// compact, lossless `match-data.bin` pack format (see
+    /// `docs/gameplay-export.md`).
+    Pack {
+        #[command(subcommand)]
+        action: PackCommands,
     },
     /// Parse a completed Slippi replay with Peppi and summarize its timeline.
     InspectReplay {
@@ -108,6 +117,15 @@ enum Commands {
         #[arg(long, default_value_t = 60)]
         timeout_seconds: u64,
     },
+}
+
+#[derive(Subcommand)]
+enum PackCommands {
+    /// Read a `MatchData` JSON export and write the compact binary pack.
+    Convert { json: PathBuf, bin: PathBuf },
+    /// Decode both a JSON and binary `MatchData` pack and assert they hold
+    /// the exact same value (a lossless round trip, not just "both parse").
+    Verify { json: PathBuf, bin: PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -182,7 +200,7 @@ fn main() -> Result<()> {
             output,
             seed,
         } => {
-            let data = serde_json::from_slice(&fs::read(match_data)?)?;
+            let data = pack::load_match_data(&match_data)?;
             let replay = slippi::Replay::read(BufReader::new(File::open(replay)?))?;
             let built = initialization::build(data, &replay, seed)?;
             fs::write(&output, serde_json::to_string_pretty(&built)?)?;
@@ -197,6 +215,43 @@ fn main() -> Result<()> {
                 }))?
             );
         }
+        Commands::Pack { action } => match action {
+            PackCommands::Convert { json, bin } => {
+                let bytes = fs::read(&json)?;
+                let data: skirmish::game::data::MatchData = serde_json::from_slice(&bytes)?;
+                pack::write_bin(&bin, &data)?;
+                let json_len = bytes.len() as u64;
+                let bin_len = fs::metadata(&bin)?.len();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "json": json,
+                        "bin": bin,
+                        "json_bytes": json_len,
+                        "bin_bytes": bin_len,
+                    }))?
+                );
+            }
+            PackCommands::Verify { json, bin } => {
+                let from_json: skirmish::game::data::MatchData =
+                    serde_json::from_slice(&fs::read(&json)?)?;
+                let from_bin = pack::read_bin(&bin)?;
+                anyhow::ensure!(
+                    from_json == from_bin,
+                    "pack verify failed: {} and {} do not decode to the same MatchData",
+                    json.display(),
+                    bin.display()
+                );
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "json": json,
+                        "bin": bin,
+                        "equal": true,
+                    }))?
+                );
+            }
+        },
         Commands::InspectReplay {
             path,
             finalized_only,

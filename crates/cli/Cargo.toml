@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 skirmish = { path = "../.." }
 skirmish-equivalence = { path = "../equivalence" }
+ciborium = "0.2.2"
 
 [dev-dependencies]
 peppi = "=2.1.2"

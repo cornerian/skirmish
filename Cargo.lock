@@ -2344,6 +2344,7 @@ name = "skirmish-cli"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "ciborium",
  "clap",
  "peppi",
  "peppi-adapter",
