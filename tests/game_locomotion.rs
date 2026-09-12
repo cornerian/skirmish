@@ -285,11 +285,31 @@ fn crouch_thresholds_have_hysteresis_and_do_not_reverse_while_held() {
         step(&mut game, 0, [0.0, -0.7]).fighters[0].action,
         Action::Wait
     );
+    let entered = step(&mut game, 0, [0.0, -0.71]);
+    assert_eq!(entered.fighters[0].action, Action::Squat);
+    // `ftCo_Squat_Enter`'s own extra `ftAnim_8006EBA4` advance (`ftCo_
+    // Squat.c:60-69`, `start_squat`'s own comment) lands `action_frame` on 2
+    // by the time this step's state is observed -- `start_squat`'s explicit
+    // `1` plus the shared end-of-frame `+= 1` -- the same shape as `start_
+    // dash`/`start_turn` (`tests/game_dash.rs`'s own entry pin).
+    assert_eq!(entered.fighters[0].action_frame, 2);
+    // `crouch_animation_frames` is 6 (`fixtures/game/locomotion.json`); the
+    // gate reads `action_frame` before this same step's own end-of-frame
+    // increment, so it still sees 5 (not yet 6) on the fourth held frame
+    // (`action_frame` prints as 6 there) and only converts to SquatWait on
+    // the fifth held frame -- five held frames total, matching entry's own
+    // one-frame head start.
+    for _ in 0..4 {
+        assert_eq!(
+            step(&mut game, 0, [0.0, -1.0]).fighters[0].action,
+            Action::Squat
+        );
+    }
     assert_eq!(
-        step(&mut game, 0, [0.0, -0.71]).fighters[0].action,
-        Action::Squat
+        step(&mut game, 0, [0.0, -1.0]).fighters[0].action,
+        Action::SquatWait
     );
-    for _ in 0..10 {
+    for _ in 0..5 {
         step(&mut game, 0, [0.0, -1.0]);
     }
     assert_eq!(game.state().fighters[0].action, Action::SquatWait);

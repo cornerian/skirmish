@@ -1,5 +1,31 @@
 # Local validation provenance
 
+The 2026-09-12 Squat entry-advance fix (the real-replay parity loop on
+`fox-fd-2.slp`/`fox-fd-4.slp`, `docs/parity.md`) covers a sibling instance
+of the entry-advance bug the 2026-09-12 special-entry-advance batch fixed
+below, this time in the common (not Fox-specific) `ftCo_Squat_Enter`
+(`ftCo_Squat.c:60-69`): it calls `ftAnim_8006EBA4(gobj)` immediately after
+`Fighter_ChangeMotionState`, the identical extra advance `ftCo_Dash_Enter`/
+`ftCo_Turn_Enter` make. `ftCo_Squat_Anim`'s own exit check
+(`!ftAnim_IsFramesRemaining(gobj)`, reached from `ftCo_Wait_IASA`/`ftCo_
+Walk_IASA`/`ftCo_RunBrake_IASA`'s shared `ftCo_800D5FB0` call) reads `cur_
+anim_frame` directly, so without this advance Squat's own `action_frame >=
+crouch_animation_frames` gate (`game::locomotion`) read one frame behind,
+holding Squat one frame too long before converting to SquatWait. Fixed at
+the source the same way as `start_dash`/`start_turn`: a new `start_squat`
+helper sets `action_frame = 1` (not `0`) at entry, used at both call sites
+`ftCo_800D5FB0` reaches (the shared Wait/Walk/interruptible-tilt chain and
+`RunBrake`'s own copy). `tests/game_locomotion.rs`'s `crouch_thresholds_
+have_hysteresis_and_do_not_reverse_while_held` pins the entry frame's own
+`action_frame` (`2`, matching `start_dash`'s own entry pin: `start_squat`'s
+explicit `1` plus the shared end-of-frame `+= 1`) and the exact held-frame
+count before SquatWait converts (five, one fewer than before this fix).
+This fix alone does not move either `fox-fd-2.slp`'s or `fox-fd-4.slp`'s
+own baseline (confirmed by re-measuring): the divergence this loop was
+chasing on `fox-fd-4.slp` turned out to be `game::locomotion::update_
+actions`'s Landing-specific squat-entry branch calling the wrong destination
+entirely, not this timing bug -- see this file's own next entry.
+
 The 2026-09-12 shield-regeneration-on-conversion-frame fix (the real-replay
 parity loop, `fox-bf.slp`, `docs/parity.md`) stops `Fighter_ProcessHit_
 8006D1EC`-equivalent regeneration (`game::shield::finish_frame`) from

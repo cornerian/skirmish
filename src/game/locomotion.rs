@@ -521,6 +521,17 @@ fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     f.locomotion.turn_smash = smash;
 }
 
+/// `ftCo_Squat_Enter` (`ftCo_Squat.c:60-69`) makes the identical extra
+/// `ftAnim_8006EBA4` call `ftCo_Dash_Enter` does, immediately after
+/// `Fighter_ChangeMotionState`; see `start_dash`'s own comment. Without it,
+/// `Action::Squat`'s own `action_frame >= crouch_animation_frames` exit
+/// check (below) reads one frame behind `ftCo_Squat_Anim`'s `cur_anim_frame`-
+/// based `ftAnim_IsFramesRemaining`, so Squat lasted one frame too long.
+fn start_squat(f: &mut Fighter) {
+    enter(f, Action::Squat);
+    f.action_frame = 1;
+}
+
 pub(crate) fn start_run_turn(f: &mut Fighter, frame: u32) {
     let facing = f.facing;
     enter(f, Action::RunTurn);
@@ -949,7 +960,7 @@ pub(crate) fn update_actions(
                 f.action != Action::Landing || super::landing::squat_window(f, data);
             if landing_squat_ready && input.stick[1] < -p.crouch_enter_threshold {
                 f.locomotion.pass_delay = None;
-                enter(f, Action::Squat);
+                start_squat(f);
             } else if input.stick[0] * f.facing <= p.turn_threshold {
                 start_turn(f, p, false);
             } else if input.stick[0] * f.facing >= p.walk_threshold
@@ -1004,7 +1015,7 @@ pub(crate) fn update_actions(
             {
                 start_run_turn(f, f.action_frame);
             } else if input.stick[1] < -p.crouch_enter_threshold {
-                enter(f, Action::Squat);
+                start_squat(f);
             }
         }
         Action::Turn => {
