@@ -279,7 +279,7 @@ fn angle_xy(a: [f32; 3], b: [f32; 2]) -> f32 {
         // (`tools/ppc_fma_audit.py lbVector_AngleXY`; `docs/math.md`).
         let dot = a[1].mul_add(b[1], a[0] * b[0]);
         let cosine = (dot / product).clamp(-1.0, 1.0);
-        crate::math::acosf(cosine)
+        crate::compat::math::trig::acosf(cosine)
     } else {
         0.0
     }
@@ -309,7 +309,7 @@ fn redirect_from_velocity(velocity: [f32; 2]) -> (f32, f32) {
     let facing = face_stick(velocity[0]);
     (
         facing,
-        crate::math::atan2f(velocity[1], velocity[0] * facing),
+        crate::compat::math::trig::atan2f(velocity[1], velocity[0] * facing),
     )
 }
 
@@ -343,7 +343,7 @@ fn enter_from_ground_hold(
         fighter.fox_up_special.travel_frames = a.duration;
         fighter.ground_velocity = a.speed * fighter.facing;
         fighter.fox_up_special.rotate_model =
-            crate::math::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
+            crate::compat::math::trig::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
     } else {
         // ftCommon_8007D60C's behaviorally-observable core: leave the
         // ground under the fighter's own decision, not a physical loss of
@@ -372,7 +372,7 @@ fn enter_aerial_launch(
         if stick[0].abs() > a.facing_stick_min {
             fighter.facing = face_stick(stick[0]);
         }
-        crate::math::atan2f(stick[1], stick[0] * fighter.facing)
+        crate::compat::math::trig::atan2f(stick[1], stick[0] * fighter.facing)
     } else {
         HALF_PI
     };
@@ -384,8 +384,8 @@ fn enter_aerial_launch(
     // `(facing_dir * x74) * cosf(rotateModel)` -- f32 multiplication is not
     // associative, so the grouping is kept bit-exact to the source.
     fighter.velocity = [
-        facing * (a.speed * crate::math::cosf(angle)),
-        a.speed * crate::math::sinf(angle),
+        facing * (a.speed * crate::compat::math::trig::cosf(angle)),
+        a.speed * crate::compat::math::trig::sinf(angle),
     ];
     helpers::max_out_jumps(fighter, data);
 }
@@ -602,10 +602,11 @@ impl SpecialMove for Move {
                     // kept bit-exact to the source's own grouping (see
                     // `enter_aerial_launch`'s identical note).
                     movement.animation_velocity[0] = -((fighter.facing
-                        * (accel * crate::math::cosf(rotate)))
+                        * (accel * crate::compat::math::trig::cosf(rotate)))
                         - movement.self_velocity[0]);
-                    movement.animation_velocity[1] =
-                        -((accel * crate::math::sinf(rotate)) - movement.self_velocity[1]);
+                    movement.animation_velocity[1] = -((accel
+                        * crate::compat::math::trig::sinf(rotate))
+                        - movement.self_velocity[1]);
                 }
                 true
             }
@@ -644,8 +645,10 @@ impl SpecialMove for Move {
     fn update_ground_contact(&self, fighter: &mut Fighter) {
         if fighter.action == Action::SpecialHi && fighter.grounded {
             let floor_normal = fighter.floor_normal;
-            fighter.fox_up_special.rotate_model =
-                crate::math::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
+            fighter.fox_up_special.rotate_model = crate::compat::math::trig::atan2f(
+                -floor_normal[0] * fighter.facing,
+                floor_normal[1],
+            );
         }
     }
 
@@ -822,7 +825,7 @@ mod tests {
     #[test]
     fn angle_xy_parallel_and_perpendicular() {
         assert_eq!(angle_xy([1.0, 0.0, 0.0], [1.0, 0.0]), 0.0);
-        // `angle_xy` now calls `crate::math::acosf`, seeded from a real
+        // `angle_xy` now calls `crate::compat::math::trig::acosf`, seeded from a real
         // reciprocal-sqrt estimate rather than this decompilation project's
         // own placeholder-derived (non-convergent) one -- see
         // `frsqrte_newton3`'s doc comment and `docs/math.md`. Unlike the

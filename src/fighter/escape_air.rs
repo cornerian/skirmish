@@ -8,10 +8,10 @@ pub fn launch_velocity(stick: [f32; 2], deadzone: [f32; 2], force: f32) -> [f32;
     if stick[0].abs() < deadzone[0] && stick[1].abs() < deadzone[1] {
         return [0.0, 0.0];
     }
-    let angle = crate::math::atan2f(stick[1], stick[0]);
+    let angle = crate::compat::math::trig::atan2f(stick[1], stick[0]);
     [
-        force * crate::math::cosf(angle),
-        force * crate::math::sinf(angle),
+        force * crate::compat::math::trig::cosf(angle),
+        force * crate::compat::math::trig::sinf(angle),
     ]
 }
 

@@ -2,15 +2,16 @@
 //!
 //! Stack entries are raw 32-bit words, operands are big endian, and jumps are
 //! relative to the byte after their operand. `sin`/`cos`/`tan`/`atan`/`asin`/
-//! `acos` (opcodes `0x0d`-`0x12`) use `crate::math`'s ports of the game's own
-//! trigonometry (`docs/math.md`); `log`/`exp`/`sqrt` (`0x13`, `0x14`, `0x16`)
+//! `acos` (opcodes `0x0d`-`0x12`) use `crate::compat::math::trig`'s ports of
+//! the game's own trigonometry (`docs/math.md`); `log`/`exp`/`sqrt` (`0x13`,
+//! `0x14`, `0x16`)
 //! still use `libm`, so their final bits and NaN payloads are not certified
 //! against the PowerPC runtime. Integer arithmetic wraps as on PowerPC.
 //! Invalid float casts and integer division, which are undefined in the
 //! reference C, return explicit errors.
 
-use super::math;
-use crate::random::HsdRng;
+use super::math::operators as math;
+use crate::compat::math::random::HsdRng;
 
 const DEG_TO_RAD: f64 = 0.017453292519943295;
 const RAD_TO_DEG: f64 = 57.29577951308232;
@@ -131,12 +132,12 @@ fn unary(opcode: u8, word: u32, rng: &mut HsdRng, pc: usize) -> Result<u32, Erro
         0x0a => i.wrapping_neg() as u32,
         0x0b => rng.randi(2) as u32,
         0x0c => rng.randf().to_bits(),
-        0x0d => crate::math::sinf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
-        0x0e => crate::math::cosf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
-        0x0f => crate::math::tanf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
-        0x10 => degrees(crate::math::asinf(f)),
-        0x11 => degrees(crate::math::acosf(f)),
-        0x12 => degrees(crate::math::atanf(f)),
+        0x0d => crate::compat::math::trig::sinf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
+        0x0e => crate::compat::math::trig::cosf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
+        0x0f => crate::compat::math::trig::tanf((DEG_TO_RAD * f64::from(f)) as f32).to_bits(),
+        0x10 => degrees(crate::compat::math::trig::asinf(f)),
+        0x11 => degrees(crate::compat::math::trig::acosf(f)),
+        0x12 => degrees(crate::compat::math::trig::atanf(f)),
         0x13 => libm::logf(f).to_bits(),
         0x14 => libm::expf(f).to_bits(),
         0x15 => {

@@ -5,8 +5,8 @@ const BUTTON_B: u16 = 0x0200;
 /// A fresh B press with both main-stick axes strictly inside their thresholds.
 pub fn neutral_input(pressed_buttons: u16, stick: [f32; 2], thresholds: [f32; 2]) -> bool {
     pressed_buttons & BUTTON_B != 0
-        && super::compat::comparison_abs(stick[0]) < thresholds[0]
-        && super::compat::comparison_abs(stick[1]) < thresholds[1]
+        && crate::compat::source_ops::comparison_abs(stick[0]) < thresholds[0]
+        && crate::compat::source_ops::comparison_abs(stick[1]) < thresholds[1]
 }
 
 #[cfg(test)]

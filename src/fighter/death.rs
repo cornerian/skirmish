@@ -1,6 +1,6 @@
 //! Exact blast-line ordering and top-death selection from `ftCo_800D3158`.
 
-use crate::random::HsdRng;
+use crate::compat::math::random::HsdRng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

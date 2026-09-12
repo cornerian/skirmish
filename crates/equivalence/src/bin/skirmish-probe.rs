@@ -1,7 +1,7 @@
 //! Executable differential probe for translated RNGs, not a game executable.
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
-use skirmish::random::{HsdRng, MslRng};
+use skirmish::compat::math::random::{HsdRng, MslRng};
 use skirmish_equivalence::trace::{Record, f32_bits};
 use std::{
     collections::BTreeMap,

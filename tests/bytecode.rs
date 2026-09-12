@@ -1,7 +1,7 @@
 use proptest::prelude::*;
-use skirmish::{
-    compat::bytecode::{Error, evaluate},
-    random::HsdRng,
+use skirmish::compat::{
+    bytecode::{Error, evaluate},
+    math::random::HsdRng,
 };
 
 fn literal(word: u32) -> Vec<u8> {

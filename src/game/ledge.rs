@@ -450,7 +450,7 @@ pub(crate) fn update_actions(
             } else {
                 (false, controller.cstick)
             };
-            let angle = crate::math::atan2f(stick[1], stick[0].abs());
+            let angle = crate::compat::math::trig::atan2f(stick[1], stick[0].abs());
             input::stick_option(
                 main,
                 fighter.ledge.input_ready,

@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::random::{HsdRng, HsdSeedContext, MslRng};
+use skirmish::compat::math::random::{HsdRng, HsdSeedContext, MslRng};
 use std::sync::Mutex;
 
 // Upstream reference functions intentionally retain their shared global seeds.

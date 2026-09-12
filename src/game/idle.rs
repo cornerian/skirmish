@@ -1,7 +1,7 @@
 //! Idle animation cycling from `ftCo_Wait_Anim` (`ftCo_Wait.c:34-42`) and
 //! `ftCo_8008A7A8` (`ftwaitanim.c:62-105`). See `docs/idle.md`.
 use super::{Action, Error, Fighter, data::FighterData};
-use crate::random::HsdRng;
+use crate::compat::math::random::HsdRng;
 use serde::{Deserialize, Serialize};
 
 /// `fighter.idle`: the character's Wait1 restart length plus its idle table

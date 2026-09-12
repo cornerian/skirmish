@@ -6,10 +6,10 @@ mod conformance;
 mod death_resources;
 
 use skirmish::{
+    compat::math::random::HsdRng,
     game::{
         Action, BUTTON_A, Controller, Event, Match, Phase, State, data::MatchData, death::Kind,
     },
-    random::HsdRng,
 };
 
 const IDLE: [Controller; 2] = [Controller {

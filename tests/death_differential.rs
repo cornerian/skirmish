@@ -3,8 +3,8 @@
 
 use proptest::prelude::*;
 use skirmish::{
+    compat::math::random::HsdRng,
     fighter::death::{Kind, Query, select},
-    random::HsdRng,
 };
 
 unsafe extern "C" {

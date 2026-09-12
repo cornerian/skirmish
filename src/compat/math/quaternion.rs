@@ -60,14 +60,14 @@ pub fn matrix_to_euler(m: &Matrix) -> Vector {
     // The unsuffixed C threshold is double precision.
     if f64::from(len) > 1e-5 {
         [
-            crate::math::atan2f(m[2][1], m[2][2]),
-            crate::math::atan2f(-m[2][0], len),
-            crate::math::atan2f(m[1][0], m[0][0]),
+            crate::compat::math::trig::atan2f(m[2][1], m[2][2]),
+            crate::compat::math::trig::atan2f(-m[2][0], len),
+            crate::compat::math::trig::atan2f(m[1][0], m[0][0]),
         ]
     } else {
         [
-            crate::math::atan2f(-m[1][2], m[1][1]),
-            crate::math::atan2f(-m[2][0], len),
+            crate::compat::math::trig::atan2f(-m[1][2], m[1][1]),
+            crate::compat::math::trig::atan2f(-m[2][0], len),
             0.0,
         ]
     }
@@ -122,11 +122,11 @@ pub fn interpolate(p: Quaternion, q: Quaternion, t: f32) -> Quaternion {
     let cosine = p.dot(q);
     let (sp, sq) = if 1.0 + cosine > 1e-10 {
         if 1.0 - cosine > 1e-10 {
-            let theta = crate::math::acosf(cosine);
-            let sine = crate::math::sinf(theta);
+            let theta = crate::compat::math::trig::acosf(cosine);
+            let sine = crate::compat::math::trig::sinf(theta);
             (
-                crate::math::sinf((1.0 - t) * theta) / sine,
-                crate::math::sinf(t * theta) / sine,
+                crate::compat::math::trig::sinf((1.0 - t) * theta) / sine,
+                crate::compat::math::trig::sinf(t * theta) / sine,
             )
         } else {
             ((1.0 - f64::from(t)) as f32, t)
@@ -135,8 +135,12 @@ pub fn interpolate(p: Quaternion, q: Quaternion, t: f32) -> Quaternion {
         let t = if t < 0.5 { t } else { t - 0.5 };
         let doubled = 2.0 * t;
         (
-            crate::math::sinf((std::f64::consts::FRAC_PI_2 * f64::from(1.0 - doubled)) as f32),
-            crate::math::sinf((std::f64::consts::FRAC_PI_2 * f64::from(doubled)) as f32),
+            crate::compat::math::trig::sinf(
+                (std::f64::consts::FRAC_PI_2 * f64::from(1.0 - doubled)) as f32,
+            ),
+            crate::compat::math::trig::sinf(
+                (std::f64::consts::FRAC_PI_2 * f64::from(doubled)) as f32,
+            ),
         )
     };
     (p * sp + q * sq).to_array()

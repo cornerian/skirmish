@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::ctype;
+use skirmish::compat::ctype;
 
 unsafe extern "C" {
     fn oracle_ctype_flags(c: i32) -> u8;

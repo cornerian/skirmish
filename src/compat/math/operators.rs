@@ -25,6 +25,6 @@ pub fn atan2_degrees(y: f32, x: f32) -> f32 {
     if x == 0.0 {
         if y >= 0.0 { 90.0 } else { -90.0 }
     } else {
-        (57.29577951308232 * f64::from(crate::math::atan2f(y, x))) as f32
+        (57.29577951308232 * f64::from(crate::compat::math::trig::atan2f(y, x))) as f32
     }
 }

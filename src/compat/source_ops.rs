@@ -3,7 +3,8 @@
 /// Runtime/platform.h's comparison-based `ABS` macro. Unlike `f32::abs`, this
 /// preserves negative zero and the sign bit of an unordered NaN.
 #[inline]
-pub(crate) fn comparison_abs(value: f32) -> f32 {
+#[allow(dead_code)]
+pub fn comparison_abs(value: f32) -> f32 {
     if value < 0.0 { -value } else { value }
 }
 

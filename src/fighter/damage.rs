@@ -120,13 +120,13 @@ pub fn directional_influence(
             if x * stick[1] - y * stick[0] < 0.0 {
                 deflection = -deflection;
             }
-            let mut angle = crate::math::atan2f(y, x);
+            let mut angle = crate::compat::math::trig::atan2f(y, x);
             let magnitude = libm::sqrtf(x * x + y * y);
             let scale = max_angle_degrees * DEGREES_TO_RADIANS;
             angle += scale * deflection;
             return [
-                magnitude * crate::math::cosf(angle),
-                magnitude * crate::math::sinf(angle),
+                magnitude * crate::compat::math::trig::cosf(angle),
+                magnitude * crate::compat::math::trig::sinf(angle),
             ];
         }
     }
@@ -140,13 +140,13 @@ pub fn directional_influence(
 pub fn decay_air_knockback(velocity: [f32; 2], decay: f32) -> [f32; 2] {
     let [x, y] = velocity;
     if x != 0.0 || y != 0.0 {
-        let angle = crate::math::atan2f(y, x);
+        let angle = crate::compat::math::trig::atan2f(y, x);
         if libm::sqrtf(x * x + y * y) < decay {
             [0.0; 2]
         } else {
             [
-                x - decay * crate::math::cosf(angle),
-                y - decay * crate::math::sinf(angle),
+                x - decay * crate::compat::math::trig::cosf(angle),
+                y - decay * crate::compat::math::trig::sinf(angle),
             ]
         }
     } else {
@@ -339,7 +339,7 @@ pub fn positional_launch(
     let angle_degrees = if abs_dx < 1e-5 {
         0
     } else {
-        (crate::math::atanf(dy / abs_dx) * RADIANS_TO_DEGREES) as i32
+        (crate::compat::math::trig::atanf(dy / abs_dx) * RADIANS_TO_DEGREES) as i32
     };
     PositionalLaunch {
         direction,
@@ -381,7 +381,7 @@ pub struct GroundLaunch {
 
 /// `lbVector_Angle`, including its tiny-vector fallthrough and cosine clamp.
 /// The original is three-dimensional; the damage transition supplies z = 0.
-/// `acosf` uses `crate::math::acosf`, seeded from a real reciprocal-sqrt
+/// `acosf` uses `crate::compat::math::trig::acosf`, seeded from a real reciprocal-sqrt
 /// estimate rather than this decompilation project's own placeholder-derived
 /// (and non-convergent) one; `sqrt` is still `f32::sqrt` (`libm::sqrtf`'s
 /// hardware `frsqrte`-estimate equivalent is out of scope for this batch;
@@ -397,7 +397,7 @@ pub fn vector_angle(a: [f32; 2], b: [f32; 2]) -> f32 {
         if cosine < -1.0 {
             cosine = -1.0;
         }
-        crate::math::acosf(cosine)
+        crate::compat::math::trig::acosf(cosine)
     } else {
         0.0
     }
@@ -472,11 +472,13 @@ pub enum TechRoll {
 /// Directional portion of `ftCo_80098928`. The caller owns the already-tested
 /// `ftCo_800986B0` tech predicate and the subsequent action transition.
 pub fn tech_roll_direction(stick_x: f32, facing: f32, threshold: f32) -> Option<TechRoll> {
-    (super::compat::comparison_abs(stick_x) >= threshold).then_some(if stick_x * facing >= 0.0 {
-        TechRoll::Forward
-    } else {
-        TechRoll::Backward
-    })
+    (crate::compat::source_ops::comparison_abs(stick_x) >= threshold).then_some(
+        if stick_x * facing >= 0.0 {
+            TechRoll::Forward
+        } else {
+            TechRoll::Backward
+        },
+    )
 }
 
 /// `ftCo_800DF644`: the C-stick's Y sample newly crosses the upward threshold.
@@ -492,8 +494,8 @@ pub fn fresh_horizontal_cstick(
     horizontal_threshold: f32,
     vertical_angle: f32,
 ) -> bool {
-    super::compat::comparison_abs(previous[0]) < horizontal_threshold
-        && super::compat::comparison_abs(current[0]) >= horizontal_threshold
+    crate::compat::source_ops::comparison_abs(previous[0]) < horizontal_threshold
+        && crate::compat::source_ops::comparison_abs(current[0]) >= horizontal_threshold
         && super::aerial::stick_angle(current) < vertical_angle
 }
 
@@ -597,7 +599,8 @@ fn knockdown_roll(input: KnockdownInput, rules: &KnockdownRules) -> Option<Knock
         rules.vertical_angle_radians,
     ) {
         Some(input.cstick[0])
-    } else if super::compat::comparison_abs(input.main[0]) >= rules.horizontal_stick_threshold
+    } else if crate::compat::source_ops::comparison_abs(input.main[0])
+        >= rules.horizontal_stick_threshold
         && super::aerial::stick_angle(input.main) < rules.vertical_angle_radians
     {
         Some(input.main[0])

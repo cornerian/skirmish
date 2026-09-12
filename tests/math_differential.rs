@@ -36,7 +36,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::math::{acosf, asinf, atan2f, atanf, cosf, sinf, tanf};
+use skirmish::compat::math::trig::{acosf, asinf, atan2f, atanf, cosf, sinf, tanf};
 
 // `acosf`/`asinf` are compared against `std`, not `oracle_acosf`/
 // `oracle_asinf` (see below), so those two are deliberately not declared.

@@ -558,7 +558,7 @@ pub(crate) fn advance(
     // ftCo_Wait_Anim's HSD_Randi draw runs within the same animation-phase
     // callback order Melee dispatches in (player order); the seed is handed
     // off to the blast-zone death draw further below exactly as today.
-    let mut idle_rng = crate::random::HsdRng::new(state.rng_seed);
+    let mut idle_rng = crate::compat::math::random::HsdRng::new(state.rng_seed);
     for player in 0..2 {
         if !active[player] {
             continue;
@@ -932,7 +932,9 @@ pub(crate) fn advance(
                     let height = data.fighters[victim]
                         .damage_poses
                         .as_ref()
-                        .map_or_default(|poses| poses.hurtbox_heights[index]);
+                        .map_or(crate::fighter::damage::HurtHeight::Middle, |poses| {
+                            poses.hurtbox_heights[index]
+                        });
                     body_contact = Some(HitContact::Fighter {
                         height,
                         geometry: damage::FighterContact {
@@ -1008,7 +1010,7 @@ pub(crate) fn advance(
     let mut blast_deaths = [None; 2];
     let mut blast_knockouts = [false; 2];
     if let Some(rules) = &data.rules.death {
-        let mut rng = crate::random::HsdRng::new(state.rng_seed);
+        let mut rng = crate::compat::math::random::HsdRng::new(state.rng_seed);
         for player in 0..2 {
             let fighter = &state.fighters[player];
             blast_deaths[player] = crate::fighter::death::select(
@@ -1408,7 +1410,7 @@ fn update_animation(
     geometry: &StageGeometry,
     player: usize,
     input: Controller,
-    idle_rng: &mut crate::random::HsdRng,
+    idle_rng: &mut crate::compat::math::random::HsdRng,
 ) -> Result<(bool, bool), Error> {
     let attrs = &data.movement;
     rebirth::update_animation(

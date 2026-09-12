@@ -112,8 +112,8 @@ impl State {
         };
         if source.angle != 0.0 {
             let (sin, cos) = (
-                crate::math::sinf(source.angle),
-                crate::math::cosf(source.angle),
+                crate::compat::math::trig::sinf(source.angle),
+                crate::compat::math::trig::cosf(source.angle),
             );
             let (old_top, old_bottom, old_right, old_left) = (top, bottom, right, left);
             // The source uses horizontal midpoint as the side points' y input.

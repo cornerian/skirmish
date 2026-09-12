@@ -38,6 +38,10 @@ skirmish-equivalence = { path = "crates/equivalence" }
 skirmish-replay = { path = "crates/skirmish-replay" }
 tempfile = "3"
 
+[[example]]
+name = "controllers"
+required-features = ["controller-input"]
+
 [[bench]]
 name = "match_step"
 harness = false

@@ -11,6 +11,7 @@ mod death_resources;
 mod idle_support;
 
 use skirmish::{
+    compat::math::random::HsdRng,
     fighter::idle::pick,
     game::{
         Action, Controller, Match, State,
@@ -18,7 +19,6 @@ use skirmish::{
         death::Kind,
         idle::{IdleAnimations, IdleEntry},
     },
-    random::HsdRng,
 };
 
 const IDLE: [Controller; 2] = [Controller {

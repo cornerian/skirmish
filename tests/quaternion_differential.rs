@@ -1,4 +1,4 @@
-use skirmish::quaternion::{self as quat, Matrix};
+use skirmish::compat::math::quaternion::{self as quat, Matrix};
 
 const IDENTITY: Matrix = [
     [1.0, 0.0, 0.0, 0.0],
@@ -87,7 +87,7 @@ fn interpolation_preserves_hsd_antipodal_behavior() {
 mod oracle {
     use super::*;
     use proptest::prelude::*;
-    use skirmish::quaternion::Quaternion;
+    use skirmish::compat::math::quaternion::Quaternion;
 
     unsafe extern "C" {
         fn oracle_quaternion(op: u32, a: *const f32, b: *const f32, t: f32, out: *mut f32) -> i32;

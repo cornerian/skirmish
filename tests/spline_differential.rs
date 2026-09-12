@@ -4,7 +4,9 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::spline::{ArcLength, Point, Spline, SplineType, arc_length_polynomial, hermite};
+use skirmish::compat::math::spline::{
+    ArcLength, Point, Spline, SplineType, arc_length_polynomial, hermite,
+};
 
 #[repr(C)]
 struct RawSpline {

@@ -974,8 +974,8 @@ pub(crate) fn apply_hit(
     );
     let speed = knockback * rules.knockback_speed;
     let incoming = [
-        -speed * crate::math::cosf(angle.radians) * damage_facing,
-        speed * crate::math::sinf(angle.radians),
+        -speed * crate::compat::math::trig::cosf(angle.radians) * damage_facing,
+        speed * crate::compat::math::trig::sinf(angle.radians),
     ];
     let ground_launch = (was_grounded && rules.damage.ground_launch.is_some()).then(|| {
         damage::ground_launch(
