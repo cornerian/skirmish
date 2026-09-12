@@ -177,6 +177,32 @@ is outside what a decomp-ported Rust function can express -- exactly the
 limitation `AGENTS.md` already names ("Host C
 agreement does not establish PowerPC or whole-game equivalence").
 
+**Update (`skirmish-f64` batch, `tools/ppc_precision_audit.py`,
+`docs/math.md`):** the remaining candidate mechanism -- a genuine
+double-precision intermediate (PowerPC's *single-precision* mnemonics
+still compute at double precision internally and round once to `f32`; a
+plain, non-fused double-precision op feeding a single-rounded one would
+still differ from two separately-rounded `f32` steps, and the FMA audit's
+own tool never actually checked for that) -- is now also ruled out, and
+not merely by absence of evidence: `ftCo_Dash_Phys`, `ftCommon_8007C98C`,
+`ftCommon_ApplyGroundMovement(NoSlide)`, `ftCommon_ApplyFrictionGround`,
+`ftCo_Dash_Enter` and `ftCommon_800804A0` all disassemble with zero
+double-precision arithmetic instructions (every `lfd` found is a
+callee-saved FPR stack spill, not a constant load). Running Fox's own
+exact recorded pack constants (`f32` bits `0x3ff33333`/`0x3dcccccd`/
+`0x3ca3d70a`/`0x400ccccd`) through every rounding model this expression
+could plausibly use -- single-precision step by step, fully
+double-precision with one final round, and every mix in between -- always
+produces `0x400147ae`, never the recording's `0x400147ad`: no instruction
+selection reaches the recorded value from these inputs at this expression,
+full stop. A perturbation sweep shows the incoming `ground_velocity` would
+need to be about two ULP lower than modeled to reproduce `0x400147ad`,
+pointing at the Dash-entry velocity computation (`ftCo_Dash_Enter`/
+`ftCommon_800804A0`, also confirmed double-precision-free) or an earlier
+frame, not this expression's own evaluation order -- a concrete lead for
+whichever future batch picks this up, not chased further here. No baseline
+change (`fox-fd-3.slp` unchanged at -32/91).
+
 **Proves:** for however many frames each recording's own
 `first_divergent_frame` reaches (or fully, if `matched`), the native
 simulation's observable fields agree with an authentic recording, for that
@@ -239,6 +265,18 @@ cross-checked against a sibling batch's independent tool
 exactly as the retail binary computes it still ties, not improves on, this
 measurement. The true cause of the frame-5 divergence remains open; not
 chased further in this batch, per this loop's own stop condition.
+
+**Update (`skirmish-f64` batch):** the other leading candidate, a genuine
+double-precision intermediate rather than a fused op, is also ruled out
+for this chain by direct disassembly (`tools/ppc_precision_audit.py`,
+`docs/math.md`): `ftCo_80099A9C` (the launch itself), `inlineA0`,
+`ftCommon_8007D9D4` (the stick-angle helper feeding `atan2f`), and
+`ftCo_EscapeAir_Phys`/`IASA` all disassemble with zero double-precision
+arithmetic instructions. This is consistent with, not a new explanation
+for, the `skirmish-msl-trig` batch's own finding above that a fully
+disassembly-verified `cosf`/`sinf` port still ties this exact frame rather
+than fixing it -- the divergence is real and still open. No baseline
+change (`fox-fd.slp` unchanged at 5/128).
 
 Previously (2026-09-11, gameplay export v6, after this loop's
 ground-jump-direction fix): 128 frames match (-123 through 4) and the
@@ -651,6 +689,18 @@ binary and this Rust port compute the same separately-rounded multiply
 then add. The actual mechanism behind the recording's own one-ULP-lower
 result remains unexplained; not chased further in this batch (`AGENTS.md`:
 "Host C agreement does not establish PowerPC or whole-game equivalence").
+
+**Update (`skirmish-f64` batch):** the double-precision-intermediate
+hypothesis is also ruled out for this identical, fighter-generic Dash
+chain by direct disassembly (`tools/ppc_precision_audit.py`,
+`docs/math.md`): zero double-precision arithmetic instructions in any of
+`ftCo_Dash_Phys`, `ftCommon_8007C98C`, `ftCommon_ApplyGroundMovement`
+(`NoSlide`), or `ftCommon_ApplyFrictionGround`. Falco's own lower
+`dash_max_velocity` puts frame -25 through the clamp branch (unlike Fox's
+frame -32 above), so the exhaustive per-input rounding-model sweep run for
+Fox's case was not independently repeated here; the same instructions
+compute it regardless of which branch is taken. No baseline change
+(`falco-fox-fd.slp` unchanged at -25/98).
 
 Previously (2026-09-12, gameplay export v2, the Falco registration batch):
 93 frames matched (-123 through -31, the pre-game Entry warp-in) and the

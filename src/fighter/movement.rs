@@ -402,4 +402,61 @@ mod tests {
         assert_eq!(decrement_toward_zero(-0.25, 1.0), 0.0);
         assert_eq!(decay_knockback(0.0, -1.0), 1.0);
     }
+
+    #[test]
+    fn dash_accel_reproduces_ieee754_not_the_recordings_one_ulp_lower_value() {
+        // fox-fd-3.slp P2, frame -32 (docs/parity.md, docs/math.md's
+        // "double-precision intermediates" section): `fighters/fox.json`'s
+        // own real locomotion-pack constants (dash_initial_velocity 0x3ff33333
+        // = 1.899999976, dash_accel_mul 0x3dcccccd = 0.100000001,
+        // dash_accel_base 0x3ca3d70a = 0.019999999, dash_max_velocity
+        // 0x400ccccd = 2.200000048, comfortably above `gr_vel + accel` so no
+        // clamp branch below ever engages). Real hardware recorded
+        // `velocities.self_x_air` = 0x400147ad; every rounding model tried --
+        // single-precision step by step (what `game::locomotion::
+        // ground_motion` and this function actually do), and fully
+        // double-precision arithmetic with a single final round to f32 --
+        // reproduces 0x400147ae instead, one ULP higher. `tools/
+        // ppc_precision_audit.py` confirms the retail binary agrees: zero
+        // double-precision arithmetic instructions anywhere in
+        // `ftCo_Dash_Phys`, `ftCommon_8007C98C`, `ftCommon_ApplyGroundMovement`
+        // (`NoSlide`), or `ftCommon_ApplyFrictionGround` -- the same plain,
+        // separately-rounded `fmuls`/`fadds` this Rust port uses. Both a
+        // fused product+sum (ruled out by `tools/ppc_fma_audit.py`, the
+        // `skirmish-fma` batch) and a double-precision intermediate are
+        // mathematically incapable of producing the recording's own value
+        // from these exact inputs; the one-ULP gap must be upstream of this
+        // frame (most likely the Dash-entry velocity itself), not in this
+        // expression's evaluation order or precision. Pinned here so a
+        // future change can't silently "fix" this by accident without
+        // re-deriving why it would actually be correct.
+        let gr_vel = f32::from_bits(0x3ff33333);
+        let stick = 1.0_f32;
+        let dash_accel_mul = f32::from_bits(0x3dcccccd);
+        let dash_accel_base = f32::from_bits(0x3ca3d70a);
+        let dash_max_velocity = f32::from_bits(0x400ccccd);
+
+        // game::locomotion::ground_motion's own two-step accel computation.
+        let mut accel = stick * dash_accel_mul;
+        accel += dash_accel_base; // stick > 0.0
+        let target = stick * dash_max_velocity;
+
+        // friction/maximum are unreachable here: gr_vel + accel (2.02) never
+        // exceeds target (2.2), so `accelerate`'s clamp branch never runs.
+        let ground_acceleration = accelerate(gr_vel, accel, target, 1.0, f32::MAX);
+        // game::simulation's own `f.ground_velocity = movement.ground_velocity
+        // + movement.ground_acceleration`, the step this unit doesn't itself
+        // perform.
+        let new_ground_velocity = gr_vel + ground_acceleration;
+
+        assert_eq!(new_ground_velocity.to_bits(), 0x400147ae);
+        assert_ne!(new_ground_velocity.to_bits(), 0x400147ad);
+
+        // The double-precision-throughout model gives the identical bits --
+        // not merely "also passes disassembly", but arithmetically incapable
+        // of reaching the recording's value from these inputs.
+        let accel_f64 = (stick as f64) * (dash_accel_mul as f64) + (dash_accel_base as f64);
+        let whole_f64 = (gr_vel as f64) + accel_f64;
+        assert_eq!((whole_f64 as f32).to_bits(), 0x400147ae);
+    }
 }

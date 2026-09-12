@@ -335,6 +335,83 @@ batch's `crate::math::acosf` call and this batch's fused dot-product/
 `sqrt_accurate` length calls are independent parts of the same function
 body).
 
+The 2026-09-12 double-precision audit batch (`skirmish-f64`, `docs/math.md`
+has the full trail) picks up where `skirmish-fma` left off on the same
+three recorded one-ULP divergences (`fox-fd-3.slp` frame -32,
+`falco-fox-fd.slp` frame -25, `fox-fd.slp` frame 5): a fused product+sum
+was already ruled out; the remaining candidate was a double-precision
+*intermediate* — PowerPC FPRs are always the IEEE double format, and the
+single-precision mnemonics (`fadds`/`fmuls`/etc.) are architecturally
+"compute at double, round once to single," so a plain (non-fused) `fmul`
+feeding a `fadds` would still round only once, differently from two
+separately-rounded `f32` operations, and the FMA audit's own tool never
+actually checked for that (it only reports fused mnemonics; a
+zero-fused-op function prints nothing else). `tools/ppc_precision_audit.py`
+extends the same disassembly approach to classify every floating-point
+instruction into double-precision arithmetic, single-precision arithmetic,
+`frsp` (the explicit single-rounding point), and `lfd`/`lfs` (double/single
+loads), so a genuine double intermediate is now directly visible rather
+than inferred from the decompiled C's declared types.
+
+Every function in all three chains (Dash/ground-movement/friction,
+air-dodge launch, landing friction, plus their immediate callees --
+`ftCo_Dash_Phys`, `ftCommon_8007C98C`, `ftCommon_ApplyGroundMovement`/
+`NoSlide`, `ftCommon_ApplyFrictionGround`, `ftCo_Dash_Enter`,
+`ftCommon_800804A0`, `ft_GetGroundFrictionMultiplier`, `ftCo_80099A9C`,
+`ftCommon_8007D9D4`, `ftCo_EscapeAir_Phys`/`IASA`, `ft_80084F3C`,
+`ftCo_Landing_Enter`/`LandingFallSpecial_Enter`/`Landing_Phys`,
+`ftCommon_Fall`/`8007CF58`/`ApplyFrictionAir`, `ftCo_800CB110`) disassembles
+to zero double-precision arithmetic instructions; every `lfd` found is a
+callee-saved FPR stack spill/restore around a call or at an epilogue, not a
+constant load. For `fox-fd-3.slp` frame -32, this batch went further than
+disassembly alone: it ran Fox's own exact recorded pack constants
+(`dash_initial_velocity`/`dash_accel_mul`/`dash_accel_base`/
+`dash_max_velocity`, `f32` bits `0x3ff33333`/`0x3dcccccd`/`0x3ca3d70a`/
+`0x400ccccd`) through every possible rounding model for this expression --
+single-precision step by step, fully double-precision with one final
+round, and every partial mix -- and all of them produce the identical
+`0x400147ae`, never the recording's own `0x400147ad`. No instruction
+selection reaches the recorded value from these inputs at this expression;
+the gap must be upstream (a perturbation sweep shows the incoming
+`ground_velocity` would need to be about two ULP lower than modeled, which
+points at the Dash-entry velocity computation instead, itself also
+confirmed fused- and double-precision-free). `falco-fox-fd.slp` frame -25
+runs through the identical, fighter-generic Dash chain (Falco's own lower
+`dash_max_velocity` puts it through the clamp branch instead, not
+independently re-swept). `fox-fd.slp` frame 5 is likewise confirmed
+double-precision-free, consistent with (not a new explanation for) the
+`skirmish-msl-trig` batch's own finding that a fully disassembly-verified
+trigonometry port still ties, not fixes, that frame.
+
+A broader sweep of the same ~500-function C-oracle-pinned list the FMA
+batch drew from (434 resolved) finds 22 functions with genuine
+double-precision arithmetic (208 instructions total) -- collision/ECB
+geometry, ASDI/SDI redirection, and the Blaster laser's reflection code,
+none reachable from any of the three named chains, so a real but unrelated
+backlog rather than an explanation here (`docs/math.md`'s own new section
+has the full list).
+
+**No Rust source change and no baseline change**: the port already
+computes all three chains exactly as the retail binary does, confirmed at
+the instruction level this time, not only from the decompiled C's declared
+types. `src/fighter/movement.rs`'s new
+`dash_accel_reproduces_ieee754_not_the_recordings_one_ulp_lower_value` unit
+test pins both the single- and double-precision-throughout evaluation of
+the exact recorded inputs, so this can't silently regress into looking
+"fixed" by accident. `docs/parity.md`'s three entries are updated with this
+audit's result. Measured against the pack this batch's own recordings are
+tracked against: `fox-fd-3.slp` unchanged at -32/91, `falco-fox-fd.slp`
+unchanged at -25/98, `fox-fd.slp` unchanged at 5/128 -- ruling out a second
+candidate explanation isn't fixing the divergence itself.
+
+**Tests**: `src/fighter/movement.rs`'s new unit test (above); no new
+C-oracle differential (this batch changes no arithmetic, only confirms the
+existing port's own evaluation order already matches the retail binary's).
+`cargo fmt --all -- --check`, `cargo clippy --locked --workspace
+--all-targets --all-features -- -D warnings`, `cargo test --locked
+--workspace` and `cargo test --locked --workspace --features c-oracle`
+(debug) all pass clean; `git diff --check` clean.
+
 The 2026-09-12 Blaster/laser C-oracle batch closes the primary gap the
 2026-09-12 Fox neutral special batch flagged below ("No C-oracle
 differential harness was added this batch for `ftfoxspecialn.c`/the laser
