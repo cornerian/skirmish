@@ -1,9 +1,13 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::game::{
-    characters::{Specials, fox::side::SideSpecial, fox::up::UpSpecial},
-    data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
-    escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
+use skirmish::{
+    fighter::clank as clank_math,
+    game::{
+        characters::{Specials, fox::side::SideSpecial, fox::up::UpSpecial},
+        clank,
+        data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
+        escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
+    },
 };
 
 #[derive(serde::Deserialize)]
@@ -54,6 +58,43 @@ pub fn profile(mut data: MatchData) -> MatchData {
     data
 }
 
+/// Wire the same ordinary clank profile `tests/game_clank.rs` uses onto
+/// `data`, plus the rebound animation `rules.clank` requires for every
+/// fighter (`validation.rs`'s "rebound animation requires a clank
+/// profile"). Only the Travel hit test opts into this -- the Hold pulse
+/// test deliberately leaves `rules.clank` unset, since it exists to
+/// exercise the generic non-clank `hit_groups`/`hitboxes::refreshed_groups`
+/// path (`docs/fox-up-special.md`'s "Hitboxes" section), which this same
+/// match-wide flag would otherwise divert to `clank::blocked`'s own,
+/// already-correct, independent victim bookkeeping.
+pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
+    data.rules.clank = Some(clank::Rules {
+        profile: clank::Profile::OrdinaryGroundedNonSlash,
+        response: clank_math::Rules {
+            damage_gap: 9,
+            duration_scale: 0.5,
+            duration_base: 2.0,
+        },
+        push_scale: 0.2,
+        push_base: 0.6,
+        hitlag_maximum: 20.0,
+        surface_friction_multiplier: 0.5,
+    });
+    for fighter in &mut data.fighters {
+        fighter.rebound = Some(clank::Animation {
+            animation_length: 13.9,
+            poses: (0..15)
+                .map(|frame| {
+                    let mut pose = fighter.bones.clone();
+                    pose[1].translation[1] = 1.0 + frame as f32 * 0.1;
+                    pose
+                })
+                .collect(),
+        });
+    }
+    data
+}
+
 /// Fox/Falco's Hold-phase charge hit: the gameplay export pack
 /// (`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911/
 /// fox-fd/match-data.json`, `fighters[0].specials.up.hold.ground`) shows a
@@ -89,16 +130,15 @@ pub fn hold_charge_hitbox() -> Hitbox {
 /// Travel runs). Every field is the pack's own value verbatim except `bone`
 /// (the pack's own bone 58 has no equivalent in this suite's shared
 /// two-bone synthetic skeleton -- see `tests/game_swept_hitboxes.rs`'s own
-/// precedent -- adapted to bone 1) and `clank`/`rebound` (the pack reports
-/// both `true`; forced off here since `rules.clank` is not configured by
-/// this move's own test profile and wiring that separate subsystem's rules
-/// is out of this batch's scope -- clank/rebound already work generically
-/// once `rules.clank` exists, per `src/game/clank.rs`, and are unaffected
-/// by anything in `up.rs`/`down.rs`).
+/// precedent -- adapted to bone 1); `clank`/`rebound` are both `true`, the
+/// pack's own values, now that this move's own test profile wires
+/// `rules.clank` (`profile`'s own clank/rebound setup above) the same way
+/// `specials::helpers::validate_hitboxes` gates every other attack's
+/// hitboxes.
 pub fn travel_hitbox() -> Hitbox {
     Hitbox {
-        clank: false,
-        rebound: false,
+        clank: true,
+        rebound: true,
         element: Default::default(),
         group: 0,
         bone: 1,

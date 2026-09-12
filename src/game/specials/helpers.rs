@@ -8,7 +8,7 @@ use crate::{
     fighter::{Movement, aerial as landing_math},
     game::{
         Action, Error, Fighter,
-        data::{Attack, FighterData},
+        data::{Attack, FighterData, Rules as MatchRules},
         simulation,
         validation::{validate_animation_pose, validate_shape},
     },
@@ -16,21 +16,31 @@ use crate::{
 
 /// Every physics/hitbox frame of `attack` against `fighter`'s own skeleton
 /// and hurtboxes: the pose/topology check every move kind already runs
-/// (`validate_animation_pose`), plus the same per-hitbox field bounds and
-/// transformed-geometry sanity check the generic jab/aerial/tilt/smash/
-/// neutral-special chain applies (`validation.rs`'s own hitbox loop) --
-/// bone/group bounds, finite/nonnegative geometry, damage/growth/fixed/base
-/// ranges, and an integral 0..=362 launch angle. Deliberately narrower than
-/// that generic chain in two respects, both intentional: it does not require
-/// `attack.move_id` even when staling is enabled (real gameplay-export packs
-/// for Fox's up/down specials do not yet populate it on every phase, and
-/// this batch is scoped to the hitboxes themselves, not that separate,
-/// pre-existing gap), and it does not gate `clank`/`rebound` on
-/// `rules.clank` (this function has no match-wide `Rules` access, unlike
-/// `validation.rs`'s own top-level pass; a future clank-focused batch that
-/// wires `rules.clank` up for these moves can add that gate here too).
-pub(crate) fn validate_hitboxes(attack: &Attack, fighter: &FighterData) -> Result<(), Error> {
+/// (`validate_animation_pose`), plus the same per-hitbox field bounds,
+/// `rules.clank`-gated clank/rebound bits, `move_id`-under-staling
+/// requirement and transformed-geometry sanity check the generic
+/// jab/aerial/tilt/smash/neutral-special chain applies (`validation.rs`'s
+/// own hitbox loop) -- bone/group bounds, finite/nonnegative geometry,
+/// damage/growth/fixed/base ranges, and an integral 0..=362 launch angle.
+/// Narrower than that generic chain in one respect: `move_id` is required
+/// under staling only for a phase that actually has a hitbox on some frame,
+/// not unconditionally for every phase passed in (pack v6 populates
+/// `move_id` on every up/down-special phase regardless, including the
+/// hitbox-free ones like `bound.pose`/`fall`/`landing`, but a future pack
+/// need not, and this batch is scoped to the hitboxes, not that separate
+/// requirement).
+pub(crate) fn validate_hitboxes(
+    attack: &Attack,
+    fighter: &FighterData,
+    rules: &MatchRules,
+) -> Result<(), Error> {
     let finite = |v: f32| v.is_finite() && v.abs() <= 1_000_000.0;
+    let has_hitboxes = attack.frames.iter().any(|frame| !frame.hitboxes.is_empty());
+    if has_hitboxes && rules.staling.is_some() && !attack.move_id.is_some_and(|id| id != 0) {
+        return Err(Error::Data(
+            "staling requires an explicit nonzero attack move_id".into(),
+        ));
+    }
     for frame in &attack.frames {
         let pose = validate_animation_pose(&frame.bones, fighter)?;
         if frame.hitboxes.len() > 4 {
@@ -44,6 +54,11 @@ pub(crate) fn validate_hitboxes(attack: &Attack, fighter: &FighterData) -> Resul
             ));
         }
         for hit in &frame.hitboxes {
+            if rules.clank.is_none() && (hit.clank || hit.rebound) {
+                return Err(Error::Data(
+                    "clank/rebound flags require an explicit ordinary profile".into(),
+                ));
+            }
             if !(hit.bone < frame.bones.len()
                 && hit.group < 16
                 && hit.center.iter().copied().all(finite)

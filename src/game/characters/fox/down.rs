@@ -93,15 +93,16 @@ pub struct Reflect {
 }
 
 pub(crate) fn validate(
-    rules: &super::side::Rules,
+    specials_rules: &super::side::Rules,
     parameters: &DownSpecial,
     fighter: &FighterData,
+    rules: &MatchRules,
 ) -> Result<(), Error> {
     // `rules.specials` (side::Rules) supplies this move's own
     // `vertical_threshold` (x21C); validate it here too, since a fighter
     // could enable the down special without the side special ever pairing
-    // this same `rules` value against `validate_rules` itself.
-    super::side::validate_rules(rules)?;
+    // this same `specials_rules` value against `validate_rules` itself.
+    super::side::validate_rules(specials_rules)?;
     let finite = |v: f32| v.is_finite() && v.abs() <= 1_000_000.0;
     let a = &parameters.attributes;
     if !finite(a.release_lag)
@@ -145,7 +146,7 @@ pub(crate) fn validate(
         // Start's own hit (`docs/fox-down-special.md`'s gameplay-export
         // citation) is a real script-embedded hitbox; every phase is
         // checked uniformly since the shape is the same either way.
-        helpers::validate_hitboxes(attack, fighter)?;
+        helpers::validate_hitboxes(attack, fighter, rules)?;
     }
     Ok(())
 }

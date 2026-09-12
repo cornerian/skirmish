@@ -399,8 +399,8 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             &rules.specials,
             fighter.specials.as_ref().and_then(|s| s.fox_up()),
         ) {
-            (Some(rules), Some(parameters)) => {
-                characters::fox::up::validate(rules, parameters, fighter)?;
+            (Some(specials_rules), Some(parameters)) => {
+                characters::fox::up::validate(specials_rules, parameters, fighter, rules)?;
             }
             (None, Some(_)) => {
                 return Err(Error::Data(
@@ -418,7 +418,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     "down-special motions require common specials rules".into(),
                 ));
             };
-            characters::fox::down::validate(specials_rules, parameters, fighter)?;
+            characters::fox::down::validate(specials_rules, parameters, fighter, rules)?;
             if fighter.locomotion.is_none() {
                 return Err(Error::Data(
                     "down-special mid-move turn/jump-cancel/platform-drop share the common locomotion resources".into(),

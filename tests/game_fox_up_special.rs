@@ -585,11 +585,53 @@ fn invalid_up_special_resources_are_rejected() {
     // gap-closer, `docs/fox-up-special.md`'s "Hitboxes" section): an
     // out-of-range hitbox group (>= 16) on Hold's own pose is rejected the
     // same way every other move kind's hitboxes already were.
+    // `hold_charge_hitbox` (not `travel_hitbox`, which carries `clank`/
+    // `rebound` true) keeps this specifically about the group bound, not
+    // the clank gate below.
     let mut resource = data();
-    let mut hitbox = travel_hitbox();
+    let mut hitbox = up_special_resources::hold_charge_hitbox();
     hitbox.group = 99;
     up_special_mut(&mut resource.fighters[0]).hold.ground.frames[0].hitboxes = vec![hitbox];
     assert!(Match::new(resource, 0).is_err());
+
+    // Travel's own `clank`/`rebound` bits are both `true` (the pack's own
+    // values); without `rules.clank` configured, they are rejected the same
+    // way the generic jab/aerial/tilt/smash/neutral-special chain's own
+    // hitboxes already are (`validation.rs`'s "clank/rebound flags require
+    // an explicit ordinary profile").
+    let mut resource = data();
+    up_special_mut(&mut resource.fighters[0])
+        .travel
+        .ground
+        .frames[0]
+        .hitboxes = vec![travel_hitbox()];
+    assert!(Match::new(resource, 0).is_err());
+
+    // Staling requires a nonzero `move_id` on a phase that actually has a
+    // hitbox on some frame (Travel's own continuous hit); a hitbox-free
+    // phase (Fall, here) is unaffected either way. Every fighter's ordinary
+    // `jab` needs one too once staling is enabled at all (the generic
+    // jab/aerial/tilt/smash/neutral-special chain's own unconditional
+    // requirement, `validation.rs`), unrelated to this batch's own change.
+    let mut resource = up_special_resources::with_ordinary_clank(data());
+    resource.rules.staling = Some(skirmish::fighter::stale::Rules {
+        penalties: [0.0; 9],
+        debug_bypass: false,
+    });
+    for fighter in &mut resource.fighters {
+        fighter.jab.move_id = Some(2);
+    }
+    {
+        let p = up_special_mut(&mut resource.fighters[0]);
+        p.travel.ground.frames[0].hitboxes = vec![travel_hitbox()];
+        p.travel.ground.move_id = None;
+    }
+    assert!(Match::new(resource.clone(), 0).is_err());
+    up_special_mut(&mut resource.fighters[0])
+        .travel
+        .ground
+        .move_id = Some(20);
+    assert!(Match::new(resource, 0).is_ok());
 
     // `fighter.specials = None` while `rules.specials` stays set is itself
     // rejected (the side special's own validation, shared with this move,
@@ -820,8 +862,11 @@ fn travel_hits_a_nearby_opponent_every_frame_matching_the_pack_s_continuous_hitb
     // pack itself reports the identical hitbox on every one of its own 31
     // sampled frames, a shorter looping pose with the hitbox on every one of
     // *its* frames reproduces the same "never clears while Travel runs"
-    // fact exactly.
-    let mut resource = data();
+    // fact exactly. `travel_hitbox`'s own `clank`/`rebound` bits are both
+    // `true` now (the pack's own values), so this test's own resource wires
+    // the ordinary clank profile they require to validate
+    // (`specials::helpers::validate_hitboxes`'s `rules.clank` gate).
+    let mut resource = up_special_resources::with_ordinary_clank(data());
     resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
     resource.rules.knockback_speed = 0.0;
     {

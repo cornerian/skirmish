@@ -235,10 +235,12 @@ No code change was needed in `down.rs` for this, for the identical reason
 already routes into the ordinary hit-scan/damage pipeline. Validation
 gained the same `specials::helpers::validate_hitboxes` call `up::validate`
 now also uses (see `docs/fox-up-special.md`'s own "Hitboxes" section for
-what it checks and the two things it deliberately does not, for the same
-reasons here). Neither `ftfoxspeciallw.c` nor anything it calls touches a
-hitlag field, so the attacker's own hitlag on a connecting hit is the
-ordinary, already-generic engine rule -- no special-casing needed or added.
+what it checks, including the `rules.clank` gate and the `move_id`-under-
+staling requirement the 2026-09-12 hit-record-refresh batch wired up for
+both moves; `docs/validation.md`). Neither `ftfoxspeciallw.c` nor anything
+it calls touches a hitlag field, so the attacker's own hitlag on a
+connecting hit is the ordinary, already-generic engine rule -- no
+special-casing needed or added.
 
 **Native test**
 (`tests/game_fox_down_special.rs::reflector_start_hits_a_nearby_opponent_on_

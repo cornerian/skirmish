@@ -109,10 +109,12 @@ pub struct Bound {
 #[serde(deny_unknown_fields)]
 pub struct UpSpecial {
     pub hold: side::Phase,
-    /// Hitboxes stay empty: the pinned source (`ftfoxspecialhi.c`) creates
-    /// none directly, and this batch does not extract the animation-
-    /// embedded hitbox table a real Travel pose would carry. Firefox/
-    /// Firebird deals no damage in this profile.
+    /// Travel's own hit is a real script-embedded hitbox (`docs/
+    /// fox-up-special.md`'s "Hitboxes" section): a continuous bone-58
+    /// capsule active on every sampled frame, dealing the pack's own 14
+    /// damage. The pinned source itself (`ftfoxspecialhi.c`) never creates
+    /// it directly -- it belongs to the animation script, like every other
+    /// attack in this codebase.
     pub travel: side::Phase,
     pub landing: Attack,
     pub fall: Attack,
@@ -121,11 +123,12 @@ pub struct UpSpecial {
 }
 
 pub(crate) fn validate(
-    rules: &side::Rules,
+    specials_rules: &side::Rules,
     parameters: &UpSpecial,
     fighter: &FighterData,
+    rules: &MatchRules,
 ) -> Result<(), Error> {
-    side::validate_rules(rules)?;
+    side::validate_rules(specials_rules)?;
     let finite = |v: f32| v.is_finite() && v.abs() <= 1_000_000.0;
     let a = &parameters.attributes;
     if !finite(a.gravity_delay)
@@ -178,7 +181,7 @@ pub(crate) fn validate(
         // script-embedded hitboxes (`docs/fox-up-special.md`'s own
         // gameplay-export citation); every phase is checked uniformly since
         // the shape is the same `Attack`/`AttackFrame` either way.
-        helpers::validate_hitboxes(attack, fighter)?;
+        helpers::validate_hitboxes(attack, fighter, rules)?;
     }
     if parameters.bound.transn_y.len() != parameters.bound.pose.frames.len()
         || parameters.bound.exit_flags.len() != parameters.bound.pose.frames.len()

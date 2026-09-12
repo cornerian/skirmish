@@ -356,13 +356,13 @@ fn every_phase_survives_a_checkpoint_round_trip() {
 /// a placeholder); `bone` is adapted from the pack's own bone 3 to bone 1,
 /// this suite's shared two-bone synthetic skeleton having no equivalent
 /// (see `tests/game_fox_up_special.rs`'s identical adaptation for Fire
-/// Fox's own Travel hitbox), and `clank`/`rebound` are forced off (the pack
-/// reports `clank: true`, `rebound: false`; `rules.clank` is not configured
-/// by this move's own test profile, out of this batch's scope -- see that
-/// same file's `travel_hitbox` doc for why).
+/// Fox's own Travel hitbox), and `clank`/`rebound` are the pack's own
+/// values (`true`/`false`); this test's own resource wires the ordinary
+/// clank profile they require to validate
+/// (`specials::helpers::validate_hitboxes`'s `rules.clank` gate).
 fn reflector_start_hitbox() -> skirmish::game::data::Hitbox {
     skirmish::game::data::Hitbox {
-        clank: false,
+        clank: true,
         rebound: false,
         element: Default::default(),
         group: 0,
@@ -385,7 +385,7 @@ fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
     // `fixtures/game/fox-down-special.json` (used by every other test in
     // this file, whose own step counts -- "Start is 4 frames" -- are tuned
     // to that fixture's short, hitbox-free stand-in).
-    let mut resource = data();
+    let mut resource = down_special_resources::with_ordinary_clank(data());
     resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
     resource.rules.knockback_speed = 0.0;
     {
@@ -462,9 +462,13 @@ fn invalid_down_special_resources_are_rejected() {
     // `specials::helpers::validate_hitboxes` (this batch's own validation
     // gap-closer, `docs/fox-down-special.md`'s "Hitboxes" section): an
     // out-of-range hitbox group (>= 16) on Start's own pose is rejected the
-    // same way every other move kind's hitboxes already were.
+    // same way every other move kind's hitboxes already were. `clank` is
+    // forced off here (unlike `reflector_start_hitbox`'s own pack-verbatim
+    // `true`) so this keeps testing specifically the group bound, not the
+    // clank gate below.
     let mut resource = data();
     let mut hitbox = reflector_start_hitbox();
+    hitbox.clank = false;
     hitbox.group = 99;
     down_special_mut(&mut resource.fighters[0])
         .start
@@ -472,6 +476,45 @@ fn invalid_down_special_resources_are_rejected() {
         .frames[0]
         .hitboxes = vec![hitbox];
     assert!(Match::new(resource, 0).is_err());
+
+    // Reflector Start's own `clank` bit is `true` (the pack's own value);
+    // without `rules.clank` configured, it is rejected the same way the
+    // generic jab/aerial/tilt/smash/neutral-special chain's own hitboxes
+    // already are (`validation.rs`'s "clank/rebound flags require an
+    // explicit ordinary profile").
+    let mut resource = data();
+    down_special_mut(&mut resource.fighters[0])
+        .start
+        .ground
+        .frames[0]
+        .hitboxes = vec![reflector_start_hitbox()];
+    assert!(Match::new(resource, 0).is_err());
+
+    // Staling requires a nonzero `move_id` on a phase that actually has a
+    // hitbox on some frame (Start's own hit); a hitbox-free phase (End,
+    // here) is unaffected either way. Every fighter's ordinary `jab` needs
+    // one too once staling is enabled at all (the generic chain's own
+    // unconditional requirement, `validation.rs`), unrelated to this
+    // batch's own change.
+    let mut resource = down_special_resources::with_ordinary_clank(data());
+    resource.rules.staling = Some(skirmish::fighter::stale::Rules {
+        penalties: [0.0; 9],
+        debug_bypass: false,
+    });
+    for fighter in &mut resource.fighters {
+        fighter.jab.move_id = Some(2);
+    }
+    {
+        let p = down_special_mut(&mut resource.fighters[0]);
+        p.start.ground.frames[0].hitboxes = vec![reflector_start_hitbox()];
+        p.start.ground.move_id = None;
+    }
+    assert!(Match::new(resource.clone(), 0).is_err());
+    down_special_mut(&mut resource.fighters[0])
+        .start
+        .ground
+        .move_id = Some(21);
+    assert!(Match::new(resource, 0).is_ok());
 
     let mut resource = data();
     resource.rules.specials = None;

@@ -128,6 +128,35 @@ own analogous correctness, not a duplicate of that path, and the two are
 mutually exclusive per match by the existing dispatch in
 `simulation::advance`.
 
+This batch also closes the two gaps `specials::helpers::validate_hitboxes`
+(the 2026-09-11 batch's own validation gap-closer for Fox's up/down
+specials) deliberately left open, now that pack v6 supplies real
+`Rules.clank`/`rebound` data and populates `move_id` on every up/down
+special phase: the function takes the match-wide `Rules` and applies the
+same two checks `validation.rs`'s own generic jab/aerial/tilt/smash/
+neutral-special chain already runs on every other attack's hitboxes --
+`rules.clank.is_some() || !(hit.clank || hit.rebound)` (Travel's own hit and
+Reflector's Start hit both carry the pack's real values now, `clank`/
+`rebound` both `true` for Travel, `clank` `true`/`rebound` `false` for
+Start, instead of the forced-off placeholders the previous batch used) --
+and a `move_id`-under-staling requirement, narrower than the generic chain
+in one respect: required only for a phase that actually has a hitbox on
+some frame, not unconditionally for every phase (a future pack need not
+populate `move_id` on a hitbox-free phase like `bound.pose`, even though
+pack v6 already does). `characters::fox::up::validate`/`down::validate`
+each gained a `rules: &MatchRules` parameter (renaming their existing
+`side::Rules` parameter to `specials_rules` to disambiguate) threaded from
+`validation.rs`'s own per-fighter pass, which already holds the match-wide
+`Rules` in scope under the same name. `tests/support/fox_up_special.rs`/
+`fox_down_special.rs` each gain a `with_ordinary_clank` helper (the same
+profile `tests/game_clank.rs` uses, plus the rebound animation
+`rules.clank` requires for every fighter) that only the Travel/Reflector-
+Start hit tests and the new validation cases opt into -- the Hold pulse
+test deliberately keeps `rules.clank` unset, since enabling it match-wide
+would divert its own hit-connect check onto `clank::blocked`'s independent,
+already-correct bookkeeping instead of the `hit_groups`/`refreshed_groups`
+path this batch exists to fix.
+
 The 2026-09-12 Falco registration batch adds `game::characters::
 Specials::Falco` on top of Fox's existing side/up/down special code
 (`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own

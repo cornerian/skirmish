@@ -258,13 +258,10 @@ match-data.json`, `fighters[0].specials.up.{hold,travel}.{ground,air}`.
   gained a matching gap-closer: `specials::helpers::validate_hitboxes` (also
   used by `down.rs`) runs the same per-hitbox field/geometry checks the
   generic jab/aerial/tilt/smash/neutral-special chain already runs
-  (`validation.rs`), which previously skipped Fox's up/down specials
-  entirely (they had nothing to check while every hitbox list was empty).
-  Deliberately narrower in two respects: no `attack.move_id` requirement
-  under staling (the real export pack does not yet populate it on every
-  phase -- `bound.pose`, for one -- and this batch is scoped to the
-  hitboxes, not that separate gap) and no `rules.clank`-gate for the
-  `clank`/`rebound` bits (this helper has no match-wide `Rules` access).
+  (`validation.rs`), including that chain's own `rules.clank`-gate on the
+  `clank`/`rebound` bits and its `move_id`-under-staling requirement (the
+  2026-09-12 hit-record-refresh batch wired both up, narrowing the latter
+  to phases that actually carry a hitbox; see `docs/validation.md`).
 - **Attacker-side hitlag**: neither `ftfoxspecialhi.c` nor any function it
   calls ever touches a hitlag-related field (confirmed by reading the whole
   pinned file), so the ordinary, already-generic engine rule applies
