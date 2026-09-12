@@ -1,5 +1,64 @@
 # Local validation provenance
 
+The 2026-09-11 Dash->Run `action_frame` timing fix (the real-replay parity
+loop, `docs/parity.md`) fixes a genuine one-frame-late boundary in
+`game::dash::update_dash_or_run` and `game::locomotion::update_actions`'s
+identical fallback copy: both compared `f.action_frame >= p.dash_run_frame`
+to decide when a held Dash automatically becomes Run, modeling `fn_
+800CA5F0`'s gate on the animation's own scripted run flag (`cmd_vars[0]`,
+written by a set-cmd-var command at `ftaction.c:462`, which `dash_run_frame`
+stands in for directly). The decomp side of that comparison,
+`ftCo_Dash_IASA`, reads `fp->cur_anim_frame` after the *same* frame's own
+generic per-frame animation advance (`Fighter_Spaghetti_8006AD10`'s
+unconditional `ftAnim_8006EBA4(gobj)`, `fighter.c:1684`) has already run --
+this is the identical ordering fact the Dash/Turn `state_age` fix above
+relies on. Skirmish's shared end-of-frame `action_frame += 1`
+(`simulation::advance`) runs *after* `update_actions`/`update_dash_or_run`
+within the same frame, so `f.action_frame` at the point this check reads it
+still holds the *previous* frame's count -- one less than the value decomp
+compares at the equivalent instant. Confirmed directly against `fox-fd.slp`:
+P1 holds forward through Dash frames -24..-14 (`action_age` 1..11, all
+matching) and is already in Run at -13 -- the frame whose *unincremented*
+`action_frame` is 11, one below `dash_run_frame` (12) -- not one frame
+later, at -12, which the unadjusted comparison produced (the first
+divergence this fix targets: `action_state` expected Run, actual Dash, at
+-13). Both copies of the check now compare `action_frame + 1 >=
+dash_run_frame`.
+
+**Tests added**: `tests/game_dash.rs`'s new
+`holding_forward_through_dash_enters_run_one_frame_before_the_unadjusted_
+threshold` pins the synthetic fixture's own `dash_run_frame` (8) boundary,
+confirming Run is entered once `action_frame` reaches 7 rather than 8. This
+shifted an existing test's own boundary: `late_phase_redash_ground_
+velocity_reflects_the_transition_friction_tail`'s `rules.dash = None`
+scenario held neutral for 6 frames before its own fresh press, which used to
+land one frame short of the (buggy) run-transition threshold and now lands
+exactly on the corrected one, entering Run instead of continuing Dash (not
+what that scenario tests, since it only tests the fallback path with no
+friction tail); reduced to 5 frames of neutral to stay clear of the boundary
+again, with a comment explaining why. `tests/support/dash.rs`'s own
+fixture-rationale comment (`BUFFER.dash_buffer_frame_limit`) is updated to
+describe the corrected timing (the threshold is now reachable exactly when
+late phase begins, not one frame into it) instead of the stale, pre-fix
+reasoning. No C-oracle differential was added, for the same reason as the
+Dash/Turn `state_age` fix: this ports a control-flow/sequencing fact about
+when in the frame a check runs, not a specific pinned function's arithmetic.
+`cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-
+targets --all-features -- -D warnings` and `cargo test --locked --workspace`
+(910 passed/0 failed/19 ignored, up from 909/0/19 immediately before this
+fix) all pass.
+
+Measured against gameplay export pack v5 (`v5-snapshot-20260911`, published;
+pack v4's missing specials `move_id` is fixed in v5, otherwise identical
+fox-fd data through this range): `checked_frames` went from 110 to 116
+(frames -123 through -8); the next divergence is -7, `position.x` (expected
+`-17.7748`, actual `-17.6948`) on P1's Run->KneeBend (JumpSquat) transition,
+with `action_state` itself already matching -- a separate, unrelated
+physics subsystem, reported rather than chased in this batch.
+`tests/fixtures/slippi/parity/fox-fd-baseline.json` and `tests/fixtures/
+slippi/parity/gameplay-export.lock.json` are updated to pack v5
+accordingly; `docs/parity.md` records the same measurement.
+
 The 2026-09-11 Dash->Turn `action_age` fix (the real-replay parity loop,
 `docs/parity.md`) extends the transition-frame fix below to `Action::Turn`:
 `ftCo_Turn_Enter` and `ftCo_Turn_Enter_Smash` (`ftCo_Turn.c:49-62`, `:173-

@@ -1,7 +1,7 @@
 {
-  "first_divergent_frame": -13,
-  "checked_frames": 110,
-  "export_version": "v4",
+  "first_divergent_frame": -7,
+  "checked_frames": 116,
+  "export_version": "v5",
   "updated": "2026-09-11",
-  "note": "Measured on 2026-09-11 with gameplay export v4 (v4-snapshot-20260911, published snapshot) at the real-replay parity loop's Dash->Turn action_age fix (docs/parity.md, docs/validation.md): frames -123..-14 match, up from -123..-31 (93 frames). Fixed: Action::Turn needed the same action_frame-unadjusted state_age treatment already given to Action::Dash, since ftCo_Turn_Enter/ftCo_Turn_Enter_Smash (ftCo_Turn.c:49-62,173-188) make the same extra ftAnim_8006EBA4 call ftCo_Dash_Enter does; ftCo_TurnRun_Enter does not, so Action::RunTurn is unaffected. Frame -13 now differs on P1 action_state (expected Run, actual Dash) on the Dash->Run transition itself: a different, unrelated subsystem, not action_age. Move this forward as divergences are fixed."
+  "note": "Measured on 2026-09-11 with gameplay export v5 (v5-snapshot-20260911, published snapshot, identical fox-fd data to v4 through this range) at the real-replay parity loop's Dash->Run action_frame timing fix (docs/parity.md, docs/validation.md): frames -123..-8 match, up from -123..-14 (110 frames). Fixed: game::dash::update_dash_or_run's and game::locomotion's Dash-to-Run check compared action_frame >= dash_run_frame, one frame later than fn_800CA5F0's own cur_anim_frame >= dash_run_frame (ftaction.c:462's scripted flag), because the generic per-frame animation advance already bumps decomp's cur_anim_frame before ftCo_Dash_IASA runs each frame, while Skirmish's shared end-of-frame action_frame += 1 has not yet run at the point this check reads it; changed both copies to action_frame + 1 >= dash_run_frame. Frame -7 now differs on P1 position.x (expected -17.7748, actual -17.6948) on the Run->KneeBend (JumpSquat) transition itself, with action_state already matching: a different, unrelated physics subsystem. Move this forward as divergences are fixed."
 }

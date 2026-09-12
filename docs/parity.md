@@ -70,9 +70,36 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, gameplay export v4,
+**Current measurement (2026-09-11, gameplay export v5,
+`/mnt/archive/datasets/melee/skirmish-gameplay/v5-snapshot-20260911`, the
+real-replay parity loop's Dash->Run `action_frame` timing fix):** 116 frames
+match (-123 through -8) and the first divergent frame is -7, field
+`position.x` (expected `-17.7748`, actual `-17.6948`, on P1's Run->KneeBend
+transition, with `action_state` itself already matching). Pack v5 publishes
+`move_id` for the specials that pack v4 was missing (`docs/ecb-load-flags.md`'s
+"Known gap" no longer blocks stepping this match through its own recorded
+inputs past frame ~71); it is otherwise identical to v4 for this fox-fd data
+through the range measured here. The previous divergence (-13, `action_state`
+on a Dash->Run transition, described below) is fixed: `game::dash::
+update_dash_or_run`'s and `game::locomotion`'s Dash-to-Run check compared
+`action_frame >= dash_run_frame`, one frame later than `fn_800CA5F0`'s own
+`cur_anim_frame >= dash_run_frame` (the animation's scripted run flag,
+`ftaction.c:462`) -- the generic per-frame animation advance
+(`Fighter_Spaghetti_8006AD10`'s `ftAnim_8006EBA4`, `fighter.c:1684`) already
+bumps decomp's `cur_anim_frame` for the current frame before `ftCo_Dash_IASA`
+reads it, while `simulation::advance`'s shared end-of-frame `action_frame +=
+1` has not yet run at the point this check reads `action_frame`. Both copies
+of the check now compare `action_frame + 1 >= dash_run_frame`, confirmed
+directly against `fox-fd.slp`: P1 holds forward through Dash frames -24..-14
+(`action_age` 1..11) and is already in Run at -13, one frame before the
+unadjusted comparison produced. The new divergence at -7 is a separate,
+unrelated subsystem (Run's ground movement or the KneeBend/JumpSquat entry
+itself, not the Dash-to-Run transition), reported rather than chased in this
+batch.
+
+Previously (2026-09-11, gameplay export v4,
 `/mnt/archive/datasets/melee/skirmish-gameplay/v4-snapshot-20260911`, the
-real-replay parity loop's Dash->Turn `action_age` fix):** 110 frames match
+real-replay parity loop's Dash->Turn `action_age` fix): 110 frames match
 (-123 through -14) and the first divergent frame is -13, field
 `action_state` (expected `0x0015`/Run, actual `0x0014`/Dash, on P1's
 Dash->Run transition). The previous divergence (-30, `action_age` on a

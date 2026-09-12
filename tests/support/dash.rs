@@ -17,11 +17,17 @@ pub const RULES: Rules = Rules {
 /// `rules.grab.shield_grab` supplies the middle-phase limit (x4C) and the
 /// AttackDash catch buffer (x68); the base grab profile leaves it `None`, so
 /// the dash profile installs its own value here. `tests/fixtures/game/
-/// locomotion.json`'s `dash_run_frame` is 8: a limit of 8.0 would make the
-/// Dash-to-Run transition fire on the very frame the late phase begins
-/// whenever the entry stick is still held, confounding the late-phase
-/// re-dash and shield tests below. 6.0 keeps a clean late-phase window
-/// (frames 7) before that transition can apply.
+/// locomotion.json`'s `dash_run_frame` is 8, checked against `action_frame +
+/// 1` (`game::dash::update_dash_or_run`'s real-replay-verified Dash-to-Run
+/// timing fix), so it is already satisfied on the very frame the late phase
+/// begins (`action_frame` 7) whenever the entry stick is still held. The
+/// late-phase re-dash/Turn and shield tests below reach their own checks
+/// first (`try_dash`/the shield-entry buffer, both ahead of the run
+/// transition in `Phase::Late`), so they are unaffected; a scenario that
+/// reaches Phase::Late with a fresh forward stick and *no* competing check
+/// ahead of it (the `rules.dash = None` fallback below, where `try_dash` is
+/// unreachable) must stay one frame short of `action_frame` 7 instead, or it
+/// enters Run rather than exercising the scenario it's testing.
 pub const BUFFER: ShieldGrabRules = ShieldGrabRules {
     dash_buffer_frames: 5.0,
     dash_buffer_frame_limit: 6.0,

@@ -249,6 +249,33 @@ fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     );
 }
 
+/// `fox-fd.slp` reports P1 already in Run at the frame whose *pre-increment*
+/// `action_frame` is one less than `dash_run_frame` (12): holding forward
+/// through Dash frames -24..-14 (`action_age` 1..11) enters Run already at
+/// -13, not -12 (`docs/parity.md`'s frame -13 divergence, fixed by this
+/// batch). `game::dash::update_dash_or_run`'s own comment on this check
+/// explains why: the generic per-frame animation advance that lands
+/// decomp's `cur_anim_frame` on this frame's own count runs before
+/// `ftCo_Dash_IASA` reads it, while Skirmish's shared end-of-frame
+/// `action_frame += 1` has not yet run at the point this check reads
+/// `action_frame`, so the comparison needs `action_frame + 1`. This fixture
+/// pins the same relationship with its own `dash_run_frame` (8, `tests/
+/// fixtures/game/locomotion.json`): Run is entered once `action_frame`
+/// reaches 7, one frame before the unadjusted `action_frame >= 8` would
+/// have fired.
+#[test]
+fn holding_forward_through_dash_enters_run_one_frame_before_the_unadjusted_threshold() {
+    let mut game = Match::new(data(), 42).unwrap();
+    enter_dash(&mut game); // action_frame 1.
+    for expected_frame in 2..=7 {
+        let state = step(&mut game, stick(0, [1.0, 0.0]));
+        assert_eq!(state.fighters[0].action, Action::Dash);
+        assert_eq!(state.fighters[0].action_frame, expected_frame);
+    }
+    let state = step(&mut game, stick(0, [1.0, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Run);
+}
+
 #[test]
 fn late_phase_redash_restarts_input_entered_dash_only_in_the_late_phase() {
     let mut game = Match::new(data(), 42).unwrap();
@@ -285,7 +312,13 @@ fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
 
     // rules.dash = None has no tail, and try_dash is unreachable from within
     // an already-ongoing Dash in that path (only Wait/Walk/SquatWait reach
-    // it), so the same fresh press just continues ordinary Dash physics.
+    // it), so the same fresh press just continues ordinary Dash physics --
+    // one frame earlier than the `with_rules` scenario above, to stay clear
+    // of `dash_run_frame`'s own boundary (the fixture's 8, checked against
+    // `action_frame + 1`, the real-replay parity loop's Dash-to-Run timing
+    // fix: `game::dash::update_dash_or_run`'s own comment). Six frames of
+    // neutral here would instead land exactly on that boundary and enter
+    // Run, which this scenario isn't testing.
     let mut without_data = data();
     without_data.rules.dash = None;
     for fighter in &mut without_data.fighters {
@@ -293,7 +326,7 @@ fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
     }
     let mut without_rules = Match::new(without_data, 42).unwrap();
     enter_dash(&mut without_rules);
-    hold_neutral(&mut without_rules, 6);
+    hold_neutral(&mut without_rules, 5);
     let continued = step(&mut without_rules, stick(0, [1.0, 0.0]));
     assert_ne!(continued.fighters[0].action_frame, 1);
     assert_ne!(

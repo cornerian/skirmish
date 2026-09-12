@@ -359,7 +359,24 @@ fn update_dash_or_run(
         return Ok(true);
     }
     if f.action == Action::Dash {
-        if f.action_frame >= p.dash_run_frame && input.stick[0] * f.facing >= p.run_threshold {
+        // `fn_800CA5F0`'s own `cur_anim_frame >= dash_run_frame` check reads
+        // a value the generic per-frame animation advance
+        // (`Fighter_Spaghetti_8006AD10`'s unconditional `ftAnim_
+        // 8006EBA4(gobj)`, `fighter.c:1684`) already bumped for *this* frame
+        // before `ftCo_Dash_IASA` (this function's decomp counterpart) runs
+        // -- the same ordering fact `observation::observe`'s `state_age`
+        // fix documents. `simulation::advance`'s shared end-of-frame
+        // `action_frame += 1` has not run yet at this point in the frame,
+        // so `f.action_frame` here still holds the *previous* frame's
+        // count; `+ 1` recovers the value this frame's own advance would
+        // have produced, matching `cur_anim_frame` at the equivalent
+        // decomp instant. Confirmed directly against `fox-fd.slp`: P1
+        // holds forward through Dash frames -24..-14 (age 1..11) and
+        // enters Run already at -14's next frame, -13 -- the frame whose
+        // *unincremented* `action_frame` is 11, one below `dash_run_frame`
+        // (12) -- not one frame later, which the unadjusted comparison
+        // produced.
+        if f.action_frame + 1 >= p.dash_run_frame && input.stick[0] * f.facing >= p.run_threshold {
             super::locomotion::enter_run(f, 0.0);
             return Ok(true);
         }

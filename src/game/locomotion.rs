@@ -919,8 +919,10 @@ pub(crate) fn update_actions(
                 enter(f, Action::Wait);
             }
         }
+        // `+ 1`: see `dash::update_dash_or_run`'s own copy of this check for
+        // why the unadjusted `action_frame` reads one frame late here.
         Action::Dash
-            if f.action_frame >= p.dash_run_frame
+            if f.action_frame + 1 >= p.dash_run_frame
                 && input.stick[0] * f.facing >= p.run_threshold =>
         {
             enter_run(f, 0.0)
