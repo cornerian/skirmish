@@ -479,8 +479,26 @@ pub(crate) fn shield_jump_input(
     })
 }
 
+/// `ftCo_Dash_Enter` (`ftCo_Dash.c:48-63`) calls `ftAnim_8006EBA4(gobj)` a
+/// second, explicit time immediately after `Fighter_ChangeMotionState`
+/// lands `cur_anim_frame` on `0.0`: an extra animation advance most
+/// `_Enter`s (`ftCo_Fall_Enter`/`ftCo_Landing_Enter`/`ftCo_Run_Enter_Full`/
+/// `ftCo_KneeBend_Enter`, read in full) do not make. Modeled here directly,
+/// at the source, rather than as a per-consumer adjustment: `action_frame`
+/// is 1 (not 0) from this frame on, exactly like `cur_anim_frame`, so every
+/// later `action_frame`-based Dash gate (the run transition, the phase
+/// boundaries, the animation end, pose sampling) compares against the
+/// decomp's own thresholds unadjusted. `simulation::advance`'s ordinary,
+/// unconditional end-of-frame `action_frame += 1` still runs this same
+/// frame (unsuppressed, exactly as for every other action), so `action_
+/// frame` is 2 -- not 1 -- at the end of the entry frame, one ahead of
+/// `cur_anim_frame` like every other action's own end-of-frame value
+/// (`observation::observe`'s general rule, `docs/validation.md`); replacing
+/// the entry-time `0` with `1` is what makes that generic rule already work
+/// for Dash without its own exception.
 fn start_dash(f: &mut Fighter, p: &Parameters, from_input: bool) {
     enter(f, Action::Dash);
+    f.action_frame = 1;
     f.locomotion.tilt_x_age = 254;
     let initial = f.facing * p.dash_initial_velocity;
     f.locomotion.dash_initial_delta = if f.ground_velocity * f.facing < 0.0 {
@@ -491,8 +509,13 @@ fn start_dash(f: &mut Fighter, p: &Parameters, from_input: bool) {
     f.locomotion.dash_from_input = from_input;
 }
 
+/// `ftCo_Turn_Enter`/`ftCo_Turn_Enter_Smash` (`ftCo_Turn.c:49-62`, `:173-
+/// 188`) make the identical extra `ftAnim_8006EBA4` call `ftCo_Dash_Enter`
+/// does; see `start_dash`'s own comment. `ftCo_TurnRun_Enter` (`ftCo_
+/// TurnRun.c:44-51`) does not, so `start_run_turn` is unchanged.
 fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     enter(f, Action::Turn);
+    f.action_frame = 1;
     f.locomotion.turn_frames = if smash { 0.0 } else { p.standing_turn_frames };
     f.locomotion.turn_has_turned = false;
     f.locomotion.turn_smash = smash;
@@ -919,10 +942,11 @@ pub(crate) fn update_actions(
                 enter(f, Action::Wait);
             }
         }
-        // `+ 1`: see `dash::update_dash_or_run`'s own copy of this check for
-        // why the unadjusted `action_frame` reads one frame late here.
+        // See `dash::update_dash_or_run`'s own copy of this check: `start_
+        // dash`'s entry-time `action_frame = 1` keeps this comparison
+        // aligned with decomp's `cur_anim_frame` unadjusted.
         Action::Dash
-            if f.action_frame + 1 >= p.dash_run_frame
+            if f.action_frame >= p.dash_run_frame
                 && input.stick[0] * f.facing >= p.run_threshold =>
         {
             enter_run(f, 0.0)

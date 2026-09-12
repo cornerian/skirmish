@@ -84,7 +84,7 @@ fn step(game: &mut Match, controller: Controller) -> State {
 fn enter_dash(game: &mut Match) -> State {
     let state = step(game, stick(0, [1.0, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Dash);
-    assert_eq!(state.fighters[0].action_frame, 1);
+    assert_eq!(state.fighters[0].action_frame, 2);
     assert!(state.fighters[0].locomotion.dash_from_input);
     state
 }
@@ -118,7 +118,7 @@ fn entering_dash_from_a_fresh_press_reports_the_replay_verified_age_of_one() {
 
 #[test]
 fn early_phase_forward_smash_keeps_facing_and_flips_with_the_cstick() {
-    // Frame 1 is inside the early phase (<=3). The stick that entered the
+    // Frame 2 is inside the early phase (<=3). The stick that entered the
     // dash is already "stale" (x670 reset to 254 by ftCo_Dash_Enter), so the
     // dash-specific check (no age window) fires where the ordinary
     // Wait-chain smash could not.
@@ -142,7 +142,7 @@ fn early_phase_forward_smash_keeps_facing_and_flips_with_the_cstick() {
 
 #[test]
 fn early_phase_forward_roll_only_lasts_through_the_roll_limit() {
-    // Frame 1 <= roll_frames (2): held shoulder rolls immediately.
+    // Frame 2 <= roll_frames (2): held shoulder rolls immediately.
     let mut early = Match::new(data(), 42).unwrap();
     enter_dash(&mut early);
     let state = step(&mut early, buttons(BUTTON_L));
@@ -152,7 +152,7 @@ fn early_phase_forward_roll_only_lasts_through_the_roll_limit() {
     // is not consulted at all here, and nothing else fires either.
     let mut late_early = Match::new(data(), 42).unwrap();
     enter_dash(&mut late_early);
-    hold_neutral(&mut late_early, 2); // frame 2, neutral: nothing fires.
+    hold_neutral(&mut late_early, 1); // frame 2, neutral: nothing fires.
     let state = step(&mut late_early, buttons(BUTTON_L)); // frame 3.
     assert_eq!(state.fighters[0].action, Action::Dash);
 
@@ -175,7 +175,7 @@ fn dash_attack_fires_from_the_middle_phase_and_from_run_but_not_early_or_late() 
     // catch buffer to the shared shield-grab x68 value.
     let mut middle = Match::new(data(), 42).unwrap();
     enter_dash(&mut middle);
-    hold_neutral(&mut middle, 3); // frames 2..=4 (early tail into middle).
+    hold_neutral(&mut middle, 2); // frames 2..=4 (early tail into middle).
     let state = step(&mut middle, buttons(BUTTON_A)); // frame 4.
     assert_eq!(state.fighters[0].action, Action::AttackDash);
     assert_eq!(
@@ -203,7 +203,7 @@ fn dash_attack_fires_from_the_middle_phase_and_from_run_but_not_early_or_late() 
     // Late phase (frame 7): A no longer enters AttackDash at all.
     let mut late = Match::new(data(), 42).unwrap();
     enter_dash(&mut late);
-    hold_neutral(&mut late, 6); // frames 2..=7 (early, middle, into late).
+    hold_neutral(&mut late, 5); // frames 2..=7 (early, middle, into late).
     let state = step(&mut late, buttons(BUTTON_A)); // frame 7: late phase.
     assert_ne!(state.fighters[0].action, Action::AttackDash);
 }
@@ -220,7 +220,7 @@ fn dash_attack_fires_from_the_middle_phase_and_from_run_but_not_early_or_late() 
 fn entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one() {
     let mut game = Match::new(data(), 42).unwrap();
     enter_dash(&mut game);
-    hold_neutral(&mut game, 3); // frames 2..=4: middle phase.
+    hold_neutral(&mut game, 2); // frames 2..=4: middle phase.
     let state = step(&mut game, stick(0, [-1.0, 0.0])); // frame 4: dash-back.
     assert_eq!(state.fighters[0].action, Action::Turn);
     let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
@@ -240,7 +240,7 @@ fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     // enters a smash Turn instead of restarting the dash.
     let mut middle = Match::new(data(), 42).unwrap();
     enter_dash(&mut middle);
-    hold_neutral(&mut middle, 3); // frames 2..=4.
+    hold_neutral(&mut middle, 2); // frames 2..=4.
     let state = step(&mut middle, stick(0, [-1.0, 0.0])); // frame 4.
     assert_eq!(state.fighters[0].action, Action::Turn);
     assert_eq!(
@@ -249,25 +249,19 @@ fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     );
 }
 
-/// `fox-fd.slp` reports P1 already in Run at the frame whose *pre-increment*
-/// `action_frame` is one less than `dash_run_frame` (12): holding forward
-/// through Dash frames -24..-14 (`action_age` 1..11) enters Run already at
-/// -13, not -12 (`docs/parity.md`'s frame -13 divergence, fixed by this
-/// batch). `game::dash::update_dash_or_run`'s own comment on this check
-/// explains why: the generic per-frame animation advance that lands
-/// decomp's `cur_anim_frame` on this frame's own count runs before
-/// `ftCo_Dash_IASA` reads it, while Skirmish's shared end-of-frame
-/// `action_frame += 1` has not yet run at the point this check reads
-/// `action_frame`, so the comparison needs `action_frame + 1`. This fixture
-/// pins the same relationship with its own `dash_run_frame` (8, `tests/
-/// fixtures/game/locomotion.json`): Run is entered once `action_frame`
-/// reaches 7, one frame before the unadjusted `action_frame >= 8` would
-/// have fired.
+/// `fox-fd.slp` reports P1 already in Run at frame -13, whose `action_frame`
+/// (`game::locomotion::start_dash`'s entry-time `1`, kept aligned with
+/// decomp's `cur_anim_frame` from then on) is 11, one below `dash_run_frame`
+/// (12) (`docs/parity.md`'s frame -13 divergence, fixed by the real-replay
+/// parity loop). This fixture pins the same relationship with its own
+/// `dash_run_frame` (8, `tests/fixtures/game/locomotion.json`): Run is
+/// entered once `action_frame` reaches 8, matching `fn_800CA5F0`'s own
+/// `cur_anim_frame >= dash_run_frame` unadjusted.
 #[test]
-fn holding_forward_through_dash_enters_run_one_frame_before_the_unadjusted_threshold() {
+fn holding_forward_through_dash_enters_run_at_the_unadjusted_threshold() {
     let mut game = Match::new(data(), 42).unwrap();
-    enter_dash(&mut game); // action_frame 1.
-    for expected_frame in 2..=7 {
+    enter_dash(&mut game); // action_frame 2.
+    for expected_frame in 3..=8 {
         let state = step(&mut game, stick(0, [1.0, 0.0]));
         assert_eq!(state.fighters[0].action, Action::Dash);
         assert_eq!(state.fighters[0].action_frame, expected_frame);
@@ -280,12 +274,12 @@ fn holding_forward_through_dash_enters_run_one_frame_before_the_unadjusted_thres
 fn late_phase_redash_restarts_input_entered_dash_only_in_the_late_phase() {
     let mut game = Match::new(data(), 42).unwrap();
     enter_dash(&mut game);
-    hold_neutral(&mut game, 6); // frames 2..=7: early tail, middle, into late.
+    hold_neutral(&mut game, 5); // frames 2..=7: early tail, middle, into late.
     assert_eq!(game.state().fighters[0].action, Action::Dash);
     // Frame 7 is the late phase; a fresh same-direction stick restarts Dash.
     let state = step(&mut game, stick(0, [1.0, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Dash);
-    assert_eq!(state.fighters[0].action_frame, 1);
+    assert_eq!(state.fighters[0].action_frame, 2);
     assert!(state.fighters[0].locomotion.dash_from_input);
 }
 
@@ -293,11 +287,11 @@ fn late_phase_redash_restarts_input_entered_dash_only_in_the_late_phase() {
 fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
     let mut with_rules = Match::new(data(), 42).unwrap();
     enter_dash(&mut with_rules);
-    let primed = hold_neutral(&mut with_rules, 6); // lands right before frame 7.
+    let primed = hold_neutral(&mut with_rules, 6); // lands right before frame 8.
     let gr_vel_before = primed.fighters[0].ground_velocity;
-    let redashed = step(&mut with_rules, stick(0, [1.0, 0.0])); // frame 7: re-dash.
+    let redashed = step(&mut with_rules, stick(0, [1.0, 0.0])); // frame 8: re-dash.
     assert_eq!(redashed.fighters[0].action, Action::Dash);
-    assert_eq!(redashed.fighters[0].action_frame, 1);
+    assert_eq!(redashed.fighters[0].action_frame, 2);
     // ftCo_Dash_Enter computes dash.x0 = facing*dash_initial_velocity - gr_vel
     // from the PRE-tail ground_velocity (start_dash runs before
     // apply_transition_friction), so the entry frame's ground movement adds
@@ -313,12 +307,10 @@ fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
     // rules.dash = None has no tail, and try_dash is unreachable from within
     // an already-ongoing Dash in that path (only Wait/Walk/SquatWait reach
     // it), so the same fresh press just continues ordinary Dash physics --
-    // one frame earlier than the `with_rules` scenario above, to stay clear
-    // of `dash_run_frame`'s own boundary (the fixture's 8, checked against
-    // `action_frame + 1`, the real-replay parity loop's Dash-to-Run timing
-    // fix: `game::dash::update_dash_or_run`'s own comment). Six frames of
-    // neutral here would instead land exactly on that boundary and enter
-    // Run, which this scenario isn't testing.
+    // one frame short of `dash_run_frame`'s own boundary (the fixture's 8,
+    // `game::locomotion::update_actions`'s fallback Dash arm) rather than
+    // landing exactly on it and entering Run, which this scenario isn't
+    // testing.
     let mut without_data = data();
     without_data.rules.dash = None;
     for fighter in &mut without_data.fighters {
@@ -328,7 +320,7 @@ fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
     enter_dash(&mut without_rules);
     hold_neutral(&mut without_rules, 5);
     let continued = step(&mut without_rules, stick(0, [1.0, 0.0]));
-    assert_ne!(continued.fighters[0].action_frame, 1);
+    assert_ne!(continued.fighters[0].action_frame, 2);
     assert_ne!(
         continued.fighters[0].ground_velocity.to_bits(),
         expected.to_bits()
@@ -348,7 +340,7 @@ fn late_phase_guard_on_ground_velocity_reflects_the_transition_friction_tail() {
     });
     let mut with_rules = Match::new(late_data, 42).unwrap();
     enter_dash(&mut with_rules);
-    hold_neutral(&mut with_rules, 2); // frames 1, 2 neutral.
+    hold_neutral(&mut with_rules, 1); // frames 1, 2 neutral.
     let held = step(&mut with_rules, buttons(BUTTON_L)); // frame 3 (early): primes "held".
     let gr_vel_before = held.fighters[0].ground_velocity;
     let entered = step(&mut with_rules, buttons(BUTTON_L)); // frame 4: now late.
@@ -405,7 +397,7 @@ fn middle_and_late_phase_shield_entries_differ_only_by_the_grab_buffer() {
     // Middle phase (frame 4): held L raises an ordinary guard, unbuffered.
     let mut middle = Match::new(data(), 42).unwrap();
     enter_dash(&mut middle);
-    hold_neutral(&mut middle, 2); // frames 1, 2 neutral.
+    hold_neutral(&mut middle, 1); // frames 1, 2 neutral.
     step(&mut middle, buttons(BUTTON_L)); // frame 3 (early): primes "held".
     let state = step(&mut middle, buttons(BUTTON_L)); // frame 4 (middle).
     assert_eq!(state.fighters[0].action, Action::GuardOn);
@@ -415,7 +407,7 @@ fn middle_and_late_phase_shield_entries_differ_only_by_the_grab_buffer() {
     // opens GuardReflect, arming the same (here zero) buffer.
     let mut middle_press = Match::new(data(), 42).unwrap();
     enter_dash(&mut middle_press);
-    hold_neutral(&mut middle_press, 3);
+    hold_neutral(&mut middle_press, 2);
     let state = step(&mut middle_press, buttons(BUTTON_L));
     assert_eq!(state.fighters[0].action, Action::GuardReflect);
     assert_eq!(state.fighters[0].shield.dash_grab_buffer, 0.0);
@@ -430,7 +422,7 @@ fn middle_and_late_phase_shield_entries_differ_only_by_the_grab_buffer() {
     });
     let mut late = Match::new(late_data, 42).unwrap();
     enter_dash(&mut late);
-    hold_neutral(&mut late, 2); // frames 1, 2 neutral (frame 2 is still
+    hold_neutral(&mut late, 1); // frames 1, 2 neutral (frame 2 is still
     // inside the roll limit, so a held shoulder there would roll instead).
     step(&mut late, buttons(BUTTON_L)); // frame 3 (early, past the roll
     // limit): primes "held" without rolling or checking the shield yet.
@@ -445,7 +437,7 @@ fn middle_and_late_phase_shield_entries_differ_only_by_the_grab_buffer() {
     // opens GuardReflect, arming the buffer this phase would have armed.
     let mut late_press = Match::new(data(), 42).unwrap();
     enter_dash(&mut late_press);
-    hold_neutral(&mut late_press, 6);
+    hold_neutral(&mut late_press, 5);
     let state = step(&mut late_press, buttons(BUTTON_L));
     assert_eq!(state.fighters[0].action, Action::GuardReflect);
     assert_eq!(
@@ -476,7 +468,7 @@ fn an_idle_dash_frame_matches_ground_velocity_with_rules_dash_none() {
     .unwrap();
     enter_dash(&mut with_rules);
     enter_dash(&mut without_rules);
-    // Frame 1: nothing fires with a neutral stick in either configuration.
+    // Frame 2: nothing fires with a neutral stick in either configuration.
     let with_gr_vel = step(&mut with_rules, buttons(0)).fighters[0].ground_velocity;
     let without_gr_vel = step(&mut without_rules, buttons(0)).fighters[0].ground_velocity;
     assert_eq!(with_gr_vel, without_gr_vel);
@@ -488,7 +480,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
     // held past a fresh entry.
     let mut catch = Match::new(data(), 42).unwrap();
     enter_dash(&mut catch);
-    hold_neutral(&mut catch, 3);
+    hold_neutral(&mut catch, 2);
     let state = step(&mut catch, buttons(BUTTON_A)); // frame 4: AttackDash.
     assert_eq!(state.fighters[0].action, Action::AttackDash);
     let state = step(&mut catch, buttons(BUTTON_L));
@@ -497,7 +489,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
     // The buffer expires: enough neutral frames drain it to zero.
     let mut expire = Match::new(data(), 42).unwrap();
     enter_dash(&mut expire);
-    hold_neutral(&mut expire, 3);
+    hold_neutral(&mut expire, 2);
     step(&mut expire, buttons(BUTTON_A)); // AttackDash, buffer armed.
     for _ in 0..dash_support::BUFFER.dash_buffer_frames as u32 {
         step(&mut expire, buttons(0));
@@ -508,7 +500,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
     // The Wait chain only opens on flagged poses.
     let mut wait_chain = Match::new(data(), 42).unwrap();
     enter_dash(&mut wait_chain);
-    hold_neutral(&mut wait_chain, 3);
+    hold_neutral(&mut wait_chain, 2);
     step(&mut wait_chain, buttons(BUTTON_A)); // AttackDash frame 0.
     for _ in 0..dash_support::INTERRUPT_FROM - 1 {
         let state = step(&mut wait_chain, buttons(0));
@@ -521,7 +513,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
     // Ends in Wait once the poses are exhausted.
     let mut ends = Match::new(data(), 42).unwrap();
     enter_dash(&mut ends);
-    hold_neutral(&mut ends, 3);
+    hold_neutral(&mut ends, 2);
     step(&mut ends, buttons(BUTTON_A));
     for _ in 0..dash_support::FRAMES {
         step(&mut ends, buttons(0));
@@ -531,7 +523,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
     // A close victim is hit exactly once.
     let mut hit = Match::new(close(), 42).unwrap();
     enter_dash(&mut hit);
-    hold_neutral(&mut hit, 3);
+    hold_neutral(&mut hit, 2);
     step(&mut hit, buttons(BUTTON_A));
     let mut hits = 0;
     for _ in 0..dash_support::FRAMES {
@@ -558,7 +550,7 @@ fn attack_dash_catches_interrupts_and_hits_once() {
 fn checkpoints_restore_dash_and_attack_dash_state() {
     let mut game = Match::new(data(), 42).unwrap();
     enter_dash(&mut game);
-    hold_neutral(&mut game, 3);
+    hold_neutral(&mut game, 2);
     step(&mut game, buttons(BUTTON_A)); // AttackDash, buffer armed.
     let checkpoint = game.checkpoint();
     let inputs = [buttons(BUTTON_L), buttons(0), buttons(0)];
@@ -637,5 +629,5 @@ fn rules_dash_none_keeps_match_new_working_and_the_original_dash_behaviour() {
     let mut game = Match::new(without, 42).unwrap();
     let state = step(&mut game, stick(0, [1.0, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Dash);
-    assert_eq!(state.fighters[0].action_frame, 1);
+    assert_eq!(state.fighters[0].action_frame, 2);
 }

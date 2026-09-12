@@ -237,10 +237,11 @@ impl Recording {
                     // comments spell out the general -1 rule (`simulation::
                     // advance`'s shared end-of-frame `action_frame += 1`
                     // always runs one frame ahead of Melee's own
-                    // `cur_anim_frame`) and Dash's/Turn's own exception
-                    // (`ftCo_Dash_Enter`/`ftCo_Turn_Enter`/`ftCo_Turn_Enter_
-                    // Smash`'s extra `ftAnim_8006EBA4` call); this
-                    // harness-local duplicate must track that formula.
+                    // `cur_anim_frame`), which now already covers Dash and
+                    // Turn too (`game::locomotion::start_dash`/`start_turn`
+                    // model their extra `ftAnim_8006EBA4` entry call at the
+                    // source instead); this harness-local duplicate must
+                    // track that formula.
                     let action_age = if fighter.action == Action::Walk
                         && self.initialization.data.fighters[player]
                             .movement
@@ -263,8 +264,6 @@ impl Recording {
                             Some(animation) => age.min(animation.start_frames - 1) as f32,
                             None => age as f32,
                         }
-                    } else if matches!(fighter.action, Action::Dash | Action::Turn) {
-                        fighter.action_frame as f32
                     } else {
                         fighter.action_frame.saturating_sub(1) as f32
                     };
@@ -1399,9 +1398,13 @@ fn file_backed_dash_attacks_and_late_redash_match_and_detect_their_first_changed
     }
 
     // Dash, release to neutral through the early and middle phases (limit
-    // 6.0), then a fresh forward press in the late phase (frame 7) restarts
-    // Dash via ftCo_Dash_CheckInput (dash_from_input = true, action_frame
-    // resets to 1), rather than merely continuing the same Dash instance.
+    // 6.0), then a fresh forward press in the late phase (frame 8: `game::
+    // locomotion::start_dash`'s entry-time `action_frame = 1` keeps every
+    // Dash gate aligned with decomp's own frame count, one higher than
+    // before this alignment) restarts Dash via ftCo_Dash_CheckInput
+    // (dash_from_input = true, action_frame resets to 1, read back as 2
+    // once this same frame's ordinary end-of-frame tail also runs), rather
+    // than merely continuing the same Dash instance.
     {
         let mut inputs = vec![IDLE; 14];
         inputs[0][0].stick = [1.0, 0.0];
@@ -1416,7 +1419,7 @@ fn file_backed_dash_attacks_and_late_redash_match_and_detect_their_first_changed
         }
         let redashed = &recording.states[7].fighters[0];
         assert_eq!(redashed.action, Action::Dash);
-        assert_eq!(redashed.action_frame, 1);
+        assert_eq!(redashed.action_frame, 2);
 
         let bytes = recording.bytes(support::Fixture::default(), |_| {});
         matched(&recording.compare(&bytes), FIRST, recording.inputs.len());

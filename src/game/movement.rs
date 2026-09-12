@@ -30,14 +30,15 @@
 //! no such correction for that general case, since it runs before the
 //! increment ever happens.
 //!
-//! Dash is the one exception `observation.rs` already documents: `ftCo_
-//! Dash_Enter` (`ftCo_Dash.c:48-63`) calls `ftAnim_8006EBA4(gobj)` itself,
-//! immediately on entry, before that same frame's collision test -- so
-//! Melee's `cur_anim_frame` is already one frame ahead of every other
-//! action's entry convention for the rest of Dash's duration. `observation.
-//! rs` reports this by reading `action_frame` (post-increment) with no
-//! subtraction; the equivalent pre-increment value this module sees is one
-//! *behind* that reported age, so Dash alone reads `action_frame + 1`.
+//! Dash and Turn read `action_frame` unadjusted too, the same as every other
+//! action here: `game::locomotion::start_dash`/`start_turn` model `ftCo_
+//! Dash_Enter`'s and `ftCo_Turn_Enter`/`ftCo_Turn_Enter_Smash`'s extra,
+//! immediate `ftAnim_8006EBA4(gobj)` call (`ftCo_Dash.c:48-63`, `ftCo_
+//! Turn.c:49-62,173-188`) at the source, by setting `action_frame` to `1`
+//! (not `0`) at entry, so it already matches Melee's own `cur_anim_frame`
+//! at every point this module (and every other Dash/Turn frame-count gate)
+//! reads it -- entry included, not just afterward. `observation.rs` no
+//! longer needs a Dash/Turn exception either, for the same reason.
 //!
 //! Walk/Run/Wait read their existing continuous frame counters
 //! (`fighter.locomotion.walk.frame`/`run.frame`, `fighter.idle.frame`)
@@ -112,11 +113,7 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             fighter.action_frame as usize,
             false,
         ),
-        Action::Dash => (
-            poses.dash.as_ref()?,
-            fighter.action_frame.saturating_add(1) as usize,
-            false,
-        ),
+        Action::Dash => (poses.dash.as_ref()?, fighter.action_frame as usize, false),
         Action::RunBrake => (
             poses.run_brake.as_ref()?,
             fighter.action_frame as usize,

@@ -174,7 +174,7 @@ fn shield_grab_follows_the_escapes_and_precedes_the_jump_dispatchers() {
 fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
     // Dash frames at or before the x4C limit raise a shield without a buffer.
     let mut early = Match::new(long_raise(), 42).unwrap();
-    let entered = dash_then_shield(&mut early, 4);
+    let entered = dash_then_shield(&mut early, 3);
     assert_eq!(entered.fighters[0].action, Action::GuardOn);
     assert_eq!(entered.fighters[0].shield.dash_grab_buffer, 0.0);
     assert_eq!(
@@ -184,7 +184,7 @@ fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
 
     // Later dash frames arm x68 frames that count down on GuardOn callbacks.
     let mut late = Match::new(long_raise(), 42).unwrap();
-    let entered = dash_then_shield(&mut late, 5);
+    let entered = dash_then_shield(&mut late, 4);
     assert_eq!(entered.fighters[0].action, Action::GuardOn);
     assert_eq!(entered.fighters[0].shield.dash_grab_buffer, 3.0);
     assert_eq!(
@@ -193,7 +193,7 @@ fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
     );
 
     let mut expiring = Match::new(long_raise(), 42).unwrap();
-    dash_then_shield(&mut expiring, 5);
+    dash_then_shield(&mut expiring, 4);
     for remaining in [2.0, 1.0, 0.0] {
         let state = step(&mut expiring, buttons(BUTTON_L));
         assert_eq!(state.fighters[0].action, Action::GuardOn);
@@ -205,7 +205,7 @@ fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
     );
 
     let mut last_frame = Match::new(long_raise(), 42).unwrap();
-    dash_then_shield(&mut last_frame, 5);
+    dash_then_shield(&mut last_frame, 4);
     step(&mut last_frame, buttons(BUTTON_L));
     step(&mut last_frame, buttons(BUTTON_L));
     let state = step(&mut last_frame, buttons(BUTTON_L | BUTTON_A));
@@ -237,7 +237,7 @@ fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
 
     // Guard itself never consults or drains the buffer.
     let mut guard = Match::new(data(), 42).unwrap();
-    dash_then_shield(&mut guard, 5);
+    dash_then_shield(&mut guard, 4);
     step(&mut guard, buttons(BUTTON_L));
     let state = step(&mut guard, buttons(BUTTON_L | BUTTON_A));
     assert_eq!(state.fighters[0].action, Action::Catch);
@@ -247,7 +247,7 @@ fn run_and_late_dash_shields_arm_the_dash_grab_buffer_for_guard_on_frames() {
 #[test]
 fn a_fresh_shield_from_wait_clears_a_stale_buffer() {
     let mut game = Match::new(long_raise(), 42).unwrap();
-    dash_then_shield(&mut game, 5);
+    dash_then_shield(&mut game, 4);
     assert_eq!(game.state().fighters[0].shield.dash_grab_buffer, 3.0);
     let mut frames = 0;
     while game.state().fighters[0].action != Action::Wait {
@@ -298,7 +298,7 @@ fn shield_stun_and_guard_off_do_not_grab() {
 #[test]
 fn checkpoints_restore_the_dash_grab_buffer_and_its_branch() {
     let mut game = Match::new(long_raise(), 42).unwrap();
-    dash_then_shield(&mut game, 5);
+    dash_then_shield(&mut game, 4);
     let checkpoint = game.checkpoint();
     let inputs = [
         buttons(BUTTON_L),

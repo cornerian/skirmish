@@ -1,5 +1,73 @@
 # Local validation provenance
 
+The 2026-09-11 Dash/Turn entry-time consolidation (the real-replay parity
+loop) moves the fix below -- and the observation-layer Dash/Turn exception
+before it -- to their common source, rather than patching each downstream
+comparison independently. Both are the same underlying fact: `ftCo_
+Dash_Enter` (`ftCo_Dash.c:48-63`) and `ftCo_Turn_Enter`/`ftCo_Turn_
+Enter_Smash` (`ftCo_Turn.c:49-62`, `:173-188`) call `ftAnim_8006EBA4(gobj)`
+a second, explicit time immediately after `Fighter_ChangeMotionState`, so
+decomp's `cur_anim_frame` is `1`, not `0`, from the entry frame on. Traced
+frame by frame (E = the entry frame, "dispatch" = the value a same-frame
+IASA/`update_actions` read sees, "end" = the value after that frame's own
+processing): an ordinary action's `action_frame` already agrees with
+decomp's `cur_anim_frame` at dispatch on every frame (`0` at E, `1` at
+E+1, ...), and is exactly one *ahead* of it at end (matching
+`observation::observe`'s general `-1` rule); Dash's `action_frame`, without
+this batch, was `0` at E dispatch, `1` at E end, `1` at E+1 dispatch, `2`
+at E+2 dispatch -- ends agreed with decomp exactly (why the observation
+exception below reads `action_frame` unadjusted), but dispatch was one
+*behind* decomp for the whole action (why `dash_run_frame` needed its own
+`+1`). Setting `action_frame = 1` at Dash/Turn's entry (`game::locomotion::
+start_dash`/`start_turn`), and leaving `simulation::advance`'s ordinary,
+unconditional end-of-frame `action_frame += 1` untouched -- unlike the
+already-rejected idea of suppressing or relocating that shared tail itself,
+which would silently shift every other duration gate that reads
+`action_frame` -- makes Dash/Turn's own `action_frame` exactly `1` at E
+dispatch, `2` at E end, `2` at E+1 dispatch, `3` at E+2 dispatch: dispatch
+now agrees with decomp on every frame like every other action (removing
+the `dash_run_frame`/`+1` patch below and `game::movement::pose`'s own
+existing `action_frame.saturating_add(1)` Dash special case, both reverted
+to the unadjusted comparison), and end is now uniformly one ahead of
+decomp like every other action (removing `observation::observe`'s Dash/
+Turn exception, restoring its single general `-1` rule for every action).
+
+`game::movement::pose`'s Turn arm had no such special case before this
+batch (it already read `action_frame` unadjusted), so it was quietly one
+frame behind decomp's own bone sampling for Turn specifically; this batch
+fixes that latent gap as a side effect of the source-level change, with no
+code change needed there. `src/game/grab.rs`'s `shield_entry_buffer`
+(`ftCo_80091B9C`'s "Dash past the x4C frame" gate) and `src/game/
+locomotion.rs`'s `Action::Dash if f.action_frame >= p.dash_animation_frames`
+(`ftCo_Dash_Anim`'s animation-end check) and `Action::Turn`'s equivalent
+`turn_animation_frames` check are the same kind of raw, unadjusted
+comparison and needed no code change either, for the same reason.
+
+**Tests**: every existing synthetic test that stepped a fixed number of
+frames from a fresh Dash/Turn entry to land on a specific phase boundary
+(`tests/game_dash.rs`, `tests/game_shield_grab.rs`, `crates/cli/tests/
+replay_match.rs`) needed its frame count reduced by one to keep landing on
+the same decomp-cited boundary now that entry itself starts one
+`action_frame` higher, and every direct `action_frame` assertion on a
+freshly-(re-)entered Dash changed from `1` to `2` (already-decomp-verified
+`state_age`/`action_age` values, e.g. `dash_run_frame`'s own boundary and
+the Dash/Turn 1.0 entry-frame age, are unaffected, since observation and
+the fixed checks already produce the same numbers). `tests/game_dash.rs`'s
+`holding_forward_through_dash_enters_run_one_frame_before_the_unadjusted_
+threshold` is renamed `..._at_the_unadjusted_threshold` and now asserts
+Run is entered exactly when `action_frame` reaches `dash_run_frame`
+unadjusted, rather than one frame early. No C-oracle differential changed:
+this still ports a control-flow/sequencing fact, not a pinned function's
+arithmetic. `cargo fmt --all -- --check`, `cargo clippy --locked --
+workspace --all-targets --all-features -- -D warnings` and `cargo test
+--locked --workspace` (910 passed/0 failed/19 ignored, unchanged from
+immediately before this batch -- no test added or removed, only corrected)
+all pass. Measured against gameplay export pack v5: unchanged from the
+measurement below (116 frames matched, first divergence at -7,
+`position.x`, on P1's Run->KneeBend transition) -- this batch is a
+behavior-preserving consolidation for every frame this recording already
+reaches, confirmed rather than assumed.
+
 The 2026-09-11 Dash->Run `action_frame` timing fix (the real-replay parity
 loop, `docs/parity.md`) fixes a genuine one-frame-late boundary in
 `game::dash::update_dash_or_run` and `game::locomotion::update_actions`'s
