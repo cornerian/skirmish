@@ -1,7 +1,7 @@
 {
-  "first_divergent_frame": -51,
-  "checked_frames": 72,
-  "export_version": "v3",
+  "first_divergent_frame": -50,
+  "checked_frames": 73,
+  "export_version": "v4",
   "updated": "2026-09-11",
-  "note": "Measured on 2026-09-11 with gameplay export v3 (sha256 54568123...; the complete Fox/FD export: every profile, the Fox specials, per-frame movement poses, all rule sets) at Skirmish caec917: frames -123..-52 match. Frame -51 differs on P1 action_state: Skirmish enters Landing on the frame the position first crosses the floor, while the game keeps falling one more frame (every landing in the recording shows the position 2.7-3.6 units below the floor for one frame before Landing). Move this forward as divergences are fixed."
+  "note": "Measured on 2026-09-11 with gameplay export v4 (sha256 5077a39c...; the complete Fox/FD export with the ECB and hurtbox bones exported as the raw joint indices the game uses) at Skirmish 499d33a: frames -123..-51 match. Frame -50 differs on P1 action_state: Skirmish lands one frame before the game because it pads the collision box by two units on every load while the game's ordinary airborne and grounded loads skip the padding (per-path load flags). Move this forward as divergences are fixed."
 }
