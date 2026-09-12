@@ -162,7 +162,10 @@ fn first_interruptible_frame_opens_the_complete_wait_chain_and_the_crouch() {
     // cur_anim_frame == 3 == normal_landing_lag: the lag gate opens, and
     // `cur_anim_frame < frame_speed_mul + normal_landing_lag` (3 < 1 + 3)
     // also still opens the squat entry (ordinary Landing's `anim_speed`, and
-    // so `frame_speed_mul`, is always 1.0).
+    // so `frame_speed_mul`, is always 1.0). `ftCo_Landing_IASA` (`ftCo_
+    // Landing.c:146-147`) calls `ftCo_SquatWait_CheckInput` here, not
+    // `ftCo_Squat_CheckInput`, so this crouch entry lands in SquatWait
+    // directly, skipping Squat's own crouch-down animation.
     let cases: [(&str, Controller, Action); 8] = [
         ("jab", buttons(BUTTON_A), Action::Jab),
         ("tilt", stick(BUTTON_A, [0.6, 0.0]), Action::AttackS3S),
@@ -171,7 +174,7 @@ fn first_interruptible_frame_opens_the_complete_wait_chain_and_the_crouch() {
         ("jump", buttons(BUTTON_X), Action::JumpSquat),
         ("dash", stick(0, [1.0, 0.0]), Action::Dash),
         ("smash", cstick([1.0, 0.0]), Action::AttackS4S),
-        ("crouch", stick(0, [0.0, -1.0]), Action::Squat),
+        ("crouch", stick(0, [0.0, -1.0]), Action::SquatWait),
     ];
     for (label, input, expected) in cases {
         let mut game = Match::new(data(), 42).unwrap();

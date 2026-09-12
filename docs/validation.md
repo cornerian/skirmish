@@ -26,6 +26,29 @@ chasing on `fox-fd-4.slp` turned out to be `game::locomotion::update_
 actions`'s Landing-specific squat-entry branch calling the wrong destination
 entirely, not this timing bug -- see this file's own next entry.
 
+The 2026-09-12 Landing-to-SquatWait routing fix (the same loop) fixes that
+next-diagnosed cause: `ftCo_Landing_IASA`'s own squat check
+(`ftCo_Landing.c:146-147`) calls `ftCo_SquatWait_CheckInput` directly, not
+`ftCo_Squat_CheckInput` -- an interruptible Landing with the stick held down
+steps straight into SquatWait (`fn_800D62C4`'s own `Fighter_
+ChangeMotionState`, no extra `ftAnim_8006EBA4` advance), skipping the
+ordinary crouch-down animation entirely, unlike Wait/Walk/RunBrake's own
+down-stick check (`ftCo_800D5FB0`, above). `game::locomotion::update_
+actions` previously routed every down-stick entry through the same
+`start_squat`/`Action::Squat`, Landing included; it now branches on
+`f.action == Action::Landing` and enters `Action::SquatWait` directly for
+that case. Confirmed directly against `fox-fd-4.slp`: P4 lands an ordinary
+short hop and holds down at frame -34 through -31 (`Action::Landing`,
+`action_state` 42, ages 0..3), then the recording shows `action_state` 40
+(SquatWait) at frame -30 with no intervening frame at `action_state` 39
+(Squat) -- confirming the direct routing, not a fast crouch-down animation.
+`tests/game_landing.rs`'s `first_interruptible_frame_opens_the_complete_
+wait_chain_and_the_crouch` updates its own `"crouch"` case from
+`Action::Squat` to `Action::SquatWait` to match. Moved `fox-fd-4.slp`'s
+`checked_frames` from 93 to 103 (`first_divergent_frame` from -30 to -20);
+`fox-fd-2.slp` is unaffected (its own divergence is on an unrelated
+Fox-specials pack-export gap, `docs/parity.md`).
+
 The 2026-09-12 shield-regeneration-on-conversion-frame fix (the real-replay
 parity loop, `fox-bf.slp`, `docs/parity.md`) stops `Fighter_ProcessHit_
 8006D1EC`-equivalent regeneration (`game::shield::finish_frame`) from

@@ -960,7 +960,19 @@ pub(crate) fn update_actions(
                 f.action != Action::Landing || super::landing::squat_window(f, data);
             if landing_squat_ready && input.stick[1] < -p.crouch_enter_threshold {
                 f.locomotion.pass_delay = None;
-                start_squat(f);
+                if f.action == Action::Landing {
+                    // ftCo_Landing_IASA (ftCo_Landing.c:146-147) calls
+                    // `ftCo_SquatWait_CheckInput` directly, not `ftCo_
+                    // Squat_CheckInput`: an interruptible Landing steps
+                    // straight into SquatWait (`fn_800D62C4`'s own
+                    // `Fighter_ChangeMotionState`, no extra `ftAnim_8006EBA4`
+                    // advance), skipping the ordinary crouch-down animation
+                    // Wait/Walk/RunBrake's own down-stick check enters
+                    // through `start_squat` below.
+                    enter(f, Action::SquatWait);
+                } else {
+                    start_squat(f);
+                }
             } else if input.stick[0] * f.facing <= p.turn_threshold {
                 start_turn(f, p, false);
             } else if input.stick[0] * f.facing >= p.walk_threshold
