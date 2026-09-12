@@ -476,6 +476,39 @@ fn the_shot_fires_on_the_scripts_own_frame_not_loop_entry() {
     );
 }
 
+/// `NeutralSpecial::validate` (and `SideSpecial::validate`) reject a
+/// `script` whose per-frame vectors don't have exactly as many entries as
+/// their own phase's own pose count -- checked before a match is even
+/// constructed, matching the established `invalid_*_resources_are_
+/// rejected_without_constructing_a_match` convention elsewhere in this
+/// test suite.
+#[test]
+fn mismatched_script_frame_counts_are_rejected() {
+    use skirmish::game::{Match, characters::Specials};
+
+    let mut resource = script_resources::profile(data());
+    for fighter in &mut resource.fighters {
+        let Some(Specials::Fox {
+            neutral: Some(neutral),
+            ..
+        }) = &mut fighter.specials
+        else {
+            panic!("script_resources::profile always installs Fox's neutral script");
+        };
+        // Drop one row from Loop-ground's own `cmd_vars`, breaking parity
+        // with `loop_phase.ground.frames.len()`.
+        neutral
+            .script
+            .as_mut()
+            .expect("script_resources::profile always installs a script")
+            .loop_phase
+            .ground
+            .cmd_vars
+            .pop();
+    }
+    assert!(Match::new(resource, 0).is_err());
+}
+
 #[test]
 fn checkpoint_round_trip_preserves_the_move_and_in_flight_projectiles() {
     let mut resource = data();
