@@ -759,24 +759,15 @@ use up_special_resources::{hold_attack_with_pack_hitboxes, travel_hitbox};
 #[test]
 fn hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames() {
     // The schedule below reproduces the pack's own periodic pulse (frames
-    // 20/22/24/26/28/30/32), and the first of those frames does connect
-    // exactly on schedule -- but this engine's shared per-attacker
-    // `hit_groups` bitmask (`src/game/simulation.rs`, `source.hit_groups &
-    // (1 << hit.group) != 0`) is only cleared by a fresh `simulation::enter`
-    // (a whole new action), not by a hitbox slot merely cycling through a
-    // disabled frame and back on within the *same* action. Every other
-    // continuous/repeating hitbox already in this codebase (any attack with
-    // more than one active frame and no dedicated re-enable mechanism) is
-    // bound by the identical rule; only `jab`'s own `clear_hits` script flag
-    // opts a specific frame out of it (`tests/game_jab.rs::clear_hits_lets_
-    // third_jabs_group_hit_the_victim_twice`), and `Attack`/`AttackFrame`
-    // (the generic shape this move's own Hold/Travel hitboxes use) has no
-    // such field. Reproducing pulses 2 through 7 as independently
-    // connecting hits would need that same per-frame re-enable mechanism
-    // added to the specials pipeline, which is a distinct feature this batch
-    // does not add -- the frames after 20 are still exercised here (no
-    // spurious hit fires on any of them, matching this engine's own actual,
-    // already-tested behavior for a continuous hitbox with no clear_hits).
+    // 20/22/24/26/28/30/32, clear on every frame in between). Each pulse
+    // independently connects: `hitboxes::refreshed_groups` (`src/game/
+    // hitboxes.rs`) generically re-enables an attacker's per-group
+    // `hit_groups` bit whenever a hitbox re-creates after being absent from
+    // every one of the four slots on the previous frame -- the same rule
+    // `ftAction_8007121C`'s own re-enable gate (`state ==
+    // HitCapsule_Disabled || x4 != hit_group`) and `ftColl_800768A0`'s
+    // victim-clear-on-no-shared-capsule (`lbColl_80008440`) apply in the
+    // pinned source. See `docs/fox-up-special.md`'s "Hitboxes" section.
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
     resource.rules.knockback_speed = 0.0;
@@ -815,9 +806,9 @@ fn hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames() {
         }
         frame_before = state.fighters[0].action_frame;
     }
-    assert_eq!(hit_frames, vec![20]);
-    // One pulse at 2 damage; no staling is configured for this profile.
-    assert_eq!(game.state().fighters[1].percent, 2.0);
+    assert_eq!(hit_frames, vec![20, 22, 24, 26, 28, 30, 32]);
+    // Seven pulses at 2 damage apiece; no staling is configured for this profile.
+    assert_eq!(game.state().fighters[1].percent, 14.0);
 }
 
 #[test]

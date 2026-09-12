@@ -251,12 +251,13 @@ sampled the instant `Action::SpecialLwStart`/`SpecialAirLwStart` is
 entered, the identical same-frame cascade `docs/fox-up-special.md`'s Travel
 regression documents) and deals 5 damage as the pack reports; frame 1's own
 copy of the identical hitbox does not independently connect a second time,
-for the same shared per-attacker `hit_groups` reason `docs/fox-up-special.
-md`'s own Hold pulse doc explains (only cleared by a fresh `simulation::
-enter`, not a hitbox slot's own re-enable within the same action). No
-C-oracle differential was added: hit resolution arithmetic is already
-oracle-pinned and generic over `Hitbox` fields, and this batch supplies new
-data through that existing pipeline, not new arithmetic.
+since it never leaves `frame.hitboxes` for even one frame -- the shared
+per-attacker `hit_groups` bitmask has nothing to refresh
+(`hitboxes::refreshed_groups`, `docs/validation.md`'s 2026-09-12 entry) and
+stays set from frame 0's own connect, exactly like Travel's own continuous
+hit. No C-oracle differential was added: hit resolution arithmetic is
+already oracle-pinned and generic over `Hitbox` fields, and this batch
+supplies new data through that existing pipeline, not new arithmetic.
 
 ## C-oracle coverage
 

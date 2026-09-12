@@ -68,6 +68,66 @@ not allow doing that with confidence. The native Rust behavior is instead
 verified by the tests above, the real-recording cross-checks in the design
 note, and code review against the cited decomp functions.
 
+The 2026-09-12 hit-record-refresh batch closes the gap the 2026-09-11
+special-move script-hitbox batch left open: a script that clears a hitbox
+and re-creates it later in the same action (Fire Fox Hold's own charge
+pulse, frames 20/22/24/26/28/30/32) previously connected only on its first
+active frame, since the per-attacker `hit_groups` bitmask
+(`src/game/simulation.rs`) cleared only on a fresh `simulation::enter`, not
+on a hitbox slot's own re-enable. `src/game/hitboxes.rs` gains
+`refreshed_groups(tracks, frame)`: the generic counterpart of
+`ftAction_8007121C`'s own re-enable gate (`ftaction.c:284-359`, the
+CreateHitbox opcode) -- a hitbox is a fresh spawn when
+`hitbox->state == HitCapsule_Disabled || hitbox->x4 != hit_group` (`x4`
+being the capsule's own hit-group id, `Hitbox::group` here). On a fresh
+spawn the source calls `ftColl_800768A0` (`ftcoll.c:301-314`), which copies
+victim history from another still-enabled capsule sharing the same group
+(`lbColl_CopyHitCapsule`, `lbcollision.c:1809-1822`) if one exists, or
+clears it (`lbColl_80008440`, `lbcollision.c:1796-1807`, zeroing
+`victims_1`/`victims_2` and their counts) otherwise; the explicit
+ClearHitbox/ClearAllHitboxes opcodes (`ftAction_80071784`/
+`ftAction_800717D8`, `ftaction.c:426-444`) only flip `state` to `Disabled`
+and never touch the victim lists themselves, so the clear happens lazily on
+the next creation. This codebase has one exported `AttackFrame` per
+simulation frame rather than a per-opcode timeline, so `refreshed_groups`
+reads "disabled" as "absent from `frame.hitboxes`" (matching
+`update_tracks`'s own existing contract) and "another already-enabled
+capsule sharing the group" as "any of the four `tracks` slots already
+carried that group on the previous frame" -- checked across every slot, not
+just the one being read, to match `ftColl_800768A0`'s own all-capsules
+search. `simulation::advance` now clears the matching `hit_groups` bits
+(`fighter.hit_groups &= !hitboxes::refreshed_groups(...)`) immediately
+before calling `update_tracks` (which reads the same, not-yet-overwritten
+`tracks`), for every attack generically -- no per-move opt-in. A hitbox
+present on every frame from its own action's entry (jab, Travel's own
+continuous hit, Reflector's Start hit) never sees a gap, so nothing past
+its own first frame changes for it, matching the source's own same-group
+reissue no-op. `jab.rs`'s own `FrameFlags::clear_hits` and the rapid-jab
+loop's frame-zero `hit_groups = 0` are unchanged and still needed: a script
+that clears and immediately re-creates a hitbox within the very same
+exported frame is invisible to a presence/absence check at this
+granularity, since the capsule never actually leaves `frame.hitboxes` at
+that resolution. Native coverage: `tests/game_swept_hitboxes.rs` gains a
+focused unit test pinning `refreshed_groups` itself (gap-then-return
+refreshes, continuing/same-frame presence does not, a group shared by
+another slot copies rather than clears); `tests/game_fox_up_special.rs::
+hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames` now
+asserts all seven pulses connect independently (14 damage total, not 2) --
+this test previously asserted the *absence* of exactly this behavior, since
+it did not exist yet. `tests/game_jab.rs`'s own
+`rapid_jab_tapping_keeps_the_loop_going_and_rehits_each_cycle` (the rapid
+loop) and `clear_hits_lets_third_jabs_group_hit_the_victim_twice`'s own
+`without_clear` branch (an ordinary continuous hitbox hitting once) already
+covered the other two required scenarios and needed no change. Separately,
+`src/game/clank.rs`'s own `State`/`Slot`/`sample`/`blocked` already
+implement the identical re-enable/copy/clear semantics independently,
+scoped to matches with `rules.clank` configured (`clank::blocked` replaces
+the `hit_groups` bitmask check entirely, match-wide, whenever
+`data.rules.clank.is_some()`) -- this batch's fix is the non-clank engine's
+own analogous correctness, not a duplicate of that path, and the two are
+mutually exclusive per match by the existing dispatch in
+`simulation::advance`.
+
 The 2026-09-12 Falco registration batch adds `game::characters::
 Specials::Falco` on top of Fox's existing side/up/down special code
 (`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own

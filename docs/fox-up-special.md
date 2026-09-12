@@ -282,20 +282,17 @@ match-data.json`, `fighters[0].specials.up.{hold,travel}.{ground,air}`.
   place a stationary second fighter in reach. Travel's hit connects on its
   own entry frame (frame 0's hitbox is already active the instant
   `Action::SpecialHi` is entered, the same same-frame cascade this move's
-  Hold-anim-end launch already relies on). Hold's own pulse connects exactly
-  at frame 20 and deals 2 damage as the pack reports; pulses 22 through 32
-  do not independently connect a second time, because this engine's shared
-  per-attacker `hit_groups` bitmask (`src/game/simulation.rs`) is only
-  cleared by a fresh `simulation::enter` (a new action), not by a hitbox
-  slot cycling through a disabled frame and back on within the *same*
-  action -- exactly the rule every other continuous/repeating hitbox in
-  this codebase already lives under (only `jab`'s own `clear_hits` script
-  flag opts a specific frame out of it, a field `Attack`/`AttackFrame` does
-  not have). Reproducing independently-connecting pulses would need that
-  same per-frame re-enable mechanism added to the specials pipeline, which
-  is a distinct feature this batch does not add; the test still exercises
-  (and asserts the absence of a spurious hit on) every frame from 20 through
-  Hold's own end. No C-oracle differential was added for this data: hit
+  Hold-anim-end launch already relies on), and only once, since it never
+  clears. Hold's own pulse connects independently at every one of the
+  pack's own seven pulse frames (20 through 32), 2 damage apiece: this
+  engine's shared per-attacker `hit_groups` bitmask (`src/game/
+  simulation.rs`) now clears the matching bit whenever a hitbox re-creates
+  after a genuine gap in the exported per-frame data
+  (`hitboxes::refreshed_groups`, the 2026-09-12 hit-record-refresh batch,
+  `docs/validation.md`), the generic counterpart of `ftAction_8007121C`'s
+  own re-enable gate and `ftColl_800768A0`/`lbColl_80008440`'s own
+  victim-clear-on-no-shared-capsule -- modeled for every attack, not just
+  this move. No C-oracle differential was added for this data: hit
   resolution arithmetic (`combat::knockback`/`hitlag`/`initial_hitstun`) is
   already oracle-pinned and generic over `Hitbox` fields
   (`tests/combat_differential.rs`), and this batch supplies new data through

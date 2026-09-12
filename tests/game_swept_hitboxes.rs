@@ -3,7 +3,7 @@ use skirmish::collision::bones::{Bone, LocalTransform, Pose};
 use skirmish::game::{
     BUTTON_A, Controller, Error, Event, Match,
     data::{AttackFrame, Hitbox, MatchData},
-    hitboxes::{Track, update_tracks},
+    hitboxes::{Track, refreshed_groups, update_tracks},
 };
 
 const IDLE: [Controller; 2] = [Controller {
@@ -99,6 +99,37 @@ fn frozen_pose_collapses_sweep_and_invalid_updates_are_atomic() {
         Err(Error::Data(_))
     ));
     assert_eq!(tracks, saved);
+}
+
+#[test]
+fn refreshed_groups_flags_only_a_gap_then_return_not_a_shared_or_continuing_slot() {
+    // Every group is absent from a brand-new (or freshly `simulation::enter`-
+    // reset) track array, so its first appearance is always a re-creation --
+    // `ftAction_8007121C`'s own `state == HitCapsule_Disabled` arm.
+    let tracks = [Track::default(); 4];
+    assert_eq!(refreshed_groups(&tracks, Some(&frame(&[0, 1]))), 0b11);
+    assert_eq!(refreshed_groups(&tracks, None), 0);
+
+    // A hitbox present on the immediately preceding frame is not refreshed:
+    // the pinned source's own same-group reissue of an already-`Enabled`
+    // capsule is a no-op.
+    let mut tracks = [Track::default(); 4];
+    update_tracks(&mut tracks, Some(&frame(&[0])), &pose(0.0)).unwrap();
+    assert_eq!(refreshed_groups(&tracks, Some(&frame(&[0]))), 0);
+
+    // A genuine gap (absent for a whole frame) followed by its return is a
+    // re-creation again, matching Fire Fox Hold's own charge-pulse schedule
+    // (`docs/fox-up-special.md`'s "Hitboxes" section).
+    update_tracks(&mut tracks, None, &pose(0.0)).unwrap();
+    assert_eq!(refreshed_groups(&tracks, Some(&frame(&[0]))), 0b1);
+
+    // A group still active on another slot is not refreshed when a second
+    // slot newly picks it up: `ftColl_800768A0`'s own search finds the
+    // other, still-enabled capsule and copies its victim history instead of
+    // clearing it.
+    let mut tracks = [Track::default(); 4];
+    update_tracks(&mut tracks, Some(&frame(&[5])), &pose(0.0)).unwrap();
+    assert_eq!(refreshed_groups(&tracks, Some(&frame(&[5, 5]))), 0);
 }
 
 fn resource() -> MatchData {

@@ -796,6 +796,14 @@ pub(crate) fn advance(
         } else {
             None
         };
+        // A script re-creating a hitbox after a genuine gap in the exported
+        // per-frame data (Fire Fox Hold's charge pulse, `docs/
+        // fox-up-special.md`'s "Hitboxes" section) re-enables its victim
+        // record generically for every attack, matching
+        // `ftAction_8007121C`'s own re-enable gate; see
+        // `hitboxes::refreshed_groups`'s own citation. Read before
+        // `update_tracks` overwrites `fighter.hitboxes` for this frame.
+        fighter.hit_groups &= !hitboxes::refreshed_groups(&fighter.hitboxes, frame);
         swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
         let charge = fighter.smash;
         staling::sample(
