@@ -51,6 +51,73 @@ grace frame. Recorded here for whoever picks up that diagnosis next.
 Full citations, the difference table, and every test: `docs/falco.md`'s
 own "Falco's neutral special (Laser): now wired" section.
 
+The 2026-09-13 zero-knockback-hit fix (the real-replay parity loop,
+`fox-bf.slp`, `docs/parity.md`) stops `game::damage::apply_hit` from
+forcing a Damage motion-state reaction on a hit whose computed knockback
+is exactly zero. `Fighter_ProcessHit_8006D1EC`'s ordinary ground/air
+dispatch (priority `0xE`, `fighter.c:2810`, `switch (fp->x1828)` case
+`0`) calls `ftCo_8008EC90` (`ftCo_Damage.c:838`), whose own first check --
+`if (fp->x2220_b3 || fp->x2220_b4 || !fp->dmg.kb_applied) { inlineB2(gobj);
+return; }` -- skips its entire motion-state transition (`ftCo_8008E908`
+-> `ftCo_8008DCE0`, `:668,266`, both of which unconditionally call
+`Fighter_ChangeMotionState` for any *nonzero* knockback, confirmed by
+reading both in full) whenever the hit's own final computed knockback
+(`fp->dmg.kb_applied`, freshly overwritten by `ftCo_Damage_CalcKnockback`
+earlier in the same dispatch) is exactly `0.0`, applying only cosmetic
+hit-effects (`inlineB2`'s own `ftCo_8008DA4C` flash/vibration, not
+modeled) instead. A hit with zero growth, zero base and zero
+weight-independent knockback computes exactly this regardless of percent
+or weight -- Fox/Falco's own Blaster laser is a real, already-documented
+example (`docs/fox-neutral-special.md`: "zero knockback is real: a laser
+flinches its target without pushing it").
+
+Confirmed directly against `fox-bf.slp`: P1 takes a Blaster hit (damage
+`3`) while mid-`JumpSquat` (Slippi action state `24`, `KneeBend`) at
+frame 26 and stays in `JumpSquat`, uninterrupted, continuing normally
+into its own jump two frames later -- only its damage percent ticks up.
+Before this fix, `game::damage::apply_hit` unconditionally called
+`simulation::enter(target, Action::Damage)` regardless of knockback,
+forcing P1 into `DamageN1` instead.
+
+Three narrower follow-on divergences surfaced once the motion-state fix
+alone was in place, each isolating one more piece of the same skipped
+reaction that is *not* gated the same way:
+
+- **The victim's own `last_hit_by`/`last_hit_by_instance`** are part of
+  the same skipped reaction (decomp's own hit-attribution write lives
+  inside the gated path) and must stay at their prior, no-hit value; this
+  loop's own `combat_history::record_hit` previously always set them.
+- **The attacker's own last-move-landed/combo-count** (`combo::record`,
+  the same function's *other* half) is the opposite: it is the attacker's
+  own bookkeeping, set independently of whether the victim ever reacts,
+  so it must keep updating even when the reaction itself is skipped.
+  `record_hit` gained an explicit `reacted: bool` parameter to split
+  these two halves (`grab.rs`'s own caller always passes `true`, an
+  ordinary grab hit's reaction is never skipped).
+- **The attacker's own hitlag** is part of the same skipped reaction too
+  (confirmed directly: P4, the Blaster's owner, incorrectly carried
+  hitlag from this hit before this specific fix) and is now gated
+  alongside the victim's.
+
+**Tests**: `game_damage`'s new `zero_knockback_ticks_damage_without_
+forcing_any_reaction` zeros a synthetic jab's growth/fixed/base
+knockback fields, lands the hit, and confirms the victim stays in
+`Action::Wait` with zero velocity/hitstun/hitlag and an untouched
+`last_hit_by`, while its percent still rises by the jab's own damage;
+the attacker's own hitlag likewise stays zero, but its `last_attack_
+landed`/combo `count` still update, confirming the two independent
+gates. `cargo fmt --check`, `cargo clippy --workspace --all-targets` and
+`cargo test --workspace` (both default and `c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10: 156 frames now
+match (`-123` through `32`), up from 149; `fox-bf-baseline.json` moves to
+reflect this. The new first divergence is frame 33, field `action_state`
+on P4 (expected `Dash`, actual `Turn`) -- squarely the concurrent
+fox-fd-2/fox-fd-4 loop's own dash-entry-velocity investigation
+(`docs/parity.md`'s own commit history: "Test and falsify the
+skirmish-f64 batch's dash-entry-velocity lead"), so not pursued further
+here to avoid duplicating or racing that work.
+
 The 2026-09-13 aerial-Blaster-entry velocity fix (the real-replay parity
 loop, `fox-bf.slp`, `docs/parity.md`) stops `game::characters::fox::
 neutral::update_actions` from zeroing velocity on an airborne Blaster

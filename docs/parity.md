@@ -1146,8 +1146,39 @@ entry_zeros_it`).
 published gameplay-export pack v10. The new first divergence is frame
 26, field `action_state` on P1 (expected `KneeBend`, actual `DamageN1`)
 -- P1 is hit by something Skirmish's own simulation does not expect at
-that frame, a separate, undiagnosed root cause not pursued further in
-this batch.
+that frame.
+
+**Fixed: a zero-knockback hit was forcing a reaction it should not.**
+P1 takes a Blaster hit (damage `3`) while mid-`JumpSquat` at frame 26 and
+stays in `JumpSquat`, uninterrupted, continuing normally into its own
+jump two frames later -- only its percent ticks up. `Fighter_ProcessHit_
+8006D1EC`'s ordinary reaction dispatch (`fighter.c:2810`, case `0` of
+`switch (fp->x1828)`) calls `ftCo_8008EC90` (`ftCo_Damage.c:838`), whose
+own first check -- `if (fp->x2220_b3 || fp->x2220_b4 ||
+!fp->dmg.kb_applied) { inlineB2(gobj); return; }` -- skips its entire
+motion-state transition (`ftCo_8008E908` -> `ftCo_8008DCE0`) whenever the
+hit's own final computed knockback is exactly `0.0`, applying only
+cosmetic hit-effects instead. Fox/Falco's own Blaster laser has zero
+growth, zero base and zero weight-independent knockback -- already
+documented as "zero knockback is real: a laser flinches its target
+without pushing it" (`docs/fox-neutral-special.md`) -- so it always
+computes exactly this. `game::damage::apply_hit` now gates its entire
+victim-side reaction (motion-state transition, velocity, hitstun,
+hitlag, `last_hit_by`) on the computed knockback being nonzero, while
+still applying percent and the attacker's own separate last-move-
+landed/combo-count bookkeeping (`combo::record`, which is the attacker's
+own accounting and stays unconditional) and gating the attacker's own
+hitlag alongside the victim's. `docs/validation.md` has the full
+native-test breakdown (`game_damage`'s new `zero_knockback_ticks_damage_
+without_forcing_any_reaction`).
+
+156 frames now match (`-123` through `32`), up from 149;
+`fox-bf-baseline.json` moves to reflect this, measured against the same
+published gameplay-export pack v10. The new first divergence is frame
+33, field `action_state` on P4 (expected `Dash`, actual `Turn`) --
+squarely the concurrent fox-fd-2/fox-fd-4 loop's own dash-entry-velocity
+investigation, so not pursued further here to avoid duplicating or
+racing that work.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

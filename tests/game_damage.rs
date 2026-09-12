@@ -1,5 +1,5 @@
 //! Synthetic end-to-end damage timing; no character/common-data defaults.
-use skirmish::game::{BUTTON_A, Controller, Event, Match, data::MatchData};
+use skirmish::game::{Action, BUTTON_A, Controller, Event, Match, data::MatchData};
 
 const IDLE: [Controller; 2] = [Controller {
     cstick: [0.0; 2],
@@ -30,6 +30,44 @@ fn hit(data: MatchData) -> Match {
         }
     )));
     game
+}
+
+#[test]
+fn zero_knockback_ticks_damage_without_forcing_any_reaction() {
+    // `ftCo_8008EC90` (the ordinary ground/air damage-reaction entry,
+    // `ftCo_Damage.c:838`): `if (fp->x2220_b3 || fp->x2220_b4 ||
+    // !fp->dmg.kb_applied) { inlineB2(gobj); return; }` skips its entire
+    // motion-state transition (`ftCo_8008E908` -> `ftCo_8008DCE0`) whenever
+    // the computed knockback is exactly zero -- Fox/Falco's own Blaster
+    // laser is a real example (zero growth/base/weight-independent,
+    // `docs/fox-neutral-special.md`), confirmed against `fox-bf.slp`: P1
+    // takes a Blaster hit mid-JumpSquat and stays in JumpSquat, uninterrupted,
+    // only its damage percent ticking up (`docs/parity.md`). The attacker's
+    // own last-move-landed/combo-count bookkeeping (`combo::record`) is a
+    // separate, always-unconditional mechanism (the attacker's own
+    // accounting, set independently of whether the victim reacts), so it
+    // still updates; the victim's own `last_hit_by` and both fighters' own
+    // hitlag, however, are part of the same skipped reaction.
+    let mut resource = data();
+    for frame in &mut resource.fighters[0].jab.frames {
+        for hitbox in &mut frame.hitboxes {
+            hitbox.growth = 0;
+            hitbox.fixed = 0;
+            hitbox.base = 0;
+        }
+    }
+    let game = hit(resource);
+    let attacker = &game.state().fighters[0];
+    let victim = &game.state().fighters[1];
+    assert_eq!(victim.action, Action::Wait);
+    assert_eq!(victim.percent, 10.0);
+    assert_eq!(victim.velocity, [0.0, 0.0]);
+    assert_eq!(victim.hitstun, 0);
+    assert_eq!(victim.hitlag, 0.0);
+    assert_eq!(victim.combo.last_hit_by, None);
+    assert_eq!(attacker.hitlag, 0.0);
+    assert_eq!(attacker.combo.last_attack_landed, 1);
+    assert_eq!(attacker.combo.count, 1);
 }
 
 #[test]

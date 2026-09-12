@@ -1360,6 +1360,7 @@ fn apply_pummel(
         victim,
         staled.identity.move_id,
         &data.rules.damage.combo,
+        true,
     );
     state.events.push(Event::Hit {
         attacker: holder,

@@ -996,78 +996,112 @@ pub(crate) fn apply_hit(
     if !angle.radians.is_finite() || merged.into_iter().any(|value| !value.is_finite()) {
         return Err(Error::NonFinite);
     }
+    // `Fighter_UnkTakeDamage_8006CC30` (percent) and `ftCo_Damage_CalcKnockback`
+    // (this hit's own knockback magnitude) both run unconditionally in
+    // `Fighter_ProcessHit_8006D1EC`, before its `switch (fp->x1828)` reaches
+    // `ftCo_8008EC90` (the ordinary ground/air reaction entry, `ftCo_
+    // Damage.c:838`): that function's own first check --
+    // `if (fp->x2220_b3 || fp->x2220_b4 || !fp->dmg.kb_applied) { inlineB2(gobj);
+    // return; }` -- skips its entire motion-state transition (`ftCo_8008E908`
+    // -> `ftCo_8008DCE0`, `:668,266`) whenever the computed knockback is
+    // exactly zero, applying only cosmetic hit-effects (`inlineB2`'s own
+    // `ftCo_8008DA4C` flash/vibration, not modeled) instead. A hit with zero
+    // growth, zero base and zero weight-independent knockback -- e.g. Fox/
+    // Falco's own Blaster laser, confirmed zero across all three fields
+    // (`docs/fox-neutral-special.md`) -- always computes exactly this,
+    // regardless of percent or weight: it "flinches" cosmetically without
+    // ever forcing a reaction, so a fighter mid-JumpSquat (or any other
+    // action) simply keeps going, only its damage percent ticking up --
+    // `combat_history::record_hit`'s own victim-side `last_hit_by`/
+    // `last_hit_by_instance` bookkeeping stays at its own prior (no-hit)
+    // value too, since decomp's skipped reaction never reaches the code
+    // that would update it. The attacker's own last-move-landed/combo-count
+    // bookkeeping (the same function's `combo::record`) is unaffected --
+    // it is the attacker's own accounting, set independently of whether the
+    // victim ever flinches -- so `record_hit` itself still runs every hit.
+    // The attacker's own hitlag, though, is part of the same skipped
+    // reaction (`ftCo_8008EC90`'s gate runs before `ftCo_Damage_
+    // CalcHitlag` would otherwise apply it to either side), so it stays
+    // gated alongside the victim's.
+    let reacted = knockback != 0.0;
+    if reacted {
+        state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
+    }
     super::combat_history::record_hit(
         state,
         attacker,
         victim,
         staled.identity.move_id,
         &data.rules.damage.combo,
+        reacted,
     );
-    state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
-    let target = &mut state.fighters[victim];
-    // ftCo_8008DCE0 first installs the hit direction. Its prone low-damage
-    // caller then supplies the old facing as the transition's final override.
-    target.facing = if down_damage_face_up.is_some() {
-        previous_facing
-    } else {
-        damage_facing
-    };
-    target.percent = (target.percent + staled.damage).min(999.0);
-    target.hitlag = target.hitlag.max(hitlag);
-    target.hitstun = hitstun as u32;
-    target.velocity = [0.0; 2];
-    target.ground_velocity = 0.0;
-    target.knockback = merged;
-    target.ground_knockback = ground_launch.map_or(0.0, |launch| launch.ground_knockback);
-    if was_grounded && ground_launch.is_none_or(|launch| launch.airborne) {
-        // ftCommon_8007D5D4 consumes the ground jump when damage leaves ground.
-        target.locomotion.jumps_used = 1;
-    }
-    if ground_launch.is_none_or(|launch| launch.airborne) {
-        target.grounded = false;
-        target.ground_line = None;
-    }
-    target.fast_fall = false;
-    super::ledge::release_on_damage(target, rules.ledge.as_ref());
-    super::simulation::enter(
-        target,
-        if down_damage_face_up.is_some() {
-            Action::DownDamage
+    state.fighters[victim].percent = (state.fighters[victim].percent + staled.damage).min(999.0);
+    if reacted {
+        let target = &mut state.fighters[victim];
+        // ftCo_8008DCE0 first installs the hit direction. Its prone
+        // low-damage caller then supplies the old facing as the
+        // transition's final override.
+        target.facing = if down_damage_face_up.is_some() {
+            previous_facing
         } else {
-            Action::Damage
-        },
-    );
-    target.damage_motion = if down_damage_face_up.is_none() {
-        damage_motion
-    } else {
-        None
-    };
-    if let Some(face_up) = down_damage_face_up {
-        target.prone = Some(if face_up {
-            ProneOrientation::FaceUp
+            damage_facing
+        };
+        target.hitlag = target.hitlag.max(hitlag);
+        target.hitstun = hitstun as u32;
+        target.velocity = [0.0; 2];
+        target.ground_velocity = 0.0;
+        target.knockback = merged;
+        target.ground_knockback = ground_launch.map_or(0.0, |launch| launch.ground_knockback);
+        if was_grounded && ground_launch.is_none_or(|launch| launch.airborne) {
+            // ftCommon_8007D5D4 consumes the ground jump when damage leaves ground.
+            target.locomotion.jumps_used = 1;
+        }
+        if ground_launch.is_none_or(|launch| launch.airborne) {
+            target.grounded = false;
+            target.ground_line = None;
+        }
+        target.fast_fall = false;
+        super::ledge::release_on_damage(target, rules.ledge.as_ref());
+        super::simulation::enter(
+            target,
+            if down_damage_face_up.is_some() {
+                Action::DownDamage
+            } else {
+                Action::Damage
+            },
+        );
+        target.damage_motion = if down_damage_face_up.is_none() {
+            damage_motion
         } else {
-            ProneOrientation::FaceDown
-        });
-        // The source stores hitstun in the same union slot used by DownWait.
-        target.down_timer = hitstun as u32;
+            None
+        };
+        if let Some(face_up) = down_damage_face_up {
+            target.prone = Some(if face_up {
+                ProneOrientation::FaceUp
+            } else {
+                ProneOrientation::FaceDown
+            });
+            // The source stores hitstun in the same union slot used by DownWait.
+            target.down_timer = hitstun as u32;
+        }
+        target.damage_elapsed = 0;
+        target.locomotion.tilt_x_age = 254;
+        target.locomotion.tilt_y_age = 254;
+        target.damage_angle_flag = 0;
+        target.last_damage_surface = None;
+        target.reflect_lockout = 0;
+        if let Some(timer) = angle.special_timer {
+            target.damage_angle_flag = 1;
+            target.damage_angle_timer = timer;
+        }
+        // A zero-hitlag hit has no expiry callback in the examined upstream path.
+        target.di_pending = target.hitlag > 0.0;
+        target.tumbling = rules
+            .damage
+            .floor_response
+            .as_ref()
+            .is_some_and(|profile| knockback >= profile.tumble_knockback_threshold);
     }
-    target.damage_elapsed = 0;
-    target.locomotion.tilt_x_age = 254;
-    target.locomotion.tilt_y_age = 254;
-    target.damage_angle_flag = 0;
-    target.last_damage_surface = None;
-    target.reflect_lockout = 0;
-    if let Some(timer) = angle.special_timer {
-        target.damage_angle_flag = 1;
-        target.damage_angle_timer = timer;
-    }
-    // A zero-hitlag hit has no expiry callback in the examined upstream path.
-    target.di_pending = target.hitlag > 0.0;
-    target.tumbling = rules
-        .damage
-        .floor_response
-        .as_ref()
-        .is_some_and(|profile| knockback >= profile.tumble_knockback_threshold);
     state.events.push(Event::Hit {
         attacker,
         victim,
