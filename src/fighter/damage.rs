@@ -56,11 +56,15 @@ pub fn launch_angle(
     } else if knockback < rules.grounded_low_knockback {
         0.0
     } else {
-        let mut result = (rules.grounded_max_degrees
-            * ((knockback - rules.grounded_low_knockback)
-                / (rules.grounded_high_knockback - rules.grounded_low_knockback))
-            + 1.0)
-            * DEGREES_TO_RADIANS;
+        // `x148 * ratio + 1` is a single Gekko `fmadds`
+        // (`tools/ppc_fma_audit.py ftCo_Damage_CalcAngle`; `docs/math.md`),
+        // computed with `f32::mul_add` for its one rounding; the
+        // degrees-to-radians conversion is a separate, unfused multiply.
+        let mut result = rules.grounded_max_degrees.mul_add(
+            (knockback - rules.grounded_low_knockback)
+                / (rules.grounded_high_knockback - rules.grounded_low_knockback),
+            1.0,
+        ) * DEGREES_TO_RADIANS;
         let cap = rules.grounded_max_degrees * DEGREES_TO_RADIANS;
         if result > cap {
             result = cap;
@@ -671,6 +675,36 @@ mod tests {
             merge_knockback([-0.0, 0.0], [0.0, -0.0], 3, 3).map(f32::to_bits),
             [(-0.0_f32).to_bits(), 0]
         );
+    }
+
+    /// `ftCo_Damage_CalcAngle`'s `x148 * ratio + 1` is a single Gekko
+    /// `fmadds` (`tools/ppc_fma_audit.py ftCo_Damage_CalcAngle`;
+    /// `docs/math.md`); `launch_angle`'s grounded branch computes it with
+    /// `f32::mul_add`. These inputs (a negative `ratio`, reached here via
+    /// `grounded_high_knockback < grounded_low_knockback` rather than a
+    /// negative knockback, since a knockback below `grounded_low_knockback`
+    /// would otherwise take the early-return-zero branch instead) were
+    /// chosen so the fused and naive roundings of that one expression
+    /// disagree, and the disagreement survives the subsequent
+    /// degrees-to-radians multiply as two different final bit patterns.
+    /// Hand-verified against `libm`'s `fmaf` outside Rust.
+    #[test]
+    fn launch_angle_matches_the_hardware_fused_rounding_not_naive_two_rounding() {
+        let rules = LaunchAngleRules {
+            airborne_radians: 0.0,
+            grounded_max_degrees: f32::from_bits(0x4295_3de4), // 74.62088012695312
+            grounded_low_knockback: 0.0,
+            grounded_high_knockback: -1.0,
+            special_angle_min: 0,
+            special_angle_max: 0,
+            special_timer: 0,
+        };
+        // `special_angle_min`/`special_angle_max`/`special_timer` above are
+        // unused on this path: they only apply when `angle != 361`.
+        let knockback = f32::from_bits(0x3c4b_7a98); // 0.012419365346431732
+        let result = launch_angle(361, knockback, false, &rules);
+        assert_eq!(result.radians.to_bits(), 0x3aa7_9552);
+        assert_eq!(result.special_timer, None);
     }
 
     #[test]

@@ -103,6 +103,13 @@ pub struct KnockbackModifiers {
 /// `ftColl_80079AB0`, with damage-count override selection represented explicitly.
 /// `attack_damage` is its `unk_count` argument, not necessarily the final damage.
 /// The source's nested order and inclusive maximum comparison are preserved.
+///
+/// Three `a * b + c`-shaped subexpressions here are each a single Gekko
+/// `fmadds` on the real hardware (`tools/ppc_fma_audit.py ftColl_80079AB0`;
+/// `docs/math.md`), not a separately-rounded multiply then add, so each is
+/// written with `f32::mul_add` to reproduce that one rounding: the two
+/// (mutually exclusive) branch inner-terms below, and the shared growth/
+/// scale terms after them.
 pub fn knockback(
     rules: &KnockbackRules,
     hit: KnockbackHit,
@@ -112,26 +119,33 @@ pub fn knockback(
 ) -> Result<f32, CombatError> {
     let w = modifiers.weight * rules.weight_scale;
     let inner = if hit.fixed != 0 {
-        rules.fixed_damage * rules.percent_scale
-            + rules.damage_percent_scale * (rules.fixed_damage * hit.fixed as f32)
+        // `x118 * x110 + x114 * (x118 * x28)` -- the fixed-damage branch's
+        // own `fmadds`.
+        rules.damage_percent_scale.mul_add(
+            rules.fixed_damage * hit.fixed as f32,
+            rules.fixed_damage * rules.percent_scale,
+        )
     } else {
         let count = match damage.count_override {
             Some(count) => count,
             None => integer(damage.percent)?,
         };
-        rules.percent_scale * (count as f32 + damage.pending_damage)
-            + rules.damage_percent_scale
-                * (attack_damage as f32 * (count as f32 + damage.pending_damage))
+        let count_and_pending = count as f32 + damage.pending_damage;
+        // `x110 * (count + pending) + x114 * (unk_count * (count + pending))`
+        // -- the percent branch's own `fmadds`.
+        rules.damage_percent_scale.mul_add(
+            attack_damage as f32 * count_and_pending,
+            rules.percent_scale * count_and_pending,
+        )
     };
-    let result = modifiers.defense
-        * (modifiers.attack
-            * (modifiers.stage
-                * ((0.01
-                    * hit.growth as f32
-                    * (rules.growth_scale
-                        * ((rules.weight_base - (w * rules.weight_base) / (1.0 + w)) * inner)
-                        + rules.growth_base))
-                    + hit.base as f32)));
+    let decay_factor = rules.weight_base - (w * rules.weight_base) / (1.0 + w);
+    // `x11C * (decay_factor * inner) + x120`.
+    let growth_term = rules
+        .growth_scale
+        .mul_add(decay_factor * inner, rules.growth_base);
+    // `0.01 * growth * growth_term + x2C`.
+    let scaled = (0.01 * hit.growth as f32).mul_add(growth_term, hit.base as f32);
+    let result = modifiers.defense * (modifiers.attack * (modifiers.stage * scaled));
     Ok(if result >= rules.maximum {
         rules.maximum
     } else {
@@ -151,13 +165,17 @@ pub struct HitlagRules {
 
 /// `ftCommon_CalcHitlag`. `crouching` means the source motion is Squat or
 /// SquatWait; truncation occurs after each of the original three stages.
+/// `dmg * x198 + x19C` is a single Gekko `fmadds`
+/// (`tools/ppc_fma_audit.py ftCommon_CalcHitlag`; `docs/math.md`), so it is
+/// computed with `f32::mul_add` rather than a separately-rounded multiply
+/// and add.
 pub fn hitlag(
     damage: i32,
     crouching: bool,
     multiplier: f32,
     rules: &HitlagRules,
 ) -> Result<f32, CombatError> {
-    let base = integer(damage as f32 * rules.damage_scale + rules.base)?;
+    let base = integer((damage as f32).mul_add(rules.damage_scale, rules.base))?;
     let result = integer(base as f32 * multiplier)? as f32;
     Ok(if crouching {
         integer(result * rules.crouch_multiplier)? as f32
@@ -232,5 +250,72 @@ mod tests {
         assert_eq!(initial_hitstun(0.0, 1.0), Ok(1));
         assert_eq!(initial_hitstun(3.9, 1.0), Ok(3));
         assert!(initial_hitstun(f32::INFINITY, 1.0).is_err());
+    }
+
+    /// `ftCommon_CalcHitlag`'s `dmg * x198 + x19C` is a single Gekko
+    /// `fmadds` (`tools/ppc_fma_audit.py ftCommon_CalcHitlag`;
+    /// `docs/math.md`), one rounding rather than two. At these inputs the
+    /// two ways of computing it land on opposite sides of an integer
+    /// boundary before the subsequent truncation, so a regression to plain
+    /// `dmg as f32 * rules.damage_scale + rules.base` is caught by the
+    /// *outcome*, not just an internal bit pattern: naive multiply-then-add
+    /// gives `1772.9998779296875` (truncating to 1772), while the fused
+    /// `f32::mul_add` -- matching the real hardware -- gives exactly
+    /// `1773.0`. Values hand-verified against `libm`'s `fmaf` outside Rust.
+    #[test]
+    fn hitlag_matches_the_hardware_fused_rounding_not_naive_two_rounding() {
+        let rules = HitlagRules {
+            damage_scale: f32::from_bits(0x400f_d0da), // 2.247122287750244
+            base: f32::from_bits(0xc00e_81a8),         // -2.226663589477539
+            crouch_multiplier: 1.0,
+        };
+        assert_eq!(hitlag(790, false, 1.0, &rules), Ok(1773.0));
+        assert_ne!(
+            790_f32 * rules.damage_scale + rules.base,
+            790_f32.mul_add(rules.damage_scale, rules.base),
+            "the test inputs should straddle a rounding boundary; if this \
+             assertion fails the inputs above no longer demonstrate anything"
+        );
+    }
+
+    /// A recorded divergence from an early run of
+    /// `tests/combat_differential.rs`'s `knockback_matches_c` (before that
+    /// test was given the documented small-relative-tolerance comparison
+    /// for the pinned `KNOCKBACK` macro's own two-products-summed `inner`
+    /// term -- see that test's own comment and `docs/math.md`):
+    /// `knockback`'s three `f32::mul_add` call sites reproduce
+    /// `-1.1778402e17` (bits `0xdbd1_39f9`), hand-verified against `libm`'s
+    /// `fmaf` outside Rust, bit-for-bit -- pinned here independent of the C
+    /// oracle's own limitations for this function.
+    #[test]
+    fn knockback_matches_a_hardware_fused_value_pinned_from_the_retail_dol() {
+        let rules = KnockbackRules {
+            weight_scale: f32::from_bits(0x410a_51b5),
+            weight_base: f32::from_bits(0xc0f4_771e),
+            maximum: f32::from_bits(0xcc25_3ed9),
+            percent_scale: f32::from_bits(0xc0aa_72d6),
+            damage_percent_scale: f32::from_bits(0xc0f4_7858),
+            fixed_damage: f32::from_bits(0x3df9_f25d),
+            growth_scale: f32::from_bits(0x3fc6_2f3e),
+            growth_base: f32::from_bits(0xc11e_1169),
+        };
+        let hit = KnockbackHit {
+            growth: 154_012_587,
+            fixed: 16_863_776,
+            base: 4_234_953_701,
+        };
+        let damage = DamageState {
+            percent: f32::from_bits(0xc301_4c57),
+            pending_damage: f32::from_bits(0x446a_3863),
+            count_override: Some(1_207_400_802),
+        };
+        let modifiers = KnockbackModifiers {
+            stage: f32::from_bits(0x4116_28de),
+            attack: f32::from_bits(0xc107_a386),
+            defense: f32::from_bits(0xc11e_fa34),
+            weight: f32::from_bits(0xbead_149b),
+        };
+        let result = knockback(&rules, hit, damage, 3_491_357_132, modifiers).unwrap();
+        assert_eq!(result.to_bits(), 0xdbd1_39f9);
     }
 }

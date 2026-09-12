@@ -14,6 +14,21 @@ typedef struct {
 typedef struct { u32 x24, x28, x2C; } HitCapsule;
 static _Thread_local ftCommonData* p_ftCommonData;
 
+/* `ftColl_80079AB0`'s three `a * b + c`-shaped subexpressions each match a
+ * real Gekko `fmadds` (`tools/ppc_fma_audit.py ftColl_80079AB0`;
+ * `docs/math.md`), and `fighter::combat::knockback` uses `f32::mul_add` at
+ * each. This oracle macro is deliberately left exactly as `ftcoll.c` itself
+ * pins it (still compiled `-ffp-contract=off`, like every adapter other
+ * than `build.rs`'s `FMA_CONTRACT_FILES`): an earlier attempt to compile
+ * this one with `-ffp-contract=fast -mfma` -- restructured into the
+ * per-statement form the two adapters in `FMA_CONTRACT_FILES` use -- was
+ * reverted after disassembling the result showed GCC choosing a different
+ * multiply/add pairing than the retail binary for the two-products-summed
+ * `inner` term (`x118 * x110 + x114 * (x118 * x28)`-shaped), which is
+ * itself pinned inline in `ftColl_80079AB0`'s own body and so isn't this
+ * wrapper's to restructure. `docs/math.md` has the concrete evidence; the
+ * differential test compares against this uncontracted oracle with a
+ * documented few-ULP tolerance instead of bit-for-bit. */
 #define KNOCKBACK(defense, attack, arg3, one, ftd, hit, w, inner)             \
     ((defense) *                                                              \
      ((attack) *                                                              \

@@ -316,3 +316,325 @@ measurement outcome.
   tested domain, per this project's existing "stays within C's defined
   float-to-int range" precedent (`tests/oracle/README.md`) -- except here
   the range itself is reproduced instead of avoided.
+
+## Fused multiply-add outside trigonometry: auditing the retail binary and mirroring it (`skirmish-fma` batch)
+
+MetroWerks CodeWarrior contracts `a * b + c`-shaped float expressions into
+single Gekko instructions (`fmadds`/`fmsubs`/`fnmadds`/`fnmsubs`, and the
+double-precision forms without the trailing `s`) wherever the source
+expression permits it. Those instructions compute the product and sum with
+one final rounding, not two — an f32 port that writes the same expression
+as a separate multiply then add reproduces the *value* almost always, but
+not always the *bit pattern*, because Rust does not contract float
+arithmetic on its own. This document is the audit this batch ran to find
+out, function by function, where that actually matters, and records what
+changed in the Rust port as a result.
+
+### The tool: `tools/ppc_fma_audit.py`
+
+```
+uv run --with capstone python3 tools/ppc_fma_audit.py \
+    --dol /mnt/archive/runs/melee-assets-20260909/disc/sys/main.dol \
+    --symbols /mnt/shared/Projects/Code/External/melee/config/GALE01/symbols.txt \
+    ftCommon_8007C98C ftColl_80079AB0 ...
+
+# Or from a file, one name per line (# comments allowed):
+uv run --with capstone python3 tools/ppc_fma_audit.py --dol ... --symbols ... \
+    --functions-file names.txt --summary-only
+```
+
+Given function names, it parses the DOL's own section table to find each
+symbol's file offset (no hardcoded load address), disassembles the bytes at
+`symbols.txt`'s recorded address and size with Capstone 5's PowerPC
+backend, and prints every fused instruction found together with a few
+neighboring instructions and a per-function summary. Only the standard
+library and `capstone` are used, invoked exactly as shown above (capstone
+is never `pip install`ed).
+
+**A real gap in capstone's PPC support, and the fix.** Capstone 5's
+PowerPC backend does not decode every legacy PowerPC FPU opcode — `fcmpo`
+appears throughout this binary and capstone's `Cs.disasm` simply stops
+there, silently truncating the rest of the function (confirmed: without a
+fix, `ftCommon_8007C98C` disassembled to 4 instructions instead of the 61 its
+`size:0xF4` implies). The tool works around this by disassembling one
+instruction at a time and, whenever capstone fails to decode a word,
+recording it as `.long 0x........` and advancing by the fixed PowerPC
+instruction width (4 bytes) instead of stopping. This is the only reason a
+custom decoder is needed at all; every *decodable* instruction, including
+every fused-multiply-add form used below, capstone handles natively and
+correctly (verified against hand-encoded `fmadds`/`fmsub`/`fnmadds`/
+`fnmsubs` test vectors before trusting it against the retail binary).
+
+### Per-function findings
+
+#### The batch's named targets
+
+Audited directly (`ftCo_80099A9C` is the actual address; `ftCo_EscapeAir`'s
+own callbacks just dispatch to it):
+
+| Function | Fused ops | Notes |
+| --- | --- | --- |
+| `ftCommon_8007C98C` (`getAccelAndTarget`'s caller / `accelerate`) | **none** | plain `fadds`/`fmuls` throughout |
+| `ftCommon_ApplyGroundMovement` | **none** | |
+| `ftCommon_ApplyGroundMovementNoSlide` | **none** | |
+| `ftCommon_ApplyFrictionGround` | **none** | |
+| `ftCommon_ApplyFrictionAir` | **none** | |
+| `ftCommon_Fall` | **none** | |
+| `ftCo_800CB110` (jump launch) | **none** | |
+| `ftCo_80099A9C` (`ftCo_EscapeAir` launch, inlines `inlineA0`) | **none** | `force * cosf(angle)` is a plain `fmuls`, not `a*b+c` shaped at all |
+| `ftCo_Dash_Phys` (inlines `getAccelAndTarget`, calls `ftCommon_8007C98C`/`ftCommon_ApplyGroundMovement`) | **none** | `stick * dash_accel_mul` then a separate `fadds` for `+= dash_accel_base` |
+| `ftColl_80079AB0` (knockback) | **6** (`fmaddsx6`) | see below — mirrored |
+| `ftCo_Damage_CalcVel` | **none** | |
+| `ftCommon_CalcHitlag` | **1** (`fmaddsx1`) | mirrored |
+| `lbVector_AngleXY` | **9** (`fmaddsx1`, `fnmsubx8`) | mirrored |
+| `ft_80084F3C` | **none** | |
+| `ftCo_800DA824` (grab-escape timer) | **2** (`fmaddsx2`) | mirrored |
+
+**This falsifies the batch's own working hypotheses (evidence 1 and 2 in
+the brief).** Both recorded 1-ULP divergences named in this batch's brief
+were suspected to come from a fused product+sum rounding once instead of
+twice somewhere in these chains:
+
+- `fox-fd-3.slp` frame -32, `velocities.self_x_air` (`0x400147ad` expected,
+  `0x400147ae` actual): the suspect chain was `getAccelAndTarget` /
+  `ftCommon_8007C98C` / `accelerate_ground`, all audited above with **zero**
+  fused ops. `ftCo_Dash_Phys` disassembles to a plain `fmuls` (`stick *
+  dash_accel_mul`) followed by a plain `fadds` (`+= dash_accel_base`), not a
+  single `fmadds`. The retail binary computes this exact chain with the
+  same separately-rounded arithmetic Rust does; the divergence is real but
+  is not this.
+- `fox-fd.slp` frame 5, `position.x` (decayed from an air dodge's launch
+  velocity): the suspect was `ftCo_EscapeAir`'s launch (`force * cosf(angle)`
+  / `force * sinf(angle)`). `ftCo_80099A9C` (the real launch function,
+  inlining `inlineA0`) has zero fused ops — each product is a standalone
+  `fmuls`, never combined with an addition. This is consistent with
+  `docs/parity.md`'s own diagnosis for this frame: the divergence traces to
+  `libm`'s portable `cosf`/`sinf` not being bit-identical to the original
+  GameCube SDK's trig routines, a transcendental-function difference, not a
+  rounding-contraction one.
+
+Both are recorded in `docs/parity.md` with this audit's result; neither
+recording's baseline changed (see `docs/validation.md`).
+
+#### Functions with real fused ops, mirrored in this batch
+
+| Decomp function | Fused ops | Rust site | `f32::mul_add` at |
+| --- | --- | --- | --- |
+| `ftColl_80079AB0` | 3 distinct sites (2 mutually-exclusive branch variants + 2 shared = 6 static occurrences) | `fighter::combat::knockback` | the branch `inner` term (`x118*x110 + x114*(x118*x28)` fixed, or the count-based equivalent), `growth_term` (`x11C*(decay*inner)+x120`), and `scaled` (`0.01*growth*growth_term+x2C`) |
+| `ftCommon_CalcHitlag` | 1 | `fighter::combat::hitlag` | `dmg * x198 + x19C` |
+| `ftCo_800DA824` | 2 | `fighter::grab::escape_timer` | `handicap_scale*temp+base`, and the final `percent*percent_scale+temp` |
+| `ftCo_Damage_CalcAngle` | 1 | `fighter::damage::launch_angle` | `x148 * ratio + 1` (in the grounded branch, before the separate degrees-to-radians multiply) |
+| `lbVector_AngleXY` | 1 `fmadds` (the dot product) + 8 `fnmsub` (double precision, inside the inlined `sqrtf_accurate` Newton-Raphson refinement, 4 iterations × 2 calls) | `game::characters::fox::up::angle_xy` (private) | the dot product `a.y*b.y + a.x*b.x`, and a new `sqrt_accurate` helper's `3.0 - guess*guess*x` per iteration |
+
+`lbVector_AngleXY` needed more than a `mul_add` at one call site: its own
+length calls go through `lbVector_Len_xy_accurate` → `sqrtf_accurate`
+(`MSL/math_ppc.h`), which is *not* Rust's `f32::sqrt` but four fused
+Newton-Raphson iterations refining a `__frsqrte` hardware estimate, in
+double precision. `up.rs::angle_xy` previously called `.sqrt()` directly —
+correctly rounded, but not what the retail binary actually computes. This
+batch ported the real algorithm as `sqrt_accurate`, seeded from `1.0 /
+(x as f64).sqrt()` instead of a bit-exact `__frsqrte` emulation: Newton's
+method for `1/sqrt(x)` has one stable, quadratically-convergent fixed
+point, and `__frsqrte`'s own documented accuracy (~12 bits, doubling each
+iteration to 24, 48, then 96 bits over the four iterations) is *less*
+accurate than seeding from a correctly-rounded double reciprocal sqrt, so
+both converge to the identical fixed point well before the fourth
+iteration; iterating past convergence is idempotent up to rounding. This
+was directly confirmed, not just argued: `tests/fox_up_special_differential.rs`
+compares the real, pinned `ftFox_SpecialHi_*` C (which calls the actual
+`lbVector_AngleXY`, uncontracted) against a test-local mirror of the new
+Rust algorithm, and it matches bit-for-bit across 100,000 generated cases.
+
+#### Every C-oracle-pinned function with float math: what has fused ops
+
+`tools/ppc_fma_audit.py` was run in bulk against the 463 unique function
+names across every `tests/oracle/*.functions.json` (409 resolved to a
+`symbols.txt` address and disassembled cleanly; the other 54 are
+`static inline` helpers or local statics that get folded into a caller and
+have no standalone symbol — `inlineA0`/`inlineA1`/`mn_8022C7CC_inline` and
+similar). 409 functions audited, 244 fused instructions found across 47 of
+them:
+
+```
+HSD_MtxInverse: 20 (fmaddsx2, fmsubsx8, fnmsubsx10)
+HSD_MtxSRT: 4 (fmaddsx2, fmsubsx2)
+doEnter: 1 (fmaddsx1)
+ftCo_8008E5A4: 7 (fmaddsx4, fnmsubx3)
+ftCo_800925A4: 1 (fmaddsx1)
+ftCo_80092ED8: 2 (fmaddsx2)
+ftCo_80092F2C: 4 (fmaddsx4)
+ftCo_80093240: 2 (fmaddsx2)
+ftCo_800932DC: 2 (fmaddsx2)
+ftCo_80099D9C: 1 (fmaddsx1)
+ftCo_800C18A8: 5 (fmaddsx1, fnmsubx3, fnmsubsx1)
+ftCo_800C6408: 1 (fnmsubsx1)
+ftCo_800DA824: 2 (fmaddsx2)                    -- mirrored, see above
+ftCo_800DEEB8: 1 (fmaddsx1)
+ftCo_Damage_CalcAngle: 1 (fmaddsx1)             -- mirrored, see above
+ftCo_Damage_OnExitHitlag: 4 (fmaddsx1, fnmsubx3)
+ftCo_Dash_IASA: 1 (fmaddsx1)
+ftCo_EntryStart_Phys: 1 (fmaddsx1)
+ftCo_RebirthWait_Phys: 1 (fmaddsx1)
+ftCo_Rebirth_Phys: 1 (fmaddsx1)
+ftCo_TurnRun_Phys: 2 (fmaddsx1, fnmsubsx1)
+ftColl_80076528: 2 (fnmsubsx2)
+ftColl_8007699C: 2 (fmaddsx2)
+ftColl_80079AB0: 6 (fmaddsx6)                   -- mirrored, see above
+ftCommon_8007DD7C: 2 (fmaddsx2)
+ftCommon_8007DFD0: 2 (fmaddsx2)
+ftCommon_CalcHitlag: 1 (fmaddsx1)                -- mirrored, see above
+ftFx_SpecialAirHi_Phys: 2 (fnmsubsx2)
+ftFx_SpecialAirLwTurn_Anim: 1 (fnmsubsx1)
+ftFx_SpecialLwTurn_Anim: 1 (fnmsubsx1)
+ftFx_SpecialLw_Turn: 1 (fnmsubsx1)
+ftWalkCommon_800DFEC8: 1 (fnmsubsx1)
+ft_800CB6EC: 1 (fnmsubsx1)
+lbColl_80005C44: 9 (fmaddsx9)
+lbColl_80005EBC: 9 (fmaddsx9)
+lbColl_80005FC0: 5 (fmaddsx5)
+lbColl_80006094: 36 (fmaddx3, fmaddsx30, fmsubsx3)
+lbColl_80006E58: 46 (fmaddx3, fmaddsx34, fmsubsx3, fnmsubx6)
+lbVector_Angle: 8 (fmaddsx2, fnmsubx6)
+lbVector_AngleXY: 9 (fmaddsx1, fnmsubx8)         -- mirrored, see above
+lbVector_Mirror: 3 (fmaddsx3)
+mpCollInterpolateECB: 8 (fmaddsx8)
+mpColl_LoadECB_Fixed: 4 (fmaddsx2, fmsubsx2)
+mpLib_8004ED5C: 6 (fnmsubx6)
+mpLineIntersection: 7 (fmaddx2, fmsubx5)
+mpLineIntersectionH: 1 (fmaddx1)
+mpLineIntersectionV: 1 (fmaddx1)
+mpRemap2d: 6 (fmaddx6)
+```
+
+Four of these are the ones this batch mirrored (above). The remaining 43
+are a real, documented backlog, deliberately **not** touched in this batch:
+
+- `ftCo_8008E5A4` and `ftCo_Damage_OnExitHitlag` are ASDI/SDI redirection —
+  they call `atan2f`/`cosf`/`sinf`/`sqrtf`, squarely the territory of the
+  concurrent `skirmish-msl-trig` batch porting `MSL/trigf.c`; touching them
+  here risked stepping on that work mid-flight, per this batch's own
+  coordination instructions.
+- `lbVector_Angle` (the 3D, non-XY vector angle) very likely goes through
+  the same or a similar Newton-Raphson `sqrtf`-family routine as
+  `lbVector_AngleXY` did (the double-precision `fnmsub` pattern is the same
+  shape, just 3 iterations' worth instead of 4 — 6 `fnmsub` for two calls
+  instead of 8), but this wasn't independently verified against `MSL`'s
+  `sqrtf` source and no Rust call site currently depends on it matching
+  bit-for-bit.
+- `HSD_MtxInverse`/`HSD_MtxSRT`/`mpLineIntersection*`/`mpRemap2d`/
+  `mpCollInterpolateECB`/`mpColl_LoadECB_Fixed`/the `lbColl_*` capsule/sweep
+  routines are collision/ECB geometry, largely outside this batch's named
+  physics/damage/knockback scope.
+- The rest (`doEnter`, `ftCo_800925A4`, `ftCo_80092ED8`, `ftCo_80092F2C`,
+  `ftCo_80093240`, `ftCo_800932DC`, `ftCo_80099D9C`, `ftCo_800C18A8`,
+  `ftCo_800C6408`, `ftCo_800DEEB8`, `ftCo_Dash_IASA`, `ftCo_EntryStart_Phys`,
+  `ftCo_RebirthWait_Phys`, `ftCo_Rebirth_Phys`, `ftCo_TurnRun_Phys`,
+  `ftColl_80076528`, `ftColl_8007699C`, `ftCommon_8007DD7C`,
+  `ftCommon_8007DFD0`, the four `ftFx_Special*`/`ftWalkCommon_800DFEC8`
+  functions, `ft_800CB6EC`, `lbVector_Mirror`, `mpLib_8004ED5C`) are simply
+  not yet checked against their own Rust ports one by one; each is a single
+  `f32::mul_add` review away, following exactly this batch's method.
+
+### The oracle strategy: what worked, what didn't, and why
+
+The task's own question — does `-ffp-contract=fast` with `-mfma` on x86-64
+reproduce PowerPC single-rounding semantics closely enough to build the
+c-oracle adapters that way — has a real, nuanced answer, established here
+empirically rather than assumed. `build.rs` compiles two static libraries:
+`skirmish_oracle` (the default, `-ffp-contract=off`, matching every
+existing adapter) and `skirmish_oracle_fma` (`-ffp-contract=fast -mfma`,
+plus a forced `opt_level(2)` — GCC's contraction pass is part of its
+optimizer and is silently a no-op at `-O0`, which is what `cc` mirrors from
+Cargo's dev/test profile by default; this was found by disassembling the
+resulting object and seeing plain `vmulss`/`vaddss` instead of `vfmadd`
+before adding the explicit `opt_level`).
+
+**Where it works cleanly: `combat_hitlag.c` and `damage_calc_angle.c`.**
+Both wrap a function whose *entire* body contains exactly one `a * b + c`
+shape, with no other multiply nearby for the compiler to consider
+contracting instead. Disassembling the compiled objects confirms a single
+`vfmadd`-family instruction each, matching the real hardware bit-for-bit;
+`tests/combat_differential.rs`'s `hitlag_and_initial_hitstun_match_c` and
+`tests/damage_differential.rs`'s `generated_angles_match` compare against
+these with an exact bit match, run to 100,000+ generated cases without a
+single mismatch. (`ftCo_Damage_CalcAngle` needed splitting out of
+`damage_core.c`'s existing six-function bundle into its own translation
+unit, `damage_calc_angle.c`, specifically *because* four of its five
+former siblings there — `ftCo_Damage_CalcVel`, `ftCo_8008E5A4`,
+`ftCo_Damage_CalcKnockback`, `ftCo_Damage_OnEveryHitlag`,
+`ftCo_Damage_OnExitHitlag` — are not all fusion-free, and contracting the
+whole shared file would have risked changing their oracle output out from
+under comparisons this batch never re-verified.)
+
+**Where it does not, and had to be reverted: `combat_knockback.c` and
+`escape_formula.c`.** Two distinct failure modes were found, both by
+disassembling the actual compiled object after a test failure, not by
+guessing:
+
+1. **Multiple candidate multiplies competing for one addition.**
+   `ftColl_80079AB0`'s `inner` term is `A*B + C*(D*E)`, a sum of two
+   products. A fused multiply-add can only remove *one* of the two
+   products' rounding, by folding it into the addition; which one is a
+   compiler choice IEEE 754 does not constrain. Disassembling
+   `combat_knockback.c` compiled with contraction showed GCC choosing the
+   *other* pairing than the retail PowerPC binary does for this exact
+   expression (confirmed against `tools/ppc_fma_audit.py`'s own
+   disassembly of `ftColl_80079AB0`). Splitting the *oracle wrapper's* own
+   copy of the `KNOCKBACK` macro into isolated per-statement form (mirroring
+   the technique that worked for the two functions above) fixed the two
+   *other* fused sites in the same function (`growth_term`, `scaled`) but
+   could not fix `inner`, because `inner`'s own expression is computed
+   inline inside `ftColl_80079AB0`'s pinned, verbatim-extracted body — not
+   something an oracle wrapper is free to restructure.
+2. **Contraction reaching across a statement boundary the source never
+   suggested.** `ftCo_800DA824`'s six statements each look like a clean,
+   isolated `a * b + c` candidate (unlike `ftColl_80079AB0`'s single nested
+   expression), so this was tried first, expecting it to work like
+   `ftCommon_CalcHitlag` did. It didn't: disassembling the compiled object
+   showed GCC's `-ffp-contract=fast` fusing a single-use `rank_scale *
+   ratio` product (computed two statements earlier, and used nowhere else)
+   into the later, plain `temp += value` addition — a pairing the real
+   PowerPC compiler never makes at all (confirmed: a plain `fadds` there in
+   the retail disassembly). GCC's contraction is not limited to the
+   syntactic shape of one statement; it can reach any single-use product
+   into a later addition if the intervening code doesn't observe it.
+
+Both files were reverted to their original, uncontracted form (matching
+every other adapter); `fighter::combat::knockback` and
+`fighter::grab::escape_timer` still use `f32::mul_add` at the exact sites
+`tools/ppc_fma_audit.py` identified (unaffected by any of this — the
+oracle's limitations don't change what the real PowerPC hardware does).
+Their differential tests (`combat_differential.rs`'s `knockback_matches_c`,
+`escape_formula_differential.rs`'s `escape_timer_matches_ftco_800da824`)
+compare against the now-uncontracted oracle with a documented small
+*relative* tolerance (`1e-4`, calibrated with two-plus orders of magnitude
+of margin above the worst of 50,000+ generated cases, which stayed under
+4e-7 and 2e-6 respectively) instead of requiring an exact bit match, and
+treat "both sides land off the finite range" as agreement rather than
+asserting a specific relationship between the two non-finite values (an
+FMA's full-precision intermediate product genuinely can't overflow the way
+an unfused multiply alone can, so a fused and an unfused computation of the
+same expression can diverge categorically — not just by a few ULPs — right
+at the edge of `f32`'s range; both directions of this were hit empirically
+while calibrating this test). Each function is additionally pinned exactly
+by a native Rust unit test against a hand-verified (`libm`'s `fmaf` outside
+Rust) fused value, independent of the C oracle's own limitations for these
+two functions specifically:
+`fighter::combat::tests::knockback_matches_a_hardware_fused_value_pinned_from_the_retail_dol`
+and
+`fighter::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`.
+
+**Bottom line for future batches doing this:** `-ffp-contract=fast -mfma`
+reproduces PowerPC single-rounding semantics reliably only when a
+function's *entire* translation unit contains exactly the one fused
+expression and nothing else that shares an operand with it; multi-term
+sums of products, or any statement whose product could plausibly flow
+into a *different* nearby addition, need per-site verification (compile,
+disassemble, compare register operands against `tools/ppc_fma_audit.py`'s
+own output) rather than an assumption that the flag alone suffices.
+
+### See also
+
+- `docs/parity.md` — the `fox-fd-3.slp` and `falco-fox-fd.slp` entries cite
+  this audit's negative result for the Dash acceleration chain.
+- `docs/validation.md` — the recordings' measurements after this batch.

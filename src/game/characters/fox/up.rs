@@ -227,10 +227,44 @@ pub(crate) fn attack(action: Action, parameters: &UpSpecial) -> Option<&Attack> 
     }
 }
 
+/// `sqrtf_accurate` (`MSL/math_ppc.h`): four fused Newton-Raphson
+/// iterations, in double precision, refining a reciprocal-square-root
+/// estimate that the real hardware seeds from `__frsqrte` (a Gekko
+/// instruction with no portable equivalent). Each iteration's `3.0 -
+/// guess * guess * x` is a single Gekko `fnmsub` (`tools/ppc_fma_audit.py
+/// lbVector_AngleXY`; `docs/math.md`, where the same iteration appears
+/// inlined into `lbVector_AngleXY` itself), so it is computed here with
+/// `f64::mul_add` for that one rounding rather than two.
+///
+/// This does not need to start from a bit-exact `__frsqrte` estimate to
+/// land on the same answer: Newton's method for `1/sqrt(x)` has a single,
+/// stable fixed point with quadratic convergence, so any starting guess
+/// already accurate to a handful of bits reaches the fixed point (to full
+/// double precision, given `__frsqrte`'s documented ~12-bit accuracy
+/// doubling on each of these four iterations to 12, 24, 48, then 96 bits)
+/// well before the fourth iteration, and further iterations from that
+/// point are idempotent up to rounding. Seeding from `1.0 / sqrt(x)`
+/// (`f64::sqrt` is correctly rounded, i.e. far more accurate than
+/// `__frsqrte`'s own estimate, not less) converges to the identical fixed
+/// point the real hardware's four iterations do.
+fn sqrt_accurate(x: f32) -> f32 {
+    if x > 0.0 {
+        let x64 = f64::from(x);
+        let mut guess = 1.0 / x64.sqrt();
+        for _ in 0..4 {
+            let refined = x64.mul_add(-(guess * guess), 3.0);
+            guess = (0.5 * guess) * refined;
+        }
+        (x64 * guess) as f32
+    } else {
+        x
+    }
+}
+
 /// `lbVector_AngleXY`: the clamped angle between two XY vectors (Z ignored).
 fn angle_xy(a: [f32; 3], b: [f32; 2]) -> f32 {
-    let len_a = (a[0] * a[0] + a[1] * a[1]).sqrt();
-    let len_b = (b[0] * b[0] + b[1] * b[1]).sqrt();
+    let len_a = sqrt_accurate(a[0] * a[0] + a[1] * a[1]);
+    let len_b = sqrt_accurate(b[0] * b[0] + b[1] * b[1]);
     let product = len_a * len_b;
     // `if (lena_lenb)`: a C truthy (non-zero) check, not `> 0.0`. The two
     // agree for every ordinary finite product (both lengths are
@@ -241,7 +275,10 @@ fn angle_xy(a: [f32; 3], b: [f32; 2]) -> f32 {
     // caller's own `!(angle < threshold)` then treats as satisfied), while
     // `> 0.0` is false for NaN and would have silently substituted 0.0.
     if product != 0.0 {
-        let cosine = ((a[0] * b[0] + a[1] * b[1]) / product).clamp(-1.0, 1.0);
+        // `a.x * b.x + a.y * b.y` is a single Gekko `fmadds`
+        // (`tools/ppc_fma_audit.py lbVector_AngleXY`; `docs/math.md`).
+        let dot = a[1].mul_add(b[1], a[0] * b[0]);
+        let cosine = (dot / product).clamp(-1.0, 1.0);
         crate::math::acosf(cosine)
     } else {
         0.0

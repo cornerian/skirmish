@@ -5,6 +5,7 @@
   "sweep": "combat_collision",
   "damage_core": "combat_hitstun",
   "damage_angle_range": "combat_knockback",
+  "damage_calc_angle": "combat_hitstun",
   "shield_collision": "combat_collision",
   "shield_mtx": "hsd_mtx",
   "shield_sdk": "sdk_mtx",

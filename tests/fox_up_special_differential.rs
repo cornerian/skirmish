@@ -343,16 +343,37 @@ fn mirror_fall(self_vel_y: f32, gravity: f32, terminal: f32) -> f32 {
     m.self_velocity[1]
 }
 
+/// `sqrtf_accurate`, mirroring `up.rs::sqrt_accurate` (private to the
+/// crate): four fused Newton-Raphson iterations in double precision. See
+/// that function's own comment for why a portable seed converges to the
+/// same fixed point as the real hardware's `__frsqrte`-seeded iteration.
+fn mirror_sqrt_accurate(x: f32) -> f32 {
+    if x > 0.0 {
+        let x64 = f64::from(x);
+        let mut guess = 1.0 / x64.sqrt();
+        for _ in 0..4 {
+            let refined = x64.mul_add(-(guess * guess), 3.0);
+            guess = (0.5 * guess) * refined;
+        }
+        (x64 * guess) as f32
+    } else {
+        x
+    }
+}
+
 /// `lbVector_AngleXY`, mirroring `up.rs::angle_xy` (private to the crate).
 fn mirror_angle_xy(a: [f32; 2], b: [f32; 2]) -> f32 {
-    let len_a = (a[0] * a[0] + a[1] * a[1]).sqrt();
-    let len_b = (b[0] * b[0] + b[1] * b[1]).sqrt();
+    let len_a = mirror_sqrt_accurate(a[0] * a[0] + a[1] * a[1]);
+    let len_b = mirror_sqrt_accurate(b[0] * b[0] + b[1] * b[1]);
     let product = len_a * len_b;
     // `if (lena_lenb)`: non-zero, not positive -- see `up.rs::angle_xy`'s
     // identical fix and comment for why this matters (a NaN product from
     // an overflowing vector must propagate, not silently become 0.0).
     if product != 0.0 {
-        let cosine = ((a[0] * b[0] + a[1] * b[1]) / product).clamp(-1.0, 1.0);
+        // `a.x * b.x + a.y * b.y` is a single Gekko `fmadds`; see
+        // `up.rs::angle_xy`'s identical `mul_add`.
+        let dot = a[1].mul_add(b[1], a[0] * b[0]);
+        let cosine = (dot / product).clamp(-1.0, 1.0);
         libm::acosf(cosine)
     } else {
         0.0

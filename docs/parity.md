@@ -158,13 +158,23 @@ arithmetic, using the pack's own full-precision constants (`1.899999976 +
 (1.0 * 0.100000001 + 0.019999999)`), independently reproduces Skirmish's
 own `0x400147ae` bit-for-bit -- confirming the Rust port computes the
 mathematically correct IEEE 754 result for this expression, while the
-recording's own hardware produced a result one ULP lower. Chasing this
-further would mean reproducing the original PowerPC compiler's exact
-instruction selection for this expression (a known class of Gekko/Broadway
-divergence: paired-single multiply-add instructions round the fused
-product+sum once rather than twice, unlike separately-rounded scalar
-`f32` ops), which is outside what a decomp-ported Rust function can
-express -- exactly the limitation `AGENTS.md` already names ("Host C
+recording's own hardware produced a result one ULP lower. The `skirmish-fma`
+batch's `tools/ppc_fma_audit.py` has since checked the retail binary's own
+disassembly for exactly the suspected mechanism (a fused multiply-add
+rounding the product+sum once instead of twice) and ruled it out for this
+chain: `ftCo_Dash_Phys` (the function that inlines `getAccelAndTarget` and
+calls `ftCommon_8007C98C` and `ftCommon_ApplyGroundMovementNoSlide`)
+disassembles to a plain `fmuls` followed by a plain `fadds` for `accel`,
+not a single `fmadds`, and none of `ftCommon_8007C98C`,
+`ftCommon_ApplyGroundMovement` or `ftCommon_ApplyGroundMovementNoSlide`
+contain any fused op either (`docs/math.md`'s per-function findings). So
+the retail PowerPC binary computes this exact chain with the same
+separately-rounded multiply-then-add IEEE 754 `f32` arithmetic this Rust
+port does; reproducing the original PowerPC compiler's exact instruction
+selection is not the explanation here after all. The actual mechanism
+behind the recording's own one-ULP-lower result remains unexplained, which
+is outside what a decomp-ported Rust function can express -- exactly the
+limitation `AGENTS.md` already names ("Host C
 agreement does not establish PowerPC or whole-game equivalence").
 
 **Proves:** for however many frames each recording's own
@@ -601,31 +611,40 @@ match (-123 through -26) and the first divergent frame is -25, field
 `position.x` (expected `0xc26121ec` = `-56.28312683105469`, actual
 `0xc26121eb` = `-56.28312301635742`, a 1-ULP difference, for P3/Falco).
 
-**Diagnosis (pending the fused-op audit, not a Skirmish logic bug --
-reported per this loop's own stop condition):** P3 (Falco) enters Dash at
-frame -27 and is still in Dash at -25 (`action_age` 3.0, matching); the
-diverging field is `position.x` alone, moved by `ftCo_Dash_Phys`'s ordinary
-friction/acceleration step (`getAccelAndTarget`/`ftCommon_8007C98C`,
-`fighter::locomotion::accelerate`/`Movement::accelerate_ground`). Tracing
-the exact bit patterns the native simulation itself produces (a temporary
-debug trace, not committed) through frames -27..-25 and replaying each step
-against `tests/physics_differential.rs`'s existing c-oracle harness (a
-temporary, uncommitted probe, not a new permanent test) shows every step
-already agrees with the host-compiled decomp C bit-for-bit on these exact
-inputs: the entry's own initial-velocity delta, frame -26's
-`accelerate_ground` call (`gr_vel=1.9` in, `0x3fe8f5c2` out, host C agrees),
-and frame -25's own call (`gr_vel=0x3fe8f5c2` in, host C agrees with Rust's
-result too). This is the same class of divergence as `fox-fd-3.slp`'s own
-frame -32 `velocities.self_x_air` case (also a one-ULP difference on a
-Dash frame's `getAccelAndTarget`/`ftCommon_8007C98C`/`accelerate_ground`
-chain, also verified bit-exact against host-compiled C): a sibling batch
-(`skirmish-fma`) is checking the retail binary's own disassembly for a
-fused multiply-add in `ftCommon_8007C98C`/the ground-acceleration chain,
-which would explain a systematic one-ULP gap between host-compiled
-(separately-rounded) C and the original PowerPC Gekko/Broadway FPU
-(which can round a fused product+sum once instead of twice) without any
-Skirmish translation bug. Pending that audit's result, not chased further
-in this batch.
+**Diagnosis (the fused-op hypothesis is now checked and ruled out; still a
+suspected cross-platform floating-point limitation, not a Skirmish logic
+bug -- reported per this loop's own stop condition):** P3 (Falco) enters
+Dash at frame -27 and is still in Dash at -25 (`action_age` 3.0, matching);
+the diverging field is `position.x` alone, moved by `ftCo_Dash_Phys`'s
+ordinary friction/acceleration step (`getAccelAndTarget`/
+`ftCommon_8007C98C`, `fighter::locomotion::accelerate`/
+`Movement::accelerate_ground`). Tracing the exact bit patterns the native
+simulation itself produces (a temporary debug trace, not committed) through
+frames -27..-25 and replaying each step against
+`tests/physics_differential.rs`'s existing c-oracle harness (a temporary,
+uncommitted probe, not a new permanent test) shows every step already
+agrees with the host-compiled decomp C bit-for-bit on these exact inputs:
+the entry's own initial-velocity delta, frame -26's `accelerate_ground`
+call (`gr_vel=1.9` in, `0x3fe8f5c2` out, host C agrees), and frame -25's own
+call (`gr_vel=0x3fe8f5c2` in, host C agrees with Rust's result too). This is
+the same class of divergence as `fox-fd-3.slp`'s own frame -32
+`velocities.self_x_air` case below, and both were flagged for the
+`skirmish-fma` batch's fused-multiply-add audit
+(`tools/ppc_fma_audit.py`) to check against the retail binary's own
+disassembly. That audit is now complete for this exact chain, and finds no
+fused op: `ftCo_Dash_Phys` (`.text:0x800CA53C`, which inlines
+`getAccelAndTarget` and calls `ftCommon_8007C98C` and
+`ftCommon_ApplyGroundMovement`) disassembles to a plain `fmuls` (`stick *
+dash_accel_mul`) followed by a plain `fadds` (`+= dash_accel_base`), not a
+single `fmadds`; `ftCommon_8007C98C`, `ftCommon_ApplyGroundMovement` and
+`ftCommon_ApplyGroundMovementNoSlide` themselves also disassemble with zero
+fused ops (`docs/math.md`'s per-function findings). The one-ULP gap against
+the real recording is confirmed *not* explained by a fused product+sum
+rounding once instead of twice on this chain -- both the retail PowerPC
+binary and this Rust port compute the same separately-rounded multiply
+then add. The actual mechanism behind the recording's own one-ULP-lower
+result remains unexplained; not chased further in this batch (`AGENTS.md`:
+"Host C agreement does not establish PowerPC or whole-game equivalence").
 
 Previously (2026-09-12, gameplay export v2, the Falco registration batch):
 93 frames matched (-123 through -31, the pre-game Entry warp-in) and the

@@ -61,24 +61,14 @@ static void PSVECCrossProduct(const Vec3* a, const Vec3* b, Vec3* out) {
     out->y = a->z * b->x - a->x * b->z;
     out->z = a->x * b->y - a->y * b->x;
 }
-#include "damage_angle_range_original.inc"
 #include "damage_core_original.inc"
 
-float oracle_damage_angle(int32_t angle, float knockback, int airborne,
-                          const float* rules, const uint32_t* bounds,
-                          int32_t timer, uint8_t* flags) {
-    static _Thread_local ftCommonData common;
-    common = (ftCommonData){ .x144_radians=rules[0], .x148=rules[1],
-        .x14C=rules[2], .x150=rules[3], .unk_kb_angle_min=bounds[0],
-        .unk_kb_angle_max=bounds[1], .x7F0=timer };
-    p_ftCommonData = &common;
-    Fighter fighter = { .dmg.x1848_kb_angle=angle, .ground_or_air=airborne,
-        .mv.co.damage={flags[0], flags[1]} };
-    float result = ftCo_Damage_CalcAngle(&fighter, knockback);
-    flags[0] = fighter.mv.co.damage.x1A;
-    flags[1] = fighter.mv.co.damage.x1B;
-    return result;
-}
+/* `ftCo_Damage_CalcAngle` (its own `oracle_damage_angle_fma`) moved to
+ * `tests/oracle/damage_calc_angle.c`, compiled with FMA contraction so its
+ * `x148 * ratio + 1` matches the real Gekko `fmadds`; see that file's own
+ * comment and `docs/math.md`. It was the only one of this file's functions
+ * that used `ftColl_8007AC68`, so `damage_angle_range_original.inc` is no
+ * longer included here either. */
 
 void oracle_damage_merge(const float* values, int32_t since_hit,
                          int32_t window, float* output) {

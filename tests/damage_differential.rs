@@ -6,9 +6,15 @@
 use proptest::prelude::*;
 use skirmish::fighter::damage::*;
 
-#[link(name = "skirmish_oracle", kind = "static")]
+// `ftCo_Damage_CalcAngle`'s own fused `x148 * ratio + 1` (`docs/math.md`)
+// only matches `fighter::damage::launch_angle`'s `f32::mul_add` when
+// compiled with FMA contraction, so it lives in its own translation unit
+// (`tests/oracle/damage_calc_angle.c`) built into the separate
+// `skirmish_oracle_fma` static library (`build.rs`) rather than
+// `skirmish_oracle`.
+#[link(name = "skirmish_oracle_fma", kind = "static")]
 unsafe extern "C" {
-    fn oracle_damage_angle(
+    fn oracle_damage_angle_fma(
         angle: i32,
         knockback: f32,
         airborne: i32,
@@ -17,6 +23,10 @@ unsafe extern "C" {
         timer: i32,
         flags: *mut u8,
     ) -> f32;
+}
+
+#[link(name = "skirmish_oracle", kind = "static")]
+unsafe extern "C" {
     fn oracle_damage_merge(values: *const f32, since_hit: i32, window: i32, output: *mut f32);
     fn oracle_damage_di(values: *const f32, max_degrees: f32, output: *mut f32);
     fn oracle_damage_decay(velocity: *const f32, decay: f32, output: *mut f32);
@@ -82,7 +92,7 @@ fn angle_case(
     // SAFETY: arrays provide four float coefficients, two u32 bounds, and two
     // mutable flag bytes; each call initializes thread-local common data.
     let expected = unsafe {
-        oracle_damage_angle(
+        oracle_damage_angle_fma(
             angle,
             kb,
             i32::from(air),

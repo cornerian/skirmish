@@ -224,6 +224,117 @@ guessable Skirmish-side fix; not chased further per this loop's own stop
 condition. `tests/fixtures/slippi/parity/fox-fd-2-baseline.json`/`fox-fd-4-
 baseline.json` are updated accordingly.
 
+The 2026-09-12 fused-multiply-add audit batch (`skirmish-fma`, `docs/math.md`
+has the full trail) adds `tools/ppc_fma_audit.py` (stdlib + `capstone`, `uv
+run --with capstone`, never `pip install`ed) to disassemble named functions
+out of the retail `main.dol` and report every real Gekko `fmadds`/`fmsubs`/
+`fnmadds`/`fnmsubs` (and double-precision forms) found, resolving each
+address through the DOL's own section table and
+`config/GALE01/symbols.txt`. It works around a real Capstone 5 PowerPC-
+backend gap (`fcmpo` isn't decoded at all; `Cs.disasm` silently truncates
+the rest of the function there) by resyncing one instruction at a time
+instead of stopping. Audited every function named in the batch's own brief
+(the Dash/ground-acceleration and air-dodge-launch chains: zero fused ops,
+settling a question two sibling batches' own diagnoses were waiting on, see
+below) plus every float-touching function the c-oracle harness pins (409 of
+463 resolved to a real address; 47 contain a fused op, four mirrored here).
+
+Mirrored with `f32::mul_add` (or a negated form) at the exact expression
+the disassembly shows: `ftColl_80079AB0` (`fighter::combat::knockback`,
+three sites), `ftCommon_CalcHitlag` (`fighter::combat::hitlag`, one),
+`ftCo_800DA824` (`fighter::grab::escape_timer`, two) and
+`ftCo_Damage_CalcAngle` (`fighter::damage::launch_angle`, one).
+`lbVector_AngleXY` needed more than a `mul_add`: its length calls go
+through `sqrtf_accurate`'s four fused Newton-Raphson iterations (not
+`f32::sqrt`), ported as `game::characters::fox::up::sqrt_accurate`, seeded
+from a correctly-rounded `1.0 / f64::sqrt` rather than a bit-exact
+`__frsqrte` emulation (Newton's method for `1/sqrt(x)` has one stable,
+quadratically-convergent fixed point, so both reach it well before the
+fourth iteration); confirmed bit-for-bit against the real, pinned
+`ftFox_SpecialHi_*` C (which calls the actual `lbVector_AngleXY`,
+uncontracted) across 100,000 generated cases in
+`tests/fox_up_special_differential.rs`.
+
+Two of the batch's own working hypotheses (this brief's own "evidence 1 and
+2") turned out to be false, settled by direct disassembly rather than
+argument. `fox-fd-3.slp` frame -32 and `falco-fox-fd.slp` frame -25's
+one-ULP `velocities.self_x_air`/`position.x` divergences were suspected to
+come from a fused product+sum in the Dash `getAccelAndTarget`/
+`ftCommon_8007C98C`/`ftCommon_ApplyGroundMovement(NoSlide)` chain:
+`ftCo_Dash_Phys` (which inlines the former and calls the latter two)
+disassembles to a plain `fmuls` followed by a plain `fadds` for `accel`,
+not a single `fmadds`, and none of the three called functions contain any
+fused op either. `fox-fd.slp` frame 5 (`ftCo_80099A9C`'s air-dodge launch)
+is likewise confirmed fused-op-free — consistent with the concurrent
+`skirmish-msl-trig` batch's own direct measurement that a fully
+disassembly-verified trigonometry port also ties, not fixes, that same
+frame. `docs/parity.md`'s falco-fox-fd and fox-fd-3 entries, and
+`falco-fox-fd-baseline.json`'s own note (both previously read "pending the
+fused-op audit"), are corrected accordingly; no recording's own ratchet
+baseline changes, since ruling out one candidate explanation isn't fixing
+the divergence itself. Measured directly against this batch's own two
+named recordings' pinned export (`SKIRMISH_GAMEPLAY_DATA=.../
+v6-snapshot-20260911`): `fox-fd.slp` is unchanged at 5/128, `fox-fd-3.slp`
+unchanged at -32/91, confirmed again against the live `v2` export too.
+`falco-fox-fd.slp` (measured directly against `v2`, the pack it's tracked
+against) is likewise unchanged at -25/98. `fox-fd-2.slp`/`fox-fd-4.slp`
+are a different, concurrently-owned parity loop's own recordings
+(`docs/parity.md`); measuring them against the live `v2` pack during this
+batch showed both matching further than their own just-updated baselines
+(from a concurrent special-entry-advance fix landing in the same window),
+which is that other loop's own result, not this batch's -- neither
+baseline was touched here.
+
+Oracle strategy: `build.rs` gained a second static library,
+`skirmish_oracle_fma`, compiled with `-ffp-contract=fast -mfma` (plus a
+forced `opt_level(2)` — GCC's contraction is a no-op at the `-O0` `cc`
+mirrors from Cargo's dev/test profile by default, found by disassembling
+the compiled object and seeing plain `vmulss`/`vaddss` instead of
+`vfmadd`), for the two functions whose *entire* body is a single,
+unambiguous `a * b + c`: `ftCommon_CalcHitlag`, and `ftCo_Damage_CalcAngle`
+(split out of `damage_core.c`'s six-function bundle into its own
+`damage_calc_angle.c` translation unit for exactly this reason — several
+of its five former siblings there are not fusion-free, and contracting the
+whole shared file would have risked changing their oracle output out from
+under comparisons this batch never re-verified). Two more were tried there
+and reverted after disassembling the compiled objects showed GCC choosing
+a different fusion than the retail binary: `ftColl_80079AB0`'s `inner`
+term is a sum of two products (only one of the two can be fused, and GCC
+picks the other pairing than CodeWarrior did), and `ftCo_800DA824`'s
+contraction reached across a statement boundary to fuse a product the
+real PowerPC compiler never fuses at all. Both functions' differential
+tests instead compare against the unmodified, uncontracted oracle with a
+documented small relative tolerance (`1e-4`, two-plus orders of magnitude
+above the worst of 50,000+ generated cases) and treat both sides landing
+off the finite range as agreement (a fused computation's full-precision
+intermediate product can't overflow the way an unfused one can, so the two
+can diverge categorically right at `f32`'s range edge — confirmed both
+directions while calibrating). Each of the four mirrored functions is
+additionally pinned exactly by a native Rust unit test against a
+hand-verified (`libm`'s `fmaf` outside Rust) value, independent of the
+oracle's own limitations for the two reverted functions.
+
+**Tests**: new/changed coverage in `tests/combat_differential.rs`,
+`tests/escape_formula_differential.rs`, `tests/damage_differential.rs` and
+`tests/fox_up_special_differential.rs`, plus four native unit tests pinning
+hand-verified fused bit patterns (`fighter::combat`,
+`fighter::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`,
+`fighter::damage::tests::launch_angle_matches_the_hardware_fused_rounding_not_naive_two_rounding`).
+`cargo fmt --all --check` is clean; `cargo clippy --locked --workspace
+--all-targets --all-features -- -D warnings`, `cargo test --locked
+--workspace`, `cargo test --locked --workspace --features c-oracle` (debug
+and release) and `git diff --check` all pass clean (1131 passed, 13
+ignored, 0 failed, in this crate's own `--lib --tests --features c-oracle`
+subset alone; the full workspace run adds every other crate's own suite on
+top, unaffected by this batch's changes). Rebased onto `origin/main` twice
+during this batch (once past `34f4fff`'s falco-fox-fd correction this batch
+was itself waiting on, once more past `5394478`'s trigonometry batch,
+which touches the same `game::characters::fox::up::angle_xy` function this
+batch also changed — merged cleanly, both changes compose: the trig
+batch's `crate::math::acosf` call and this batch's fused dot-product/
+`sqrt_accurate` length calls are independent parts of the same function
+body).
+
 The 2026-09-12 Blaster/laser C-oracle batch closes the primary gap the
 2026-09-12 Fox neutral special batch flagged below ("No C-oracle
 differential harness was added this batch for `ftfoxspecialn.c`/the laser

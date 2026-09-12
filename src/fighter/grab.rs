@@ -99,6 +99,10 @@ pub fn capture_alignment(
 /// `slot = standing + 1`; `value = rank_max - slot`; `value = rank_scale *
 /// value`; `temp = handicap_max - handicap`; `temp = handicap_scale * temp +
 /// base`; `temp += value`; `return percent * percent_scale + temp`.
+/// The two `* +`-shaped steps (`handicap_scale * temp + base` and the final
+/// `percent * percent_scale + temp`) are each a single Gekko `fmadds`
+/// (`tools/ppc_fma_audit.py ftCo_800DA824`; `docs/math.md`), so both use
+/// `f32::mul_add` for their one rounding instead of two.
 #[allow(clippy::too_many_arguments)]
 pub fn escape_timer(
     base: f32,
@@ -116,9 +120,9 @@ pub fn escape_timer(
     let value = rank_scale * value;
     let handicap = handicap as f32;
     let temp = handicap_max - handicap;
-    let temp = handicap_scale * temp + base;
+    let temp = handicap_scale.mul_add(temp, base);
     let temp = temp + value;
-    percent * percent_scale + temp
+    percent.mul_add(percent_scale, temp)
 }
 
 /// A main-stick horizontal threshold crossing has priority over vertical throws.
@@ -267,6 +271,32 @@ mod tests {
             9,
         );
         assert_eq!(at_forty_percent, 75.0 + 40.0 * 1.6);
+    }
+
+    /// `ftCo_800DA824`'s `handicap_scale * temp + base` is a single Gekko
+    /// `fmadds` (`tools/ppc_fma_audit.py ftCo_800DA824`; `docs/math.md`);
+    /// `escape_timer` computes it with `f32::mul_add` for that one
+    /// rounding. At these (deliberately extreme, chosen to make the
+    /// difference land outside the mantissa noise floor) inputs, a plain
+    /// `handicap_scale * temp + base` and the fused form disagree, and this
+    /// pins the fused, hardware-matching result -- hand-verified against
+    /// `libm`'s `fmaf` outside Rust, independent of
+    /// `tests/escape_formula_differential.rs`'s own C-oracle comparison
+    /// (which, for this same function, needs a documented relative
+    /// tolerance rather than an exact match; see that test's comment and
+    /// `docs/math.md`).
+    #[test]
+    fn escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding() {
+        let base = f32::from_bits(0x0011_33c4); // 1.579773e-39
+        let handicap_scale = f32::from_bits(0x7d11_a9fa); // 1.2101289e37
+        let result = escape_timer(base, handicap_scale, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 7);
+        assert_eq!(result.to_bits(), 0xfe7e_e975);
+        assert_ne!(
+            result,
+            handicap_scale * -7.0 + base,
+            "the test inputs should straddle a rounding boundary; if this \
+             assertion fails the inputs above no longer demonstrate anything"
+        );
     }
 
     #[test]

@@ -1,4 +1,20 @@
-/* Host adapter for the complete ftCo_800DA824 grab-escape timer formula. */
+/* Host adapter for the complete ftCo_800DA824 grab-escape timer formula.
+ *
+ * Two of this function's statements are each a real Gekko `fmadds`
+ * (`tools/ppc_fma_audit.py ftCo_800DA824`; `docs/math.md`), and
+ * `fighter::grab::escape_timer` uses `f32::mul_add` at both. This file is
+ * deliberately *not* in `build.rs`'s `FMA_CONTRACT_FILES`: it was tried
+ * there first, since each fused expression is its own statement (unlike
+ * `combat_knockback.c`'s single nested expression), but disassembling the
+ * compiled object with `-ffp-contract=fast -mfma` showed GCC's contraction
+ * reaching across a statement boundary neither statement's own source
+ * suggests -- fusing an unrelated, single-use `rank_scale * ratio` product
+ * (`value`) into the later, plain `temp += value` two statements downstream,
+ * which the real PowerPC compiler never fuses at all (confirmed by
+ * disassembly: a plain `fadds` there). `docs/math.md` has the concrete
+ * before/after evidence; the differential test compares against this
+ * uncontracted oracle with a documented few-ULP tolerance instead of
+ * bit-for-bit. */
 #include <stdint.h>
 
 typedef int32_t s32;
