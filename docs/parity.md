@@ -1124,29 +1124,40 @@ own first frame via `py-slippi`:
   for frames -123 through at least -121 (x already matches the pack
   exactly for both ports). Both spawn Y values are wrong by a few tenths
   of a unit -- not a rounding-scale gap -- and are wrong by *different*
-  amounts (`0.2215` and `0.3215`, suspiciously exactly `0.1` apart),
-  which does not look like a single shared rounding artifact so much as
-  a spawn-table decode or transform-composition bug specific to this
-  stage's export.
+  amounts (`0.2215` and `0.3215`, suspiciously exactly `0.1` apart).
 - **Pokemon Stadium**: the pack's `stage.spawns` are `[[-39.999996185302734,
   31.99999237060547], [40.0, 32.0]]`. The recording shows both P1 and P4
   at exactly `(-40.0, 32.0)` and `(40.0, 32.0)`. Spawn index 1 is exact;
-  spawn index 0 is off by a few ULPs in *both* x and y, consistent with
-  the task's own suspicion (a transform composition applied to one
-  spawn point but not its mirror, rather than a snap the game itself
-  performs).
+  spawn index 0 is off by a few ULPs in *both* x and y.
 
-Both point at the `skirmish-assets` exporter's stage/spawn decoding
-(`docs/gameplay-export.md`'s step 7, `GrXX.dat` -> `stage.spawns`), not
-at anything in this repository: Skirmish has not run a single frame yet
-in either case. Reported per this loop's own instructions (exporter data
-gets reported with the exact field and expected value, not patched
-locally): `fox-dl`'s `stage.spawns[0].y` and `stage.spawns[1].y` should
-both be `37.0`; `fox-ps`'s `stage.spawns[0]` should be `(-40.0, 32.0)`
-(spawn index 1 is already correct). `fox-dl-baseline.json`/
-`fox-ps-baseline.json` record today's measured `-123`/`0` and will move
-once the exporter republishes corrected spawn coordinates for these two
-stages.
+Root cause, found by the exporter owner: the retail game places a spawn
+point by composing the spawn marker joint's *full parent chain* --
+`lb_8000B1CC` (the map's spawn-point resolver) calling
+`HSD_JObjSetupMatrix` up the joint hierarchy to get the marker's world
+transform, not just its own local translation. The `skirmish-assets`
+exporter reads the marker joint's local translation directly and skips
+that composition, which is silently correct only when every ancestor
+joint between the marker and the map root is an identity transform.
+Dream Land's *unequal* per-port offsets (`0.2215` vs `0.3215`) match two
+spawn markers sitting under different, non-identity parent joints in the
+map's scene graph; Pokemon Stadium's *few-ULP* gap on spawn index 0 only
+(index 1 exact) matches one spawn marker's parent chain carrying a
+near-identity transform with just enough floating-point residue to move
+the last few bits, while the other marker's own chain composes to
+exactly identity. Both are the same one bug (composing world transforms
+the exporter currently skips), not two unrelated stage-specific issues.
+
+This is exporter code, not exporter *data*: reported per this loop's own
+instructions to the exporter owner rather than patched locally --
+`skirmish-assets`'s stage export (`stage.rs`) needs to compose the spawn
+marker's parent chain via the same `HSD_JObjSetupMatrix`-equivalent walk
+used for bone poses elsewhere in the exporter, not read the marker's
+local translation alone. A dedicated exporter-side loop is fixing the
+composition in `stage.rs` directly; once it republishes corrected
+`stage.spawns` for these two stages (`fox-dl`: both `.y` should read
+`37.0`; `fox-ps`: spawn index 0 should read `(-40.0, 32.0)`),
+`fox-dl-baseline.json`/`fox-ps-baseline.json`'s `-123`/`0` will move
+without any further Skirmish-side change.
 
 ## Practical consequence
 
