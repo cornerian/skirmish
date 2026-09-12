@@ -1,7 +1,7 @@
 //! Fox's registry entry: which special moves he plays, in dispatch
 //! priority order, and the Slippi state/animation ids his phases report.
 //! Falco plays the exact same moves through the exact same registry entry
-//! (`CHARACTER_IDS`, `slippi_ids`) -- see `game::characters::Specials`'s own
+//! (`CHARACTER_IDS`, `slippi_ids`) -- see `characters::Specials`'s own
 //! doc for why the decomp makes this a data-only difference, not a
 //! behavioral one.
 //!
@@ -15,7 +15,8 @@ pub mod neutral;
 pub mod side;
 pub mod up;
 
-use crate::game::{Action, specials};
+use super::common as specials;
+use crate::game::Action;
 
 /// Fox's specials, in the same priority the grounded/aerial dispatch chains
 /// check them: the side special first (grounded: `ftCo_Attack100_
@@ -39,7 +40,7 @@ pub(crate) const MOVES: &[&dyn specials::SpecialMove] =
 /// this table keys on -- and shares Fox's own source file for these moves
 /// (`ftFc_Init_MotionStateTable`, `ftfalco.c:23-370`, points every one of
 /// Falco's `ftFx_MS_Special*` entries at the identical Fox callbacks) while
-/// keeping its own attributes (`game::characters::Specials::Falco`'s doc).
+/// keeping its own attributes (`characters::Specials::Falco`'s doc).
 pub(crate) const CHARACTER_IDS: [u8; 2] = [2, 20];
 
 /// The Slippi action-state id and its (possibly extrapolated) animation

@@ -153,7 +153,7 @@ pub struct Rules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape_air: Option<super::escape_air::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specials: Option<super::characters::fox::side::Rules>,
+    pub specials: Option<crate::characters::fox::side::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilt: Option<super::tilt::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -254,7 +254,7 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ledge: Option<super::ledge::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specials: Option<super::characters::Specials>,
+    pub specials: Option<crate::characters::Specials>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escape: Option<super::escape::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -316,7 +316,7 @@ impl FighterData {
         if action == super::Action::DownAttack {
             return Some(&self.knockdown.as_ref()?.variant(prone)?.attack);
         }
-        if let Some(attack) = super::specials::attack(action, self) {
+        if let Some(attack) = crate::characters::common::attack(action, self) {
             return Some(attack);
         }
         let index = super::aerial::attack_index(action)?;

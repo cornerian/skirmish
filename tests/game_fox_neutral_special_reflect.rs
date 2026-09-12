@@ -17,9 +17,8 @@ mod down_special_resources;
 #[path = "support/fox_neutral_special.rs"]
 mod neutral_special_resources;
 
-use skirmish::game::{
-    Action, BUTTON_B, BUTTON_L, Controller, Event, Match, characters::Specials, data::MatchData,
-};
+use skirmish::characters::Specials;
+use skirmish::game::{Action, BUTTON_B, BUTTON_L, Controller, Event, Match, data::MatchData};
 
 const IDLE: [Controller; 2] = [Controller {
     buttons: 0,

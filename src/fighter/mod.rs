@@ -2,7 +2,6 @@
 
 pub mod action_instance;
 pub mod aerial;
-pub mod characters;
 pub mod clank;
 pub mod combat;
 pub mod combo;

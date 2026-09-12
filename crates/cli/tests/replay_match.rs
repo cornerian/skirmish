@@ -3385,7 +3385,7 @@ fn firefox_hold_charge_hitbox_self_recorded_replay_matches() {
     let bones = data.fighters[0].bones.clone();
     let hold = fox_up_special_support::hold_attack_with_pack_hitboxes(&bones);
     match data.fighters[0].specials.as_mut() {
-        Some(skirmish::game::characters::Specials::Fox { up: Some(up), .. }) => {
+        Some(skirmish::characters::Specials::Fox { up: Some(up), .. }) => {
             up.hold.ground = hold.clone();
             up.hold.air = hold;
         }

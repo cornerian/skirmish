@@ -3,6 +3,7 @@
 //! in docs/match.md, and every input resource carries an experimental profile.
 use super::{data::*, *};
 use crate::{
+    characters::common as specials,
     collision::{bones, ecb, shield as body_collision, stage},
     fighter::{
         Movement, combat, damage as damage_math, locomotion as movement_math, nudge as push,
@@ -113,10 +114,10 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
-        fox_side_special: characters::fox::side::State::default(),
-        fox_up_special: characters::fox::up::State::default(),
-        down_special: characters::fox::down::State::default(),
-        fox_neutral_special: characters::fox::neutral::State::default(),
+        fox_side_special: crate::characters::fox::side::State::default(),
+        fox_up_special: crate::characters::fox::up::State::default(),
+        down_special: crate::characters::fox::down::State::default(),
+        fox_neutral_special: crate::characters::fox::neutral::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -209,25 +210,25 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // The side special's gravity delay is freshly assigned by every phase's
     // own entry; a mid-phase ground<->air conversion preserves it explicitly
     // around this reset (`specials::transfer_ground_air`).
-    fighter.fox_side_special = characters::fox::side::State::default();
+    fighter.fox_side_special = crate::characters::fox::side::State::default();
     // Same convention as the side special's own reset above: the up
     // special's gravity delay, rotate/launch angle and Travel counters are
     // all freshly assigned by their own phase's entry, with mid-phase
     // ground<->air conversions preserving them explicitly around this reset
     // (`specials::transfer_ground_air`, the up special's own `land`).
-    fighter.fox_up_special = characters::fox::up::State::default();
+    fighter.fox_up_special = crate::characters::fox::up::State::default();
     // Fighter_ChangeMotionState unconditionally clears `fp->mv.fx.SpecialLw`;
-    // every internal Reflector transition (`characters::fox::down`) restores
+    // every internal Reflector transition (`crate::characters::fox::down`) restores
     // the whole-move fields (release_lag/is_release/gravity_delay) it
     // preserves across phase changes explicitly around this reset, the same
     // pattern as `fox_side_special` above.
-    fighter.down_special = characters::fox::down::State::default();
+    fighter.down_special = crate::characters::fox::down::State::default();
     // Blaster keeps no whole-move state across a `simulation::enter` at
     // all: `repeat_armed` is freshly re-evaluated every Loop cycle, and a
     // mid-move ground<->air conversion never happens for this move (see
-    // `characters::fox::neutral`'s own module doc), so there is nothing to
+    // `crate::characters::fox::neutral`'s own module doc), so there is nothing to
     // preserve around this reset, unlike the other three specials above.
-    fighter.fox_neutral_special = characters::fox::neutral::State::default();
+    fighter.fox_neutral_special = crate::characters::fox::neutral::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
@@ -617,7 +618,12 @@ pub(crate) fn advance(
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
             shield_active_into_pass[player] = shielding_before_pass;
         } else {
-            characters::fox::down::platform_drop(fighter, &data.fighters[player], &geometry, input);
+            crate::characters::fox::down::platform_drop(
+                fighter,
+                &data.fighters[player],
+                &geometry,
+                input,
+            );
         }
     }
     grab::synchronize_actions(data, state)?;
@@ -752,12 +758,12 @@ pub(crate) fn advance(
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
     // Item logic runs after fighters, at its own GObj priority: any pending
-    // shot from this frame's own fighter dispatch (`characters::fox::
+    // shot from this frame's own fighter dispatch (`crate::characters::fox::
     // neutral`) spawns now, then every active projectile (a freshly
     // spawned one included, matching the source's own same-frame item
     // Anim/Phys/Coll run) advances once.
     for player in 0..2 {
-        if let Some(projectile) = characters::fox::neutral::drain_pending_shot(
+        if let Some(projectile) = crate::characters::fox::neutral::drain_pending_shot(
             &mut state.fighters[player],
             &data.fighters[player],
             player,

@@ -3,7 +3,7 @@
 //! Start/Loop/Turn/Hit/End state machine, the mid-move turn, jump cancel and
 //! platform drop, the `reflecting` bit). Everything reusable across moves --
 //! gravity-delayed fall, ground/air conversion keeping the frame, the exit
-//! to Wait/Fall -- comes from `game::specials::helpers` instead of being
+//! to Wait/Fall -- comes from `characters::common::helpers` instead of being
 //! re-derived here. Gated purely on resource presence, like the shared
 //! neutral shell and the side special.
 //!
@@ -20,12 +20,13 @@
 //! "reachable through a test hook, unreachable in play" brief.
 
 use crate::{
-    fighter::{Movement, characters::fox as math},
+    characters::arithmetic::fox as math,
+    characters::common::{SpecialMove, helpers},
+    fighter::Movement,
     game::{
         Action, BUTTON_B, Controller, Error, Fighter,
         data::{Attack, FighterData, Rules as MatchRules, StageGeometry},
         simulation,
-        specials::{SpecialMove, helpers},
     },
 };
 use serde::{Deserialize, Serialize};

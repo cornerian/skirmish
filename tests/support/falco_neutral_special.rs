@@ -1,9 +1,7 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::game::{
-    Controller, Match, characters::Specials, characters::fox::neutral::NeutralSpecial,
-    data::MatchData,
-};
+use skirmish::characters::{Specials, fox::neutral::NeutralSpecial};
+use skirmish::game::{Controller, Match, data::MatchData};
 
 #[derive(serde::Deserialize)]
 struct Fixture {

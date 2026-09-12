@@ -1,15 +1,12 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
+use skirmish::characters::{
+    Specials,
+    fox::{down::DownSpecial, side::Rules},
+};
 use skirmish::{
     fighter::clank as clank_math,
-    game::{
-        characters::{
-            Specials,
-            fox::{down::DownSpecial, side::Rules},
-        },
-        clank,
-        data::MatchData,
-    },
+    game::{clank, data::MatchData},
 };
 
 #[derive(serde::Deserialize)]

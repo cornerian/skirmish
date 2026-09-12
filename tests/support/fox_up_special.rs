@@ -1,9 +1,9 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
+use skirmish::characters::{Specials, fox::side::SideSpecial, fox::up::UpSpecial};
 use skirmish::{
     fighter::clank as clank_math,
     game::{
-        characters::{Specials, fox::side::SideSpecial, fox::up::UpSpecial},
         clank,
         data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
         escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
@@ -14,7 +14,7 @@ use skirmish::{
 struct Fixture {
     // Shared with the side special (`up::validate` takes the same `Rules`);
     // only `vertical_threshold` is actually read by this move's own dispatch.
-    rules: skirmish::game::characters::fox::side::Rules,
+    rules: skirmish::characters::fox::side::Rules,
     parameters: UpSpecial,
 }
 

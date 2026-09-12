@@ -10,13 +10,12 @@ mod conformance;
 #[path = "support/fox_down_special.rs"]
 mod down_special_resources;
 
-use skirmish::game::{
-    Action, BUTTON_B, Controller, Event, Match, characters::Specials, data::MatchData,
-};
+use skirmish::characters::Specials;
+use skirmish::game::{Action, BUTTON_B, Controller, Event, Match, data::MatchData};
 
 fn down_special_mut(
     fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::game::characters::fox::down::DownSpecial {
+) -> &mut skirmish::characters::fox::down::DownSpecial {
     let Some(Specials::Fox { down, .. }) = fighter.specials.as_mut() else {
         panic!("test fixture is missing its down-special resource");
     };
@@ -296,7 +295,7 @@ fn slippi_action_names_are_stable() {
 
 #[test]
 fn slippi_ids_are_360_through_369() {
-    use skirmish::game::characters;
+    use skirmish::characters;
     for (action, state) in [
         (Action::SpecialLwStart, 360),
         (Action::SpecialLw, 361),
@@ -328,7 +327,7 @@ fn hit_phase_is_wired_but_unreachable_through_ordinary_dispatch() {
     // `hit_check` function Hit shares. Here: confirm the phase is still
     // fully wired into the observation layer despite being unreachable in
     // play, matching the design note's brief.
-    use skirmish::game::characters;
+    use skirmish::characters;
     for action in [Action::SpecialLwHit, Action::SpecialAirLwHit] {
         let (state, _animation) = characters::slippi_ids(Some(2), action).unwrap();
         assert!(matches!(state, 362 | 367));

@@ -26,9 +26,9 @@
 #[path = "support/conformance.rs"]
 mod conformance;
 
+use skirmish::characters::{Specials, fox};
 use skirmish::game::{
     Action, BUTTON_B, Controller, Match,
-    characters::{Specials, fox},
     data::MatchData,
     escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
 };
@@ -181,15 +181,15 @@ fn falco_and_fox_resolve_the_same_slippi_special_ids() {
         Action::SpecialHiHold,
         Action::SpecialLwStart,
     ] {
-        let fox_ids = skirmish::game::characters::slippi_ids(Some(2), action);
-        let falco_ids = skirmish::game::characters::slippi_ids(Some(20), action);
+        let fox_ids = skirmish::characters::slippi_ids(Some(2), action);
+        let falco_ids = skirmish::characters::slippi_ids(Some(20), action);
         assert!(fox_ids.is_some());
         assert_eq!(fox_ids, falco_ids);
     }
     // An unregistered external id (Dr. Mario, 22 -- not to be confused with
     // Falco's own internal kind, also numbered 22) still resolves nothing.
     assert_eq!(
-        skirmish::game::characters::slippi_ids(Some(22), Action::SpecialNStart),
+        skirmish::characters::slippi_ids(Some(22), Action::SpecialNStart),
         None
     );
 }

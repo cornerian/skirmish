@@ -15,10 +15,10 @@ mod conformance;
 #[path = "support/fox_up_special.rs"]
 mod up_special_resources;
 
+use skirmish::characters::Specials;
 use skirmish::collision::stage;
 use skirmish::game::{
     Action, BUTTON_B, Controller, Event, Match,
-    characters::Specials,
     data::{MatchData, StageGeometry},
 };
 
@@ -26,7 +26,7 @@ use skirmish::game::{
 /// `Specials` is tagged by character and only Fox's variant carries one.
 fn up_special_mut(
     fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::game::characters::fox::up::UpSpecial {
+) -> &mut skirmish::characters::fox::up::UpSpecial {
     let Some(Specials::Fox { up, .. }) = fighter.specials.as_mut() else {
         panic!("test fixture is missing its up-special resource");
     };

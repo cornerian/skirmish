@@ -3,7 +3,7 @@
 //! input gate ordering, the Start/Dash/End phase table, the ghost-item
 //! deviation). Everything reusable across moves -- gravity-delayed fall,
 //! pose-driven velocity, ground/air conversion keeping the frame, the
-//! `FallSpecial`/landing exits -- comes from `game::specials::helpers`
+//! `FallSpecial`/landing exits -- comes from `characters::common::helpers`
 //! instead of being re-derived here. Gated purely on resource presence,
 //! like the shared neutral shell.
 //!
@@ -16,12 +16,13 @@
 //! rumble suppression (`Ft_MF_SkipRumble`).
 
 use crate::{
-    fighter::{Movement, characters::fox as math, edge::Mode},
+    characters::arithmetic::fox as math,
+    characters::common::{SpecialMove, helpers},
+    fighter::{Movement, edge::Mode},
     game::{
         Action, BUTTON_B, Controller, Error, Fighter,
         data::{Attack, FighterData, Rules as MatchRules},
         simulation,
-        specials::{SpecialMove, helpers},
         validation::validate_animation_pose,
     },
 };

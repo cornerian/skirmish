@@ -366,7 +366,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             fighter.specials.as_ref().and_then(|s| s.fox_side()),
         ) {
             (Some(rules), Some(parameters)) => {
-                characters::fox::side::validate(rules, parameters, fighter)?;
+                crate::characters::fox::side::validate(rules, parameters, fighter)?;
                 if fighter.escape_air.is_none() {
                     return Err(Error::Data(
                         "side-special landing shares the common air-dodge landing resources".into(),
@@ -400,7 +400,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             fighter.specials.as_ref().and_then(|s| s.fox_up()),
         ) {
             (Some(specials_rules), Some(parameters)) => {
-                characters::fox::up::validate(specials_rules, parameters, fighter, rules)?;
+                crate::characters::fox::up::validate(specials_rules, parameters, fighter, rules)?;
             }
             (None, Some(_)) => {
                 return Err(Error::Data(
@@ -418,7 +418,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                     "down-special motions require common specials rules".into(),
                 ));
             };
-            characters::fox::down::validate(specials_rules, parameters, fighter, rules)?;
+            crate::characters::fox::down::validate(specials_rules, parameters, fighter, rules)?;
             if fighter.locomotion.is_none() {
                 return Err(Error::Data(
                     "down-special mid-move turn/jump-cancel/platform-drop share the common locomotion resources".into(),
@@ -426,7 +426,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
         }
         if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_neutral()) {
-            characters::fox::neutral::validate(parameters, fighter)?;
+            crate::characters::fox::neutral::validate(parameters, fighter)?;
         }
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
@@ -868,7 +868,7 @@ fn validate_bones(bones: &[Bone]) -> Result<Pose, Error> {
         .map_err(|e| Error::Data(e.to_string()))
 }
 
-/// Shared with `characters::fox::{up,down}::validate`'s own per-hitbox
+/// Shared with `crate::characters::fox::{up,down}::validate`'s own per-hitbox
 /// geometry check (the same reason as it needing `validate_animation_pose`).
 pub(crate) fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
     let shape = shape

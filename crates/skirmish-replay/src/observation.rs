@@ -809,7 +809,7 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
         | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn => {
-            let (state, _animation) = game::characters::slippi_ids(character, fighter.action)?;
+            let (state, _animation) = skirmish::characters::slippi_ids(character, fighter.action)?;
             state as u16
         }
         Eliminated => return None,
@@ -873,7 +873,7 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         // side-special indices there are flagged as an unverified
         // extrapolation, not a confirmed figatree table.
         341..=369 => {
-            let (_state, animation) = game::characters::slippi_ids(character, fighter.action)?;
+            let (_state, animation) = skirmish::characters::slippi_ids(character, fighter.action)?;
             animation
         }
         _ => return None,

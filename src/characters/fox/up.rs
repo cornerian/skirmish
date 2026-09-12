@@ -1,7 +1,7 @@
 //! Fox/Falco up special (Fire Fox / Fire Bird): resource shape, validation
 //! and the phase table genuinely specific to this move. Shared phase
 //! behaviours (gravity-delayed fall, ground/air frame-preserving
-//! conversion, the `FallSpecial` exit) come from `game::specials::helpers`
+//! conversion, the `FallSpecial` exit) come from `characters::common::helpers`
 //! instead of being re-derived here, exactly like the side special. Gated
 //! purely on resource presence.
 //!
@@ -16,12 +16,12 @@
 
 use super::side;
 use crate::{
+    characters::common::{SpecialMove, helpers},
     fighter::{Movement, edge::Mode},
     game::{
         Action, BUTTON_B, Controller, Error, Fighter,
         data::{Attack, FighterData, Rules as MatchRules},
         simulation,
-        specials::{SpecialMove, helpers},
     },
 };
 use serde::{Deserialize, Serialize};

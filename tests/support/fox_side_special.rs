@@ -1,10 +1,10 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
+use skirmish::characters::{
+    Specials,
+    fox::side::{Rules, SideSpecial},
+};
 use skirmish::game::{
-    characters::{
-        Specials,
-        fox::side::{Rules, SideSpecial},
-    },
     data::MatchData,
     escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
 };

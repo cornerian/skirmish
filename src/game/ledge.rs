@@ -787,7 +787,7 @@ fn catchable(action: Action) -> bool {
             | Action::AttackAirB
             | Action::AttackAirHi
             | Action::AttackAirLw
-    ) || super::specials::ledge_catchable(action)
+    ) || crate::characters::common::ledge_catchable(action)
 }
 
 fn endpoint(line: &stage::Line, side: Side) -> [f32; 2] {

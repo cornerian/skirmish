@@ -221,7 +221,7 @@ fn falcos_laser_still_bounces_off_a_shield_like_foxs_does() {
 /// bare `characters::slippi_ids` function.
 #[test]
 fn falco_neutral_actions_resolve_through_the_shared_slippi_table() {
-    use skirmish::game::characters;
+    use skirmish::characters;
     assert_eq!(
         characters::slippi_ids(Some(20), Action::SpecialNStart),
         Some((341, 295))

@@ -4,9 +4,8 @@
 #![forbid(unsafe_code)]
 
 pub mod aerial;
-pub mod characters;
 pub mod clank;
-mod collision;
+pub mod collision;
 mod combat_history;
 pub mod damage;
 pub mod dash;
@@ -28,14 +27,13 @@ pub mod nudge;
 pub mod projectile;
 pub mod rebirth;
 pub mod shield;
-mod simulation;
+pub mod simulation;
 pub mod smash;
-pub mod specials;
 pub mod stage_motion;
 pub mod staling;
 pub mod taunt;
 pub mod tilt;
-mod validation;
+pub mod validation;
 pub mod wall_jump;
 
 use crate::collision::ecb;
@@ -344,10 +342,10 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
-    pub fox_side_special: characters::fox::side::State,
-    pub fox_up_special: characters::fox::up::State,
-    pub down_special: characters::fox::down::State,
-    pub fox_neutral_special: characters::fox::neutral::State,
+    pub fox_side_special: crate::characters::fox::side::State,
+    pub fox_up_special: crate::characters::fox::up::State,
+    pub down_special: crate::characters::fox::down::State,
+    pub fox_neutral_special: crate::characters::fox::neutral::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,

@@ -22,13 +22,13 @@
 //! hitbox-free and entirely unmodeled.
 
 use crate::{
+    characters::common::{SpecialMove, helpers},
     fighter::special::neutral_input,
     game::{
         Action, BUTTON_B, Controller, Fighter,
         data::{Attack, FighterData, Hitbox, Rules as MatchRules},
         projectile::{self, ProjectileKind},
         simulation,
-        specials::{SpecialMove, helpers},
         validation::validate_animation_pose,
     },
 };

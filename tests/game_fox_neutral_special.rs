@@ -275,7 +275,7 @@ fn leaving_the_ground_mid_move_falls_through_to_ordinary_fall() {
 
 #[test]
 fn slippi_ids_cover_all_six_phases() {
-    use skirmish::game::characters;
+    use skirmish::characters;
     for (action, state, animation) in [
         (Action::SpecialNStart, 341, 295),
         (Action::SpecialNLoop, 342, 296),
@@ -369,16 +369,14 @@ fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
 /// these tests). Exercises the full engine end to end, distinct from
 /// `tests/fox_neutral_special_differential.rs`'s own oracle-only trace.
 mod script_resources {
-    use skirmish::game::{
-        characters::{
-            Specials,
-            fox::{
-                neutral::NeutralScript,
-                side::{ScriptFrames, ScriptPhase},
-            },
+    use skirmish::characters::{
+        Specials,
+        fox::{
+            neutral::NeutralScript,
+            side::{ScriptFrames, ScriptPhase},
         },
-        data::{Attack, MatchData},
     };
+    use skirmish::game::data::{Attack, MatchData};
 
     fn extend(attack: &mut Attack, len: usize) {
         let last = attack
@@ -524,7 +522,8 @@ fn the_shot_fires_on_the_scripts_own_frame_not_loop_entry() {
 /// test suite.
 #[test]
 fn mismatched_script_frame_counts_are_rejected() {
-    use skirmish::game::{Match, characters::Specials};
+    use skirmish::characters::Specials;
+    use skirmish::game::Match;
 
     let mut resource = script_resources::profile(data());
     for fighter in &mut resource.fighters {

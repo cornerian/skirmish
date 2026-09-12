@@ -1,24 +1,26 @@
-//! Per-character special-move registries. `Specials` is the resource shape
-//! a fighter's data carries (one variant per playable character, each
-//! holding its own moves' `Option`al parameters); the modules underneath
-//! list what those moves are and how their Slippi ids resolve.
+//! Per-character move sets: resource declarations, the Slippi state/animation
+//! id tables, dispatch state machines, and the pure per-character scalar
+//! arithmetic those state machines call.
 //!
-//! Adding a whole new character means adding a `Specials` variant here, a
-//! `characters::<name>` module with its own registry entry (mirroring
-//! `fox::MOVES`), and wiring its external character id into [`moves`] and
-//! [`slippi_ids`]. Adding a move to a character that already exists here
-//! only touches that character's own module (see `fox::MOVES`'s doc).
+//! Each character is one subtree implementing `common::SpecialMove` for its
+//! special moves — adding a character means adding its subtree, a `Specials`
+//! variant below, and a registry arm in [`moves`]/[`slippi_ids`]; shared
+//! special-move machinery lives in [`common`] and per-character arithmetic in
+//! [`arithmetic`].
 
+pub mod arithmetic;
+pub mod common;
 pub mod fox;
 
-use super::{Action, specials::SpecialMove};
+use crate::game::Action;
+use common::SpecialMove;
 use serde::{Deserialize, Serialize};
 
 /// A fighter's special-move resources, tagged by which character's move set
 /// they belong to. Each variant carries every one of that character's moves
 /// as its own `Option`. `neutral` on both variants is Fox's own dedicated
 /// Blaster resource (`characters::fox::neutral::NeutralSpecial`), not the
-/// generic shared shell (`game::specials::neutral`, retired outright -- see
+/// generic shared shell (`characters::common`'s retired `neutral` shell -- see
 /// `docs/fox-neutral-special.md`); Falco's own Laser reuses the identical
 /// type (same source file, same attribute shape, see below), but stays
 /// `None` in every export so far.

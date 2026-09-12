@@ -15,13 +15,14 @@ mod conformance;
 #[path = "support/fox_side_special.rs"]
 mod side_special_resources;
 
-use skirmish::game::{Action, BUTTON_B, Controller, Match, characters::Specials, data::MatchData};
+use skirmish::characters::Specials;
+use skirmish::game::{Action, BUTTON_B, Controller, Match, data::MatchData};
 
 /// Mutable access to a fighter's side-special resource in test setup, since
 /// `Specials` is tagged by character and only Fox's variant carries one.
 fn side_special_mut(
     fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::game::characters::fox::side::SideSpecial {
+) -> &mut skirmish::characters::fox::side::SideSpecial {
     let Some(Specials::Fox { side, .. }) = fighter.specials.as_mut() else {
         panic!("test fixture is missing its side-special resource");
     };

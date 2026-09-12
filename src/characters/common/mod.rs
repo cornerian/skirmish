@@ -11,18 +11,21 @@
 //!
 //! Adding a new move (a queued Fox up/down special, or eventually another
 //! character) means: write its own file implementing [`SpecialMove`], list
-//! it in its character's registry entry in `game::characters`, and add its
+//! it in its character's registry entry in `characters`, and add its
 //! Slippi state/animation ids to the observation table. Nothing in this
 //! module, `simulation`, `collision`, `edge` or `ledge` needs to change.
 
 pub mod helpers;
 
-use super::{
-    Action, Controller, Error, Fighter, characters,
-    data::{Attack, FighterData, Rules},
-    landing, tilt,
+use super::{ALL_MOVES, moves};
+use crate::{
+    fighter::{Movement, edge::Mode},
+    game::{
+        Action, Controller, Error, Fighter,
+        data::{Attack, FighterData, Rules},
+        landing, tilt,
+    },
 };
-use crate::fighter::{Movement, edge::Mode};
 
 /// Every phase hook a special move can implement. Callers precompute the
 /// shared eligibility booleans once per frame (`grounded_chain_open`/
@@ -223,7 +226,7 @@ pub(crate) trait SpecialMove {
 /// character is currently playing it, so they search this whole set rather
 /// than one fighter's own registry slice.
 fn all_moves() -> &'static [&'static dyn SpecialMove] {
-    characters::ALL_MOVES
+    ALL_MOVES
 }
 
 /// The grounded chains that may open a fresh special this frame: ordinary
@@ -257,18 +260,18 @@ fn grounded_chain_open(fighter: &Fighter, data: &FighterData) -> bool {
 /// jump/fall, or an interruptible wall-tech/airborne-damage window.
 fn aerial_chain_open(fighter: &Fighter) -> bool {
     !fighter.grounded
-        && (super::damage::wall_tech_interruptible(fighter)
-            || super::damage::damage_air_interruptible(fighter)
+        && (crate::game::damage::wall_tech_interruptible(fighter)
+            || crate::game::damage::damage_air_interruptible(fighter)
             || matches!(
                 fighter.action,
                 Action::Jump | Action::JumpAerial | Action::Fall | Action::Pass
             )
-            || super::aerial::interruptible(fighter))
+            || crate::game::aerial::interruptible(fighter))
 }
 
 pub(crate) fn attack(action: Action, data: &FighterData) -> Option<&Attack> {
     let specials = data.specials.as_ref()?;
-    characters::moves(Some(specials))
+    moves(Some(specials))
         .iter()
         .find_map(|mv| mv.attack(action, data))
 }
@@ -290,7 +293,7 @@ pub(crate) fn update_actions(
     // the loop below.
     let ground = grounded_chain_open(fighter, data);
     let air = aerial_chain_open(fighter);
-    for mv in characters::moves(data.specials.as_ref()) {
+    for mv in moves(data.specials.as_ref()) {
         if mv.update_actions(fighter, data, rules, ground, air, input) {
             return true;
         }
@@ -304,19 +307,19 @@ pub(crate) fn update_animation(
     input: Controller,
     on_platform: bool,
 ) {
-    for mv in characters::moves(data.specials.as_ref()) {
+    for mv in moves(data.specials.as_ref()) {
         mv.update_animation(fighter, data, input, on_platform);
     }
 }
 
 pub(crate) fn ground_target_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
-    characters::moves(data.specials.as_ref())
+    moves(data.specials.as_ref())
         .iter()
         .find_map(|mv| mv.ground_target_velocity(fighter, data))
 }
 
 pub(crate) fn ground_friction_override(fighter: &Fighter, data: &FighterData) -> Option<f32> {
-    characters::moves(data.specials.as_ref())
+    moves(data.specials.as_ref())
         .iter()
         .find_map(|mv| mv.ground_friction_override(fighter, data))
 }
@@ -327,7 +330,7 @@ pub(crate) fn air_physics(
     rules: &Rules,
     movement: &mut Movement,
 ) -> bool {
-    for mv in characters::moves(data.specials.as_ref()) {
+    for mv in moves(data.specials.as_ref()) {
         if mv.air_physics(fighter, data, rules, movement) {
             return true;
         }
@@ -359,7 +362,7 @@ pub(crate) fn land(
     on_platform: bool,
     pre_landing: &Fighter,
 ) -> Result<bool, Error> {
-    for mv in characters::moves(data.specials.as_ref()) {
+    for mv in moves(data.specials.as_ref()) {
         if mv.land(fighter, data, on_platform, pre_landing)? {
             return Ok(true);
         }
@@ -385,7 +388,7 @@ pub(crate) fn air_contact(
     ceiling: Option<([f32; 3], usize)>,
     wall: Option<([f32; 3], usize)>,
 ) -> bool {
-    characters::moves(data.specials.as_ref())
+    moves(data.specials.as_ref())
         .iter()
         .any(|mv| mv.air_contact(fighter, data, ceiling, wall))
 }

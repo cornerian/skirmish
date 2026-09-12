@@ -84,7 +84,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
 /// 1 (no teeter states to enter) degrades to mode 0.
 pub(crate) fn mode_for_action(action: Action, edge_rules_present: bool) -> math::Mode {
     use Action::*;
-    if let Some(mode) = super::specials::collision_mode(action) {
+    if let Some(mode) = crate::characters::common::collision_mode(action) {
         return mode;
     }
     match action {
