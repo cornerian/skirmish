@@ -148,8 +148,8 @@ fn falco_has_no_neutral_special_wired_yet() {
 #[test]
 fn falco_and_fox_resolve_the_same_slippi_special_ids() {
     for action in [
-        Action::SpecialN,
-        Action::SpecialAirN,
+        Action::SpecialNStart,
+        Action::SpecialAirNStart,
         Action::SpecialSStart,
         Action::SpecialHiHold,
         Action::SpecialLwStart,
@@ -162,7 +162,7 @@ fn falco_and_fox_resolve_the_same_slippi_special_ids() {
     // An unregistered external id (Dr. Mario, 22 -- not to be confused with
     // Falco's own internal kind, also numbered 22) still resolves nothing.
     assert_eq!(
-        skirmish::game::characters::slippi_ids(Some(22), Action::SpecialN),
+        skirmish::game::characters::slippi_ids(Some(22), Action::SpecialNStart),
         None
     );
 }
