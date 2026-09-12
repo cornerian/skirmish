@@ -51,6 +51,59 @@ grace frame. Recorded here for whoever picks up that diagnosis next.
 Full citations, the difference table, and every test: `docs/falco.md`'s
 own "Falco's neutral special (Laser): now wired" section.
 
+The 2026-09-13 Turn-to-Dash conversion fix (the real-replay parity loop,
+`fox-bf.slp`, `docs/parity.md`) stops `game::locomotion::update_actions`'s
+`Action::Turn` arm from waiting for Turn's own `has_turned` flip
+(`turn_frames` reaching zero) before converting into `Dash`.
+`ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion (`ftCo_Turn.c:97-148,
+160-169`) checks the smash threshold/window against the *current* frame's
+own stick, independent of whether `ftCo_Turn_Anim_Inner`'s separate
+`frames_to_turn` countdown has completed: it resolves the facing flip
+itself the moment the check first passes, rather than waiting on that
+other mechanism. `ftCo_Dash_Enter` (`ftCo_Dash.c:49-70`) reads `fp->
+facing_dir` directly for its own initial velocity and never flips it,
+so whichever mechanism flips facing first is what Dash inherits.
+
+Confirmed directly against `fox-bf.slp`: P4 enters `Turn` from `Landing`
+at frame 32 with a moderate reversal (stick `0.7375`) -- an ordinary
+entry, `standing_turn_frames` (`4`) far from expired, facing still
+unflipped -- and by frame 33, the stick strengthens to `0.8375`
+(`>= dash_threshold` `0.8`, `tilt_x_age` `1 < dash_window` `2`) and P4 is
+already in `Dash` with facing flipped, one frame after entering `Turn`.
+Before this fix, the conversion's own gate additionally required
+`just_turned` (the flip having *already* happened via the separate
+countdown), so it would not have fired until several more frames later
+once `standing_turn_frames` actually expired.
+
+`update_actions`'s Turn arm now checks the smash condition fresh each
+frame (`smash_this_frame`) and, once `turn_smash` is set (either from
+this frame or an earlier one) and the current frame's own check still
+holds, resolves `turn_has_turned`/`facing` directly and enters Dash --
+without needing `just_turned` at all. Since nothing else consumed
+`just_turned` after removing that gate, the whole boolean was threaded
+out of `locomotion`/`simulation`'s per-frame pipeline (`update_animation`'s
+own three-argument tuple return, `update_actions`'s own parameter list at
+both call layers).
+
+**Tests**: `game_dash`'s new
+`a_stronger_stick_mid_turn_converts_straight_to_dash_without_waiting_
+for_the_flip` enters an ordinary Turn with a moderate reversal, confirms
+facing has not yet flipped, then strengthens the stick on the very next
+frame and confirms Dash is entered with facing already flipped -- a
+scenario no existing test exercised (the existing Turn/Dash tests only
+cover the smash-*entry* case, where `turn_smash`/`x8` is already true
+from `try_dash`'s own entry). `cargo fmt --check`, `cargo clippy
+--workspace --all-targets` and `cargo test --workspace` (both default
+and `c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10: 160 frames now
+match (`-123` through `36`), up from 156; `fox-bf-baseline.json` moves
+to reflect this. The new first divergence is frame 37, field
+`action_age` on P1 (expected `1.0`, actual `0.0`), on the frame P1
+enters `AttackAirLw` (Fox's down-air) -- the same class of "extra entry
+advance" bug already fixed for Dash/Turn/Squat/EscapeAir, now found in a
+new action, not pursued further in this entry.
+
 The 2026-09-13 zero-knockback-hit fix (the real-replay parity loop,
 `fox-bf.slp`, `docs/parity.md`) stops `game::damage::apply_hit` from
 forcing a Damage motion-state reaction on a hit whose computed knockback

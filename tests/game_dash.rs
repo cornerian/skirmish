@@ -227,6 +227,32 @@ fn entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one() {
     assert_eq!(observed.fighters[0].action_age, 1.0);
 }
 
+/// `fox-bf.slp`: P4 enters an ordinary (non-smash) `Turn` from `Landing` at
+/// frame 32 with a moderate reversal (stick_x `0.7375`, `standing_turn_
+/// frames` far from expired), then on Turn's very next frame (33) the stick
+/// strengthens to `0.8375` (`>= dash_threshold`, `tilt_x_age` `1 <
+/// dash_window`) and P4 is already in `Dash` with facing flipped -- one
+/// frame after entering `Turn`, not the several more `standing_turn_frames`
+/// would otherwise need. `ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion
+/// (`ftCo_Turn.c:97-148,160-169`) does not wait for `ftCo_Turn_Anim_Inner`'s
+/// separate `has_turned` flip (`frames_to_turn` reaching zero): it resolves
+/// the facing flip itself the moment a frame's own stick crosses the smash
+/// threshold, since `ftCo_Dash_Enter` reads `fp->facing_dir` directly and
+/// never flips it.
+#[test]
+fn a_stronger_stick_mid_turn_converts_straight_to_dash_without_waiting_for_the_flip() {
+    let mut game = Match::new(data(), 42).unwrap();
+    let state = step(&mut game, stick(0, [-0.5, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(state.fighters[0].facing, 1.0, "not yet flipped");
+    let state = step(&mut game, stick(0, [-0.9, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Dash);
+    assert_eq!(
+        state.fighters[0].facing, -1.0,
+        "flipped by the conversion itself, not a separate has_turned tick"
+    );
+}
+
 #[test]
 fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     // Early phase: an opposite stick matches neither the forward-smash nor

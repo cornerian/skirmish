@@ -604,15 +604,14 @@ fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters) {
     f.locomotion.jump_backward = backward;
 }
 
-pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Controller) -> bool {
+pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Controller) {
     let Some(p) = data.locomotion.as_ref() else {
-        return false;
+        return;
     };
     if !f.grounded && f.locomotion.jumps_used == 0 {
         f.locomotion.jumps_used = 1;
     }
 
-    let mut just_turned = false;
     // Anim callbacks precede IASA. A release on the launch frame is too late to
     // change a ground jump's stored short-hop choice.
     match f.action {
@@ -685,7 +684,6 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
             } else if !f.locomotion.turn_has_turned {
                 f.locomotion.turn_has_turned = true;
                 f.facing = -f.facing;
-                just_turned = true;
             }
             if f.action == Action::Turn && f.action_frame >= p.turn_animation_frames {
                 enter(f, Action::Wait);
@@ -739,7 +737,6 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
         }
         _ => {}
     }
-    just_turned
 }
 
 /// `ftCo_Run_Enter_Full` (`ftCo_Run.c:66-74`) with `anim_start = 0.0`, the
@@ -883,7 +880,6 @@ pub(crate) fn update_actions(
     edge_rules: Option<&super::edge::Rules>,
     walk_rules: Option<&WalkRules>,
     input: Controller,
-    just_turned: bool,
 ) {
     let Some(p) = data.locomotion.as_ref() else {
         return;
@@ -1036,15 +1032,30 @@ pub(crate) fn update_actions(
             } else {
                 -f.facing
             };
-            if input.stick[0] * facing_after >= p.dash_threshold
-                && f.locomotion.tilt_x_age < p.dash_window
-            {
+            let smash_this_frame = input.stick[0] * facing_after >= p.dash_threshold
+                && f.locomotion.tilt_x_age < p.dash_window;
+            if smash_this_frame {
                 f.locomotion.turn_smash = true;
             }
-            if just_turned
-                && f.locomotion.turn_smash
-                && input.stick[0] * facing_after >= p.dash_threshold
-            {
+            if f.locomotion.turn_smash && smash_this_frame {
+                // ftCo_Turn_IASA's own fn_800C9C2C/dash-back conversion
+                // (ftCo_Turn.c:97-148,160-169) does not wait for Turn's own
+                // `has_turned` flip (`frames_to_turn` reaching zero via
+                // `ftCo_Turn_Anim_Inner`): it converts straight into Dash
+                // the moment a frame's own stick crosses the smash
+                // threshold within the window, resolving the facing flip
+                // itself rather than waiting on the separate mechanism.
+                // `ftCo_Dash_Enter` (`ftCo_Dash.c:49-70`) reads `fp->
+                // facing_dir` directly for its own initial velocity and
+                // never flips it -- confirmed directly against
+                // `fox-bf.slp`: P4 enters `Turn` at frame 32 (age 1,
+                // ordinary entry, `standing_turn_frames` far from expired)
+                // with facing still unflipped, then is already in `Dash`
+                // with facing flipped at frame 33, the same frame its own
+                // stick (0.8375) first crosses `dash_threshold` (0.8)
+                // within `dash_window` (`tilt_x_age` 1 < 2).
+                f.locomotion.turn_has_turned = true;
+                f.facing = facing_after;
                 // ftCo_Turn.c:133: this Dash is entered from Turn's own smash
                 // completion, not ftCo_Dash_CheckInput, so dash.x4 = 0.
                 start_dash(f, p, false);

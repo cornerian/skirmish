@@ -536,7 +536,6 @@ pub(crate) fn advance(
     }
     combat_history::update(&mut state.fighters, active);
 
-    let mut just_turned = [false; 2];
     let mut clank_owns = [false; 2];
     let mut shield_owns = [false; 2];
     // `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`) call the same
@@ -564,7 +563,7 @@ pub(crate) fn advance(
         if !active[player] {
             continue;
         }
-        (just_turned[player], clank_owns[player], shield_owns[player]) = update_animation(
+        (clank_owns[player], shield_owns[player]) = update_animation(
             &mut state.fighters[player],
             &data.fighters[player],
             &data.rules,
@@ -604,7 +603,6 @@ pub(crate) fn advance(
             &data.fighters[player],
             &data.rules,
             input,
-            just_turned[player],
             clank_owns[player],
             shield_owns[player],
         )?;
@@ -1411,7 +1409,7 @@ fn update_animation(
     player: usize,
     input: Controller,
     idle_rng: &mut crate::random::HsdRng,
-) -> Result<(bool, bool, bool), Error> {
+) -> Result<(bool, bool), Error> {
     let attrs = &data.movement;
     rebirth::update_animation(
         f,
@@ -1470,7 +1468,7 @@ fn update_animation(
     taunt::update_animation(f, data)?;
     // Anim transitions install the destination state's input callback before
     // dispatch. This includes fresh aerial input on the ground-jump launch.
-    let just_turned = locomotion::update_animation(f, data, input);
+    locomotion::update_animation(f, data, input);
     aerial::update_animation(f, data);
     let clank_owns = clank::update_animation(f, data);
     let shield_owns = if clank_owns {
@@ -1478,7 +1476,7 @@ fn update_animation(
     } else {
         shield::update_animation(f, data, rules.shield.as_ref(), input)
     };
-    Ok((just_turned, clank_owns, shield_owns))
+    Ok((clank_owns, shield_owns))
 }
 
 fn update_actions(
@@ -1486,7 +1484,6 @@ fn update_actions(
     data: &FighterData,
     rules: &Rules,
     input: Controller,
-    just_turned: bool,
     clank_owns: bool,
     shield_owns: bool,
 ) -> Result<(), Error> {
@@ -1611,7 +1608,6 @@ fn update_actions(
             rules.edge.as_ref(),
             rules.walk.as_ref(),
             input,
-            just_turned,
         );
         return Ok(());
     }

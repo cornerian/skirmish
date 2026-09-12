@@ -1175,10 +1175,44 @@ without_forcing_any_reaction`).
 156 frames now match (`-123` through `32`), up from 149;
 `fox-bf-baseline.json` moves to reflect this, measured against the same
 published gameplay-export pack v10. The new first divergence is frame
-33, field `action_state` on P4 (expected `Dash`, actual `Turn`) --
-squarely the concurrent fox-fd-2/fox-fd-4 loop's own dash-entry-velocity
-investigation, so not pursued further here to avoid duplicating or
-racing that work.
+33, field `action_state` on P4 (expected `Dash`, actual `Turn`). Not the
+concurrent fox-fd-2/fox-fd-4 loop's own dash-entry-velocity investigation
+after all -- that investigation is closed (falsified) and does not own
+this frame; `dash_threshold` itself is independently verified from the
+disc, so the divergence is a mechanism gap, not a pack-data one.
+
+**Fixed: Turn's own smash-to-Dash conversion waited for the wrong
+flip.** P4 enters `Turn` from `Landing` at frame 32 with a moderate
+reversal (stick `0.7375`) -- an ordinary entry, `standing_turn_frames`
+(`4`) far from expired -- and by frame 33 the stick strengthens to
+`0.8375` (`>= dash_threshold` `0.8`, `tilt_x_age` `1 < dash_window` `2`)
+and P4 is already in `Dash` with facing flipped, one frame after
+entering `Turn`. `ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion
+(`ftCo_Turn.c:97-148,160-169`) checks the smash threshold/window against
+the *current* frame's own stick independent of whether `ftCo_Turn_
+Anim_Inner`'s separate `frames_to_turn` countdown has completed: it
+resolves the facing flip itself the moment the check first passes,
+rather than waiting on that other mechanism, since `ftCo_Dash_Enter`
+(`ftCo_Dash.c:49-70`) reads `fp->facing_dir` directly and never flips it
+itself. `game::locomotion::update_actions`'s own `Action::Turn` arm
+previously gated this conversion on `just_turned` (the flip having
+*already* happened via the separate countdown) in addition to the smash
+check, so it would not have fired until several more frames later once
+`standing_turn_frames` actually expired. It now checks the smash
+condition fresh each frame and resolves `turn_has_turned`/`facing`
+directly once it holds, without needing `just_turned` at all -- which,
+having lost its only remaining consumer, was removed from the whole
+per-frame pipeline. `docs/validation.md` has the full native-test
+breakdown (`game_dash`'s new `a_stronger_stick_mid_turn_converts_
+straight_to_dash_without_waiting_for_the_flip`).
+
+160 frames now match (`-123` through `36`), up from 156;
+`fox-bf-baseline.json` moves to reflect this, measured against the same
+published gameplay-export pack v10. The new first divergence is frame
+37, field `action_age` on P1 (expected `1.0`, actual `0.0`), on the
+frame P1 enters `AttackAirLw` (Fox's down-air) -- the same class of
+"extra entry advance" bug already fixed for Dash/Turn/Squat/EscapeAir,
+now found in a new action, not pursued further in this entry.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 
