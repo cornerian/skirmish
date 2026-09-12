@@ -26,7 +26,7 @@ pub struct State {
     pub hits: [Option<Hit>; 4],
     /// Deferred only within one native callback turn. Flushed before contacts
     /// and before publishing a frame/checkpoint, in scheduler order.
-    pub(crate) transitions: Vec<Transition>,
+    pub(crate) transitions: Transitions,
 }
 
 /// `ft_800890D0` on a motion change, or the deferred `ft_800892A0` restart.
@@ -35,13 +35,64 @@ pub(crate) enum Transition {
     Move(Action),
     Restart,
 }
+
+/// Allocation-free for the common case, exactly equivalent to
+/// `Vec<Transition>` for any input: `transition`/`restart_identity` push at
+/// most two entries before the next `flush` in every call site this task
+/// found (`simulation::enter`'s `leaving_down_tilt` branch is the only one
+/// that pushes twice in one call) -- the same four-slot size class
+/// `State::hits: [Option<Hit>; 4]` already uses on this very struct. `State`
+/// is cloned whole every `Match::step` (`docs/performance.md`), and a
+/// `Vec`'s clone always reallocates sized to its length regardless of the
+/// source's prior capacity, so the inline slots remove the allocation
+/// entirely for ordinary frames. `overflow` only allocates past that inline
+/// capacity, so correctness never depends on that "at most two" observation
+/// being exhaustive (`fighter::action_instance::Pending`'s sibling type hit
+/// exactly this with an existing test that queued five in a row).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub(crate) struct Transitions {
+    items: [Option<Transition>; 4],
+    len: u8,
+    overflow: Vec<Transition>,
+}
+
+impl Transitions {
+    fn push(&mut self, transition: Transition) {
+        let len = self.len as usize;
+        if let Some(slot) = self.items.get_mut(len) {
+            *slot = Some(transition);
+            self.len += 1;
+        } else {
+            self.overflow.push(transition);
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0 && self.overflow.is_empty()
+    }
+
+    /// Matches `Vec::drain(..)`'s "empty afterward" behavior and exact push
+    /// order (inline slots were filled first, so they precede whatever
+    /// spilled into `overflow`).
+    fn drain(&mut self) -> impl Iterator<Item = Transition> + '_ {
+        let len = self.len as usize;
+        let items = self.items;
+        self.len = 0;
+        items
+            .into_iter()
+            .take(len)
+            .flatten()
+            .chain(self.overflow.drain(..))
+    }
+}
+
 impl Default for State {
     fn default() -> Self {
         Self {
             queue: Queue::default(),
             identity: Entry::INACTIVE,
             hits: [None; 4],
-            transitions: vec![],
+            transitions: Transitions::default(),
         }
     }
 }
@@ -82,7 +133,7 @@ pub(crate) fn flush(
     action_counter: &mut crate::fighter::instance::Counter,
 ) -> Result<(), Error> {
     crate::fighter::action_instance::flush(&mut fighter.action_instance, action_counter);
-    for transition in fighter.staling.transitions.drain(..) {
+    for transition in fighter.staling.transitions.drain() {
         if rules.is_none() {
             continue;
         }

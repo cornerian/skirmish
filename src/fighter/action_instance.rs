@@ -9,7 +9,48 @@ pub struct State {
     pub motion_identity: u8,
     /// Slippi `post.instance_id` (`x2074.x2088`).
     pub id: u16,
-    pending: Vec<u8>,
+    pending: Pending,
+}
+
+/// Allocation-free for the common case, exactly equivalent to `Vec<u8>` for
+/// any input: almost every call site (`simulation.rs`, `jab.rs`) queues at
+/// most two identities before the next `flush`, so this inline array removes
+/// the heap round trip a `Vec` would pay on every ordinary action-transition
+/// frame -- `State` is cloned whole every `Match::step`
+/// (see `docs/performance.md`), and a `Vec`'s clone always reallocates sized
+/// to length, so pooling wouldn't help here the way it does for
+/// `collision::bones::Pose`; only removing the allocation entirely does.
+/// `overflow` only allocates past the inline capacity (exercised by
+/// `zero_changes_and_restarts_allocate_but_equal_nonzero_retains` below,
+/// which queues five in a row), so correctness never depends on guessing a
+/// call site's exact maximum.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+struct Pending {
+    items: [u8; 4],
+    len: u8,
+    overflow: Vec<u8>,
+}
+
+impl Pending {
+    fn push(&mut self, identity: u8) {
+        let len = self.len as usize;
+        if let Some(slot) = self.items.get_mut(len) {
+            *slot = identity;
+            self.len += 1;
+        } else {
+            self.overflow.push(identity);
+        }
+    }
+
+    /// Matches `Vec::drain(..)`'s "empty afterward" behavior and exact push
+    /// order (inline slots were filled first, so they precede whatever
+    /// spilled into `overflow`).
+    fn drain(&mut self) -> impl Iterator<Item = u8> + '_ {
+        let len = self.len as usize;
+        let items = self.items;
+        self.len = 0;
+        items.into_iter().take(len).chain(self.overflow.drain(..))
+    }
 }
 
 pub fn queue(state: &mut State, identity: u8) {
@@ -17,7 +58,7 @@ pub fn queue(state: &mut State, identity: u8) {
 }
 
 pub fn flush(state: &mut State, counter: &mut Counter) {
-    for identity in state.pending.drain(..) {
+    for identity in state.pending.drain() {
         change(state.motion_identity, &mut state.id, identity, counter);
         state.motion_identity = identity;
     }
