@@ -185,16 +185,23 @@ fn reflector_reverses_owner_and_damages_the_original_shooter() {
             break;
         }
     }
-    assert!(reflected, "the laser must reach and reflect off the Reflector");
+    assert!(
+        reflected,
+        "the laser must reach and reflect off the Reflector"
+    );
 
     let mut hit = false;
     for _ in 0..40 {
         let state = game.step(input(1, down_input(-0.8))).unwrap().clone();
-        if state
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ProjectileHit { owner: 1, victim: 0 }))
-        {
+        if state.events.iter().any(|e| {
+            matches!(
+                e,
+                Event::ProjectileHit {
+                    owner: 1,
+                    victim: 0
+                }
+            )
+        }) {
             hit = true;
             assert_eq!(state.fighters[0].percent, 5.0);
             break;
@@ -229,11 +236,15 @@ fn reflection_is_gated_on_the_laser_not_exceeding_max_damage() {
                 .any(|e| matches!(e, Event::ProjectileReflected { .. })),
             "a laser above max_damage must never reflect"
         );
-        if state
-            .events
-            .iter()
-            .any(|e| matches!(e, Event::ProjectileHit { owner: 0, victim: 1 }))
-        {
+        if state.events.iter().any(|e| {
+            matches!(
+                e,
+                Event::ProjectileHit {
+                    owner: 0,
+                    victim: 1
+                }
+            )
+        }) {
             hit_normally = true;
             assert!(state.fighters[1].percent > 0.0);
             break;

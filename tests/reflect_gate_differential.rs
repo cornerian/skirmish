@@ -16,7 +16,8 @@ use proptest::prelude::*;
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
-    fn oracle_reflect_eligible(hit_damage_in: f32, max_damage_in: i32, out_damage: *mut i32) -> i32;
+    fn oracle_reflect_eligible(hit_damage_in: f32, max_damage_in: i32, out_damage: *mut i32)
+    -> i32;
 }
 
 fn expected_damage(hit_damage: f32) -> i32 {
@@ -32,7 +33,10 @@ fn compare(hit_damage: f32, max_damage: i32) {
     let mut damage = 0;
     let eligible = unsafe { oracle_reflect_eligible(hit_damage, max_damage, &mut damage) };
     let expected = expected_damage(hit_damage);
-    assert_eq!(damage, expected, "damage derivation for hit_damage={hit_damage}");
+    assert_eq!(
+        damage, expected,
+        "damage derivation for hit_damage={hit_damage}"
+    );
     assert_eq!(
         eligible != 0,
         expected <= max_damage,

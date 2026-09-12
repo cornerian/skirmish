@@ -136,7 +136,14 @@ fn compare_enter(ground: bool, gr_vel_in: f32, svx: f32, svy: f32, svz: f32) {
             &mut out_svz,
         );
     }
-    assert_eq!(msid, if ground { MS_START_GROUND } else { MS_START_AIR });
+    assert_eq!(
+        msid,
+        if ground {
+            MS_START_GROUND
+        } else {
+            MS_START_AIR
+        }
+    );
     assert_eq!((c0, c1, c2, c3), (0, 0, 0, 0));
     assert_eq!(is_loop, 0);
     if ground {
@@ -207,10 +214,16 @@ fn compare_loop_anim(
     }
     if frames_remaining {
         assert_eq!(msid, 0, "no transition mid-clip");
-        assert_eq!(is_loop_out, is_blaster_loop_in as i32, "isBlasterLoop untouched mid-clip");
+        assert_eq!(
+            is_loop_out, is_blaster_loop_in as i32,
+            "isBlasterLoop untouched mid-clip"
+        );
     } else if is_blaster_loop_in {
         assert_eq!(msid, if ground { MS_LOOP_GROUND } else { MS_LOOP_AIR });
-        assert_eq!(is_loop_out, 0, "a repeat cycle resets isBlasterLoop for the next one");
+        assert_eq!(
+            is_loop_out, 0,
+            "a repeat cycle resets isBlasterLoop for the next one"
+        );
     } else {
         assert_eq!(msid, if ground { MS_END_GROUND } else { MS_END_AIR });
     }

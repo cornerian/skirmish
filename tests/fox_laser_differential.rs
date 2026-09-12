@@ -120,13 +120,31 @@ fn close_bits(label: &str, actual: f32, expected: f32) {
     );
 }
 
-fn compare_spawn(owner_x: f32, owner_y: f32, ecb_top: f32, ecb_bottom: f32, angle: f32, speed: f32) {
-    let (mut px, mut py, mut oa, mut os, mut facing, mut lifetime) =
-        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+fn compare_spawn(
+    owner_x: f32,
+    owner_y: f32,
+    ecb_top: f32,
+    ecb_bottom: f32,
+    angle: f32,
+    speed: f32,
+) {
+    let (mut px, mut py, mut oa, mut os, mut facing, mut lifetime) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     unsafe {
         oracle_laser_spawn(
-            owner_x, owner_y, ecb_top, ecb_bottom, angle, speed, 54, 35.0, &mut px, &mut py,
-            &mut oa, &mut os, &mut facing, &mut lifetime,
+            owner_x,
+            owner_y,
+            ecb_top,
+            ecb_bottom,
+            angle,
+            speed,
+            54,
+            35.0,
+            &mut px,
+            &mut py,
+            &mut oa,
+            &mut os,
+            &mut facing,
+            &mut lifetime,
         );
     }
     // `ftLib_80086990`: `owner.cur_pos + (0, 0.5 * (ecb.top + ecb.bottom), 0)`.
@@ -166,7 +184,9 @@ fn expected_mirror(vel: [f32; 2], normal: [f32; 2]) -> [f32; 2] {
 fn compare_shield_bounce(vel: [f32; 2], normal: [f32; 2]) {
     let (mut vx, mut vy, mut angle) = (0.0, 0.0, 0.0);
     unsafe {
-        oracle_laser_shield_bounce(vel[0], vel[1], normal[0], normal[1], &mut vx, &mut vy, &mut angle);
+        oracle_laser_shield_bounce(
+            vel[0], vel[1], normal[0], normal[1], &mut vx, &mut vy, &mut angle,
+        );
     }
     let expected = expected_mirror(vel, normal);
     // Pure multiply/add: bit-exact, matching the real `lbVector_Mirror`
@@ -186,7 +206,10 @@ fn compare_reflected(facing_dir: f32, xc68: f32, angle: f32) {
     unsafe {
         oracle_laser_reflected(facing_dir, xc68, angle, &mut out_facing, &mut out_angle);
     }
-    assert_eq!(out_facing, xc68, "facing snaps to the reflecting fighter's own xC68 side");
+    assert_eq!(
+        out_facing, xc68,
+        "facing snaps to the reflecting fighter's own xC68 side"
+    );
     // No trig call at all (`angle += M_PI`, the `f64` constant, promoting
     // the f32 field for the addition exactly as C's own `+=` does): bit-
     // exact via the precise per-iteration normalization loop.
@@ -206,7 +229,10 @@ fn compare_reflect_damage(hitbox_damage: f32, damage_mul: f32, damage_cap: u32) 
             &mut scaled,
         );
     }
-    assert_eq!(owner_swapped, 1, "Item_80269F14 always swaps the owner for a non-M_Ball item");
+    assert_eq!(
+        owner_swapped, 1,
+        "Item_80269F14 always swaps the owner for a non-M_Ball item"
+    );
     assert_eq!(reflect_called, 1);
     // `item.c:1613-1619`: `hit.damage * xC6C + 0.99f`, truncated toward
     // zero, capped at the (here test-controlled) global maximum.
@@ -241,7 +267,13 @@ fn adapter_statements_are_verbatim_in_the_pinned_sources() {
             "/* END VERBATIM RESET RAY AFTER REFLECTION */",
         ),
     ] {
-        let block = adapter.split(begin).nth(1).unwrap().split(end).next().unwrap();
+        let block = adapter
+            .split(begin)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap();
         assert!(source.contains(block), "not verbatim: {begin}");
     }
 }

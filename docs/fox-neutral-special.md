@@ -647,8 +647,121 @@ directly (spawn, travel, hit), which this port fully controls and can
 assert exactly, and documents the real-Slippi-item-diff work as the
 concrete next step in `docs/replays.md`.
 
-Tests
---------
+## Oracle
+
+A later verification batch closed the two gaps this document originally
+flagged here ("no C-oracle differential for `ftfoxspecialn.c`/the laser
+item's functions" and "no automated tests for the shield-bounce/Reflector
+hand-off paths"), plus a real bug the differential itself exposed. Kept
+here rather than folded silently into the prose above so the audit trail
+of what got verified, and how, stays explicit.
+
+`tests/oracle/original/ftfoxspecialn.c` snapshots the whole file;
+`ftfoxspecialn.functions.json` selects the Start/Loop/End state machine's
+own Enter/Anim/IASA callbacks (ground and air), `PrepareBlasterShot`/
+`FireBlasterShot`, and their shared static-inline helpers -- the cosmetic
+gun's own functions (`ClearBlaster`/`RemoveBlaster`/`CheckRemoveBlaster`/
+`GetBlasterAction`/`CheckBlasterAction`/`ftFx_Throw_Anim`) are excluded,
+matching this document's own "confirmed hitbox-free, entirely unmodeled"
+treatment above. `tests/oracle/fox_neutral_special.c` captures
+`Fighter_ChangeMotionState`, `it_8029C6A4` (the item spawn entry point --
+capturing the exact angle/speed/kind this state machine hands it; the
+item's own real behavior is a separate adapter, below), `ft_8008A2BC`/
+`ftCo_Fall_Enter`/`ftCo_80096900` (Wait/Fall/FallSpecial dispatch), and
+`ftCommon_8007D7FC` (this move's own `Enter` re-zeroes `self_vel`/`gr_vel`
+unconditionally afterward regardless, so only the call is observable
+here; its own arithmetic is independently pinned by the down-special
+oracle's `oracle_down_enter`, which really depends on it); scripts
+`ftAnim_IsFramesRemaining`; and hand-duplicates `ftFox_SpecialN_
+CheckLoopInput` verbatim from `ftFox/inlines.h` (no `.c` file of its own
+to extract from), checked against a pinned snapshot of that header.
+`tests/fox_neutral_special_differential.rs` compares the Enter reset, the
+exact turnaround-latch predicate over arbitrary `cmd_vars[0]`/fresh-press
+inputs, the Start->Loop transition, Loop's own repeat-vs-end decision and
+same-frame fire check (item spawn captured), and End's Wait/Fall/
+FallSpecial dispatch, over 256 proptest cases plus known-value checks.
+
+`tests/oracle/original/itfoxlaser.c` snapshots the laser item's own file;
+`itfoxlaser.functions.json` selects the spawn entry points
+(`it_8029C504`/`it_8029C6A4`, `normalizeAngle`), the per-frame motion
+callback (`itFoxlaser_UnkMotion1_Anim`/`_Phys`), and the reflect
+callbacks (`itFoxLaser_Logic94_Reflected`/`_ShieldBounced`) -- the throw-
+finisher entry point (`it_8029C6CC`) and the trivial `_Clanked`/
+`_Absorbed`/`_HitShield`/`_EvtUnk` callbacks are out of scope, matching
+this document's own scope boundaries above. `tests/oracle/fox_laser.c`
+hand-duplicates the shared "ray" helpers (`Item_InitRaySpawnPosition`/
+`Item_InitRaySpawnFields`/`Item_UpdateRayAnimation`/
+`Item_BounceRayOffShield`/`Item_ResetRayAfterReflection`) verbatim from
+`melee/it/kinds/inlines.h` (also pinned, header-only, no `.c` file to
+extract from), but links the real `it_8026BB68`/`ftLib_80086990`
+(extracted from newly pinned `it_26B1.c`/`ftlib.c`) and the real
+`lbVector_Mirror` (already pinned whole-file by an existing adapter alias,
+`ground_launch`/`up_special_angle` -> `lbvector.c`) directly rather than
+stubbing them, since the spawn-position and shield-bounce comparisons
+depend on their exact arithmetic. It also extracts `Item_80269F14`
+(`item.c`, newly pinned) for the Reflector hand-off's own owner-swap and
+damage-scaling arithmetic, capturing `it_80272460` (the subsequent
+per-victim staling re-application this item's own reflect path also
+performs -- out of scope, a documented gap, see below) rather than
+reimplementing it. `tests/fox_laser_differential.rs` compares the spawn
+position (`ftLib_80086990`'s own ECB-midpoint formula) and angle
+normalization, per-frame velocity recompute, the shield-bounce mirror
+(bit-exact -- pure multiply/add against the real `lbVector_Mirror`) and
+its `atan2f`-derived resulting angle, the Reflector callback's facing
+snap and `angle += pi`, and the owner-swap/damage-scaling formula, over
+256 proptest cases each. Every comparison is bit-exact except genuinely
+`cosf`/`sinf`/`atan2f`-derived values, which use the same documented ULP
+tolerance `fox_up_special_differential.rs`'s own `close_bits` already
+established for the identical cross-implementation `libm`/system-`libc`
+gap -- not a translation bug, the same reasoning applies verbatim.
+
+`ftColl_80077464`'s own `max_damage` eligibility gate is a verbatim
+excerpt (`tests/oracle/reflect_gate.c`, matching `hit_direction.c`'s own
+pattern), not a full extraction: the surrounding branches touch
+`ReflectAttr`/hit-direction bookkeeping this port has no equivalent for
+at all. `tests/reflect_gate_differential.rs` proves the excerpt's own
+text appears verbatim in the already-pinned `combat_knockback.c`
+snapshot, then compares the damage-derivation idiom (a fractional nonzero
+`hit->damage` rounds up to `1`, inapplicable to this codebase's own
+integer `Hitbox::damage` but confirmed rather than silently assumed) and
+the exact `>`/`<=` eligibility boundary against `game::projectile::
+step`'s own `(damage as i32) <= down.reflect.max_damage`, over 512
+proptest cases.
+
+**The differential exposed a real bug, now fixed**: `Item_80269F14`
+(`item.c:1613-1619`) scales a reflected hitbox's damage as `hit.damage *
+xC6C + 0.99f`, truncated toward zero -- the `+ 0.99` term was missing
+from `game::projectile`'s own reflect handoff. Fixed in `src/game/
+projectile.rs`, with a native regression (`damage_mul = 1.5` gives `5`,
+not the buggy `4`) in addition to the C-oracle comparison above. The
+global damage cap the source also applies (`it_804D6D28->xD8`) remains
+unmodeled -- its real runtime value is not in the pinned decomp snapshot
+(no initializer or reader for it exists in source at all), so it stays a
+documented gap rather than a guess, exercised in the differential only
+as a test-controlled scalar.
+
+Terrain despawn (`it_8026E9A4` -> `mpCheckAllRemap` -> `mpCheckMultiple`)
+is now a real swept ray-vs-stage-line cast in `game::projectile::step`,
+reusing `collision::stage::Stage::sweep` -- the exact pinned line-
+intersection/remap primitives fighters' own ECB collision already relies
+on -- across all four surface kinds (floor/ceiling/left-wall/right-wall),
+replacing the stage's outer bounding box as the *sole* despawn check (the
+bounding box remains a cheap secondary net for a shot that flies clean
+off the arena without crossing a line first). `mpCheckMultiple`'s own
+full stage-collision-line-array scan is not itself pinned as a new
+C-oracle differential: it requires the complete stage geometry data set
+this harness's minimal host structs do not reproduce, the same reason
+`tests/oracle/ledge_snap.c`'s own adapter already stubs the identical
+function for the analogous ledge-obstruction scan rather than
+reimplementing it. `mpCheckAllRemap`'s own `checks & 0x10` bit additionally
+selects "Remap" floor/ceiling/wall variants that track a line's *previous*
+frame position for moving platforms; this codebase's own moving-platform
+remap plumbing (`collision::resolve`'s `previous_geometry` parameter) is
+not threaded through the projectile system, so this is exact for static
+geometry and a documented simplification for a platform that moved on the
+exact frame a laser crosses it.
+
+## Tests
 
 `tests/game_fox_neutral_special.rs` (a fresh file, replacing rather than
 literally migrating `tests/game_special.rs`'s own coverage of the shared
@@ -657,16 +770,20 @@ Loop -> End with and without a repeat press (the laser actually spawning,
 per cycle), a real hit applying damage through the ordinary pipeline and
 despawning the laser on contact (no piercing), staling across three
 repeated hits, the grounded phases' own ground-leaves-to-`Fall` fallback,
-the Slippi ids, and a checkpoint round trip including an in-flight
-projectile. **Not covered by an automated test in this batch**: the
-shield-bounce velocity mirror and the Reflector hand-off (owner swap,
-`angle += pi`, `damage_mul`) -- both are implemented and cited above
-against the exact decomp call chain and (for the shield bounce) a real
-recording's own observed reflected velocity, but no integration test
-exercises either path yet; flagged as a concrete follow-up rather than a
-silently assumed pass. `crates/cli/tests/replay_match.rs`'s own Blaster
-regression is rewritten to fire a real laser at a fighter placed out of
-immediate range and assert the hit lands strictly after the spawn frame
+a real stage-line terrain despawn (a wall between the two fighters stops
+the laser well inside the blast zone, proving the real raycast rather
+than only the outer bounding box), the Slippi ids, and a checkpoint round
+trip including an in-flight projectile. `tests/
+game_fox_neutral_special_reflect.rs` (a later batch) covers the shield
+bounce (a laser reflects off a shielding fighter's own shield bubble
+without dealing damage, and keeps flying), the Reflector hand-off (owner
+swap, reversed direction, damages the *original* shooter with the
+correctly-scaled damage -- pinning the `+ 0.99` fix above with a value,
+`5`, the buggy formula could not produce), and the eligibility gate (a
+laser whose damage exceeds `max_damage` hits the Reflector-locked fighter
+normally instead of reflecting). `crates/cli/tests/replay_match.rs`'s own
+Blaster regression fires a real laser at a fighter placed out of
+immediate range and asserts the hit lands strictly after the spawn frame
 (proving travel, not an instant melee-style connect), matching the shape
 of a real recording's own observed multi-frame flight.
 
@@ -675,18 +792,39 @@ of a real recording's own observed multi-frame flight.
 - The exact Loop frame the shot fires on, and the exact `cmd_vars[0]`
   repeat-arming window, are both animation-script data this decomp does
   not expose; approximated as "Loop's own entry frame" and "true
-  throughout Loop, false throughout Start" respectively.
-- The laser's own damage/angle/knockback hitbox values do not exist in the
-  pinned C decomp at all (they are the item's own per-frame animation
-  command data); this batch's fixture is a synthetic, hand-built value set
-  pending the export requirements above, clearly not claimed as the real
-  game's numbers.
-- Terrain/wall despawn is approximated as leaving the stage's outer
-  bounding box, not a true swept ray-vs-terrain-line cast.
+  throughout Loop, false throughout Start" respectively. Checked again
+  against the exporter's now-delivered `specials.neutral` pack
+  (`/mnt/archive/datasets/melee/skirmish-gameplay/v2/fox-fd/match-data.json`):
+  it supplies real bone poses and hitbox values for every phase (all of
+  which already matched this document's own previously-cited numbers
+  exactly -- `angle`/`speed`/`landing_lag`/`lifetime`/`move_id`/every
+  hitbox field, byte for byte) but **no per-frame command-stream/script-
+  opcode data at all** (each frame is `{bones, hitboxes}` only), so it
+  cannot resolve this gap; still open, pending a future export pass that
+  decodes the actual animation command stream.
+- The laser's own damage/angle/knockback hitbox values are exporter-
+  confirmed (see above), no longer a synthetic placeholder.
 - `ShieldBounced` vs `HitShield`'s exact dispatch conditions in the source
   are not fully disambiguated; only the bounce behavior is modeled.
 - The real-Slippi-item-field replay diff (as opposed to this batch's own
   native self-recorded regression) is scoped out, with the concrete next
   step recorded in `docs/replays.md`.
 - The muzzle spawn position uses the hold-joint bone directly rather than
-  confirming `ftLib_80086990`'s own transform.
+  confirming `ftLib_80086990`'s own transform -- now moot: the C-oracle
+  differential above extracts and links `ftLib_80086990`/`it_8026BB68`
+  for real, confirming the spawn position never reads the hold joint at
+  all (only `spawn.prev_pos`, unused by this port, does); this port's own
+  choice to derive spawn position purely from `fighter.position`/
+  `fighter.depth`/`fighter.ecb` is confirmed correct, not merely assumed.
+- The Reflector hand-off's own damage scaling omits `it_804D6D28->xD8`'s
+  global cap (its real runtime value is not in the pinned decomp) and the
+  subsequent per-victim staling re-application `it_80272460` itself
+  performs on the newly-reflected owner's staling queue (a second,
+  separate staling touch this port does not model, distinct from the
+  ordinary hit-time staling this port's own hurtbox collision already
+  applies); both captured, not reimplemented, in the C-oracle adapter.
+- `mpCheckMultiple`'s own full stage-collision-line-array scan (behind
+  the terrain-despawn raycast above) is not itself a C-oracle
+  differential, matching `ledge_snap.c`'s own precedent for the identical
+  function; moving-platform remap-awareness (`mpCheckAllRemap`'s own
+  `checks & 0x10`) is not threaded through the projectile system either.

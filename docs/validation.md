@@ -95,6 +95,74 @@ guessable Skirmish-side fix; not chased further per this loop's own stop
 condition. `tests/fixtures/slippi/parity/fox-fd-2-baseline.json`/`fox-fd-4-
 baseline.json` are updated accordingly.
 
+The 2026-09-12 Blaster/laser C-oracle batch closes the primary gap the
+2026-09-12 Fox neutral special batch flagged below ("No C-oracle
+differential harness was added this batch for `ftfoxspecialn.c`/the laser
+item's motion functions") and the shield-bounce/Reflector "not covered by
+an automated test" flag in `docs/fox-neutral-special.md`'s own former
+"Tests" section.
+
+Pins `src/melee/ft/kinds/ftFox/ftfoxspecialn.c` (the Start/Loop/End state
+machine's own Enter/Anim/IASA callbacks, `PrepareBlasterShot`/
+`FireBlasterShot`), `src/melee/it/kinds/itfoxlaser.c` (the laser's own
+spawn/motion/reflect callbacks), and `src/melee/it/item.c` (`Item_80269F14`,
+the Reflector hand-off's owner-swap/damage-scaling excerpt), linking the
+real `lbVector_Mirror`/`ftLib_80086990`/`it_8026BB68` directly rather than
+stubbing them where the comparison depends on their exact arithmetic.
+`ftColl_80077464`'s own `max_damage` eligibility gate is a verbatim
+excerpt against the already-pinned `combat_knockback.c`, matching
+`hit_direction.c`'s own established pattern. See `docs/fox-neutral-
+special.md`'s own new "Oracle" section for the full citation list.
+
+**The differential exposed a real, previously undetected bug**:
+`Item_80269F14`'s own damage-scaling formula (`hit.damage * xC6C + 0.99f`,
+truncated toward zero) was missing its `+ 0.99` term in `src/game/
+projectile.rs`'s reflect handoff -- a plain product instead of the
+source's own truncation idiom, silently rounding a reflected hit's damage
+down more often than the real game does. Fixed with a citation; a native
+regression (`damage_mul = 1.5` gives `5`, not the buggy `4`) pins the fix
+independently of the C-oracle comparison. The global damage cap the
+source also applies (`it_804D6D28->xD8`) has no reader anywhere in the
+pinned decomp for its real runtime value, so it stays unmodeled, a
+documented gap rather than a guess.
+
+Also replaces the laser's own terrain despawn (previously the stage's
+outer bounding box only) with a real swept ray-vs-stage-line cast, reusing
+`collision::stage::Stage::sweep`'s existing pinned line-intersection
+primitives across all four surface kinds; a native regression (a wall
+between two fighters, well inside the blast zone) proves the old
+bounding-box-only check would have let the laser fly straight through.
+`mpCheckMultiple`'s own full stage-geometry-array scan is not itself
+pinned as a new C-oracle differential, matching `ledge_snap.c`'s existing
+precedent for the analogous function.
+
+Checked the exporter's now-delivered `specials.neutral` pack
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v2/fox-fd/match-data.json`)
+against the fire-timing/`cmd_vars[0]`-window approximations the original
+Blaster batch flagged below: every previously-cited attribute and laser
+hitbox value matches byte for byte (confirming, not merely repeating, the
+earlier numbers), but the pack supplies only bone poses and hitboxes per
+frame, no animation command-stream/script-opcode data at all, so it
+cannot resolve that specific gap; still open, now with that checked and
+ruled out as the source of resolution rather than left an open question.
+
+**Tests**: `tests/fox_neutral_special_differential.rs` (9 tests: Enter,
+the turnaround-latch predicate, Start->Loop, Loop's repeat/end decision
+and fire capture, End's Wait/Fall/FallSpecial dispatch, a verbatim-source
+check), `tests/fox_laser_differential.rs` (7 tests: spawn position/angle,
+per-frame motion, the shield-bounce mirror and its derived angle, the
+Reflector callback's facing/angle, the damage-scaling formula, a
+verbatim-source check), `tests/reflect_gate_differential.rs` (3 tests:
+the eligibility gate, a verbatim-source check), each with 256-512
+proptest cases. `tests/game_fox_neutral_special_reflect.rs` (3 new native
+tests: shield bounce, Reflector hand-off, eligibility gate) and a new
+terrain-line despawn test added to `tests/game_fox_neutral_special.rs`.
+`cargo fmt --all`, `cargo clippy --workspace --tests --features
+c-oracle -- -D warnings` (and without the feature), and `cargo test
+--workspace --features c-oracle` (debug) are all clean; the project's own
+six-step local audit (`fmt`, `clippy`, `native`, `c-oracle` debug,
+`c-oracle` release, `git diff --check`) ran clean, all six steps exit 0.
+
 The 2026-09-12 Fox neutral special (Blaster) batch (`docs/fox-neutral-
 special.md`) replaces the shared single-phase neutral-B shell
 (`game::specials::neutral`, retired outright -- no character variant could
