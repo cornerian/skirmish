@@ -103,23 +103,31 @@ fn data(damage_mul: f32, max_damage: i32) -> MatchData {
     resource
 }
 
-fn fire_laser(game: &mut Match) {
-    game.step(input(0, press_b())).unwrap();
-    // The fixture's Start pose is two frames (per
-    // `game_fox_neutral_special.rs`'s own precedent); step through it, then
-    // the frame Loop is entered fires the shot.
-    game.step(IDLE).unwrap();
-    game.step(IDLE).unwrap();
+/// `other`: fighter 1's own input to repeat while fighter 0 fires --
+/// dropping to `Controller::default()` for these two frames (as a plain
+/// `input(0, ..)` would) matters when fighter 1 is mid-shield: `shield::
+/// update`'s own `release_latched |= !input.shield_held()` sticks the
+/// first frame the button reads as not held, even briefly.
+fn fire_laser(game: &mut Match, other: Controller) {
+    game.step([press_b(), other]).unwrap();
+    // The fixture's Start pose is two frames, but the entry frame's own
+    // extra `ftAnim_8006EBA4` advance (`docs/validation.md`'s entry-advance
+    // table) makes the clip run out one idle frame sooner than a naive
+    // frame count would suggest -- see `game_fox_neutral_special.rs`'s own
+    // comment on the same fixture.
+    game.step([Controller::default(), other]).unwrap();
 }
 
 #[test]
 fn shield_bounce_deflects_the_laser_without_damage() {
     let mut game = Match::new(data(1.0, 20), 0).unwrap();
-    // Hold shield on fighter 1 for the whole test.
+    // Hold shield on fighter 1 for the whole test, including the two
+    // frames `fire_laser` itself steps through (see its own comment on
+    // why that input must keep being supplied explicitly).
     for _ in 0..3 {
         game.step(input(1, hold_shield())).unwrap();
     }
-    fire_laser(&mut game);
+    fire_laser(&mut game, hold_shield());
     assert_eq!(game.state().projectiles.len(), 1);
 
     let mut bounced = false;
@@ -168,7 +176,7 @@ fn reflector_reverses_owner_and_damages_the_original_shooter() {
     assert_eq!(game.state().fighters[1].action, Action::SpecialLw);
     assert!(game.state().fighters[1].shield.reflecting);
 
-    fire_laser(&mut game);
+    fire_laser(&mut game, down_input(-0.8));
     assert_eq!(game.state().projectiles.len(), 1);
     assert_eq!(game.state().projectiles[0].owner, 0);
 
@@ -225,7 +233,7 @@ fn reflection_is_gated_on_the_laser_not_exceeding_max_damage() {
     }
     assert_eq!(game.state().fighters[1].action, Action::SpecialLw);
 
-    fire_laser(&mut game);
+    fire_laser(&mut game, down_input(-0.8));
     let mut hit_normally = false;
     for _ in 0..40 {
         let state = game.step(input(1, down_input(-0.8))).unwrap().clone();

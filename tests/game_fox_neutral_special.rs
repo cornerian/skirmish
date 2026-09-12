@@ -290,7 +290,10 @@ fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
     });
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, press_b())).unwrap();
-    game.step(IDLE).unwrap();
+    // The Start clip already runs out one idle frame later than a naive
+    // frame count would suggest -- see `docs/validation.md`'s entry-advance
+    // table and `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it`'s
+    // own comment above.
     let spawn_state = game.step(IDLE).unwrap().clone();
     assert!(spawned_this_frame(&spawn_state, 0));
 
