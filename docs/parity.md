@@ -638,6 +638,30 @@ one frame before the recording's own ordinary gravity-only fall.
 un-neutralized samples throughout the lock (only dispatch sees the neutral
 controller); see `docs/input-lock.md` for the full diagnosis and citation.
 
+**Current measurement (2026-09-12, published pack v9, three fixes this
+batch):** 106 frames match (-123 through -18) and the first divergent
+frame is -17, P2's `action_age` (expected `5.0`, actual `4.0`) mid-
+`SpecialNLoop`, a plain one-frame lag appearing partway through an
+already-matching run rather than on any state transition -- not
+diagnosed further this batch. This baseline had drifted out of sync with
+this file since gameplay export v8/v9 and the concurrent GuardOn/Guard/
+Guard Reflect batch; `tests/fixtures/slippi/parity/fox-fd-4-baseline.
+json`'s own note now carries the authoritative current citation. In
+order: the previously-recorded 93-frame/-30 divergence (labeled a
+GuardOn/Guard `action_state` mismatch at capture time) was re-diagnosed
+as Squat/SquatWait (states 39/40, unrelated to the shield-family
+`state_age` fix a concurrent batch owns) and fixed by routing Landing's
+own interruptible down-stick entry into SquatWait directly, matching
+`ftCo_Landing_IASA`'s own `ftCo_SquatWait_CheckInput` call instead of the
+ordinary Squat crouch-down animation (103 frames, -20); a sibling
+entry-advance bug in the ordinary (non-Landing) Squat path was fixed in
+the same batch without moving this baseline on its own
+(`ftCo_Squat_Enter`'s own missing extra `ftAnim_8006EBA4` advance); and
+the resulting -20 divergence (EscapeAir's own `action_age`, the identical
+missing-entry-advance shape in `ftCo_80099A9C`) was fixed last, reaching
+106 frames. `docs/validation.md`'s entry-advance table and
+`fox-fd-4-baseline.json`'s own note have the full per-fix citations.
+
 ## A first Falco recording: `falco-fox-fd.slp`
 
 The first recording to carry a Falco fighter,
