@@ -401,6 +401,24 @@ pub(crate) fn resolve(
                 // in-air silhouette immediately.
                 f.ecb_lock = 10;
                 f.ecb.bottom_locked = true;
+                // ftCo_Fall_Enter unconditionally calls ftCommon_ClampAirDrift
+                // right after Fighter_ChangeMotionState (ftCo_Fall.c:63),
+                // clamping self_vel.x to +/-ca->air_drift_max: running or
+                // walking off a platform edge carries the ground speed
+                // straight into this clamp, so the fighter's first airborne
+                // frame drifts at the (much lower) air-drift maximum instead
+                // of at whatever speed it was running/walking at. The same
+                // clamp is already inlined in `begin_pass_as` for the
+                // explicit platform-drop path (`ftCo_8009A184`/
+                // `ftCo_8009A228`); this is the ordinary edge-loss path's own
+                // copy of it.
+                let mut movement = Movement {
+                    attributes: data.movement.physics(),
+                    self_velocity: [f.velocity[0], f.velocity[1], 0.0],
+                    ..Default::default()
+                };
+                movement.clamp_air_drift();
+                f.velocity[0] = movement.self_velocity[0];
             }
         }
         let floor_query = Query {

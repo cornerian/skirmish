@@ -1064,15 +1064,45 @@ now-published gameplay-export pack v9 (`/mnt/archive/datasets/melee/
 skirmish-gameplay/v2/fox-bf`, confirmed identical to the diagnostic copy
 above) rather than a local patch.
 
-**Next divergence (not pursued in this batch -- the concurrent fused-op
-audit's own area): frame -23, `position.x` on P1** (expected
-`-18.626245498657227`, actual `-17.28374481201172`), one frame after P1
-enters `Fall` (Slippi action state `29`) off a platform edge. This is
-airborne horizontal-drift physics arithmetic, the same class of function
-the concurrent `bbfaf6a` (`Cover PowerPC fused multiply-add in physics,
-damage, knockback and grab`) batch is actively disassembling
-function-by-function against the retail `main.dol`; not diagnosed further
-here to avoid duplicating or racing that work.
+**Fixed: the ordinary ground-lost-to-`Fall` path was missing the
+edge-drop air-drift clamp.** Frame -23, `position.x` on P1 (expected
+`-18.626245498657227`, actual `-17.28374481201172`) diverged one frame
+after P1 runs off Battlefield's platform edge into `Fall` (Slippi action
+state `29`) at frame -24 -- not the airborne fused-multiply-add
+arithmetic the concurrent `bbfaf6a` batch was disassembling (that
+diagnosis was left open pending this measurement), but a whole missing
+call. `ftCo_Fall_Enter` (`ftCo_Fall.c:47-70`, the generic `Fall` entry
+`ft_80084104` reaches whenever `ft_800827A0`'s ground check fails --
+`ft_081B.c:1044-1050`, the same dispatcher every Walk/Dash/Run/Turn
+`Phys` callback routes through) unconditionally calls `ftCommon_
+ClampAirDrift` (`ftcommon.c:457-459`, `ftCommon_ClampSelfVelX(fp, ca->
+air_drift_max)`) right after `Fighter_ChangeMotionState`, regardless of
+whether `ground_or_air` was `Ground` or already `Air`: running or
+dashing off an edge carries the ground speed straight into this clamp,
+so the first airborne frame drifts at `air_drift_max`, not at the
+(much higher) run/dash speed. `game::collision::resolve`'s own
+ground-lost branch already ports `ftCo_Fall_Enter`'s ECB-lock side
+effect (`ftCommon_8007D5D4`'s `ecb_lock = 10`) but had never carried
+over the `ClampAirDrift` call alongside it -- unlike `begin_pass_as`
+(the explicit platform-drop path, `ftCo_8009A184`/`ftCo_8009A228`),
+which already inlines the same clamp for its own, narrower transition.
+Confirmed directly against `fox-bf.slp`: P1's own frame-to-frame
+position delta is `2.172501` units (Run ground speed) through frame -24,
+then `0.81` units at frame -23 -- consistent with `air_drift_max` scaled
+by that frame's own stick tilt, not the carried-over run speed.
+`game::collision::resolve` now builds a scratch `Movement` from `f.
+velocity` and calls `clamp_air_drift()` on it immediately after
+`simulation::enter(f, Action::Fall)` in that branch, writing the
+clamped `self_velocity[0]` back to `f.velocity[0]`. `docs/validation.md`
+has the full native-test breakdown (`game_edges`'s existing
+`dash_and_run_past_the_end_fall_off_it`, now asserting the clamp).
+109 frames now match (`-123` through `-14`), up from 100;
+`fox-bf-baseline.json` moves to reflect this, measured against the
+same published gameplay-export pack v9. The new first divergence is
+frame -14, field `action_age` on P4 (expected `1.0`, actual `0.0`), on
+P4's own air dodge entering `EscapeAir` -- already fixed above (a
+concurrent `fox-fd-4.slp` loop independently found and fixed the same
+`ftCo_80099A9C` entry-advance bug this same day); re-measured below.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

@@ -279,6 +279,7 @@ fn dash_and_run_past_the_end_fall_off_it() {
     // Dash/Run are mode 0 (`ft_800844EC`); unaffected by `rules.edge`.
     for (label, floor_right) in [("dash", -1.5), ("run", 6.0)] {
         let mut resource = data();
+        let air_drift_max = resource.fighters[0].movement.air_drift_max;
         resource.stage.floor.right = floor_right;
         let mut game = Match::new(resource, 42).unwrap();
         let mut state = step(&mut game, stick(0, [1.0, 0.0]));
@@ -291,6 +292,16 @@ fn dash_and_run_past_the_end_fall_off_it() {
         }
         assert_eq!(state.fighters[0].action, Action::Fall, "{label}");
         assert!(!state.fighters[0].grounded, "{label}");
+        // ftCo_Fall_Enter (ftCo_Fall.c:63) unconditionally calls
+        // ftCommon_ClampAirDrift right after the motion-state change: the
+        // ground speed carried into this exact frame (well above
+        // air_drift_max here) must already be clamped down to it, not left
+        // at the dash/run speed.
+        let velocity_x = state.fighters[0].velocity[0];
+        assert!(
+            (velocity_x - air_drift_max).abs() < 1e-4,
+            "{label}: velocity.x {velocity_x} not clamped to air_drift_max {air_drift_max}"
+        );
     }
 }
 

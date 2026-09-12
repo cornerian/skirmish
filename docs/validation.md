@@ -128,6 +128,66 @@ wait_chain_and_the_crouch` updates its own `"crouch"` case from
 `fox-fd-2.slp` is unaffected (its own divergence is on an unrelated
 Fox-specials pack-export gap, `docs/parity.md`).
 
+The 2026-09-12 edge-fall air-drift-clamp fix (the real-replay parity
+loop, `fox-bf.slp`, `docs/parity.md`) adds the one call `game::collision::
+resolve`'s ordinary ground-lost branch was missing: `ftCo_Fall_Enter`
+(`ftCo_Fall.c:47-70`) unconditionally calls `ftCommon_ClampAirDrift`
+(`ftcommon.c:457-459`, itself `ftCommon_ClampSelfVelX(fp, ca->
+air_drift_max)`) right after `Fighter_ChangeMotionState`, regardless of
+whether `ground_or_air` was `Ground` or already `Air` -- clamping
+`self_vel.x` to `+/-ca->air_drift_max` on every entry into the ordinary
+`Fall` state. `ft_80084104` (`ft_081B.c:1044-1050`, the generic per-frame
+ground/collision dispatcher every Walk/Dash/Run/Turn `Phys` callback
+routes through) is the exact call site: `if (!ft_800827A0(gobj))
+ftCo_Fall_Enter(gobj);` -- "if the ground check just failed, enter Fall" --
+matching `game::collision::resolve`'s own ground-lost branch (the
+`f.grounded = false; ... simulation::enter(f, Action::Fall);` block,
+reached when none of grab/specials/damage's own ground-air transfers
+claim the frame first). That branch already ports `ftCo_Fall_Enter`'s
+ECB-lock side effect (`ftCommon_8007D5D4`'s `ecb_lock = 10`) but not its
+unconditional `ClampAirDrift` call: a fighter running or dashing off a
+platform edge carries its full ground speed (well above `air_drift_max`
+for every real character) straight into `f.velocity[0]` on the first
+airborne frame instead of the clamped value.
+
+`game::collision::resolve` now builds a scratch `Movement` (`self_
+velocity` seeded from `f.velocity`, `attributes: data.movement.
+physics()`) and calls `clamp_air_drift()` on it immediately after
+`simulation::enter(f, Action::Fall)`, writing the clamped `self_velocity[0]`
+back to `f.velocity[0]` -- the same pattern `game::collision::
+begin_pass_as` already uses for the explicit platform-drop path
+(`ftCo_8009A184`/`ftCo_8009A228`), which already carried this exact clamp
+for its own, narrower transition.
+
+Confirmed directly against `fox-bf.slp`: P1 runs off Battlefield's left
+platform at frame -24 (Slippi action state 20, `Run`, ground speed
+`2.172501` units/frame from consecutive frame deltas) and its very next
+position sample (frame -23) reflects only `0.81` units/frame of drift --
+consistent with `air_drift_max` scaled by that frame's own stick tilt
+(`0.975`), not the carried-over run speed. Before this fix, `game::
+collision::resolve` left `f.velocity[0]` at the full run speed on the
+Fall-entry frame, landing `position.x` at `-17.28374481201172` instead of
+the recording's own `-18.626245498657227` (a `1.34`-unit gap, not a
+rounding artifact) one frame later.
+
+**Tests**: `game_edges`'s existing `dash_and_run_past_the_end_fall_off_it`
+(already exercising both a dashing and a running fall off a floor end)
+gains an assertion that `velocity[0]` on the first airborne frame is
+clamped to the fixture's own `air_drift_max` (`1.5`, `tests/fixtures/
+game/integration-match.json`), well below both the dash (`dash_max_
+velocity` `2.5`) and run ground speeds it was exercising unclamped
+before this fix. `cargo fmt --check`, `cargo clippy --workspace
+--all-targets` and `cargo test --workspace` all pass.
+
+Measured against the published gameplay-export pack v9 (`/mnt/archive/
+datasets/melee/skirmish-gameplay/v9-snapshot-20260912/fox-bf`): 109
+frames now match (`-123` through `-14`), up from 100; `fox-bf-baseline.
+json` moves to reflect this. The new first divergence is frame -14,
+field `action_age` on P4 (expected `1.0`, actual `0.0`), a separate,
+undiagnosed root cause -- fixed above by the EscapeAir entry-advance fix,
+independently discovered on `fox-fd-4.slp` by a concurrent batch, which
+already covers this exact bug (`ftCo_80099A9C`'s own extra advance).
+
 The 2026-09-12 shield-regeneration-on-conversion-frame fix (the real-replay
 parity loop, `fox-bf.slp`, `docs/parity.md`) stops `Fighter_ProcessHit_
 8006D1EC`-equivalent regeneration (`game::shield::finish_frame`) from
