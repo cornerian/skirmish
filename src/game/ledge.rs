@@ -49,6 +49,25 @@ pub struct Parameters {
     pub escape: Motion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slow: Option<Options>,
+    /// Raw per-character ledge-snap geometry (`ftData.x44`'s
+    /// `ledge_snap_x`/`ledge_snap_y`/`ledge_snap_height`, already scaled by
+    /// the character's own bone scale -- `mpColl_SetLedgeSnap`,
+    /// `ft_80081B38`/`ft_80081C88`, `ft_081B.c:59-62`). `None` keeps
+    /// `Rules.ledge`'s point-distance-range legacy catch test below; `Some`
+    /// switches this fighter to the real `mpColl_80044164`/
+    /// `mpColl_800443C4` box query (`fighter::ledge::snap_catch_left`/
+    /// `_right`, `mp/mpcoll.c`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snap: Option<Snap>,
+}
+
+/// See `Parameters::snap`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Snap {
+    pub ledge_snap_x: f32,
+    pub ledge_snap_y: f32,
+    pub ledge_snap_height: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -214,6 +233,14 @@ pub(crate) fn validate(
             .point
             .into_iter()
             .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
+        || parameters.snap.is_some_and(|snap| {
+            !snap.ledge_snap_height.is_finite()
+                || snap.ledge_snap_height <= 0.0
+                || snap.ledge_snap_height > 1_000_000.0
+                || [snap.ledge_snap_x, snap.ledge_snap_y]
+                    .into_iter()
+                    .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
+        })
     {
         return Err(Error::Data("invalid explicit ledge parameters".into()));
     }
@@ -468,6 +495,7 @@ pub(crate) fn scan(
     stage: &Stage<'_>,
     geometry: &StageGeometry,
     controllers: [Controller; 2],
+    previous_positions: [[f32; 2]; 2],
 ) -> Result<(), Error> {
     let Some(rules) = &data.rules.ledge else {
         return Ok(());
@@ -477,12 +505,27 @@ pub(crate) fn scan(
         let Some(parameters) = &data.fighters[player].ledge else {
             continue;
         };
+        let previous_position = previous_positions[player];
+        // `mpColl_80046904`'s ledge-grab gate reads position, not velocity:
+        // `!touched_floor && ... && cd->cur_pos.y < cd->prev_pos.y`
+        // (`mp/mpcoll.c:2516-2518`). The legacy range test predates that
+        // query and keeps its own velocity-based proxy unchanged.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)] // The negation, not `<=`, preserves NaN.
+        let falling = match &parameters.snap {
+            Some(_) => fighter.position[1] < previous_position[1],
+            None => !(fighter.velocity[1] + fighter.knockback[1] > 0.0),
+        };
         if fighter.ledge.cooldown > 0
             || fighter.ledge.line.is_some()
             || fighter.grounded
-            || fighter.velocity[1] + fighter.knockback[1] > 0.0
+            || !falling
             || controller.stick[1] <= -rules.catch_down_threshold
             || !catchable(fighter.action)
+            // `!on_edge`: a floor-end clamp already held this frame's
+            // position (`mpcoll.c:2517`'s `Collide_Left/RightEdge` check).
+            // Only the real query models this; the legacy range test never
+            // did, so it stays unconditional for that path.
+            || (parameters.snap.is_some() && fighter.edge_contact.is_some())
         {
             continue;
         }
@@ -515,9 +558,46 @@ pub(crate) fn scan(
                 let point = endpoint(line, side);
                 let dx = anchor[0] - point[0];
                 let dy = anchor[1] - point[1];
-                if dx.abs() <= rules.catch_horizontal_range
-                    && (-rules.catch_vertical_below..=rules.catch_vertical_above).contains(&dy)
-                {
+                let eligible = if let Some(snap) = &parameters.snap {
+                    // The real per-frame query only ever tests the side
+                    // matching current facing: `mpcoll.c:2530-2542`'s
+                    // `facing_dir==1||0`/`facing_dir==-1||0` gate is always
+                    // exactly one side here, since the ordinary airborne
+                    // collision step (`ft_80083090_inline`, `ft_081B.c:637-
+                    // 654`) always passes the fighter's own facing, never
+                    // `CLIFFCATCH_BOTH` (that's a special-move-only
+                    // `ft_CheckGroundAndLedge` argument this profile does
+                    // not model).
+                    fighter.facing == side.inward() && {
+                        let ecb = fighter.ecb.current;
+                        match side {
+                            Side::Left => input::snap_catch_left(
+                                fighter.position,
+                                previous_position,
+                                ecb.right[0],
+                                ecb.bottom,
+                                snap.ledge_snap_x,
+                                snap.ledge_snap_y,
+                                snap.ledge_snap_height,
+                                point,
+                            ),
+                            Side::Right => input::snap_catch_right(
+                                fighter.position,
+                                previous_position,
+                                ecb.left[0],
+                                ecb.bottom,
+                                snap.ledge_snap_x,
+                                snap.ledge_snap_y,
+                                snap.ledge_snap_height,
+                                point,
+                            ),
+                        }
+                    }
+                } else {
+                    dx.abs() <= rules.catch_horizontal_range
+                        && (-rules.catch_vertical_below..=rules.catch_vertical_above).contains(&dy)
+                };
+                if eligible {
                     let distance = dx * dx + dy * dy;
                     if selected.is_none_or(|(_, _, old)| distance < old) {
                         selected = Some((line_id, side, distance));

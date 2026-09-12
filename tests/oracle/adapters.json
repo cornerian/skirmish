@@ -30,5 +30,6 @@
   "edge_floor": "mpcoll",
   "air_drift_recovery": "ftcommon",
   "up_special_angle": "lbvector",
-  "up_special_platform": "pass"
+  "up_special_platform": "pass",
+  "ledge_snap": "mpcoll"
 }

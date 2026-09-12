@@ -7,7 +7,7 @@ use skirmish::collision::stage::{self, Joint, Line};
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State,
     data::{AttackFrame, Hitbox, MatchData, StageGeometry},
-    ledge::{self, Options, Side, SlowRules},
+    ledge::{self, Options, Side, SlowRules, Snap},
 };
 
 const IDLE: [Controller; 2] = [Controller {
@@ -131,6 +131,60 @@ fn descending_fighter_catches_each_free_endpoint_and_bone_anchor_stays_attached(
         assert!((fighter.position[0] - expected_x).abs() < 0.000_01);
         assert!((fighter.position[1] + 0.7).abs() < 0.000_01);
     }
+}
+
+#[test]
+fn the_real_snap_query_catches_a_descending_fighter_facing_the_ledge() {
+    // Past the stage's own left edge (its floor spans -2.0..2.0), unlike the
+    // legacy point-distance test above: the real query's own box only ever
+    // reaches back toward the fighter's actual position on the side away
+    // from its snap-widened reach (`fighter::ledge::snap_catch_left`'s doc),
+    // so catching the stage's left ledge needs the fighter already past it.
+    let mut resource = data();
+    resource.stage.spawns[0] = [-1.9, 1.0];
+    resource.fighters[0].ledge.as_mut().unwrap().snap = Some(Snap {
+        ledge_snap_x: 1.0,
+        ledge_snap_y: 0.0,
+        ledge_snap_height: 20.0,
+    });
+    let mut game = Match::new(resource, 0).unwrap();
+    // Air control drifts the fighter past the edge (unlike the legacy test
+    // above, which only needs to get close enough by bone-anchor distance);
+    // once it has, and has fallen back down near the floor's height, the
+    // real box query catches it.
+    let caught = (0..30)
+        .map(|_| step(&mut game, input(0, 0, [-1.0, 0.0], [0.0; 2])))
+        .find(|state| state.fighters[0].ledge.line.is_some() || state.fighters[0].grounded)
+        .expect("fighter neither caught the ledge nor landed within 30 frames");
+    assert!(caught.events.contains(&Event::LedgeCaught {
+        player: 0,
+        line: 0,
+        side: Side::Left,
+    }));
+    assert_eq!(caught.fighters[0].ledge.line, Some(0));
+    assert_eq!(caught.fighters[0].ledge.side, Some(Side::Left));
+}
+
+#[test]
+fn the_real_snap_query_does_not_catch_a_fighter_ascending_past_the_ledge() {
+    let mut resource = data();
+    resource.stage.spawns[0] = [-1.9, 0.0];
+    resource.fighters[0].ledge.as_mut().unwrap().snap = Some(Snap {
+        ledge_snap_x: 5.0,
+        ledge_snap_y: 5.0,
+        ledge_snap_height: 10.0,
+    });
+    let mut game = Match::new(resource, 0).unwrap();
+    for _ in 0..8 {
+        let state = step(&mut game, input(0, BUTTON_X, [-1.0, 0.0], [0.0; 2]));
+        if !state.fighters[0].grounded {
+            assert!(state.fighters[0].velocity[1] > 0.0);
+            assert!(state.fighters[0].ledge.line.is_none());
+            assert_ne!(state.fighters[0].action, Action::CliffCatch);
+            return;
+        }
+    }
+    panic!("jump did not launch");
 }
 
 #[test]
@@ -525,6 +579,27 @@ fn malformed_or_unpaired_ledge_resources_are_rejected() {
         .as_mut()
         .unwrap();
     slow.jump.release_frame = slow.jump.motion.frames.len() as u32;
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].ledge.as_mut().unwrap().snap = Some(Snap {
+        ledge_snap_x: f32::NAN,
+        ledge_snap_y: 0.0,
+        ledge_snap_height: 1.0,
+    });
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].ledge.as_mut().unwrap().snap = Some(Snap {
+        ledge_snap_x: 0.0,
+        ledge_snap_y: 0.0,
+        ledge_snap_height: 0.0,
+    });
+    cases.push(bad);
+    let mut bad = data();
+    bad.fighters[0].ledge.as_mut().unwrap().snap = Some(Snap {
+        ledge_snap_x: 0.0,
+        ledge_snap_y: 0.0,
+        ledge_snap_height: -1.0,
+    });
     cases.push(bad);
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());

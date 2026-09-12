@@ -597,6 +597,15 @@ pub(crate) fn advance(
     }
     grab::synchronize_actions(data, state)?;
 
+    // Snapshot before this frame's own movement/collision resolution below,
+    // for `ledge::scan`'s `cd->prev_pos` (`mp/mpcoll.c`'s ledge-catch query
+    // reads the position from before this frame's physics -- exactly what
+    // each active fighter's own `previous_position` local further down is
+    // computed from; fighters that skip movement this frame -- rebirth,
+    // already ledge-attached, captured -- don't move in this loop either, so
+    // one snapshot here matches every fighter's own value).
+    let frame_start_positions = state.fighters.each_ref().map(|fighter| fighter.position);
+
     for player in 0..2 {
         if !active[player] {
             continue;
@@ -717,7 +726,14 @@ pub(crate) fn advance(
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
-    ledge::scan(data, state, &stage, &geometry, inputs)?;
+    ledge::scan(
+        data,
+        state,
+        &stage,
+        &geometry,
+        inputs,
+        frame_start_positions,
+    )?;
     grab::scan(data, state, frozen)?;
     resolve_captured_collisions(
         data,

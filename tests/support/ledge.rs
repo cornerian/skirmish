@@ -96,6 +96,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
                 [1.6, 0.0, 0.0],
             ]),
             slow: None,
+            snap: None,
         });
     }
     data
