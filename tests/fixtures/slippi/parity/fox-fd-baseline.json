@@ -1,7 +1,7 @@
 {
-  "first_divergent_frame": -30,
-  "checked_frames": 93,
+  "first_divergent_frame": -13,
+  "checked_frames": 110,
   "export_version": "v4",
   "updated": "2026-09-11",
-  "note": "Measured on 2026-09-11 with gameplay export v4 (v4-snapshot-20260911, corrected ECB joint indices) at the ECB-load-flags batch (docs/ecb-load-flags.md): frames -123..-31 match, including the entry fall (-52..-49) landing on the exact recorded position (0.0001), fixed by loading load_joints's flags per collision path (6 airborne, 5 grounded) instead of the unused resource field, plus resting position (not position+ecb.bottom) on the floor when the raw ECB bottom samples above position (mpColl_80046904's ecb_unlocked). Frame -30 differs on P1 action_age (expected 1, actual 0) on a Dash->Turn transition: a different, unrelated subsystem (action/turn-state age tracking), not collision or ECB flags. Move this forward as divergences are fixed."
+  "note": "Measured on 2026-09-11 with gameplay export v4 (v4-snapshot-20260911, published snapshot) at the real-replay parity loop's Dash->Turn action_age fix (docs/parity.md, docs/validation.md): frames -123..-14 match, up from -123..-31 (93 frames). Fixed: Action::Turn needed the same action_frame-unadjusted state_age treatment already given to Action::Dash, since ftCo_Turn_Enter/ftCo_Turn_Enter_Smash (ftCo_Turn.c:49-62,173-188) make the same extra ftAnim_8006EBA4 call ftCo_Dash_Enter does; ftCo_TurnRun_Enter does not, so Action::RunTurn is unaffected. Frame -13 now differs on P1 action_state (expected Run, actual Dash) on the Dash->Run transition itself: a different, unrelated subsystem, not action_age. Move this forward as divergences are fixed."
 }

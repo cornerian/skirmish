@@ -72,7 +72,30 @@ skips, and a skip is not evidence of anything.
 
 **Current measurement (2026-09-11, gameplay export v4,
 `/mnt/archive/datasets/melee/skirmish-gameplay/v4-snapshot-20260911`, the
-ECB-load-flags batch, `docs/ecb-load-flags.md`):** 93 frames match
+real-replay parity loop's Dash->Turn `action_age` fix):** 110 frames match
+(-123 through -14) and the first divergent frame is -13, field
+`action_state` (expected `0x0015`/Run, actual `0x0014`/Dash, on P1's
+Dash->Run transition). The previous divergence (-30, `action_age` on a
+Dash->Turn transition, described below) is fixed: `ftCo_Turn_Enter`/
+`ftCo_Turn_Enter_Smash` (`ftCo_Turn.c:49-62`, `:173-188`) call `ftAnim_
+8006EBA4(gobj)` immediately after `Fighter_ChangeMotionState`, the same
+extra animation advance `ftCo_Dash_Enter` already made -- so `Action::Turn`
+needed the same `action_frame`-unadjusted treatment `observation::observe`
+already gave `Action::Dash`, confirmed directly against `fox-fd.slp`'s
+dash-dance rally (P1 re-enters Turn at both -30 and -25, each already
+reporting `state_age = 1.0`). `ftCo_TurnRun_Enter` (`ftCo_TurnRun.c:44-51`)
+changes motion state but does not make this extra call, so `Action::RunTurn`
+is unaffected. The new divergence at -13 is a separate, unrelated subsystem
+(the Dash-to-Run transition frame itself), reported rather than chased in
+this batch. A missing `move_id` in the v4 pack (unrelated to either fix)
+blocks stepping this same match past frame ~71 through its own recorded
+inputs, which is why the jump landing at frames 418-421 could only be
+confirmed against the recording's own ground truth, not against Skirmish's
+simulated value there (`docs/ecb-load-flags.md`'s "Known gap").
+
+Previously (2026-09-11, gameplay export v4,
+`/mnt/archive/datasets/melee/skirmish-gameplay/v4-snapshot-20260911`, the
+ECB-load-flags batch, `docs/ecb-load-flags.md`): 93 frames match
 (-123 through -31) and the first divergent frame is -30, field
 `action_age` (expected 1, actual 0, on P1's Dash -> Turn transition). This
 measurement used the v4 pack directly rather than `SKIRMISH_GAMEPLAY_DATA`

@@ -208,6 +208,25 @@ fn dash_attack_fires_from_the_middle_phase_and_from_run_but_not_early_or_late() 
     assert_ne!(state.fighters[0].action, Action::AttackDash);
 }
 
+/// `fox-fd.slp`'s dash-dance rally reports P1's `state_age` as 1.0 on the
+/// exact frame Turn is entered from Dash's dash-back check (frame -30, and
+/// again at -25), not 0.0 like an ordinary entry: `ftCo_Turn_Enter_Smash`
+/// (`ftCo_Turn.c:173-188`, reached here through `ftCo_Dash_CheckInput`'s
+/// `start_turn(f, p, true)`) calls `ftAnim_8006EBA4(gobj)` immediately after
+/// `Fighter_ChangeMotionState`, the same extra animation advance
+/// `ftCo_Dash_Enter` makes (`docs/parity.md`'s -30 divergence, fixed by this
+/// batch).
+#[test]
+fn entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one() {
+    let mut game = Match::new(data(), 42).unwrap();
+    enter_dash(&mut game);
+    hold_neutral(&mut game, 3); // frames 2..=4: middle phase.
+    let state = step(&mut game, stick(0, [-1.0, 0.0])); // frame 4: dash-back.
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observed.fighters[0].action_age, 1.0);
+}
+
 #[test]
 fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     // Early phase: an opposite stick matches neither the forward-smash nor

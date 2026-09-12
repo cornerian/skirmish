@@ -396,19 +396,24 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                     Some(animation) => age.min(animation.start_frames - 1) as f32,
                     None => age as f32,
                 }
-            } else if fighter.action == game::Action::Dash {
-                // `ftCo_Dash_Enter` (`ftCo_Dash.c:48-63`) calls `ftAnim_
-                // 8006EBA4(gobj)` immediately after `Fighter_
-                // ChangeMotionState`, an extra animation advance most
-                // `_Enter`s don't make (confirmed directly against
-                // `ftCo_Fall_Enter`/`ftCo_Landing_Enter`/`ftCo_Run_
-                // Enter_Full`/`ftCo_KneeBend_Enter`, none of which call
-                // `ftAnim_8006EBA4` themselves): `state_age` reads 1, not
-                // 0, on Dash's own entry frame -- confirmed directly
-                // against `fox-fd.slp` (P1 enters Dash at frame -37
-                // already reporting `state_age = 1.0`) -- so unlike the
-                // general rule below, `action_frame` needs no adjustment
-                // here.
+            } else if matches!(fighter.action, game::Action::Dash | game::Action::Turn) {
+                // `ftCo_Dash_Enter` (`ftCo_Dash.c:48-63`) and, the same way,
+                // `ftCo_Turn_Enter`/`ftCo_Turn_Enter_Smash` (`ftCo_Turn.c:49-
+                // 62`, `:173-188`) each call `ftAnim_8006EBA4(gobj)`
+                // immediately after `Fighter_ChangeMotionState`, an extra
+                // animation advance most `_Enter`s don't make (confirmed
+                // directly against `ftCo_Fall_Enter`/`ftCo_Landing_Enter`/
+                // `ftCo_Run_Enter_Full`/`ftCo_KneeBend_Enter`, none of which
+                // call `ftAnim_8006EBA4` themselves, and against
+                // `ftCo_TurnRun_Enter`, `ftCo_TurnRun.c:44-51`, which changes
+                // motion state but does not): `state_age` reads 1, not 0, on
+                // the entry frame -- confirmed directly against `fox-fd.slp`
+                // (P1 enters Dash at frame -37 already reporting `state_age
+                // = 1.0`; the same dash-dance recording re-enters Turn at
+                // -30 and -25, both already reporting `state_age = 1.0`,
+                // then re-enters Dash at -29 and -24, likewise already 1.0)
+                // -- so unlike the general rule below, `action_frame` needs
+                // no adjustment here.
                 fighter.action_frame as f32
             } else {
                 // `Fighter_ChangeMotionState` (`fighter.c:933-1230`)
@@ -433,8 +438,9 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
                 // directly against `fox-fd.slp`: P1 Fall at -59, Landing at
                 // -49, Run at -13 and KneeBend at -7 all report age 0 on
                 // their own transition frame, then count up normally).
-                // `Action::Dash` (above) is the one exception this codebase
-                // has found so far; a future divergence may surface others.
+                // `Action::Dash` and `Action::Turn` (above) are the
+                // exceptions this codebase has found so far; a future
+                // divergence may surface others.
                 fighter.action_frame.saturating_sub(1) as f32
             };
             FighterObservation {

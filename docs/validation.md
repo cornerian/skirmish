@@ -1,5 +1,36 @@
 # Local validation provenance
 
+The 2026-09-11 Dash->Turn `action_age` fix (the real-replay parity loop,
+`docs/parity.md`) extends the transition-frame fix below to `Action::Turn`:
+`ftCo_Turn_Enter` and `ftCo_Turn_Enter_Smash` (`ftCo_Turn.c:49-62`, `:173-
+188`, reached respectively from a plain standing-turn check and from
+`ftCo_Dash_CheckInput`'s dash-back/re-dash logic) both call `ftAnim_
+8006EBA4(gobj)` immediately after `Fighter_ChangeMotionState`, exactly the
+extra animation advance `ftCo_Dash_Enter` already made and that
+`observation::observe` already special-cased for `Action::Dash`. Confirmed
+directly against `fox-fd.slp`'s dash-dance rally: P1 enters Turn at frames
+-30 and -25 (each already reporting `state_age = 1.0`, not 0.0) and
+re-enters Dash at -29 and -24 (also already 1.0, the existing exception).
+`ftCo_TurnRun_Enter` (`ftCo_TurnRun.c:44-51`) changes motion state but does
+not make this extra call, so `Action::RunTurn` keeps the general rule.
+Fixed in `crates/skirmish-replay/src/observation.rs`'s `observe` (the
+`Action::Dash | Action::Turn` match arm) and its harness-local duplicate in
+`crates/cli/tests/replay_match.rs`. A new integration test,
+`entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one`
+(`tests/game_dash.rs`), pins the recording's `state_age == 1.0` on a
+dash-back smash-Turn entry the same way the existing Dash entry test
+already did. No C-oracle differential was added, for the same reason as the
+Dash fix below: this ports a control-flow/sequencing fact, not a specific
+pinned function's arithmetic. `cargo fmt --all -- --check`, `cargo clippy
+--locked --workspace --all-targets --all-features -- -D warnings` and
+`cargo test --locked --workspace` (909 passed/0 failed/19 ignored, up from
+908/0/19 immediately before this fix) all pass. Measured directly against
+gameplay export pack v4: `checked_frames` went from 93 to 110 (frames -123
+through -14); the next divergence is -13, `action_state` (expected Run,
+actual Dash, on P1's Dash->Run transition) -- a separate, unrelated
+subsystem, reported rather than chased in this batch. `docs/parity.md`
+records the same measurement.
+
 The 2026-09-11 ECB-load-flags batch (`docs/ecb-load-flags.md`) fixed two
 real, decomp-cited bugs: `game::collision::sample` was loading every
 `CollisionBox::Bones` ECB with one static resource flags value (0 in every

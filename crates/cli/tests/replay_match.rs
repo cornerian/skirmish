@@ -237,9 +237,10 @@ impl Recording {
                     // comments spell out the general -1 rule (`simulation::
                     // advance`'s shared end-of-frame `action_frame += 1`
                     // always runs one frame ahead of Melee's own
-                    // `cur_anim_frame`) and Dash's own exception
-                    // (`ftCo_Dash_Enter`'s extra `ftAnim_8006EBA4` call);
-                    // this harness-local duplicate must track that formula.
+                    // `cur_anim_frame`) and Dash's/Turn's own exception
+                    // (`ftCo_Dash_Enter`/`ftCo_Turn_Enter`/`ftCo_Turn_Enter_
+                    // Smash`'s extra `ftAnim_8006EBA4` call); this
+                    // harness-local duplicate must track that formula.
                     let action_age = if fighter.action == Action::Walk
                         && self.initialization.data.fighters[player]
                             .movement
@@ -262,7 +263,7 @@ impl Recording {
                             Some(animation) => age.min(animation.start_frames - 1) as f32,
                             None => age as f32,
                         }
-                    } else if fighter.action == Action::Dash {
+                    } else if matches!(fighter.action, Action::Dash | Action::Turn) {
                         fighter.action_frame as f32
                     } else {
                         fighter.action_frame.saturating_sub(1) as f32
