@@ -23,7 +23,14 @@ native move identity) plus one decoded command sample per pose:
   keeps its value across jabs, and only the first jab's entry clears it.
 - `loop_check` (loop only): the throw-flag command (`set_throw_flags` hit 0,
   `throw_flags_b3`) that `ftCo_Attack100Loop_Anim` consumes on this pose.
-- `clear_hits`: the clear-hitboxes command (`ftColl_8007AFF8`).
+- `clear_hits`: the clear-hitboxes command (`ftColl_8007AFF8`). Needed
+  because the jab's hitbox stays in `Attack.frames` on the very pose this
+  command runs (the script clears and immediately re-creates it within the
+  same exported frame), which the generic per-attacker `hit_groups`
+  re-enable (`hitboxes::refreshed_groups`, `docs/validation.md`'s
+  2026-09-12 entry) cannot see, since it only reacts to a hitbox actually
+  being absent for a whole frame -- exactly what Fire Fox Hold's own charge
+  pulse does instead, needing no `clear_hits`-equivalent field at all.
 
 Optional per-pose `root_translations` supply the TransN delta that
 `ft_80084FA8` turns into ground speed (every jab callback uses it).
