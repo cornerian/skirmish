@@ -839,23 +839,55 @@ missing-entry-advance shape in `ftCo_80099A9C`) was fixed last, reaching
 106 frames. `docs/validation.md`'s entry-advance table and
 `fox-fd-4-baseline.json`'s own note have the full per-fix citations.
 
-**Current measurement (2026-09-13, published pack v10): moved again,
-blocked on the reserved Blaster subsystem.** Re-measured directly against
-pack v10 (script command variables embedded, `docs/parity.md`'s own
-"Published pack v10" note above): 110 frames now match (-123 through -14).
-The new divergence is still P2's `action_age`, still mid-`SpecialNLoop`
-(state 342), now at frame -13 (expected `9.0`, actual `8.0`) -- the same
-one-frame-lag shape the v9 baseline's own divergence showed, just later in
-the loop's own per-shot cycle: the script data changed exactly when each
-cycle's own `action_frame` resets, moving where the lag first becomes
-visible, without fixing the lag itself. Not diagnosed further this loop:
-`Action::SpecialNLoop`'s own script-driven re-arm/fire cadence lives
-entirely in `src/game/characters/fox/neutral.rs`, one of the two files
-(with `src/game/projectile.rs`) a concurrent Falco Blaster batch is
-already reserved on (this loop's own coordination instructions); skipped
-rather than risking a collision with that batch's in-flight edits --
-`fox-fd-2.slp`'s own v10 re-measurement above hits the same reserved
-subsystem on its own divergence.
+**Current measurement (2026-09-13, published pack v10): moved again, then
+its own divergence fixed by the same bug as `fox-fd-2.slp`'s own.**
+Re-measured directly against pack v10 (script command variables embedded,
+`docs/parity.md`'s own "Published pack v10" note above): 110 frames now
+match (-123 through -14). The divergence was P2's `action_age`, mid-
+`SpecialNLoop` (state 342), at frame -13 (expected `9.0`, actual `8.0`) --
+the same one-frame-lag shape the v9 baseline's own divergence showed.
+
+The reservation that previously blocked this (a concurrent Falco Blaster
+batch) turned out to be narrower than assumed: it covers Falco's own data
+path and item-kind differences, not the shared hit pipeline or Loop
+timing. Two hypotheses for the lag were checked directly and both point
+away from `characters::fox::neutral`'s own script/`cmd_vars` timing.
+First, whether Loop's own re-entry (`enter_loop`, reached from both
+Start->Loop and a repeat Loop->Loop pass) is missing the same extra
+`ftAnim_8006EBA4` advance the Start-entry family needed: reading the
+pinned decomp directly (`ftFox_SpecialN_BeginLoopTransition`/
+`FinishLoopTransition`, `ftfoxspecialn.c:316-333`) shows neither makes that
+call (unlike `ftFox_SpecialN_InitializeState`, which does, `:246-252`), so
+Loop's own entry needs no such adjustment -- `enter_loop`'s existing
+default `action_frame = 0` (from `simulation::enter`'s own blanket reset)
+is already correct. Second, and confirmed directly: a probe stepping the
+native match frame-by-frame shows P2's own `action_state`/`action_age`
+already match the recording bit-exactly on every single frame from -123
+through -3 once the projectile-owner-hitlag fix below is applied -- so the
+Loop's own script-driven cadence was never wrong; the v9/v10 baselines'
+own `action_age` divergence was P2's own laser connecting and (like
+fox-fd-2.slp's P1) freezing P2's own `action_frame` afterward via the
+identical attacker-hitlag bug. Fixed at the source (`docs/validation.md`'s
+projectile-owner-hitlag entry, `game::damage::apply_hit` gains an
+`attacker_takes_hitlag` parameter, `false` for `game::projectile.rs`'s own
+call): P2's own timing now matches throughout.
+
+**New divergence, unrelated to either hypothesis above.** With P2's own
+freeze fixed, `checked_frames`/`first_divergent_frame` stay at 110/-13 (the
+fix does not move the ratchet), but the field changes: P4's `action_state`
+(expected `0x002b`/43 = `LandingFallSpecial`, actual `0x004e`/78 =
+`Damage`, grounded/middle/level-0 hitstun). P4 has been in
+`LandingFallSpecial` continuously since -19 (its own tracked age past 18
+by -13); the recording shows P4's own `percent` still rising (`3` at -13,
+`6` at -5, matching P2's laser connecting again) while P4 stays in
+`LandingFallSpecial` throughout, uninterrupted. Skirmish instead
+transitions P4 into ordinary grounded hitstun the instant the hit lands,
+same as any other hit. This looks like a genuinely unmodeled interruption
+rule (a hit landing during `LandingFallSpecial`'s own lag not always
+forcing a hitstun-state transition in decomp), not a shape either
+hypothesis above predicted; not chased further this loop, reported per
+this loop's own stop condition (`fox-fd-4-baseline.json`'s own note has
+the full citation).
 
 ## A first Falco recording: `falco-fox-fd.slp`
 
