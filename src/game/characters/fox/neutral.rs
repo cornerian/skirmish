@@ -461,10 +461,17 @@ impl SpecialMove for Move {
                 // based Start gate compares against the decomp's own
                 // thresholds unadjusted.
                 fighter.action_frame = 1;
+                // `ftFx_SpecialN_Enter` (ground) zeros `gr_vel`/`self_vel.{x,
+                // y,z}` right after `ftFox_SpecialN_InitializeState`, but
+                // `ftFx_SpecialAirN_Enter` (air) does not touch velocity at
+                // all -- only `Fighter_ChangeMotionState`, the shared
+                // `InitializeState` and the blaster spawn. An airborne press
+                // keeps whatever velocity it already had (e.g. a jump's own
+                // continuing drift), unlike the ground entry's hard stop.
                 if ground {
                     fighter.ground_velocity = 0.0;
+                    fighter.velocity = [0.0, 0.0];
                 }
-                fighter.velocity = [0.0, 0.0];
                 true
             }
         }

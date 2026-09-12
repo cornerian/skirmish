@@ -1112,11 +1112,42 @@ pack-version bump and not a behavior change): 137 frames now match
 reflect this. The new first divergence is frame 14, field `position.x`
 on P4 (expected `33.07349395751953`, actual `33.836673736572266`, a
 `0.76`-unit gap), on the frame P4 enters Fox's own aerial neutral
-special (Blaster, Slippi action state `344`, `SpecialAirNStart`) -- the
-concurrent script-driven Blaster-timing batch's own area (`docs/
-parity.md`'s own commit history: "Cover the script-driven Blaster
-timing..."), not pursued further here to avoid duplicating or racing
-that work.
+special (Blaster, Slippi action state `344`, `SpecialAirNStart`).
+Not the concurrent script-driven Blaster-timing batch's own area after
+all (that batch's own work is the script/`cmd_vars` timing already
+landed on `main`; this divergence turned out to be unrelated, ordinary
+entry-velocity handling), so continued here rather than deferred.
+
+**Fixed: the aerial Blaster entry was zeroing velocity it should leave
+alone.** `ftFx_SpecialN_Enter` (the grounded Blaster entry,
+`ftfoxspecialn.c:255-269`) zeros `gr_vel` and `self_vel.{x,y,z}` right
+after `Fighter_ChangeMotionState`/`ftFox_SpecialN_InitializeState`;
+`ftFx_SpecialAirN_Enter` (the aerial entry, `:274-284`) does not touch
+velocity at all -- only the motion-state change, the shared
+`InitializeState` (extra animation advance, `cmd_vars` reset) and the
+blaster-gun spawn. `game::characters::fox::neutral::update_actions`
+applied the ground entry's own unconditional `self_vel = 0` to both
+branches, so P4's mid-jump press hard-stopped its existing drift instead
+of carrying it through untouched. Confirmed directly against
+`fox-bf.slp`: P4's own frame-to-frame `position.x` delta is one smooth,
+continuously-decelerating sequence straight through the frame-14
+transition (`-0.8632` .. `-0.7632` .. `-0.7432`, no visible mark at the
+transition itself), meaning `self_vel.x` was never reset in the
+recording; before this fix the port's own frame-14 `position.x`
+(`33.836673736572266`) sat within noise of frame 13's own value,
+i.e. velocity had already been zeroed. Now only the ground branch
+zeros `velocity`/`ground_velocity`; the air branch leaves both alone.
+`docs/validation.md` has the full native-test breakdown (`game_fox_
+neutral_special`'s new `aerial_entry_preserves_velocity_but_grounded_
+entry_zeros_it`).
+
+149 frames now match (`-123` through `25`), up from 137;
+`fox-bf-baseline.json` moves to reflect this, measured against the same
+published gameplay-export pack v10. The new first divergence is frame
+26, field `action_state` on P1 (expected `KneeBend`, actual `DamageN1`)
+-- P1 is hit by something Skirmish's own simulation does not expect at
+that frame, a separate, undiagnosed root cause not pursued further in
+this batch.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

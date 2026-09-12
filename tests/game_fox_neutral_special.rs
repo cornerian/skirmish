@@ -85,6 +85,46 @@ fn aerial_entry_selects_the_air_variant() {
 }
 
 #[test]
+fn aerial_entry_preserves_velocity_but_grounded_entry_zeros_it() {
+    // `ftFx_SpecialN_Enter` (ground) zeros `gr_vel`/`self_vel.{x,y,z}` right
+    // after `ftFox_SpecialN_InitializeState`; `ftFx_SpecialAirN_Enter` (air)
+    // does not touch velocity at all -- only `Fighter_ChangeMotionState`,
+    // the shared `InitializeState` and the blaster spawn
+    // (`ftfoxspecialn.c:246-284`). Confirmed against `fox-bf.slp`: P4's own
+    // airborne Blaster press carries its existing falling-jump drift
+    // straight through the transition (position continues the same smooth
+    // deceleration trend both before and after, `docs/parity.md`).
+    let mut resource = data();
+    resource.stage.spawns[0][1] = 20.0;
+    let mut game = Match::new(resource, 0).unwrap();
+    // Let gravity build up a nonzero, non-round falling velocity first,
+    // over two frames so the ordinary per-frame gravity delta is known.
+    for _ in 0..4 {
+        game.step(IDLE).unwrap();
+    }
+    let before = game.state().fighters[0].velocity;
+    let falling = game.step(IDLE).unwrap().fighters[0].velocity;
+    assert_ne!(falling, [0.0, 0.0]);
+    let gravity_delta = falling[1] - before[1];
+    assert_ne!(gravity_delta, 0.0);
+    let state = game.step(input(0, press_b())).unwrap();
+    assert_eq!(state.fighters[0].action, Action::SpecialAirNStart);
+    // Velocity is untouched by the transition itself: only the ordinary
+    // per-frame gravity this same frame's physics already applies, the
+    // same delta as every prior falling frame -- not zeroed or overridden.
+    assert_eq!(
+        state.fighters[0].velocity,
+        [falling[0], falling[1] + gravity_delta]
+    );
+
+    let mut grounded = Match::new(data(), 0).unwrap();
+    let state = grounded.step(input(0, press_b())).unwrap();
+    assert_eq!(state.fighters[0].action, Action::SpecialNStart);
+    assert_eq!(state.fighters[0].velocity, [0.0, 0.0]);
+    assert_eq!(state.fighters[0].ground_velocity, 0.0);
+}
+
+#[test]
 fn a_fresh_b_press_repeats_the_loop_while_no_press_ends_it() {
     let mut game = Match::new(data(), 0).unwrap();
     game.step(input(0, press_b())).unwrap();

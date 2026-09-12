@@ -51,6 +51,52 @@ grace frame. Recorded here for whoever picks up that diagnosis next.
 Full citations, the difference table, and every test: `docs/falco.md`'s
 own "Falco's neutral special (Laser): now wired" section.
 
+The 2026-09-13 aerial-Blaster-entry velocity fix (the real-replay parity
+loop, `fox-bf.slp`, `docs/parity.md`) stops `game::characters::fox::
+neutral::update_actions` from zeroing velocity on an airborne Blaster
+press. `ftFx_SpecialN_Enter` (the grounded entry, `ftfoxspecialn.c:255-
+269`) zeros `gr_vel` and `self_vel.{x,y,z}` right after `Fighter_
+ChangeMotionState`/`ftFox_SpecialN_InitializeState`; `ftFx_SpecialAirN_
+Enter` (the aerial entry, `:274-284`), though, does not touch velocity at
+all -- only the motion-state change, the shared `InitializeState` (extra
+animation advance, `cmd_vars` reset) and the blaster-gun spawn. Before
+this fix, the port applied the ground entry's own unconditional `self_
+vel = 0` to both branches, so any airborne press (mid-jump, mid-fall)
+hard-stopped the fighter's existing drift instead of carrying it through
+untouched.
+
+Confirmed directly against `fox-bf.slp`: P4 full-hops, then presses B in
+the air at frame 14 (Slippi action state `344`, `SpecialAirNStart`); its
+own frame-to-frame `position.x` delta is a smooth, continuously-
+decelerating sequence both before and after this frame (`-0.8632`,
+`-0.8432`, `-0.8232`, `-0.8032`(sic, `-0.8031`), `-0.7832`, `-0.7632`,
+`-0.7432`...) -- the transition itself leaves no visible mark, meaning
+`self_vel.x` was never reset. Before this fix, the port's own computed
+`position.x` at frame 14 (`33.836673736572266`) was within noise of
+frame 13's own value (`33.8367...`), i.e. velocity had been zeroed and
+this frame's own displacement was near-nil, a `0.76`-unit gap from the
+recording's own smoothly-continuing `33.07349395751953`.
+
+**Tests**: `game_fox_neutral_special`'s new `aerial_entry_preserves_
+velocity_but_grounded_entry_zeros_it` drops a fighter for several frames
+to build up a known, nonzero falling velocity and its own per-frame
+gravity delta, then presses B in the air and confirms the post-transition
+velocity is exactly the pre-existing velocity plus one more frame's
+ordinary gravity -- not zeroed, halved, or otherwise overridden -- while
+a matching grounded press in the same test still zeros both `velocity`
+and `ground_velocity`, confirming the fix is scoped to the air branch
+only. `cargo fmt --check`, `cargo clippy --workspace --all-targets` and
+`cargo test --workspace` (both default and `c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10 (`/mnt/archive/
+datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-bf`): 149
+frames now match (`-123` through `25`), up from 137; `fox-bf-baseline.
+json` moves to reflect this. The new first divergence is frame 26,
+field `action_state` on P1 (expected `0x0018` = `KneeBend`, actual
+`0x004e` = `DamageN1`) -- P1 is hit by something Skirmish's own
+simulation does not expect at that frame, a separate, undiagnosed root
+cause not pursued further in this entry.
+
 The 2026-09-13 `fox-bf.slp` re-measurement against gameplay-export pack
 v10 (the real-replay parity loop, `docs/parity.md`) confirms the
 concurrent `fox-fd-4.slp` loop's EscapeAir entry-advance fix (this file's
