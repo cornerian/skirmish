@@ -1,5 +1,32 @@
 # Local validation provenance
 
+The 2026-09-11 ECB-load-flags batch (`docs/ecb-load-flags.md`) fixed two
+real, decomp-cited bugs: `game::collision::sample` was loading every
+`CollisionBox::Bones` ECB with one static resource flags value (0 in every
+pack) instead of the per-collision-path value the source passes to
+`mpColl_LoadECB_inline` (6 airborne, 5 grounded), and `game::collision::
+resolve`'s floor-contact branch always rested `position + ecb.current.
+bottom` on the floor instead of `position` alone when the raw (unanchored)
+ECB bottom samples above position (`mpColl_80046904`'s `ecb_unlocked`,
+forwarded to `mpColl_80044838_Floor`'s `ignore_bottom`). Both are cited and
+explained in full in `docs/ecb-load-flags.md`, including why bit 0x2 needed
+no sweep change (it belongs to an unrelated, already-correctly-ported
+parameter) and a known resource gap (a missing `move_id` blocks stepping
+pack v4's own recorded inputs past frame ~71, unrelated to this fix).
+`load_joints` itself (`collision/ecb.rs`) was already differential-tested
+against the oracle for every flags value 0..32, so no oracle adapter change
+was needed; two new synthetic integration tests
+(`tests/game_collision_bones.rs`) and a new real-recording regression
+(`crates/cli/tests/ecb_load_flags_v4.rs`, gated on pack v4's fixed archive
+path) were added. Measured against pack v4 directly: `checked_frames` went
+from (uncorrected) landing one frame early at -50, to 74 with only the
+`load_flags` fix (landing frame now matches, but at the wrong position), to
+93 with both fixes (the entry fall and its landing position now match the
+recording exactly); the next divergence (-30, `action_age` on a Dash->Turn
+transition) is a separate, unrelated subsystem, reported rather than
+chased. `docs/parity.md` records the same measurement against its own
+`SKIRMISH_GAMEPLAY_DATA`-gated ratchet.
+
 The 2026-09-11 ECB-timing investigation batch (`docs/ecb-timing.md`) fixed
 one real, decomp-cited bug: `ftCo_Fall_Enter`/`ftCommon_8007D5D4`'s ten-frame
 ECB bottom lock was applied on grounded-jump-launch, aerial-jump and

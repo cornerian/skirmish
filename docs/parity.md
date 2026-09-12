@@ -70,20 +70,61 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, gameplay export v4, private dataset
+**Current measurement (2026-09-11, gameplay export v4,
+`/mnt/archive/datasets/melee/skirmish-gameplay/v4-snapshot-20260911`, the
+ECB-load-flags batch, `docs/ecb-load-flags.md`):** 93 frames match
+(-123 through -31) and the first divergent frame is -30, field
+`action_age` (expected 1, actual 0, on P1's Dash -> Turn transition). This
+measurement used the v4 pack directly rather than `SKIRMISH_GAMEPLAY_DATA`
+(unset in ordinary CI; the ratchet below still applies once v4 or later is
+published there). The previous divergence (-50/-49, `action_state` Fall
+vs. Landing, described below) is fixed: `game::collision::sample` now
+passes `load_joints` the flags the decomp's own collision entry point uses
+per path (6 airborne, 5 grounded) instead of one static, always-0 resource
+field, and `game::collision::resolve`'s floor-contact branch now rests
+`position` itself on the floor (instead of `position + ecb.current.bottom`)
+whenever the raw airborne ECB bottom samples above position, matching
+`mpColl_80046904`'s `ecb_unlocked`/`ignore_bottom`. The entry fall
+(-52..-49) now matches the recording bit-for-bit, including the landing
+position (`0.0001`). The new divergence at -30 is a separate, unrelated
+subsystem (action/turn-state age tracking) and is reported rather than
+chased in this batch. A missing `move_id` in the v4 pack (unrelated to
+collision) blocks stepping this same match past frame ~71 through its own
+recorded inputs, which is why the jump landing at frames 418-421 could only
+be confirmed against the recording's own ground truth, not against
+Skirmish's simulated value there (`docs/ecb-load-flags.md`'s "Known gap").
+
+Previously (2026-09-11, gameplay export v4, private dataset
 `cornerian/skirmish-datapacks`, pinned by
-`tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 73 frames
+`tests/fixtures/slippi/parity/gameplay-export.lock.json`): 73 frames
 match (-123 through -51) and the first divergent frame is -50, field
 `action_state` (expected Fall, actual Landing). Pack v4 corrects the
 collision-box and hurtbox bones: the game indexes its joint array
 directly for those (`ft_081B.c:52-57`, `ftcoll.c:3231-3285`) and only
 routes hitbox bones through the parts table (`ftaction.c:315`), so Fox's
 collision box samples joints `[41, 55, 25, 13, 7, 4]`, not the root. The
-remaining frame is the loader's two-unit padding: the game's ordinary
+remaining frame was the loader's two-unit padding: the game's ordinary
 airborne and grounded loads pass flag bit 4 and skip it
 (`mpcoll.c:392-397`, entry points at 2741-2835 and 3999-4034), while
-Skirmish applies one static flag of zero; that is the next batch
-(`docs/ecb-load-flags.md`).
+Skirmish applied one static flag of zero; fixed above.
+
+Previously (2026-09-11, gameplay export v3, private dataset
+`cornerian/skirmish-datapacks`, pinned by
+`tests/fixtures/slippi/parity/gameplay-export.lock.json`): 72 frames
+match (-123 through -52) and the first divergent frame is -51, field
+`action_state` (expected Fall, actual Landing). The v3 pack is the complete
+Fox on Final Destination export: every fighter profile, the three Fox
+specials, per-frame poses for every movement state, and all rule sets.
+The divergence is not a data limitation: every landing in the recording
+(the entry fall at -52..-49, jump landings at 418-421, 739-742, 1344-1347,
+the Illusion landing at 654-657) shows the position 2.7 to 3.6 units
+below the floor for one airborne frame before Landing at 0.0001, so the
+game detects the floor one frame after the position crosses it, while
+Skirmish lands on the crossing frame. That ordering inside the airborne
+collision solver is the next batch (`docs/landing-order.md` when it
+lands). The ECB-timing batch's earlier conclusion that Fox's collision
+bottom equalling the position makes this unfixable is superseded by that
+evidence; its ten-frame ECB lock fix stands (`docs/ecb-timing.md`).
 
 Previously (2026-09-11, gameplay export v2, private dataset
 `cornerian/skirmish-datapacks`, pinned by
