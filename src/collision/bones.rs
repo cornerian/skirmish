@@ -13,7 +13,69 @@
 //! [`super::shield`].
 
 extern crate alloc;
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
+use core::cell::RefCell;
+
+/// Reusable scratch storage for [`Pose::evaluate`]'s topological walk
+/// (`scales`/`visited`/`path`) plus a pool of `world` buffers recycled when a
+/// [`Pose`] is dropped. Every call still runs the full topological
+/// resolution and produces exactly the same values as a fresh, unpooled
+/// evaluation -- this only recycles backing allocations across calls on the
+/// same thread, on a fixed-size (4-deep) best-effort pool; a deeper nesting
+/// or a cold thread simply allocates normally, same as before this existed.
+struct Scratch {
+    scales: Vec<Option<Vector>>,
+    visited: Vec<u8>,
+    path: Vec<usize>,
+}
+
+const POOL_DEPTH: usize = 4;
+
+std::thread_local! {
+    static SCRATCH_POOL: RefCell<Vec<Scratch>> = const { RefCell::new(Vec::new()) };
+    static WORLD_POOL: RefCell<Vec<Vec<Matrix>>> = const { RefCell::new(Vec::new()) };
+}
+
+fn take_scratch() -> Scratch {
+    SCRATCH_POOL
+        .with(|pool| pool.borrow_mut().pop())
+        .unwrap_or_else(|| Scratch {
+            scales: Vec::new(),
+            visited: Vec::new(),
+            path: Vec::new(),
+        })
+}
+
+fn return_scratch(mut scratch: Scratch) {
+    scratch.scales.clear();
+    scratch.visited.clear();
+    scratch.path.clear();
+    SCRATCH_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < POOL_DEPTH {
+            pool.push(scratch);
+        }
+    });
+}
+
+fn take_world(len: usize) -> Vec<Matrix> {
+    let mut world = WORLD_POOL
+        .with(|pool| pool.borrow_mut().pop())
+        .unwrap_or_default();
+    world.clear();
+    world.resize(len, IDENTITY);
+    world
+}
+
+fn return_world(mut world: Vec<Matrix>) {
+    world.clear();
+    WORLD_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < POOL_DEPTH {
+            pool.push(world);
+        }
+    });
+}
 
 pub type Vector = [f32; 3];
 pub type Matrix = [[f32; 4]; 3];
@@ -75,12 +137,19 @@ impl core::error::Error for BoneError {}
 
 impl Pose {
     /// Resolve any acyclic parent ordering, without recursive traversal. Every
-    /// call evaluates the supplied pose completely; there is no hidden frame cache.
+    /// call evaluates the supplied pose completely; there is no hidden frame
+    /// cache of *results* -- but the `world`/`scales`/`visited`/`path`
+    /// scratch buffers are recycled through a thread-local pool (see
+    /// `take_world`/`take_scratch` above) instead of freshly allocated each
+    /// call, so this produces bit-for-bit identical output to the original
+    /// always-allocate version, just with fewer `malloc`/`free` round trips.
     pub fn evaluate(bones: &[Bone]) -> Result<Self, BoneError> {
-        let mut world = vec![IDENTITY; bones.len()];
-        let mut scales: Vec<Option<Vector>> = vec![None; bones.len()];
-        let mut visited = vec![0_u8; bones.len()];
-        let mut path = Vec::new();
+        let mut world = take_world(bones.len());
+        let mut scratch = take_scratch();
+        scratch.scales.clear();
+        scratch.scales.resize(bones.len(), None);
+        scratch.visited.clear();
+        scratch.visited.resize(bones.len(), 0);
         for (i, bone) in bones.iter().enumerate() {
             if let Some(parent) = bone.parent
                 && parent >= bones.len()
@@ -101,23 +170,23 @@ impl Pose {
         for index in 0..bones.len() {
             let mut next = Some(index);
             while let Some(i) = next {
-                match visited[i] {
+                match scratch.visited[i] {
                     2 => break,
                     1 => return Err(BoneError::Cycle { bone: i }),
                     _ => {
-                        visited[i] = 1;
-                        path.push(i);
+                        scratch.visited[i] = 1;
+                        scratch.path.push(i);
                         next = bones[i].parent;
                     }
                 }
             }
-            while let Some(i) = path.pop() {
+            while let Some(i) = scratch.path.pop() {
                 let bone = bones[i];
-                let parent_scale = bone.parent.and_then(|parent| scales[parent]);
+                let parent_scale = bone.parent.and_then(|parent| scratch.scales[parent]);
                 if parent_scale.is_some_and(|scale| scale.contains(&0.0)) {
                     return Err(BoneError::SingularParentScale { bone: i });
                 }
-                scales[i] = if bone.classical_scale {
+                scratch.scales[i] = if bone.classical_scale {
                     parent_scale
                 } else {
                     Some(core::array::from_fn(|axis| {
@@ -129,13 +198,14 @@ impl Pose {
                     .parent
                     .map_or(local, |parent| concat(&world[parent], &local));
                 if !finite(&world[i])
-                    || scales[i].is_some_and(|scale| scale.iter().any(|x| !x.is_finite()))
+                    || scratch.scales[i].is_some_and(|scale| scale.iter().any(|x| !x.is_finite()))
                 {
                     return Err(BoneError::NonFiniteTransform { bone: i });
                 }
-                visited[i] = 2;
+                scratch.visited[i] = 2;
             }
         }
+        return_scratch(scratch);
         Ok(Self { world })
     }
 
@@ -163,6 +233,17 @@ impl Pose {
         self.world
             .get(bone)
             .ok_or(BoneError::BoneOutOfRange { bone })
+    }
+}
+
+impl Drop for Pose {
+    /// Return this pose's `world` buffer to the thread-local pool instead of
+    /// freeing it, so the next `Pose::evaluate` on this thread can reuse the
+    /// allocation. Purely a memory-reuse optimization: nothing observable
+    /// about `Pose` depends on `Drop` running (no other type holds a
+    /// reference into `world` past this point).
+    fn drop(&mut self) {
+        return_world(core::mem::take(&mut self.world));
     }
 }
 
