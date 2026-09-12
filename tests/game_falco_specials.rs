@@ -13,6 +13,15 @@
 //! dispatches to the shared move code at all, not a second bit-exact
 //! numeric check of Falco's own attributes (that is `real_parity_falco_
 //! fox_fd.rs`'s job, against the real exported pack and a real recording).
+//!
+//! `neutral` is Falco's own Laser, wired for the first time this batch
+//! (`docs/falco.md`): `fighters/falco.json` (gameplay export v10) carries
+//! his own `specials.neutral`, exporter-confirmed with real, and in one
+//! respect genuinely different, attributes/hitbox data from Fox's own (see
+//! `characters::fox::neutral::{Attributes,Laser}`'s doc comments).
+//! `tests/game_falco_neutral_special.rs` covers that move end to end; this
+//! file only confirms the wiring reaches it, matching this file's own
+//! existing side/up/down coverage style.
 
 #[path = "support/conformance.rs"]
 mod conformance;
@@ -46,9 +55,14 @@ struct EscapeAirFixture {
     parameters: EscapeAirParameters,
 }
 
-/// Both fighters play `Specials::Falco`, with all three shared moves (but
-/// no neutral: real Falco packs carry none yet, `Specials::Falco`'s own
-/// doc).
+#[derive(serde::Deserialize)]
+struct NeutralFixture {
+    parameters: fox::neutral::NeutralSpecial,
+}
+
+/// Both fighters play `Specials::Falco`, with all four moves now that
+/// Falco's own Laser is wired (`fighters/falco.json`'s own `specials.
+/// neutral`, gameplay export v10; see this file's own doc comment).
 fn data() -> MatchData {
     let mut data = conformance::data();
     let escape_air: EscapeAirFixture =
@@ -59,12 +73,14 @@ fn data() -> MatchData {
         serde_json::from_str(include_str!("fixtures/game/fox-up-special.json")).unwrap();
     let down: DownFixture =
         serde_json::from_str(include_str!("fixtures/game/fox-down-special.json")).unwrap();
+    let neutral: NeutralFixture =
+        serde_json::from_str(include_str!("fixtures/game/falco-neutral-special.json")).unwrap();
     data.rules.escape_air = Some(escape_air.rules);
     data.rules.specials = Some(side.rules);
     for fighter in &mut data.fighters {
         fighter.escape_air = Some(escape_air.parameters.clone());
         fighter.specials = Some(Specials::Falco {
-            neutral: None,
+            neutral: Some(neutral.parameters.clone()),
             side: Some(side.parameters.clone()),
             up: Some(up.parameters.clone()),
             down: Some(down.parameters.clone()),
@@ -130,12 +146,23 @@ fn falco_plays_the_shared_down_special() {
 }
 
 #[test]
-fn falco_has_no_neutral_special_wired_yet() {
+fn falco_plays_his_own_neutral_special() {
     let game = Match::new(data(), 0).unwrap();
     let Some(Specials::Falco { neutral, .. }) = game.data().fighters[0].specials.as_ref() else {
         panic!("test fixture is missing its Falco specials resource");
     };
-    assert!(neutral.is_none());
+    assert!(
+        neutral.is_some(),
+        "fighters/falco.json carries specials.neutral as of gameplay export v10"
+    );
+    let mut game = Match::new(data(), 0).unwrap();
+    // A centered-stick B press (`vertical(0.0)`: `BUTTON_B`, stick `[0.0,
+    // 0.0]`), matching this file's own `side`/`vertical` helper style; the
+    // side/up/down tests above each bias the stick toward their own move,
+    // so a plain neutral press is the one this file does not already have
+    // a named helper for.
+    let state = game.step(input(0, vertical(0.0))).unwrap();
+    assert_eq!(state.fighters[0].action, Action::SpecialNStart);
 }
 
 /// External Slippi character ids (`crates/cli/src/initialization.rs`'s

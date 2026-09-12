@@ -30,6 +30,18 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub enum ProjectileKind {
     FoxLaser,
+    /// Falco's own Laser (`It_Kind_Falco_Laser`, `melee/it/forward.h:182`,
+    /// the enum value immediately after `It_Kind_Fox_Laser`). A label only:
+    /// `melee/it/it_3F2F.c`'s own per-item logic table gives "Falco laser"
+    /// the byte-identical stanza "Fox laser" uses (same `it_803F67D0` state
+    /// table, same `itFoxLaser_Logic94_*` callbacks -- confirmed by
+    /// `tests/falco_laser_table_differential.rs`, not assumed), and there is
+    /// no `itfalcolaser.c` anywhere in the pinned decomp. Every function in
+    /// this file is already generic over `kind`; this variant exists purely
+    /// so observation/replay code can report which character's laser a
+    /// spawn was (matching a real recording's own distinct `FALCO_LASER`
+    /// vs. `FOX_LASER` Slippi item type), not to change any behavior here.
+    FalcoLaser,
 }
 
 /// One in-flight projectile. `hitboxes` are this instance's own fixed

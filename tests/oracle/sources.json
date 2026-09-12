@@ -473,5 +473,10 @@
   "fixture": "tests/oracle/original/it_26b1.c",
   "upstream": "src/melee/it/it_26B1.c",
   "sha256": "2ce51e2d8d40c31213605fe2735395632ceff5680a382de3c1abad8a171c62a3"
+},
+{
+  "fixture": "tests/oracle/original/it_3F2F.c",
+  "upstream": "src/melee/it/it_3F2F.c",
+  "sha256": "d7e9af9e7239db1b142becc6032ec13ecc64e95636afa97644c4edfdd2c80f0a"
  }
 ]

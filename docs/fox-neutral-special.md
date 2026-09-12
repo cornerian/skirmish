@@ -217,14 +217,18 @@ register the same frame it fires (`ftFox_SpecialN_CreateBlasterShot`'s own
 `cmd_vars[2] = 0`), which a naive per-frame overwrite of the exported,
 still-forward-filled value would immediately re-arm on the very next
 frame, causing a spurious re-fire every remaining frame of that Loop pass.
-`script` is `None` for Falco and any pre-batch fixture; every call site
-above falls back to this move's own older approximation in that case:
-Start hard-coded as never-armed, Loop's own repeat unconditionally
-armable by any fresh press mid-cycle, and the shot fired on Loop's own
-entry frame rather than its scripted one. Neither approximation is a
-guess -- both reproduce the real cadence and per-cycle shot count -- but
-neither claims the exact scripted frame the way `script`, once supplied,
-now does.
+`script` was `None` for Falco through gameplay export v9; as of v10
+(2026-09-13, `docs/falco.md`'s own "Falco's neutral special (Laser): now
+wired") `fighters/falco.json` carries its own `specials.neutral.script` in
+the identical shape, and `Specials::Falco.neutral` now supplies it the same
+way Fox's own does. `script` remains `None` for any older, not-yet-
+re-exported fixture; every call site above falls back to this move's own
+older approximation in that case: Start hard-coded as never-armed, Loop's
+own repeat unconditionally armable by any fresh press mid-cycle, and the
+shot fired on Loop's own entry frame rather than its scripted one. Neither
+approximation is a guess -- both reproduce the real cadence and per-cycle
+shot count -- but neither claims the exact scripted frame the way `script`,
+once supplied, now does.
 
 Exporter's decoded values (supersedes the invented placeholders below)
 ---------------------------------------------------------------------------
@@ -238,10 +242,15 @@ The exporter read the disc directly and reports (full citations in its own
   0.0` rad, `velocity = 7.0` (matches this batch's own real-recording
   cross-check above exactly), `landing_lag = 0.0` (so Fox's own End-air
   natural-clip-end exit *always* takes the `ftCo_Fall_Enter` branch, never
-  `FallSpecial`, for Fox specifically -- Falco's own attributes are not
-  yet exported and may differ), `shot_item_kind = 54` (`It_Kind_Fox_
-  Laser`, a data label with no gameplay effect in an engine with only one
-  projectile kind modeled).
+  `FallSpecial`, for Fox specifically), `shot_item_kind = 54` (`It_Kind_Fox_
+  Laser`, a data label with no gameplay effect: `game::projectile` is
+  already generic over which item kind spawned it, and `ProjectileKind`'s
+  own `FoxLaser`/`FalcoLaser` variants exist purely for observation
+  labeling, not dispatch -- see `docs/falco.md`'s own "one C item, not two"
+  section). Falco's own Blaster attributes were exported as of gameplay
+  export v10 and are genuinely different in two of these three fields
+  (`speed = 5.0`, slower; `angle`/`landing_lag` both still `0.0`) -- full
+  citation in `docs/falco.md`.
 - **`FoxLaserAttr`** (ten floats, reached from `ftDataFox.x48_items[0]`
   inside `PlFx.dat`, *not* `ItCo.dat` as this batch had guessed):
   `[35, 3, 0, 0, 0, 0, 0, 0, 0, 1]`. `+0` lifetime `35` (confirmed, matches
@@ -825,6 +834,18 @@ not threaded through the projectile system, so this is exact for static
 geometry and a documented simplification for a platform that moved on the
 exact frame a laser crosses it.
 
+The 2026-09-13 Falco Laser batch adds a third oracle file,
+`tests/falco_laser_table_differential.rs`: `melee/it/it_3F2F.c`'s own
+per-item logic table (newly pinned whole, `tests/oracle/original/
+it_3F2F.c`) gives `It_Kind_Fox_Laser`/`It_Kind_Falco_Laser` byte-identical
+stanzas -- there is no separate `itfalcolaser.c` anywhere in the pinned
+decomp, confirmed by extracting and comparing both stanzas verbatim from
+the pinned snapshot, not merely asserted in prose -- plus a known-values
+check that the already-pinned generic spawn function reproduces Falco's own
+exported attributes exactly. Full citations and the real-recording cross-
+check for Falco specifically: `docs/falco.md`'s own "Falco's neutral
+special (Laser): now wired" section.
+
 ## Tests
 
 `tests/game_fox_neutral_special.rs` (a fresh file, replacing rather than
@@ -867,11 +888,14 @@ of a real recording's own observed multi-frame flight.
   arming and fire timing" above), confirmed for Fox's own ground and air
   Loop clips against a real recording's own `state_age` at the laser's
   spawn frame (`tests/fixtures/slippi/parity/fox-fd-3.slp`, five
-  independent instances, all exactly `5.0`). `script` is `None` for Falco
-  and any fixture the exporter has not been re-run against yet; those
-  still fall back to the older approximation ("Loop's own entry frame" and
-  "true throughout Loop, false throughout Start" respectively), which
-  remains reachable code, not deleted.
+  independent instances, all exactly `5.0`). As of gameplay export v10,
+  Falco's own `fighters/falco.json` carries `specials.neutral.script` too
+  (`docs/falco.md`), not independently cross-checked against a real
+  Falco recording's own `state_age` the way Fox's was (see that doc's own
+  "Known gaps"); `script` remains `None` for any fixture the exporter has
+  not been re-run against, which still falls back to the older
+  approximation ("Loop's own entry frame" and "true throughout Loop, false
+  throughout Start" respectively), remaining reachable code, not deleted.
 - Two of this project's four `fox-fd`-pairing real recordings
   (`fox-fd-2.slp`, `fox-fd-4.slp`) predate Slippi's own item-event support
   entirely (format `2.0.1`; item events were added later) and record zero

@@ -1,5 +1,56 @@
 # Local validation provenance
 
+The 2026-09-13 Falco Laser batch wires `Specials::Falco.neutral` (gameplay
+export v10's `fighters/falco.json` carries it for the first time, same
+schema as Fox's own `characters::fox::neutral::NeutralSpecial`). The task
+brief for this batch expected a distinct `itfalcolaser.c`, by analogy with
+the side special's own Fox/Falco ghost item; reading the pinned decomp
+disproves this: `melee/it/it_3F2F.c`'s own per-item-kind logic table gives
+`It_Kind_Fox_Laser`/`It_Kind_Falco_Laser` byte-identical stanzas (same
+`it_803F67D0` state table, same seven `itFoxLaser_Logic94_*` callbacks),
+and no `itfalcolaser.c` exists anywhere in `src/melee`. Falco's laser is
+the same C item as Fox's, spawned with a different `Item_Kind` constant
+purely to reach his own `Article` data and a cosmetic SFX pick
+(`ftFx_SpecialN_FireBlasterShot`'s only `FTKIND_FALCO` branch); this is now
+a pinned, automated finding, not prose: `tests/
+falco_laser_table_differential.rs` extracts both stanzas from a newly
+pinned whole-file snapshot (`tests/oracle/original/it_3F2F.c`,
+`sources.json`) and asserts they match verbatim, plus a `c-oracle`-gated
+known-values check that the already-pinned generic laser-spawn function
+reproduces Falco's own exported attributes exactly. `game::projectile::
+ProjectileKind` gains a `FalcoLaser` variant purely as an observation
+label (`characters::fox::neutral::drain_pending_shot` now checks the
+firing fighter's own `Specials` variant); every function in `game::
+projectile` was already generic over `kind` and needed no change.
+
+Falco's own laser data is genuinely different from Fox's in exactly the
+fields the existing resource shape already has: slower (`speed = 5.0` vs.
+`7.0`), a much longer lifetime (`100` vs. `35` frames), and -- the one real
+gameplay difference -- nonzero knockback (`growth: 100, fixed: 5` on all
+four hitboxes, vs. Fox's all-zero), matching Melee community knowledge
+that Falco's laser flinches harder than Fox's pure-flinch shot; the fourth
+hitbox is also a uniform size/reach rather than Fox's own widened one.
+Cross-checked against a real recording independent of the exporter
+(`19_39_37 Falco + Fox (DL).slp`, Slippi `3.9.0`, `slippi-public-dataset-
+v3.7/data/FALCO/batch_00`, py-slippi in a scratch `uv venv`): 16 `FALCO_
+LASER` (`sid.Item.FALCO_LASER == 55`) spawn instances all confirm speed
+`5.0`, plain `position += velocity` motion, and a `100`-frame lifetime
+(first-observed `timer == 99.0`, decrementing by exactly `1.0`); one
+instance reproduces the same oblique-velocity "laser angling" open
+question `docs/fox-neutral-special.md` already flagged for Fox, now
+confirmed character-independent. That same instance also surfaces a
+discrepancy for the concurrent laser-hit-registration diagnosis in `src/
+game/projectile.rs` (not fixed by this batch, per its own narrower scope):
+`itfoxlaser.c:98-107`'s own terrain-collision branch
+(`itFoxlaser_UnkMotion1_Coll`) sets the item's remaining lifetime to
+exactly one frame and restores its pre-collision position rather than
+despawning immediately, so a terrain-hit laser is observably still present
+for one more frame in a real recording; `game::projectile::step` currently
+despawns on the same frame it detects a terrain-line contact, with no such
+grace frame. Recorded here for whoever picks up that diagnosis next.
+Full citations, the difference table, and every test: `docs/falco.md`'s
+own "Falco's neutral special (Laser): now wired" section.
+
 The 2026-09-12 EscapeAir entry-advance fix (the real-replay parity loop
 on `fox-fd-4.slp`, `docs/parity.md`) covers another sibling instance of
 the entry-advance bug: `ftCo_80099A9C` (the air dodge's entry, reached

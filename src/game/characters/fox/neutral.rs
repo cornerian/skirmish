@@ -50,10 +50,12 @@ pub struct NeutralSpecial {
     pub laser: Laser,
     /// `specials.neutral.script` (exporter): the Start/Loop/End subaction
     /// scripts' own per-frame `SetCmdVar` trace, decoded straight from
-    /// `ftaction.c`'s opcode 19 stream. `None` for Falco/pre-batch fixtures
-    /// (the exporter has not supplied it yet); every reader below falls
-    /// back to this move's own pre-existing approximation in that case --
-    /// see the call sites and module doc. Boxed: `Specials` is an enum over
+    /// `ftaction.c`'s opcode 19 stream. Exported for Falco too as of gameplay
+    /// export v10 (`fighters/falco.json`'s own `specials.neutral.script`,
+    /// the same shape as Fox's); `None` remains the fallback for any older,
+    /// not-yet-re-exported fixture -- every reader below falls back to this
+    /// move's own pre-existing approximation in that case -- see the call
+    /// sites and module doc. Boxed: `Specials` is an enum over
     /// every character's own full moveset, so its size is its largest
     /// variant's; this field's own per-frame vectors are heap data already,
     /// but the surrounding `NeutralScript`/`ScriptPhase` structs are plain
@@ -81,16 +83,21 @@ pub struct NeutralScript {
 #[serde(deny_unknown_fields)]
 pub struct Attributes {
     /// `x10_FOX_BLASTER_ANGLE`, radians, mirrored across facing
-    /// (`ftFox_SpecialN_PrepareBlasterShot`). Exporter-confirmed `0.0`.
+    /// (`ftFox_SpecialN_PrepareBlasterShot`). Exporter-confirmed `0.0` for
+    /// Fox; also `0.0` for Falco (`fighters/falco.json`'s own
+    /// `specials.neutral.attributes.angle`, gameplay export v10).
     pub angle: f32,
-    /// `x14_FOX_BLASTER_VEL`. Exporter- and real-recording-confirmed `7.0`.
+    /// `x14_FOX_BLASTER_VEL`. Exporter- and real-recording-confirmed `7.0`
+    /// for Fox; Falco's own is a genuinely different, slower value, `5.0`
+    /// (`fighters/falco.json`, matching Melee community knowledge that
+    /// Falco's laser travels slower than Fox's).
     pub speed: f32,
     /// `x18_FOX_BLASTER_LANDING_LAG`: End-air's own natural-clip-end
     /// exit only (exporter-confirmed `0.0` for Fox, so this always takes
     /// the `ftCo_Fall_Enter` branch, never `FallSpecial`); unrelated to a
     /// mid-flight ground contact, which always uses the generic
-    /// `Action::Landing` fallback (see module doc). Falco's own value is
-    /// not yet exported and may differ.
+    /// `Action::Landing` fallback (see module doc). Also `0.0` for Falco
+    /// (`fighters/falco.json`): the same branch applies to both.
     pub landing_lag: f32,
 }
 
@@ -98,8 +105,14 @@ pub struct Attributes {
 #[serde(deny_unknown_fields)]
 pub struct Laser {
     /// `FoxLaserAttr.lifetime` (`+0`). Exporter- and real-recording-
-    /// confirmed `35.0` frames. `+4` (`max_scale`, exporter-confirmed
-    /// `3.0`) is a visual beam-length clamp consumed only by
+    /// confirmed `35.0` frames for Fox. Falco's own laser lives much
+    /// longer, `100.0` frames (`fighters/falco.json`'s own
+    /// `specials.neutral.laser.lifetime`, gameplay export v10; not yet
+    /// independently cross-checked against a real Falco recording's own
+    /// item-frame `expiration_timer` the way Fox's `35.0` was -- see
+    /// `docs/falco.md`'s own real-recording section for what this batch
+    /// could and could not confirm). `+4` (`max_scale`, exporter-confirmed
+    /// `3.0` for Fox) is a visual beam-length clamp consumed only by
     /// `Item_UpdateRayAnimation`, not gameplay, and is deliberately not
     /// modeled here (GFX-only, matching this project's existing
     /// precedent for such fields).
@@ -113,16 +126,30 @@ pub struct Laser {
     /// see `game::projectile`). `group`/`clank`/`rebound`/`element` are
     /// also unused (defaults). Exporter-confirmed, every hitbox: damage
     /// `3`, angle `361` (Sakurai angle, already handled generically by
-    /// `fighter::damage`), growth/fixed/base `0` (zero knockback is real
-    /// -- a laser flinches without pushing), shield damage `0`; offsets/
-    /// sizes (`0.003906`-scaled raw integers, not `1/256`): id 0
-    /// `x = -0.7812` size `1.1718`, id 1 `x = -3.6442978` size `1.1718`,
-    /// id 2 `x = -6.5073957` size `1.1718`, id 3 `x = -14.0616` size
-    /// `1.5624` (all `y = z = 0`). The item's own per-victim re-hit
-    /// cooldown (previously mis-hypothesized here as a "hitlag
-    /// multiplier", exporter-confirmed value `16`) is irrelevant: this
-    /// port's laser always despawns after its first hit (no piercing), so
-    /// no re-hit can ever occur, and is not modeled.
+    /// `fighter::damage`), shield damage `0`; offsets/sizes
+    /// (`0.003906`-scaled raw integers, not `1/256`).
+    ///
+    /// Fox: growth/fixed/base `0` (zero knockback is real -- a laser
+    /// flinches without pushing); id 0 `x = -0.7812` size `1.1718`, id 1
+    /// `x = -3.6442978` size `1.1718`, id 2 `x = -6.5073957` size `1.1718`,
+    /// id 3 `x = -14.0616` size `1.5624` (all `y = z = 0`).
+    ///
+    /// Falco: a genuine, exporter-confirmed gameplay difference, not a
+    /// simplification -- growth `100`, fixed `5`, base `0` (**nonzero
+    /// knockback**, so unlike Fox's laser, Falco's own causes real hitstun
+    /// through the ordinary `fighter::damage` pipeline, matching Melee
+    /// community knowledge that Falco's laser flinches its target
+    /// noticeably harder than Fox's own); the same four-hitbox stagger, but
+    /// a shorter reach and uniform size: id 0 `x = -0.7812` size `1.1718`,
+    /// id 1 `x = -3.6442978` size `1.1718`, id 2 `x = -6.5073957` size
+    /// `1.1718`, id 3 `x = -9.3744` size `1.1718` (no widened, longer-reach
+    /// fourth hitbox the way Fox's own `-14.0616`/`1.5624` id 3 has).
+    ///
+    /// The item's own per-victim re-hit cooldown (previously
+    /// mis-hypothesized here as a "hitlag multiplier", exporter-confirmed
+    /// value `16` for Fox) is irrelevant: this port's laser always despawns
+    /// after its first hit (no piercing), so no re-hit can ever occur, and
+    /// is not modeled.
     pub hitboxes: Vec<Hitbox>,
     /// `FtMoveId_SpecialN` (`ft/forward.h`, confirmed `18` by counting
     /// declaration order from `FtMoveId_None == 0`).
@@ -568,8 +595,18 @@ pub(crate) fn drain_pending_shot(
     } else {
         core::f32::consts::PI - parameters.attributes.angle
     };
+    // `ftFox_SpecialN_FireBlasterShot`'s only `FTKIND_FALCO` branch picks a
+    // cosmetic SFX pair (`falcoSFX`, unmodeled, matching this move's own
+    // established cosmetic-difference precedent); the fired item itself is
+    // the exact same C code either way (`tests/
+    // falco_laser_table_differential.rs`). This label carries no gameplay
+    // effect of its own -- see `ProjectileKind::FalcoLaser`'s own doc.
+    let kind = match data.specials.as_ref() {
+        Some(super::super::Specials::Falco { .. }) => ProjectileKind::FalcoLaser,
+        _ => ProjectileKind::FoxLaser,
+    };
     Some(projectile::spawn(
-        ProjectileKind::FoxLaser,
+        kind,
         player,
         position,
         angle,
