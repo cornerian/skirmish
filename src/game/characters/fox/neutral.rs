@@ -71,21 +71,25 @@ pub struct Laser {
     /// modeled here (GFX-only, matching this project's existing
     /// precedent for such fields).
     pub lifetime: f32,
-    /// The laser's own fixed hitboxes: exporter-confirmed **two** capsules
-    /// (`it_803F67D0` state 0's own command stream), both `bone: 0`
-    /// (meaningless for a projectile; `center` is instead this port's own
-    /// item-local offset from the projectile's current position, mirrored
-    /// by facing like everything else ray-shaped -- see
-    /// `game::projectile`). `group`/`clank`/`rebound`/`element` are also
-    /// unused (defaults). Exporter-confirmed: damage `3`, angle `361`
-    /// (Sakurai angle, already handled generically by `fighter::damage`),
-    /// growth/fixed/base `0` (zero knockback is real -- a laser flinches
-    /// without pushing), shield damage `0`, size `1.171875`, offsets
-    /// `x = -0.78125` / `x = -3.644531` (`y = z = 0`). The item's own
-    /// per-victim re-hit cooldown (previously mis-hypothesized here as a
-    /// "hitlag multiplier") is irrelevant: this port's laser always
-    /// despawns after its first hit (no piercing), so no re-hit can ever
-    /// occur, and is not modeled.
+    /// The laser's own fixed hitboxes: exporter-confirmed **four**
+    /// capsules (`it_803F67D0` state 0's own command stream, staggered
+    /// along the item's local `-X` axis to cover the growing beam), all
+    /// `bone: 0` (meaningless for a projectile; `center` is instead this
+    /// port's own item-local offset from the projectile's current
+    /// position, mirrored by facing like everything else ray-shaped --
+    /// see `game::projectile`). `group`/`clank`/`rebound`/`element` are
+    /// also unused (defaults). Exporter-confirmed, every hitbox: damage
+    /// `3`, angle `361` (Sakurai angle, already handled generically by
+    /// `fighter::damage`), growth/fixed/base `0` (zero knockback is real
+    /// -- a laser flinches without pushing), shield damage `0`; offsets/
+    /// sizes (`0.003906`-scaled raw integers, not `1/256`): id 0
+    /// `x = -0.7812` size `1.1718`, id 1 `x = -3.6442978` size `1.1718`,
+    /// id 2 `x = -6.5073957` size `1.1718`, id 3 `x = -14.0616` size
+    /// `1.5624` (all `y = z = 0`). The item's own per-victim re-hit
+    /// cooldown (previously mis-hypothesized here as a "hitlag
+    /// multiplier", exporter-confirmed value `16`) is irrelevant: this
+    /// port's laser always despawns after its first hit (no piercing), so
+    /// no re-hit can ever occur, and is not modeled.
     pub hitboxes: Vec<Hitbox>,
     /// `FtMoveId_SpecialN` (`ft/forward.h`, confirmed `18` by counting
     /// declaration order from `FtMoveId_None == 0`).

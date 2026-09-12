@@ -294,6 +294,7 @@ fn step(
     {
         let facing = state.projectiles[index].facing;
         let position = state.projectiles[index].position;
+        let mut connected = false;
         'hitboxes: for hit in state.projectiles[index].hitboxes.clone() {
             let offset = [
                 position[0] + hit.center[0] * facing,
@@ -382,16 +383,12 @@ fn step(
                             .record(staled.identity, false);
                     }
                     state.events.push(Event::ProjectileHit { owner, victim });
+                    connected = true;
                     break 'hitboxes;
                 }
             }
         }
-        if !state.projectiles[index].hitboxes.is_empty()
-            && state
-                .events
-                .iter()
-                .any(|e| matches!(e, Event::ProjectileHit { owner: o, victim: v } if *o == owner && *v == victim))
-        {
+        if connected {
             return Ok(Outcome::Despawn);
         }
     }
