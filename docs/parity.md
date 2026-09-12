@@ -645,6 +645,32 @@ reporting the recording's own `state_age = 1.0`) and against `fox-fd.slp`
 `1.0` on their own entry frame). The new divergence at -25 is a separate,
 unrelated matter (above), reported rather than chased in this batch.
 
+## A first Battlefield recording: `fox-bf.slp`
+
+The first recording on a stage other than Final Destination,
+`tests/fixtures/slippi/parity/fox-bf.slp` (`18_21_03 Fox + Fox (BF).slp`,
+same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus, `batch_00`,
+Slippi 2.0.1, ports P1/P4), is folded into the shared
+`tests/fixtures/slippi/parity/recordings.json` ratchet (its own
+`fox-bf-baseline.json`) under a new `fox-bf` pairing (`/mnt/archive/
+datasets/melee/skirmish-gameplay/v2/fox-bf`), the first Battlefield
+`match-data.json` export: platforms at world y 27.2 (side) and 54.4 (top),
+main platform edges at +/-68.4, and both players' two-player spawns at
+(+/-38.8, 35.2). This pairing exercises platform landing/drop-through
+(`ftCo_Pass`) and platform-adjacent ledge/teeter logic Final Destination
+never did.
+
+**Initial measurement (2026-09-12, gameplay export v2, measured directly
+against the live pack -- this pairing has no `SKIRMISH_GAMEPLAY_DATA`
+snapshot yet):** already benefiting from origin/main's own Walk entry-time
+fix (`game::locomotion::enter_walk`'s `start_frame + 1.0`, the same batch
+this loop independently rediscovered on this exact recording -- P4's own
+Landing->Walk transition at frame -31 -- before finding it already fixed
+upstream), 95 frames matched (-123 through -29) and the first divergent
+frame was -28, field `action_age` on P4 (expected `0xbf800000` = `-1.0`,
+actual `0x00000000` = `0.0`), on P4's own one-frame `GuardOn` shield-drop
+entry (immediately into `Pass` the next frame).
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

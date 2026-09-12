@@ -257,6 +257,51 @@
         "timeline": "last_recorded",
         "end_method": "Game"
       }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/18_21_03 Fox + Fox (BF).slp",
+      "file": "fox-bf.slp",
+      "bytes": 2283450,
+      "sha256": "d31e1942bba29f93c4587f8d12c62bfe3ea9e05aaf045d21d27a6db1baafcc1c",
+      "version": "2.0.1",
+      "stage_id": 31,
+      "stage": "battlefield",
+      "players": [
+        {
+          "port": "P1",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 3678804949,
+      "first_frame": -123,
+      "last_frame": 9716,
+      "physical_frames": 9840,
+      "pairing": "fox-bf",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "d31e1942bba29f93c4587f8d12c62bfe3ea9e05aaf045d21d27a6db1baafcc1c",
+        "bytes": 2283450,
+        "version": [2, 0, 1],
+        "stage": 31,
+        "ports": ["P1", "P4"],
+        "physical_frames": 9840,
+        "surviving_frames": 9840,
+        "discarded_frames": 0,
+        "selected_frames": 9840,
+        "first_frame": -123,
+        "last_frame": 9716,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
     }
   ]
 }

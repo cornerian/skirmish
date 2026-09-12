@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -28,
+  "checked_frames": 95,
+  "export_version": "v2",
+  "updated": "2026-09-12",
+  "note": "Initial measurement establishing the ratchet for fox-bf.slp (2026-09-12, /mnt/archive/datasets/melee/skirmish-gameplay/v2/fox-bf, a Fox-vs-Fox Battlefield pairing with its own match-data.json; the first non-Final-Destination stage in this ratchet). Measured directly against the live pack (fox-bf is not yet in a published SKIRMISH_GAMEPLAY_DATA snapshot). Frames -123..-29 match (95 frames), already benefiting from origin/main's own Walk entry-time fix (game::locomotion::enter_walk's start_frame + 1.0, the same batch this loop independently rediscovered on this recording before finding it already fixed upstream: P4's Landing->Walk transition at -31 already reported the correct state_age = 1.0 once rebased). The first divergence is at frame -28, field action_age on P4 (expected 0xbf800000 = -1.0, actual 0x00000000 = 0.0), on P4's own one-frame GuardOn shield-drop entry (immediately into Pass the next frame). Not yet diagnosed at this baseline."
+}
