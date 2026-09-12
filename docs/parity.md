@@ -515,22 +515,55 @@ exercises Falco's own registration (`game::characters::Specials::Falco`,
 `docs/falco.md`) end to end: `make-initialization` accepting that pack, and
 Falco's external Slippi id (20) resolving through the shared Fox move table.
 
-**Current measurement (2026-09-12, gameplay export v2, the Falco
-registration batch):** 93 frames match (-123 through -31, the pre-game
-Entry warp-in) and the first divergent frame is -30, field `action_age`
-(expected `1.0`, actual `0.0`, for P4/Fox).
+**Current measurement (2026-09-12, gameplay export v2, the real-replay
+parity loop's Walk entry-time fix, measured directly against the live pack
+-- this pairing has no `SKIRMISH_GAMEPLAY_DATA` snapshot yet):** 98 frames
+match (-123 through -26) and the first divergent frame is -25, field
+`position.x` (expected `0xc26121ec` = `-56.28312683105469`, actual
+`0xc26121eb` = `-56.28312301635742`, a 1-ULP difference, for P3/Falco).
 
-**Diagnosis (not chased further in this batch):** both fighters' own
-`entry.start_frames` are 11 (identical), and `rules.entry`'s `start_frames`/
-`end_frames` (30/30) match `fox-fd`'s own already-passing pairing, so this
-is not an obvious Falco-data mismatch. It is also not simply a
-non-P1-seating artifact: `real_parity_fox_fd_4.rs`'s own P2/P4 pairing
-matches all the way through frame 4. The most likely remaining explanation
-is a pre-existing Entry/`action_age` edge case that this batch's recording
-happens to be the first to exercise (the first mixed-character pairing
-measured this way; every previously tested recording is a same-character
-mirror match) -- but that is a hypothesis, not a diagnosis, and is reported
-here rather than fixed.
+**Diagnosis (a suspected cross-platform floating-point limitation, not a
+Skirmish logic bug -- reported per this loop's own stop condition):** P3
+(Falco) enters Dash at frame -27 and is still in Dash at -25 (`action_age`
+3.0, matching); the diverging field is `position.x` alone, moved by
+`ftCo_Dash_Phys`'s ordinary friction/acceleration step
+(`getAccelAndTarget`/`ftCommon_8007C98C`, `fighter::locomotion::
+accelerate`/`Movement::accelerate_ground`). Tracing the exact bit patterns
+the native simulation itself produces (a temporary debug trace, not
+committed) through frames -27..-25 and replaying each step against
+`tests/physics_differential.rs`'s existing c-oracle harness (a temporary,
+uncommitted probe, not a new permanent test) shows every step already
+agrees with the host-compiled decomp C bit-for-bit on these exact inputs:
+the entry's own initial-velocity delta, frame -26's `accelerate_ground`
+call (`gr_vel=1.9` in, `0x3fe8f5c2` out, host C agrees), and frame -25's own
+call (`gr_vel=0x3fe8f5c2` in, host C agrees with Rust's result too). With
+the complete translated arithmetic chain confirmed bit-identical to
+decomp's own C on this exact sequence, the remaining 1-ULP gap against the
+real GameCube recording is not explained by a Skirmish translation bug;
+the most likely remaining explanation is the PowerPC Gekko/Broadway FPU's
+own rounding behavior on this multiply/add sequence differing from strict
+host IEEE-754 by one ULP, the same category (if a different mechanism) as
+`fox-fd.slp`'s own frame-5 `position.x` entry below (there attributed to
+`libm`'s trig not matching the GameCube SDK bit-for-bit). Not chased
+further in this batch.
+
+Previously (2026-09-12, gameplay export v2, the Falco registration batch):
+93 frames matched (-123 through -31, the pre-game Entry warp-in) and the
+first divergent frame was -30, field `action_age` (expected `1.0`, actual
+`0.0`, for P4/Fox). Fixed: `game::locomotion::enter_walk` (`ftCo_
+Walk_Enter`/`ftWalkCommon_800DFCA4`, `ftwalkcommon.c:71-92`) makes the same
+extra, explicit `ftAnim_8006EBA4` call `ftCo_Dash_Enter`/`ftCo_Turn_Enter`
+already modeled (`game::locomotion::start_dash`/`start_turn`, the Dash/Turn
+entry-time consolidation above), so Walk's own tracked animation frame is
+`start_frame + 1.0`, not `start_frame`, on every entry -- both a fresh
+Wait/tilt -> Walk transition and a mid-walk kind retype, since
+`ftWalkCommon_800DFEC8`'s own re-entry routes through the identical
+`ftCo_Walk_Enter` call. Confirmed directly against this recording (P4/Fox's
+Landing->Walk transition at frame -30, the actual divergence here, now
+reporting the recording's own `state_age = 1.0`) and against `fox-fd.slp`
+(11 further Walk entries from Wait/Turn/RunBrake/Landing/Squat, all already
+`1.0` on their own entry frame). The new divergence at -25 is a separate,
+unrelated matter (above), reported rather than chased in this batch.
 
 ## Practical consequence
 

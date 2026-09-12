@@ -38,11 +38,17 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   ...)` runs with `anim_start` = the caller's own start frame -- 0 from
   `ftCo_Walk_CheckInput`/`_Ottotto` (a fresh Wait/tilt -> Walk transition),
   or the remapped frame from `ftWalkCommon_800DFEC8`'s own re-entry (below).
-  `ftAnim_8006EBA4` (no script effects modeled) and the three figatree
-  lengths/rates are recorded but otherwise unused by this port beyond the
-  animation phase below. `fighter::locomotion::walk_kind` is the pure
-  arithmetic; `game::locomotion::enter_walk` is the wiring, called both for a
-  fresh entry (`start_frame = 0.0`) and from `retype_walk`.
+  `ftWalkCommon_800DFCA4` then makes an extra, explicit `ftAnim_8006EBA4`
+  call immediately afterwards, the same second advance `ftCo_Dash_Enter`/
+  `ftCo_Turn_Enter` make (`game::locomotion::start_dash`/`start_turn`'s own
+  doc comments) -- `cur_anim_frame` is `anim_start + 1.0` from this frame on,
+  not `anim_start`, confirmed directly against `falco-fox-fd.slp` and
+  `fox-fd.slp` (27 real Walk entries between them, every one already
+  reporting `state_age = 1.0` on its own entry frame, `docs/parity.md`).
+  `fighter::locomotion::walk_kind` is the pure arithmetic;
+  `game::locomotion::enter_walk` is the wiring, called both for a fresh entry
+  (`start_frame = 0.0`) and from `retype_walk`, storing `start_frame + 1.0`
+  in either case since both route through this same extra advance.
 - **Animation phase** (`ftCo_Walk_Anim` -> `ftWalkCommon_800DFDDC`, every
   Walk frame): with `v = gr_vel` (or the entry-recorded `mv.co.walk.x0` when
   the stage friction multiplier is below 1 -- this codebase's own caller
@@ -142,7 +148,10 @@ frame exactly at the length.
 
 `tests/game_walk.rs` builds on the existing locomotion fixture (like
 `tests/game_smash.rs`'s own builder) and covers: the kind at entry from Wait
-is Slow with frame 0 and `last_rate` 1.0; a full-stick walk ramp (kept below
+is Slow with frame 1 (`ftCo_Walk_Enter`/`ftWalkCommon_800DFCA4` makes the
+same extra, explicit `ftAnim_8006EBA4` call `ftCo_Dash_Enter`/`ftCo_Turn_
+Enter` do, confirmed against real recordings, `docs/parity.md`) and
+`last_rate` 1.0; a full-stick walk ramp (kept below
 the dash-magnitude threshold throughout, so no fresh dash ever preempts it)
 reaches Middle then Fast with `action_instance.id` unchanged and every
 observed remapped frame bit-exact against the pure helper; the animation

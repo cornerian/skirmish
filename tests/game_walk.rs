@@ -61,13 +61,20 @@ fn walk_pairs(game: &mut Match, stick: [f32; 2], frames: usize) -> Vec<(State, S
     pairs
 }
 
+/// `ftCo_Walk_Enter`/`ftWalkCommon_800DFCA4` (`enter_walk`'s own doc comment)
+/// makes the same extra, explicit `ftAnim_8006EBA4` call `ftCo_Dash_Enter`/
+/// `ftCo_Turn_Enter` do, so a fresh Wait->Walk transition's `cur_anim_frame`
+/// is `1.0`, not `0.0`, on its own entry frame -- confirmed directly against
+/// `falco-fox-fd.slp` (P4/Fox's Landing->Walk transition at frame -30,
+/// `docs/parity.md`) and `fox-fd.slp` (11 further Walk entries, every one
+/// already `1.0` on its own entry frame).
 #[test]
-fn walk_kind_at_entry_from_wait_is_slow_with_frame_zero() {
+fn walk_kind_at_entry_from_wait_is_slow_with_frame_one() {
     let mut game = game();
     let entered = step(&mut game, 0, [0.75, 0.0]);
     assert_eq!(entered.fighters[0].action, Action::Walk);
     assert_eq!(entered.fighters[0].locomotion.walk.kind, WalkKind::Slow);
-    assert_eq!(entered.fighters[0].locomotion.walk.frame, 0.0);
+    assert_eq!(entered.fighters[0].locomotion.walk.frame, 1.0);
     assert_eq!(entered.fighters[0].locomotion.walk.last_rate, 1.0);
 }
 
@@ -98,7 +105,12 @@ fn walk_ramp_reaches_middle_then_fast_with_a_stable_instance_id_and_bit_exact_re
                 intermediate -= prev_length;
             }
             let new_length = lengths[f.locomotion.walk.kind as usize];
-            let expected = walk_retype_frame(intermediate, prev_length, new_length) as f32;
+            // `enter_walk`'s own extra advance: the retype re-enters Walk
+            // through the identical `ftCo_Walk_Enter`/`ftWalkCommon_800DFCA4`
+            // path a fresh entry does (`ftWalkCommon_800DFEC8`'s own
+            // `arg_cb` is `ftCo_Walk_Enter` itself), so the remapped frame
+            // gets the same `+ 1.0` a fresh Wait->Walk entry does.
+            let expected = walk_retype_frame(intermediate, prev_length, new_length) as f32 + 1.0;
             assert_eq!(
                 f.locomotion.walk.frame.to_bits(),
                 expected.to_bits(),
@@ -295,6 +307,11 @@ fn invalid_walk_resources_are_rejected_without_constructing_a_match() {
     assert!(Match::new(inverted, 42).is_err());
 }
 
+/// Absent `walk_animation`, `update_animation`'s `Action::Walk` arm never
+/// calls `advance_walk_animation`, so `walk.frame` never moves past its
+/// entry value -- but `enter_walk`'s own `start_frame + 1.0` (the extra
+/// `ftAnim_8006EBA4` advance every Walk entry makes, resource or not) still
+/// applies at entry, so that fixed value is `1.0`, not `0.0`.
 #[test]
 fn without_the_resource_walk_keeps_a_single_kind_and_never_advances_the_float_frame() {
     let mut data: MatchData =
@@ -314,7 +331,7 @@ fn without_the_resource_walk_keeps_a_single_kind_and_never_advances_the_float_fr
         let state = step(&mut game, 0, [0.75, 0.0]);
         if state.fighters[0].action == Action::Walk {
             assert_eq!(state.fighters[0].locomotion.walk.kind, WalkKind::Slow);
-            assert_eq!(state.fighters[0].locomotion.walk.frame, 0.0);
+            assert_eq!(state.fighters[0].locomotion.walk.frame, 1.0);
         }
     }
 }

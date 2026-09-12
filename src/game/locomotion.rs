@@ -792,7 +792,27 @@ fn advance_walk_animation(f: &mut Fighter, animation: &WalkAnimation) {
 /// `ftCo_Walk_Enter`/`ftWalkCommon_800DFCA4` with `accel_mul = 1`: compute
 /// the walk kind from `|ground_velocity|` and (re-)enter Walk at
 /// `start_frame`. Used both by a fresh Wait/tilt -> Walk transition
-/// (`start_frame = 0`) and by `retype_walk`'s mid-walk re-entry.
+/// (`start_frame = 0`) and by `retype_walk`'s mid-walk re-entry (`start_
+/// frame` from `walk_retype_frame`).
+///
+/// `ftWalkCommon_800DFCA4` (`ftwalkcommon.c:71-92`) calls `Fighter_
+/// ChangeMotionState` (landing `cur_anim_frame` on `anim_start`, i.e. the
+/// caller's `start_frame` unadjusted) and then, like `ftCo_Dash_Enter`/
+/// `ftCo_Turn_Enter` (`start_dash`/`start_turn`'s own doc comments), makes
+/// an extra, explicit `ftAnim_8006EBA4(gobj)` call immediately afterwards --
+/// both `ftCo_Walk_Enter`'s own fresh-entry call (`ftCo_Walk.c:52-73`) and
+/// `ftWalkCommon_800DFEC8`'s retype re-entry (`ftwalkcommon.c:130-169`) route
+/// through this same function, so both get the identical extra advance.
+/// Modeled here at the source, the same way as Dash/Turn: `walk.frame` is
+/// `start_frame + 1.0` (not `start_frame`) from this frame on, so every
+/// later `walk.frame`-based read (the general `action_age` rule, `game::
+/// movement::pose`'s bone sampling, the next frame's own `advance_walk_
+/// animation`) already agrees with decomp's `cur_anim_frame` unadjusted.
+/// Confirmed directly against `falco-fox-fd.slp` and `fox-fd.slp`: every
+/// entry into Walk from a different action (27 occurrences across both
+/// recordings, including P4/Fox's Landing->Walk transition at frame -30 in
+/// `falco-fox-fd.slp`) already reports `state_age = 1.0` on its own entry
+/// frame, not `0.0`.
 fn enter_walk(
     f: &mut Fighter,
     data: &FighterData,
@@ -812,7 +832,7 @@ fn enter_walk(
     enter(f, Action::Walk);
     f.locomotion.walk = WalkState {
         kind,
-        frame: start_frame,
+        frame: start_frame + 1.0,
         last_rate: 1.0,
     };
 }
