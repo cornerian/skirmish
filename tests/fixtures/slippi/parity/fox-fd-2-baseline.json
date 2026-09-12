@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -31,
+  "checked_frames": 92,
+  "export_version": "v6",
+  "updated": "2026-09-11",
+  "note": "Initial measurement establishing the ratchet for fox-fd-2.slp (2026-09-11, gameplay export v6, v6-snapshot-20260911, same fox-fd pack as fox-fd.slp: a Fox-vs-Fox Final Destination match applies regardless of which two ports play it). Frames -123..-32 match (92 frames); the first divergence is at frame -31, field action_state on P1 (expected 0x0155/SpecialN i.e. Fox's neutral special (Blaster), actual 0x002a/Landing). Not yet diagnosed by this loop."
+}

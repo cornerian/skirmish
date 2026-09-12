@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -44,
+  "checked_frames": 79,
+  "export_version": "v6",
+  "updated": "2026-09-11",
+  "note": "Initial measurement establishing the ratchet for fox-fd-3.slp (2026-09-11, gameplay export v6, v6-snapshot-20260911, same fox-fd pack as fox-fd.slp: a Fox-vs-Fox Final Destination match applies regardless of which two ports play it). Frames -123..-45 match (79 frames); the first divergence is at frame -44, field velocities.self_y on P2 (expected -2.53, actual 0.0), a field this recording's newer Slippi version (3.9.0) reports that fox-fd.slp's 2.0.1 does not. Not yet diagnosed by this loop."
+}

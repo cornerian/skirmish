@@ -48,27 +48,58 @@ and `validate-replay`'s docs describe them the same way.
 
 `crates/cli/tests/real_parity.rs` compares the native match — initialized from
 an independently produced gameplay export via `make-initialization` — against
-[`tests/fixtures/slippi/parity/fox-fd.slp`](../tests/fixtures/slippi/parity/manifest.json),
-a real, human-played Fox-vs-Fox Final Destination recording from the CC0-1.0
-`erickfm/slippi-public-dataset-v3.7` corpus. Neither the replay nor the
+each recording listed in
+[`tests/fixtures/slippi/parity/recordings.json`](../tests/fixtures/slippi/parity/recordings.json):
+real, human-played Fox-vs-Fox Final Destination recordings from the CC0-1.0
+`erickfm/slippi-public-dataset-v3.7` corpus. Neither the replays nor the
 gameplay export's resources come from Skirmish's own simulator.
 
-**Proves:** for however many frames the report's `first_divergent_frame`
-reaches (or fully, if `matched`), the native simulation's observable fields
-agree with an authentic recording, for this one matchup and stage. The test
-ratchets that frame against a recorded baseline
-(`tests/fixtures/slippi/parity/fox-fd-baseline.json`), so a code change that
-makes agreement *worse* is a failure, not just a number that quietly
-regresses.
+**The ratchet now spans three independent recordings**, not one:
+[`fox-fd.slp`](../tests/fixtures/slippi/parity/manifest.json) (the original
+recording; ports P1/P4), `fox-fd-2.slp` (ports P1/P2) and `fox-fd-3.slp`
+(ports P2/P4, the only one recorded on a newer Slippi client, 3.9.0, which
+reports a few extra observation fields such as `velocities.self_y` that
+2.0.1 does not). All three are Fox-vs-Fox Final Destination matches, so all
+three currently initialize from the same `fox-fd` pairing's
+`match-data.json` regardless of which two ports played them — the pack's
+spawns are assigned by participant order, not by which physical port a
+player sat at. `recordings.json` lists each recording's file, sha256,
+ports, stage and its own baseline file
+(`tests/fixtures/slippi/parity/<id>-baseline.json`); `real_parity.rs`
+iterates the list and checks every recording before failing, so a
+regression on one recording is reported alongside any others rather than
+masking them. `fox-fd`'s own baseline file, numbers and update history are
+unchanged by this generalization — the original real-replay parity loop
+(the "main loop") continues to own and ratchet `fox-fd-baseline.json`
+exactly as before; `fox-fd-2-baseline.json` and `fox-fd-3-baseline.json` are
+new, independent baselines for the two added recordings, each starting from
+that recording's own first real measurement against gameplay export v6
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v6-snapshot-20260911`):
+`fox-fd-2.slp` matches 92 frames (-123 through -32), diverging at -31 on
+P1's `action_state` (expected `0x0155`/`SpecialN` i.e. Fox's neutral
+special "Blaster", actual `0x002a`/`Landing`); `fox-fd-3.slp` matches 79
+frames (-123 through -45), diverging at -44 on P2's `velocities.self_y`
+(expected `-2.53`, actual `0.0`). Neither has been diagnosed yet; see
+`docs/validation.md` as a second, distinct parity loop worked on
+`fox-fd-2.slp` and `fox-fd-3.slp` in turn, deliberately staying clear of
+whatever the main loop above is currently chasing on `fox-fd.slp`.
 
-**Does not prove:** agreement for any other matchup, stage, or input pattern
-than what this one recording happens to exercise; agreement beyond the
-selected observation fields (`docs/replays.md`'s `fighter-post-v11` policy
-excludes RNG, collision-line geometry, items and more); or agreement once the
-first divergence is reached — the report's `checked_frames` is a matched
-*prefix*, not a summary of the whole file. It is also gated on real data:
-without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
-skips, and a skip is not evidence of anything.
+**Proves:** for however many frames each recording's own
+`first_divergent_frame` reaches (or fully, if `matched`), the native
+simulation's observable fields agree with an authentic recording, for that
+one matchup, stage and set of ports. Each recording's ratchet independently
+guards against a code change that makes *that* recording's agreement worse.
+
+**Does not prove:** agreement for any other matchup, stage or input pattern
+than what these recordings happen to exercise (all three are Fox-vs-Fox on
+Final Destination; no other matchup or stage is covered); agreement beyond
+the selected observation fields (`docs/replays.md`'s `fighter-post-v11`
+policy excludes RNG, collision-line geometry, items and more); or agreement
+once a recording's first divergence is reached — each report's
+`checked_frames` is a matched *prefix*, not a summary of the whole file. It
+is also gated on real data: without `SKIRMISH_GAMEPLAY_DATA` (see
+`docs/gameplay-export.md`) this test skips entirely, and a skip is not
+evidence of anything.
 
 **Current measurement (2026-09-11, gameplay export v6, after this loop's
 ground-jump-direction fix):** 128 frames match (-123 through 4) and the

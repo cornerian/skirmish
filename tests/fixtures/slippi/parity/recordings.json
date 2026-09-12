@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "purpose": "The list crates/cli/tests/real_parity.rs iterates to ratchet the real-replay comparison across multiple independent recordings. Each entry names a recording file under this directory, the gameplay-export pairing whose match-data.json initializes it (all three entries currently share the fox-fd pack: a Fox-vs-Fox Final Destination match applies regardless of which two ports play it, since spawns are assigned by participant order, not port), and the baseline file the ratchet compares against. See docs/parity.md for the multi-recording ratchet and manifest.json for full per-file provenance (source dataset, license, players, seed).",
+  "recordings": [
+    {
+      "id": "fox-fd",
+      "file": "fox-fd.slp",
+      "pairing": "fox-fd",
+      "baseline": "fox-fd-baseline.json",
+      "sha256": "87971fc4608e577fe5a814fc3a04dee4c0d82f99bc9a54ee16797005c5a9085e",
+      "ports": ["P1", "P4"],
+      "stage": "final-destination",
+      "stage_id": 32
+    },
+    {
+      "id": "fox-fd-2",
+      "file": "fox-fd-2.slp",
+      "pairing": "fox-fd",
+      "baseline": "fox-fd-2-baseline.json",
+      "sha256": "1e5350cc2b155d79b95310643823a845c2df128a03edf762d6fda7ed201e4764",
+      "ports": ["P1", "P2"],
+      "stage": "final-destination",
+      "stage_id": 32
+    },
+    {
+      "id": "fox-fd-3",
+      "file": "fox-fd-3.slp",
+      "pairing": "fox-fd",
+      "baseline": "fox-fd-3-baseline.json",
+      "sha256": "fb6372ad867e346ab8002f9116e2c39b41726743f97bc8524d9f88f2164776e0",
+      "ports": ["P2", "P4"],
+      "stage": "final-destination",
+      "stage_id": 32
+    }
+  ]
+}
