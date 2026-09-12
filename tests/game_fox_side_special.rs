@@ -83,8 +83,11 @@ fn ground_entry_from_wait_enters_start_with_gravity_delay_and_jumps_untouched() 
     let jumps_before = game.state().fighters[0].locomotion.jumps_used;
     let state = game.step(input(0, side(0.6))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialSStart);
-    // The generic per-frame action_frame increment already ran this step.
-    assert_eq!(state.fighters[0].action_frame, 1);
+    // `ftFx_SpecialSStart_Enter`'s own extra `ftAnim_8006EBA4` advance
+    // (`docs/validation.md`'s entry-advance table) starts this frame's
+    // `action_frame` at 1, then this same step's generic per-frame
+    // increment advances it once more.
+    assert_eq!(state.fighters[0].action_frame, 2);
     // x24 == 2.0, ticked once by this same step's own grounded Phys.
     assert_eq!(state.fighters[0].fox_side_special.gravity_delay, 1.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
@@ -191,9 +194,13 @@ fn aerial_vertical_stick_suppresses_the_side_branch() {
 
 /// Entry, then enough idle frames for the 4-pose Start phase to hand off to
 /// the Dash phase (SpecialS, action_frame 1 -- the transition's own frame).
+/// `ftFx_SpecialSStart_Enter`'s own extra `ftAnim_8006EBA4` advance
+/// (`docs/validation.md`'s entry-advance table) starts Start's own
+/// `action_frame` at 1 rather than 0, so the 4-pose clip (indices 0..=3)
+/// runs out after only 3 idle frames past the entry step, not 4.
 fn ground_dash_entry_state(game: &mut Match) -> skirmish::game::State {
     game.step(input(0, side(0.6))).unwrap();
-    for _ in 0..4 {
+    for _ in 0..3 {
         game.step(IDLE).unwrap();
     }
     game.state().clone()
@@ -221,7 +228,9 @@ fn dash_phase_air_trans_n_sets_both_axes_unconditionally() {
     let mut game = Match::new(airborne_data(), 0).unwrap();
     assert!(!game.state().fighters[0].grounded);
     game.step(input(0, side(0.6))).unwrap();
-    let state = (0..4)
+    // 3 idle frames past entry, not 4 -- see `ground_dash_entry_state`'s
+    // own comment (the same Start-phase entry advance applies to both).
+    let state = (0..3)
         .map(|_| game.step(IDLE).unwrap().clone())
         .last()
         .unwrap();
@@ -247,7 +256,9 @@ fn b_press_shortens_the_ground_dash_into_end() {
 fn b_press_shortens_the_air_dash_into_end() {
     let mut game = Match::new(airborne_data(), 0).unwrap();
     game.step(input(0, side(0.6))).unwrap();
-    for _ in 0..4 {
+    // 3 idle frames past entry, not 4 -- see `ground_dash_entry_state`'s
+    // own comment.
+    for _ in 0..3 {
         game.step(IDLE).unwrap();
     }
     assert_eq!(game.state().fighters[0].action, Action::SpecialAirS);

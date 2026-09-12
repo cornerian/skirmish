@@ -353,9 +353,12 @@ fn enter_aerial_launch(
     helpers::max_out_jumps(fighter, data);
 }
 
-/// `ftFx_SpecialHiBound_Enter`.
+/// `ftFx_SpecialHiBound_Enter`: makes the same extra, explicit
+/// `ftAnim_8006EBA4(gobj)` call the Hold entries above do (see their own
+/// comment), so `action_frame` is 1 (not 0) from this frame on.
 fn enter_bound(fighter: &mut Fighter, p: &UpSpecial) {
     simulation::enter(fighter, Action::SpecialHiBound);
+    fighter.action_frame = 1;
     fighter.velocity[0] *= p.attributes.bound_speed_mul;
 }
 
@@ -412,6 +415,14 @@ impl SpecialMove for Move {
             }
             fighter.ground_velocity /= parameters.attributes.entry_speed_div;
             simulation::enter(fighter, Action::SpecialHiHold);
+            // `ftFx_SpecialHi_Enter` makes an extra, explicit
+            // `ftAnim_8006EBA4(gobj)` call immediately after
+            // `Fighter_ChangeMotionState` lands `cur_anim_frame` on `0.0`
+            // -- the same second advance `ftCo_Dash_Enter`/`ftCo_Turn_Enter`
+            // make (`locomotion::start_dash`'s own comment, `docs/
+            // validation.md`'s entry-advance table). Modeled the same way,
+            // at the source: `action_frame` is 1 (not 0) from this frame on.
+            fighter.action_frame = 1;
             fighter.fox_up_special.gravity_delay = parameters.attributes.gravity_delay;
             return true;
         }
@@ -421,6 +432,9 @@ impl SpecialMove for Move {
                 fighter.velocity[0] /= parameters.attributes.entry_speed_div;
                 fighter.velocity[1] = 0.0;
                 simulation::enter(fighter, Action::SpecialHiHoldAir);
+                // `ftFx_SpecialAirHiStart_Enter` makes the identical extra
+                // advance `ftFx_SpecialHi_Enter` does above.
+                fighter.action_frame = 1;
                 fighter.fox_up_special.gravity_delay = parameters.attributes.gravity_delay;
                 return true;
             }
@@ -638,10 +652,15 @@ impl SpecialMove for Move {
             // Ft_MF_UpdateCmd`, start 13.0), distinct from Travel's own
             // duration-end landing (frame 0, `update_animation` above).
             // Without this arm the generic collision pipeline would instead
-            // fall through to the ordinary `Action::Landing`.
+            // fall through to the ordinary `Action::Landing`. `ftFx_
+            // SpecialHiFall_Enter` then makes the same extra, explicit
+            // `ftAnim_8006EBA4(gobj)` call every other Start/Hold/Bound
+            // entry in this table does (see `enter_bound`'s own comment),
+            // one frame beyond the `13.0` `Fighter_ChangeMotionState`
+            // start frame it just landed on: 14, not 13.
             Action::SpecialHiFall => {
                 simulation::enter(fighter, Action::SpecialHiLanding);
-                fighter.action_frame = 13;
+                fighter.action_frame = 14;
                 Ok(true)
             }
             Action::SpecialAirHi => {

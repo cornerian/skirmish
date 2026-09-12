@@ -100,6 +100,26 @@ further; the next divergence past it is undiagnosed. `fox-fd-4.slp` (added
 by a concurrent batch, see "A second real recording" below) hits the exact
 same pack-data gap on its own equivalent divergence.
 
+**`fox-fd-2.slp` (2026-09-12, live gameplay export pack, `/mnt/archive/
+datasets/melee/skirmish-gameplay/v2/fox-fd/match-data.json`): moved twice
+by the entry-advance batch.** The pack gap above is now filled (`specials.
+neutral` is present), so Fox's Blaster dispatches correctly; the next
+measurement matched 93 frames (-123 through -31) and diverged at -31
+itself, P1's `action_age` (expected `1.0`, actual `0.0`) on the very
+`SpecialNStart` entry frame -- `docs/validation.md`'s entry-advance table
+fixes this (`ftFx_SpecialN_Enter`'s own extra, undocumented `ftAnim_
+8006EBA4` advance) along with five sibling instances of the identical bug
+across Fox's other specials. Current measurement: 98 frames match (-123
+through -26); the next divergence is -25, `action_state` (expected
+`0x0156`/`SpecialNLoop`, actual `0x0155`/`SpecialNStart`), traced to a
+pack-export mismatch, not a Skirmish bug: `fighters[0].specials.neutral.
+start.ground.frames` has length `8` in the live pack, but the recording's
+own `state_age` sequence shows the real grounded Start phase lasting
+exactly 6 frames, matching the pack's own `start.air.frames` length (`6`)
+instead. Reported per this loop's own stop condition (`tests/fixtures/
+slippi/parity/fox-fd-2-baseline.json`'s own note has the full citation),
+not chased further.
+
 **`fox-fd-3.slp` (2026-09-11, gameplay export v6): moved by the
 landing-velocity fix.** The first real measurement matched 79 frames
 (-123 through -45) and diverged at -44, P2's `velocities.self_y` (expected
@@ -519,6 +539,25 @@ parameters were never exported. A live concurrent worktree
 actual pack/implementation work is left to it; both `fox-fd-2.slp` and
 `fox-fd-4.slp` are blocked on the same gap and will move together once it
 is filled.
+
+**Current measurement (2026-09-12, live gameplay export pack, `/mnt/
+archive/datasets/melee/skirmish-gameplay/v2/fox-fd/match-data.json`, the
+entry-advance batch):** the pack gap above is now filled (`specials.
+neutral` is present); P2 dispatches into Fox's neutral special correctly.
+91 frames match (-123 through -33); the next divergence is -32,
+`action_state` (expected `0x0156`/`SpecialNLoop`, actual `0x0155`/
+`SpecialNStart`) -- the identical pack-export mismatch `fox-fd-2.slp`'s own
+current measurement above hits at its equivalent frame: `fighters[0].
+specials.neutral.start.ground.frames` has length `8` in the live pack, but
+both recordings' own `state_age` sequences show the real grounded Start
+phase lasting exactly 6 frames, matching the pack's own `start.air.frames`
+length (`6`) instead. Between the pack gap closing and this new divergence,
+this batch also fixed `action_age` (expected `1.0`, actual `0.0`) on the
+`SpecialAirNStart` entry frame (-38, the same shape `fox-fd-2.slp` hit on
+its own grounded entry): `docs/validation.md`'s entry-advance table.
+Reported per this loop's own stop condition rather than chased further
+(`tests/fixtures/slippi/parity/fox-fd-4-baseline.json`'s own note has the
+full citation).
 
 **Previously (2026-09-11, gameplay export v6, before the input-lock
 `previous_input` fix):** 84 frames matched (-123 through -40) and the first

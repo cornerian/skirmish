@@ -341,6 +341,14 @@ impl SpecialMove for Move {
             simulation::enter(fighter, Action::SpecialAirSStart);
             helpers::max_out_jumps(fighter, data);
         }
+        // `ftFx_SpecialSStart_Enter`/`ftFx_SpecialAirSStart_Enter` each make
+        // an extra, explicit `ftAnim_8006EBA4(gobj)` call immediately after
+        // `Fighter_ChangeMotionState` lands `cur_anim_frame` on `0.0` -- the
+        // same second advance `ftCo_Dash_Enter`/`ftCo_Turn_Enter` make
+        // (`locomotion::start_dash`'s own comment, `docs/validation.md`'s
+        // entry-advance table). Modeled the same way, at the source:
+        // `action_frame` is 1 (not 0) from this frame on.
+        fighter.action_frame = 1;
         fighter.fox_side_special.gravity_delay = parameters.attributes.gravity_delay;
         true
     }

@@ -187,7 +187,11 @@ fn ground_entry_enters_hold_with_gravity_delay_and_jumps_untouched() {
     let jumps_before = game.state().fighters[0].locomotion.jumps_used;
     let state = game.step(input(0, up_stick(0.9))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialHiHold);
-    assert_eq!(state.fighters[0].action_frame, 1);
+    // `ftFx_SpecialHi_Enter`'s own extra `ftAnim_8006EBA4` advance
+    // (`docs/validation.md`'s entry-advance table) starts this frame's
+    // `action_frame` at 1, then this same step's generic per-frame
+    // increment advances it once more.
+    assert_eq!(state.fighters[0].action_frame, 2);
     // x54 == 2.0; ftFx_SpecialHiHold_Phys never reads or ticks it while
     // grounded (confirmed against the pinned source: unlike the side
     // special's own Start/End, Hold's ground Phys is only ft_80084F3C).
@@ -464,10 +468,12 @@ fn fall_lands_at_frame_13_via_ordinary_ground_touch() {
     }
     assert!(state.fighters[0].grounded, "must land within 200 frames");
     assert_eq!(state.fighters[0].action, Action::SpecialHiLanding);
-    // Entered at frame 13; the generic per-frame increment then advances
-    // it once more within this same step, like every other transition
-    // observed in this suite.
-    assert_eq!(state.fighters[0].action_frame, 14);
+    // `ftFx_SpecialHiFall_Enter`'s `Fighter_ChangeMotionState` lands on
+    // frame 13, then its own extra `ftAnim_8006EBA4` advance
+    // (`docs/validation.md`'s entry-advance table) makes it 14; the
+    // generic per-frame increment then advances it once more within this
+    // same step, like every other transition observed in this suite.
+    assert_eq!(state.fighters[0].action_frame, 15);
 }
 
 #[test]

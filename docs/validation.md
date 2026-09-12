@@ -1,5 +1,100 @@
 # Local validation provenance
 
+The 2026-09-12 special-entry-advance batch (the real-replay parity loop on
+`fox-fd-2.slp`/`fox-fd-4.slp`, `docs/parity.md`) fixes the `action_age`
+divergence (expected `1.0`, actual `0.0`) both recordings hit at Fox's
+neutral special (Blaster) entry frame (`-31` on `fox-fd-2.slp`, `-38` on
+`fox-fd-4.slp`; `falco-fox-fd.slp` hits the same shape at `-30`), diagnosed
+by the previous batch as "almost certainly `ftFx_SpecialN_Enter`/
+`ftFx_SpecialNStart` making the extra `ftAnim_8006EBA4` advance like Dash/
+Turn/Walk". Confirmed exactly: `ftFox_SpecialN_InitializeState`
+(`ftfoxspecialn.c:246-252`), called from both `ftFx_SpecialN_Enter` and
+`ftFx_SpecialAirN_Enter`, makes an extra, explicit `ftAnim_8006EBA4(gobj)`
+call immediately after `Fighter_ChangeMotionState` lands `cur_anim_frame`
+on `0.0` -- the identical second advance `ftCo_Dash_Enter`/`ftCo_Turn_
+Enter` make (`locomotion::start_dash`'s own comment above). Grepping every
+`_Enter` in `src/melee/ft/` that calls `ftAnim_8006EBA4` (directly, or
+through a same-file `_InitializeState`-style helper) and cross-referencing
+against every Fox special move already ported turned up five more
+undocumented instances of the identical bug, all fixed in this one batch
+since they share one root cause and one fix shape (`fighter.action_frame =
+1` immediately after `simulation::enter`, or `+= 1` on an already-nonzero
+start frame):
+
+| Decomp `_Enter` | Motion state | Rust site | Fix |
+| --- | --- | --- | --- |
+| `ftFx_SpecialN_Enter`/`ftFx_SpecialAirN_Enter` (via `ftFox_SpecialN_InitializeState`) | `SpecialNStart`/`SpecialAirNStart` | `characters::fox::neutral::Move::update_actions` | `action_frame = 1` at entry |
+| `ftFx_SpecialSStart_Enter`/`ftFx_SpecialAirSStart_Enter` | `SpecialSStart`/`SpecialAirSStart` | `characters::fox::side::Move::update_actions` | `action_frame = 1` at entry |
+| `ftFx_SpecialLw_Enter`/`ftFx_SpecialAirLw_Enter` | `SpecialLwStart`/`SpecialAirLwStart` | `characters::fox::down::enter_start` | `action_frame = 1` at entry |
+| `ftFx_SpecialHi_Enter`/`ftFx_SpecialAirHiStart_Enter` | `SpecialHiHold`/`SpecialHiHoldAir` | `characters::fox::up::Move::update_actions` | `action_frame = 1` at entry |
+| `ftFx_SpecialHiBound_Enter` | `SpecialHiBound` | `characters::fox::up::enter_bound` | `action_frame = 1` at entry |
+| `ftFx_SpecialHiFall_Enter` (start frame `13.0`, not `0`) | `SpecialHiLanding` (from `SpecialHiFall`'s own ground contact) | `characters::fox::up::Move::land`'s `SpecialHiFall` arm | `action_frame = 13 + 1 = 14` (was pinned at `13`, missing the same extra advance) |
+
+Every other `_Enter` in the same six files (Travel/Dash/End-phase entries:
+`ftFx_SpecialAirHi_Enter`, `ftFx_SpecialHi_GroundToAir`/`_AirToGround`,
+`ftFx_SpecialS_Enter`/`ftFx_SpecialAirS_Enter`/`ftFx_SpecialSEnd_Enter`/
+`ftFx_SpecialAirSEnd_Enter`, `ftFx_SpecialLwLoop_Enter`/`ftFx_
+SpecialAirLwLoop_Enter`/`ftFx_SpecialLwHit_Enter`/`ftFx_SpecialLwEnd_Enter`/
+`ftFx_SpecialAirLwEnd_Enter`) does not call `ftAnim_8006EBA4` a second time
+and is confirmed unchanged (checked directly against each file, not
+inferred): only the very first phase a fresh `B` press or a Hold/Bound/
+ground-contact re-entry reaches gets the extra advance; the Travel/Dash
+phases and every subsequent internal hand-off do not. Captain Falcon,
+Game & Watch, Mars (Marth-family), Popo/Nana and Seak (Sheik) each have
+their own analogous `_Enter` instances in the same grep (not listed in the
+table above): none of those characters are modeled in Skirmish yet, so
+they are out of scope for this batch, left for whichever future batch
+ports them.
+
+Every fixed site's own existing unit test that stepped through the
+transition needed its pinned `action_frame`/idle-frame-count updated to
+match (each test's own comment now cites this batch): `tests/
+game_fox_up_special.rs`'s `ground_entry_enters_hold_with_gravity_delay_
+and_jumps_untouched` (`action_frame` `1` -> `2`) and `fall_lands_at_
+frame_13_via_ordinary_ground_touch` (`14` -> `15`); `tests/
+game_fox_side_special.rs`'s `ground_entry_from_wait_enters_start_with_
+gravity_delay_and_jumps_untouched` (`1` -> `2`) and the Start->Dash
+hand-off tests (`ground_dash_entry_state`, `dash_phase_air_trans_n_sets_
+both_axes_unconditionally`, `b_press_shortens_the_air_dash_into_end`),
+whose own 4-pose Start clip now hands off to Dash after 3 idle frames past
+entry, not 4, since the clip's own `action_frame` count starts one frame
+ahead; `tests/game_fox_neutral_special.rs`'s `a_fresh_b_press_repeats_
+the_loop_while_no_press_ends_it` and `the_laser_travels_before_hitting_
+and_despawns_on_contact`, whose 2-frame synthetic Start fixture now hands
+off to Loop one idle frame sooner for the identical reason.
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+--all-features -- -D warnings` and `cargo test --workspace --exclude
+renderer --tests --lib` (161 test binaries, 0 failed) all pass.
+
+Measured against the live gameplay export pack (`/mnt/archive/datasets/
+melee/skirmish-gameplay/v2/fox-fd/match-data.json`, which now carries
+`specials.neutral` for Fox): `fox-fd-2.slp` moves from 92 to 98 matched
+frames (`-123` through `-26`); `fox-fd-4.slp` moves from 85 to 91 matched
+frames (`-123` through `-33`). Both recordings' entry-frame `action_age`
+now matches exactly (confirmed directly against `fox-fd-2.slp` via
+`py-slippi`: P1's `state_age` is `1.0` on the very entry frame, `-31`,
+climbing `2.0`..`6.0` through `-30`..`-26`). Both then hit a new, identical-
+shape divergence one phase later, reported rather than chased further (see
+`docs/parity.md`): `action_state` shows the recording already in
+`SpecialNLoop` (`0x0156`) one frame before Skirmish, which is still in
+`SpecialNStart` (`0x0155`). Traced to `characters::fox::neutral::Move::
+update_animation`'s `action_frame >= parameters.start.ground.frames.len()`
+gate: the live pack's `fighters[0].specials.neutral.start.ground.frames`
+has length `8`, but `fox-fd-2.slp`'s own recorded `state_age` sequence
+(`1.0` through `6.0`, six values, confirmed via `py-slippi`) shows the real
+grounded Start phase lasting exactly 6 frames -- matching the pack's own
+`start.air.frames` length (`6`), not `start.ground.frames` (`8`). Every
+sampled ground pose is bit-identical (a flat, motionless clip, so no
+per-frame content distinguishes a real 8-frame clip from a padded one),
+and the aerial variant of the same phase is already the length the
+recording demands, so this reads as a pack-export mismatch on the ground
+variant specifically (report: `fighters[0].specials.neutral.start.ground.
+frames` should have 6 entries, not 8, to match `start.air.frames` and both
+recordings' own observed timing) rather than an unmodeled system or a
+guessable Skirmish-side fix; not chased further per this loop's own stop
+condition. `tests/fixtures/slippi/parity/fox-fd-2-baseline.json`/`fox-fd-4-
+baseline.json` are updated accordingly.
+
 The 2026-09-12 Fox neutral special (Blaster) batch (`docs/fox-neutral-
 special.md`) replaces the shared single-phase neutral-B shell
 (`game::specials::neutral`, retired outright -- no character variant could

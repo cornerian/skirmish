@@ -88,8 +88,11 @@ fn aerial_entry_selects_the_air_variant() {
 fn a_fresh_b_press_repeats_the_loop_while_no_press_ends_it() {
     let mut game = Match::new(data(), 0).unwrap();
     game.step(input(0, press_b())).unwrap();
-    // Two-frame Start pose (per the fixture): frame 0, then frame 1 ends it.
-    game.step(IDLE).unwrap();
+    // Two-frame Start pose (per the fixture): `ftFx_SpecialN_Enter`'s own
+    // extra `ftAnim_8006EBA4` advance (`docs/validation.md`'s entry-advance
+    // table) starts the entry frame's `action_frame` at 1 (2 after this
+    // same step's generic increment), so the clip (indices 0..=1) already
+    // runs out one idle frame later.
     let entered_loop = game.step(IDLE).unwrap();
     assert_eq!(entered_loop.fighters[0].action, Action::SpecialNLoop);
     assert!(spawned_this_frame(entered_loop, 0));
@@ -137,7 +140,10 @@ fn the_laser_travels_before_hitting_and_despawns_on_contact() {
     resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, press_b())).unwrap();
-    game.step(IDLE).unwrap();
+    // The Start clip already runs out one idle frame later than a naive
+    // frame count would suggest -- see
+    // `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it`'s own
+    // comment.
     let spawn_state = game.step(IDLE).unwrap().clone();
     assert!(spawned_this_frame(&spawn_state, 0));
     assert_eq!(spawn_state.projectiles.len(), 1);

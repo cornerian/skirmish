@@ -277,6 +277,18 @@ impl SpecialMove for Move {
                         Action::SpecialAirNStart
                     },
                 );
+                // `ftFx_SpecialN_Enter`/`ftFx_SpecialAirN_Enter` each call
+                // `ftFox_SpecialN_InitializeState`, which makes an extra,
+                // explicit `ftAnim_8006EBA4(gobj)` call immediately after
+                // `Fighter_ChangeMotionState` lands `cur_anim_frame` on
+                // `0.0` -- the same second advance `ftCo_Dash_Enter`/
+                // `ftCo_Turn_Enter` make (`locomotion::start_dash`'s own
+                // comment, `docs/validation.md`'s entry-advance table).
+                // Modeled the same way, at the source: `action_frame` is 1
+                // (not 0) from this frame on, so every later `action_frame`-
+                // based Start gate compares against the decomp's own
+                // thresholds unadjusted.
+                fighter.action_frame = 1;
                 if ground {
                     fighter.ground_velocity = 0.0;
                 }
