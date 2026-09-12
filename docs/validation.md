@@ -1,5 +1,59 @@
 # Local validation provenance
 
+The 2026-09-12 fast-fall stick-timer window fix (the real-replay parity
+loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::simulation::
+move_fighter`'s approximate `previous_input`-edge fast-fall heuristic with
+an exact port of `ftCommon_CheckFallFast` (`ftcommon.c:492-503`) gated on a
+new optional pack field. `ftCommonData+0x8C` (`types.h:88`, immediately
+after the already-exported `fast_fall_threshold` at `+0x88`) was read
+directly from the retail disc (`PlCo.dat`, via the same `ftLoadCommonData`
+pointer resolution `skirmish-assets`'s own `gameplay::common::decode`
+already uses for `fast_fall_threshold`, confirmed by that same read
+recovering `0.6625000238418579` byte-identical to the published pack): a
+plain `int`, value `4`, matching its already-named integer neighbors
+`dash_smash_window` (`+0x40` = `2`) and `tap_jump_window` (`+0x74` = `4`)
+in both type and magnitude.
+
+`game::data::Rules` gains `fast_fall_window: Option<u32>` (`#[serde(
+default, skip_serializing_if = "Option::is_none")]`, so every existing
+fixture without it keeps loading and behaving exactly as before).
+`fighter::damage::fast_fall_trigger` is a new pure function porting
+`ftCommon_CheckFallFast`'s exact condition (`!fall_fast && velocity_y <
+0.0 && stick_y <= -threshold && tilt_y_age < window`) against the already-
+tracked `fighter.locomotion.tilt_y_age` (`fighter::damage::tilt_timer`,
+already modeling `fp->x671_timer_lstick_tilt_y`). `game::simulation::
+move_fighter` calls it when `rules.fast_fall_window` is `Some`, falling
+back unchanged to the previous heuristic when it is `None`.
+
+**Tests**: `fighter::damage`'s new `fast_fall_trigger_uses_the_tilt_timer_
+not_previous_input` pins two real `fox-bf.slp` data points directly
+(frame -27, P4: `tilt_y_age = 254` after a platform pass, does not
+trigger; frame -21, P1: `tilt_y_age = 1`, an ordinary fresh press, does
+trigger), the window's own exclusive boundary (age `3` triggers, age `4`
+does not, matching decomp's `<`, not `<=`), and that every other
+precondition (already fast-falling, non-negative velocity, stick short of
+the threshold) still refuses the trigger regardless of `tilt_y_age`.
+`cargo fmt --all -- --check`, `cargo clippy --locked --workspace
+--all-targets --all-features -- -D warnings` and `cargo test --locked
+--workspace` (both default and `c-oracle` features) all pass.
+
+Confirmed end-to-end with a throwaway diagnostic copy of `fox-bf/
+match-data.json` patched to add `"fast_fall_window": 4` (not committed,
+deleted after use, the same kind of diagnostic patch this file's own
+`friction_above_walk` entry used): `position.y` now matches at frame -27
+against that patched copy. Measured against the real, unpatched live pack
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v2/fox-bf`, which does not
+export `fast_fall_window` yet), behavior and the measured frame count are
+byte-identical to before this fix (96 frames, first divergence -27) since
+the fallback heuristic path is unchanged; `fox-bf-baseline.json` is
+therefore left unmoved by this commit and will advance once the exporter
+publishes the real field, without any further Skirmish code change. The
+diagnostic copy's own new first divergence (still frame -27, field
+`shield` on P4: expected `59.76071548461914`, actual `59.790000915527344`)
+is a separate, undiagnosed shield-health decay-rate/timing discrepancy on
+the same Guard->Pass transition frame -- reported in `docs/parity.md`
+rather than chased in this batch.
+
 The 2026-09-12 GuardOn/Guard/GuardReflect constant `state_age` fix (the
 real-replay parity loop, `fox-bf.slp`, `docs/parity.md`) corrects
 `crates/skirmish-replay/src/observation.rs`'s `action_age`: `ftCo_800923B4`/

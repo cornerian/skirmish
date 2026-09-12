@@ -168,6 +168,30 @@ pub fn tilt_timer(timer: u8, current: f32, previous: f32, threshold: f32) -> u8 
     }
 }
 
+/// `ftCommon_CheckFallFast` (`ftcommon.c:492-503`): `!fp->fall_fast &&
+/// fp->self_vel.y < 0 && fp->input.lstick[0].y <= -p_ftCommonData->x88
+/// (fast_fall_threshold) && fp->x671_timer_lstick_tilt_y <
+/// p_ftCommonData->x8C`. `x8C` (an `int`, `types.h:88`, immediately after
+/// `x88`/`fast_fall_threshold`) is the same per-frame timer `tilt_timer`
+/// (above) already maintains as `fighter.locomotion.tilt_y_age`; `window`
+/// is that constant, read directly from the retail disc's own
+/// `PlCo.dat`/`ftCommonData` for this batch (`+0x8C` = `4`, a plain `int`
+/// like its already-named neighbors `dash_smash_window`/`tap_jump_window`
+/// at `+0x40`/`+0x74`, both also small integers).
+pub fn fast_fall_trigger(
+    already_fast_falling: bool,
+    velocity_y: f32,
+    stick_y: f32,
+    threshold: f32,
+    tilt_y_age: u8,
+    window: u32,
+) -> bool {
+    !already_fast_falling
+        && velocity_y < 0.0
+        && stick_y <= -threshold
+        && u32::from(tilt_y_age) < window
+}
+
 /// ftCo_Damage_OnEveryHitlag. The magnitude threshold is inclusive, the timer
 /// window is exclusive, and a displacement consumes both axis timers. Ground
 /// response belongs to the caller; the callback itself adds both coordinates.
@@ -666,6 +690,46 @@ mod tests {
             [(-0.0_f32).to_bits(), 0]
         );
         assert_eq!(decay_air_knockback([0.5, 0.0], 1.0), [0.0; 2]);
+    }
+
+    #[test]
+    fn fast_fall_trigger_uses_the_tilt_timer_not_previous_input() {
+        // `fox-bf.slp` (`docs/parity.md`'s "A first Battlefield recording"
+        // section), window = 4 (read directly from the retail disc's own
+        // `PlCo.dat`/`ftCommonData+0x8C`).
+        const WINDOW: u32 = 4;
+        const THRESHOLD: f32 = 0.6625;
+
+        // Frame -27, P4: a platform pass just reset tilt_y_age to the 254
+        // sentinel (`ftCo_8009A228`'s own `x671_timer_lstick_tilt_y = 0xFE`)
+        // on the same continuously-held down-stick that triggered the
+        // pass; the recording shows no fast-fall this frame (ordinary
+        // gravity, `pass_velocity + gravity`), unlike the previous, approximate
+        // `previous_input` heuristic, which would fire here (the previous
+        // frame's raw stick was already past threshold too).
+        assert!(!fast_fall_trigger(
+            false, -0.5, -0.663, THRESHOLD, 254, WINDOW
+        ));
+
+        // Frame -21, P1: an ordinary fresh down-press one frame after
+        // crossing the smash deadzone (tilt_y_age = 1, well inside the
+        // window) -- the recording's own next fall shows an immediate
+        // fast_fall_velocity-magnitude drop this exact frame.
+        assert!(fast_fall_trigger(false, -0.9, -0.738, THRESHOLD, 1, WINDOW));
+
+        // The window's own boundary is exclusive, matching decomp's `<`
+        // (not `<=`): held exactly `window` frames no longer qualifies.
+        assert!(fast_fall_trigger(false, -0.9, -0.738, THRESHOLD, 3, WINDOW));
+        assert!(!fast_fall_trigger(
+            false, -0.9, -0.738, THRESHOLD, 4, WINDOW
+        ));
+
+        // Every other precondition still gates the trigger: already
+        // fast-falling, rising (or stationary) velocity, and a stick short
+        // of the threshold all refuse it regardless of tilt_y_age.
+        assert!(!fast_fall_trigger(true, -0.9, -0.738, THRESHOLD, 0, WINDOW));
+        assert!(!fast_fall_trigger(false, 0.1, -0.738, THRESHOLD, 0, WINDOW));
+        assert!(!fast_fall_trigger(false, -0.9, -0.5, THRESHOLD, 0, WINDOW));
     }
 
     #[test]

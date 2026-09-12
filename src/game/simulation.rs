@@ -1734,12 +1734,30 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
                     | Action::FlyReflectWall
                     | Action::FlyReflectCeiling
             ) && f.hitstun != 0;
-            if !damage_input_locked
-                && !f.fast_fall
-                && f.velocity[1] < 0.0
-                && input.stick[1] <= -rules.fast_fall_threshold
-                && f.previous_input.stick[1] > -rules.fast_fall_threshold
-            {
+            // `ftCommon_CheckFallFast`'s own `x671_timer_lstick_tilt_y <
+            // window` test (`fighter::damage::fast_fall_trigger`) once the
+            // pack exports `rules.fast_fall_window`; otherwise the previous
+            // `previous_input`-edge heuristic, which does not consult
+            // `tilt_y_age` and so cannot see a platform pass's own reset of
+            // it (`docs/parity.md`'s "A first Battlefield recording"
+            // section).
+            let fast_fall_ready = match rules.fast_fall_window {
+                Some(window) => damage_math::fast_fall_trigger(
+                    f.fast_fall,
+                    f.velocity[1],
+                    input.stick[1],
+                    rules.fast_fall_threshold,
+                    f.locomotion.tilt_y_age,
+                    window,
+                ),
+                None => {
+                    !f.fast_fall
+                        && f.velocity[1] < 0.0
+                        && input.stick[1] <= -rules.fast_fall_threshold
+                        && f.previous_input.stick[1] > -rules.fast_fall_threshold
+                }
+            };
+            if !damage_input_locked && fast_fall_ready {
                 f.fast_fall = true;
             }
             if f.fast_fall {

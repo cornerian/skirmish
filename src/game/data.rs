@@ -116,6 +116,14 @@ pub struct Rules {
     pub friction_above_walk: f32,
     pub walk_accel_taper_gain: f32,
     pub fast_fall_threshold: f32,
+    /// `ftCommonData+0x8C` (`ftcommon.c:498-499`, `ftCommon_CheckFallFast`):
+    /// the stick-timer window `fighter.locomotion.tilt_y_age` must stay
+    /// under for a fresh down-press to trigger fast-fall. `None` keeps the
+    /// previous, approximate `previous_input`-edge heuristic (`game::
+    /// simulation::move_fighter`) for packs that don't export this constant
+    /// yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_fall_window: Option<u32>,
     pub knockback_decay: f32,
     pub knockback_speed: f32,
     pub hitstun_scale: f32,

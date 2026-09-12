@@ -741,6 +741,54 @@ the corpus, not just this one. Reported per this loop's own stop condition
 `fast_fall_threshold` at `+0x88`) rather than fixed with an unverified
 constant.
 
+**Fixed: the fast-fall window is now modeled exactly, gated on an optional
+pack field.** `ftCommonData+0x8C` was read directly from the retail disc
+(`PlCo.dat`, the same `ftLoadCommonData[0]` pointer `skirmish-assets`'s own
+`gameplay::common::decode` already resolves `fast_fall_threshold` through):
+a plain `int`, value `4`, matching its already-named integer neighbors
+`dash_smash_window` (`+0x40` = `2`) and `tap_jump_window` (`+0x74` = `4`) in
+both type and magnitude -- not the denormalized garbage a naive blanket
+`f32` reinterpretation of that word would show. `game::data::Rules` gains
+`fast_fall_window: Option<u32>`; `fighter::damage::fast_fall_trigger` now
+ports `ftCommon_CheckFallFast` exactly (`!fast_fall && velocity_y < 0.0 &&
+stick_y <= -threshold && tilt_y_age < window`) and `game::simulation::
+move_fighter` calls it when the pack supplies `fast_fall_window`, falling
+back to the previous `previous_input`-edge heuristic when it is absent (so
+every existing fixture, none of which export this field yet, is
+unaffected). Confirmed against `fox-bf.slp` directly: frame -21 (P1) is an
+ordinary fresh down-press one frame after crossing the smash deadzone
+(`tilt_y_age = 1`), and the recording shows fast-fall triggering exactly
+there -- `1 < 4` -- agreeing with both the new check and the old heuristic
+alike (which is why the old approximation had never visibly failed before
+this recording's own platform-pass case); frame -27 (P4, the divergence
+above) is the case they disagree on, `tilt_y_age = 254 !< 4` correctly
+blocking it.
+
+Confirmed end-to-end with a throwaway diagnostic copy of `fox-bf/
+match-data.json` patched to add `"fast_fall_window": 4` (not committed,
+deleted after use, the same kind of diagnostic patch `friction_above_walk`
+used above): `position.y` now matches at frame -27 (96 frames measured
+against the *unpatched* live pack still stop at -27 on `position.y`,
+since `fast_fall_window` isn't exported there yet and the fallback
+heuristic is unchanged -- confirmed by re-measuring against the unpatched
+pack after this fix, byte-identical to before). Against the diagnostic
+copy, the new first divergence is frame -27 itself, a different field:
+`shield` on P4 (expected `59.76071548461914`, actual `59.790000915527344`).
+Ground truth shows P4's shield health already at `60.0` through frame -28
+(`GuardOn`'s only frame) and already reduced to `59.7607` at -27, the same
+frame `Guard` converts into `Pass` -- decomp's own shield-decay Phys
+callback, like the already-diagnosed Dash/Turn/Walk/jump-direction class
+of bugs above, evidently still runs once more for the *outgoing* Guard
+action on its own last frame before this frame's `IASA` converts it to
+`Pass`, and by a slightly different amount (`0.2393` observed here) than
+whatever rate Skirmish's own shield decay currently applies (`0.21`). Not
+diagnosed further in this batch: this is a new, separate root cause (per-
+frame shield-health decay timing/rate, not fast-fall), reported rather
+than chased, and does not move `fox-bf-baseline.json` (which tracks the
+*unpatched*, currently-published pack and is therefore still `96`/`-27`,
+unchanged by this fix) -- it will move once the exporter publishes
+`fast_fall_window` for real, without any further Skirmish code change.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
