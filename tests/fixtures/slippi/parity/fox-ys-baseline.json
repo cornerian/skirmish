@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -113,
+  "checked_frames": 10,
+  "export_version": "v10",
+  "updated": "2026-09-12",
+  "note": "Measured on 2026-09-12 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-ys, match-data.json). First divergence at frame -113, field position.y on P2 (expected 28.044921875, actual 28.044919967651367, a 1-ULP-at-this-magnitude gap): the real-replay parity loop covering Yoshi's Story/Fountain of Dreams/Dream Land/Pokemon Stadium (docs/parity.md) is investigating this against ftCo_EntryStart_Phys's own arithmetic and its trophy_scale/x34_scale amplitude inputs (src/game/entry.rs, src/fighter/entry.rs)."
+}

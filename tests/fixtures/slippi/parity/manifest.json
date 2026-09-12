@@ -302,6 +302,186 @@
         "timeline": "last_recorded",
         "end_method": "Game"
       }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/16_10_01 Fox + Fox (YS).slp",
+      "file": "fox-ys.slp",
+      "bytes": 2808002,
+      "sha256": "09519115d03041c46ed44a0871aba9ba4a1c5935185f234dfb942f5abce4eed4",
+      "version": "2.0.1",
+      "stage_id": 8,
+      "stage": "yoshis-story",
+      "players": [
+        {
+          "port": "P1",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P2",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 907532266,
+      "first_frame": -123,
+      "last_frame": 11977,
+      "physical_frames": 12101,
+      "pairing": "fox-ys",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "09519115d03041c46ed44a0871aba9ba4a1c5935185f234dfb942f5abce4eed4",
+        "bytes": 2808002,
+        "version": [2, 0, 1],
+        "stage": 8,
+        "ports": ["P1", "P2"],
+        "physical_frames": 12101,
+        "surviving_frames": 12101,
+        "discarded_frames": 0,
+        "selected_frames": 12101,
+        "first_frame": -123,
+        "last_frame": 11977,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/11_57_43 Fox + Fox (FoD).slp",
+      "file": "fox-fod.slp",
+      "bytes": 2496659,
+      "sha256": "c3af53e1f7c66796667d826654d6e8d1be1e6259fc333280aa2a7733985f0769",
+      "version": "2.0.1",
+      "stage_id": 2,
+      "stage": "fountain-of-dreams",
+      "players": [
+        {
+          "port": "P1",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P2",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 1329469395,
+      "first_frame": -123,
+      "last_frame": 10635,
+      "physical_frames": 10759,
+      "pairing": "fox-fod",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "c3af53e1f7c66796667d826654d6e8d1be1e6259fc333280aa2a7733985f0769",
+        "bytes": 2496659,
+        "version": [2, 0, 1],
+        "stage": 2,
+        "ports": ["P1", "P2"],
+        "physical_frames": 10759,
+        "surviving_frames": 10759,
+        "discarded_frames": 0,
+        "selected_frames": 10759,
+        "first_frame": -123,
+        "last_frame": 10635,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/10_26_55 Fox + Fox (DL).slp",
+      "file": "fox-dl.slp",
+      "bytes": 2715899,
+      "sha256": "da73f2c221e64b6dfb2bcedde434cf75843a982dfe597bdb4dafcfc83c24181a",
+      "version": "2.0.1",
+      "stage_id": 28,
+      "stage": "dream-land",
+      "players": [
+        {
+          "port": "P3",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 3852693245,
+      "first_frame": -123,
+      "last_frame": 11580,
+      "physical_frames": 11704,
+      "pairing": "fox-dl",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "da73f2c221e64b6dfb2bcedde434cf75843a982dfe597bdb4dafcfc83c24181a",
+        "bytes": 2715899,
+        "version": [2, 0, 1],
+        "stage": 28,
+        "ports": ["P3", "P4"],
+        "physical_frames": 11704,
+        "surviving_frames": 11704,
+        "discarded_frames": 0,
+        "selected_frames": 11704,
+        "first_frame": -123,
+        "last_frame": 11580,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/18_54_44 Fox + Fox (PS).slp",
+      "file": "fox-ps.slp",
+      "bytes": 2652413,
+      "sha256": "25908e83f262dde488fa2e88ec424122851af1be89f6909617a8c484af2223e0",
+      "version": "3.9.0",
+      "stage_id": 3,
+      "stage": "pokemon-stadium",
+      "players": [
+        {
+          "port": "P1",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        },
+        {
+          "port": "P4",
+          "character_id": 2,
+          "character": "fox",
+          "stocks": 4
+        }
+      ],
+      "random_seed": 2702921816,
+      "first_frame": -123,
+      "last_frame": 8601,
+      "physical_frames": 8725,
+      "pairing": "fox-ps",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "25908e83f262dde488fa2e88ec424122851af1be89f6909617a8c484af2223e0",
+        "bytes": 2652413,
+        "version": [3, 9, 0],
+        "stage": 3,
+        "ports": ["P1", "P4"],
+        "physical_frames": 8725,
+        "surviving_frames": 8725,
+        "discarded_frames": 0,
+        "selected_frames": 8725,
+        "first_frame": -123,
+        "last_frame": 8601,
+        "latest_finalized_frame": 8601,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
     }
   ]
 }

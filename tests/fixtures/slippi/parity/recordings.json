@@ -51,6 +51,46 @@
       "ports": ["P1", "P4"],
       "stage": "battlefield",
       "stage_id": 31
+    },
+    {
+      "id": "fox-ys",
+      "file": "fox-ys.slp",
+      "pairing": "fox-ys",
+      "baseline": "fox-ys-baseline.json",
+      "sha256": "09519115d03041c46ed44a0871aba9ba4a1c5935185f234dfb942f5abce4eed4",
+      "ports": ["P1", "P2"],
+      "stage": "yoshis-story",
+      "stage_id": 8
+    },
+    {
+      "id": "fox-fod",
+      "file": "fox-fod.slp",
+      "pairing": "fox-fod",
+      "baseline": "fox-fod-baseline.json",
+      "sha256": "c3af53e1f7c66796667d826654d6e8d1be1e6259fc333280aa2a7733985f0769",
+      "ports": ["P1", "P2"],
+      "stage": "fountain-of-dreams",
+      "stage_id": 2
+    },
+    {
+      "id": "fox-dl",
+      "file": "fox-dl.slp",
+      "pairing": "fox-dl",
+      "baseline": "fox-dl-baseline.json",
+      "sha256": "da73f2c221e64b6dfb2bcedde434cf75843a982dfe597bdb4dafcfc83c24181a",
+      "ports": ["P3", "P4"],
+      "stage": "dream-land",
+      "stage_id": 28
+    },
+    {
+      "id": "fox-ps",
+      "file": "fox-ps.slp",
+      "pairing": "fox-ps",
+      "baseline": "fox-ps-baseline.json",
+      "sha256": "25908e83f262dde488fa2e88ec424122851af1be89f6909617a8c484af2223e0",
+      "ports": ["P1", "P4"],
+      "stage": "pokemon-stadium",
+      "stage_id": 3
     }
   ]
 }

@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -118,
+  "checked_frames": 5,
+  "export_version": "v10",
+  "updated": "2026-09-12",
+  "note": "Measured on 2026-09-12 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-fod, match-data.json). First divergence at frame -118, field position.y on P1 (expected 21.044921875, actual 21.044919967651367, a 1-ULP-at-this-magnitude gap): same class of divergence as fox-ys-baseline.json's own entry, both landing on the first EntryStart Phys frame after the Entry-to-EntryStart transition; see fox-ys-baseline.json and docs/parity.md."
+}

@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -123,
+  "checked_frames": 0,
+  "export_version": "v10",
+  "updated": "2026-09-12",
+  "note": "Measured on 2026-09-12 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-ps, match-data.json). Diverges on the very first compared frame (-123), field position.x on P1 (expected -40.0 exactly, actual -39.999996185302734): under investigation, a rounding difference between the exported Pokemon Stadium spawn/map_head joint coordinate and the value the recording shows (docs/parity.md)."
+}

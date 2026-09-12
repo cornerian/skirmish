@@ -1,0 +1,7 @@
+{
+  "first_divergent_frame": -123,
+  "checked_frames": 0,
+  "export_version": "v10",
+  "updated": "2026-09-12",
+  "note": "Measured on 2026-09-12 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-dl, match-data.json). Diverges on the very first compared frame (-123), field position.y on P3 (expected 37.0 exactly, actual 37.2215003967285): under investigation, Dream Land's own spawn/floor snapping (stage.floor.y, the spawn point's y versus the collision line) versus the exported stage geometry (docs/parity.md)."
+}
