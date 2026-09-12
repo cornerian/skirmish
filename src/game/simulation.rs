@@ -1793,6 +1793,35 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
     }
 }
 
+// Reused across `pose()` calls on the same thread so the resource-to-physics
+// bone conversion below (`local.iter().map(Bone::physics).collect()`) does
+// not allocate a fresh `Vec` on every call, the same technique
+// `collision::bones`'s `Pose::evaluate` uses for its own scratch buffers
+// (`docs/performance.md` cites this exact conversion as a fifth allocation
+// on top of `Pose::evaluate`'s own four). The buffer is fully consumed by
+// `Pose::evaluate_with_root` before this function returns it to the pool,
+// so its contents never escape a single `pose()` call.
+std::thread_local! {
+    static PHYSICS_BONES_POOL: std::cell::RefCell<Vec<Vec<bones::Bone>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn take_physics_bones() -> Vec<bones::Bone> {
+    PHYSICS_BONES_POOL
+        .with(|pool| pool.borrow_mut().pop())
+        .unwrap_or_default()
+}
+
+fn return_physics_bones(mut buffer: Vec<bones::Bone>) {
+    buffer.clear();
+    PHYSICS_BONES_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < 4 {
+            pool.push(buffer);
+        }
+    });
+}
+
 pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
     let local = if let Some(pose) = grab::pose(fighter, data) {
         pose
@@ -1831,7 +1860,8 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     } else {
         &data.bones
     };
-    let mut bones = local.iter().map(Bone::physics).collect::<Vec<_>>();
+    let mut bones = take_physics_bones();
+    bones.extend(local.iter().map(Bone::physics));
     if fighter.action == Action::JumpAerial
         && data
             .locomotion
@@ -1862,7 +1892,9 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
             fighter.depth + fighter.death.camera_offset[2],
         ],
     ];
-    bones::Pose::evaluate_with_root(&bones, &root).map_err(physics)
+    let result = bones::Pose::evaluate_with_root(&bones, &root).map_err(physics);
+    return_physics_bones(bones);
+    result
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
