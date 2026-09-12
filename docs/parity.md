@@ -70,28 +70,23 @@ first divergence is reached — the report's `checked_frames` is a matched
 without `SKIRMISH_GAMEPLAY_DATA` (see `docs/gameplay-export.md`) this test
 skips, and a skip is not evidence of anything.
 
-**Current measurement (2026-09-11, ECB-timing batch, gameplay export v2 with
-`movement_poses` spliced in, `/mnt/shared/tmp/skirmish-gameplay-v2-ecb/`, via
-`make-initialization`/`validate-replay` against the same
-`tests/fixtures/slippi/parity/fox-fd.slp`):** 72 frames match and the first
-divergent frame is still -51, field `action_state` (expected `0x001d`/Fall,
-actual `0x002a`/Landing) — unchanged, confirming this batch's diagnosis
-(`docs/ecb-timing.md`) rather than a regression. This batch fixed one real,
-separate, decomp-cited ECB bug in the same area (`ftCo_Fall_Enter`/
-`ftCommon_8007D5D4`'s ten-frame bottom lock was not applied when a fighter
-loses ground support and falls without jumping — see `docs/ecb-timing.md`
-and the new `dashing_off_an_edge_locks_the_ecb_bottom_for_ten_frames` test in
-`tests/game_locomotion.rs`), and re-verified, by direct decomp derivation and
-by runtime instrumentation of the affected frames, the movement-poses
-batch's own diagnosis below: Fox's real, disc-decoded `collision_box.indices`
-genuinely includes a joint that's provably always exactly `position.y`
-(joint 0, verified channel-less in the real FigaTree by the exporter), and
-the decomp's own ECB clamp (`mpColl_LoadECB_JObj`'s `if (bottom_y < 0)
-bottom_y = 0`) forces the ECB bottom to equal `position.y` on every frame
-as a mathematical consequence, independent of any lock/timing fix Skirmish
-could apply. `docs/ecb-timing.md` records the full derivation, the ruled-out
-alternative mechanisms, and why this remains a data limitation of the
-already-pinned ECB batch rather than a fixable Skirmish behavior bug.
+**Current measurement (2026-09-11, gameplay export v3, private dataset
+`cornerian/skirmish-datapacks`, pinned by
+`tests/fixtures/slippi/parity/gameplay-export.lock.json`):** 72 frames
+match (-123 through -52) and the first divergent frame is -51, field
+`action_state` (expected Fall, actual Landing). The v3 pack is the complete
+Fox on Final Destination export: every fighter profile, the three Fox
+specials, per-frame poses for every movement state, and all rule sets.
+The divergence is not a data limitation: every landing in the recording
+(the entry fall at -52..-49, jump landings at 418-421, 739-742, 1344-1347,
+the Illusion landing at 654-657) shows the position 2.7 to 3.6 units
+below the floor for one airborne frame before Landing at 0.0001, so the
+game detects the floor one frame after the position crosses it, while
+Skirmish lands on the crossing frame. That ordering inside the airborne
+collision solver is the next batch (`docs/landing-order.md` when it
+lands). The ECB-timing batch's earlier conclusion that Fox's collision
+bottom equalling the position makes this unfixable is superseded by that
+evidence; its ten-frame ECB lock fix stands (`docs/ecb-timing.md`).
 
 Previously (2026-09-11, gameplay export v2, private dataset
 `cornerian/skirmish-datapacks`, pinned by
