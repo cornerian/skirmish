@@ -126,19 +126,27 @@ the reserved Blaster subsystem.** Re-measured directly against pack v10
 variables embedded), superseding the stale `v8` baseline (114 frames,
 first divergence -9, never diagnosed in this file): 118 frames now match
 (-123 through -6). The new divergence is at -5, P1's `last_attack_landed`
-(expected `0x12`/18, Melee's Blaster attack id, actual `0x00`). Traced:
-the recording's own P2 `damage` jumps `0.0` -> `3.0` on this exact frame,
-matching Skirmish's own `percent` field (checked earlier in the field
-order, and not itself reported as a mismatch) -- so the laser hitbox does
-connect and deal damage via `game::damage::apply_hit`; only the
-attacker-side bookkeeping field (`fighter::combo::last_attack_landed`, set
-by `game::combat_history::record_hit`, reached from `game::projectile.rs`'s
-`HitContact::Fighter` handling with `move_id` sourced from
-`fighters[0].specials.neutral.laser.move_id`, confirmed present and equal
-to `18` in the v10 pack) does not end up `18` by end of frame. Not chased
-further: the whole call chain runs through `src/game/characters/fox/
-neutral.rs` and `src/game/projectile.rs`, the exact two files a concurrent
-Falco Blaster batch is already reserved on (this loop's own coordination
+(expected `0x12`/18, Melee's Blaster attack id, actual `0x00`).
+`validate-replay`'s own report stops at this field (the first mismatch in
+port-then-field order, P1 checked before P2), which reads as "the hit
+never lands or is never recorded." A direct, uncommitted probe stepping
+the native match frame-by-frame (bypassing the CLI's stop-on-first-
+difference report to dump both ports' full observations) shows the truer
+shape: P2's own `percent` also mismatches at -5 (expected `3.0`, actual
+`0.0` -- Skirmish has not applied the hit at all yet), but by -4 both
+`last_attack_landed` (`18`) and `percent` (`3.0`) already match the
+recording. This is a plain one-frame lag in when Skirmish's laser bolt
+registers its hit, not a missing hit or a missing bookkeeping write:
+`game::projectile::step` (`src/game/projectile.rs`) moves each projectile
+and checks its swept hurtbox contact the same frame it is dispatched from
+`characters::fox::neutral::drain_pending_shot` (`src/game/simulation.rs`'s
+own comment: "matching the source's own same-frame item Anim/Phys/Coll"),
+so the lag traces to exactly when a shot is queued to fire relative to the
+Loop subaction script's own per-frame `cmd_vars`
+(`characters::fox::neutral`'s script-driven arming/fire check) -- Fox/
+Falco neutral-special (Blaster) territory. Not chased further: both
+`src/game/characters/fox/neutral.rs` and `src/game/projectile.rs` are
+reserved by a concurrent Falco Blaster batch (this loop's own coordination
 instructions); skipped rather than risking a collision with that batch's
 in-flight edits. `fox-fd-4.slp`'s own v10 re-measurement below hits the
 same reserved subsystem on its own divergence.
