@@ -53,20 +53,38 @@ engine until its exact behavior is shown to agree. Rendering and audio consume
 read-only state/events. They may be disabled without changing simulation state
 or RNG consumption. The CLI and C oracles are tooling, outside these libraries.
 
-Special ("B") moves are the one gameplay area with a per-character-move file
-count that grows with the roster (25 characters, several specials each), so
-they get their own sub-layout: `game::specials` (`mod.rs`'s shared dispatch --
-the grounded/aerial entry-eligibility chains and the `SpecialMove` trait every
-move implements once for its own phase hooks -- plus `helpers.rs`'s reusable
-phase behaviours and `neutral.rs`'s shared neutral-B shell) and
+Special ("B") moves currently have a per-character-move file count that grows
+with the roster (25 characters, several specials each), so the native code has
+its own sub-layout: `game::specials` (`mod.rs`'s shared dispatch -- the
+grounded/aerial entry-eligibility chains and the `SpecialMove` trait every move
+implements once for its own phase hooks -- plus `helpers.rs`'s reusable phase
+behaviours and `neutral.rs`'s shared neutral-B shell) and
 `game::characters` (a registry keyed by external character id, exposing each
 character's own moves to the shared dispatcher and to the observation layer's
 Slippi id table; `fighter::characters` holds the matching pure per-character
-arithmetic). A new move touches exactly three places: its own file (next to
-its character's other moves), one line adding it to that character's registry
-entry, and its state/animation ids in the observation table. `simulation`,
-`collision`, `edge` and `ledge` call only the shared `game::specials` entry
-points, never a specific character's module.
+arithmetic). This is the remaining native migration structure, not a claim
+that the roster is fully migrated. New character policy should move toward one
+maintainable Luau file per fighter; see [Luau fighter behavior](luau.md).
+
+The native move path remains the right owner for mechanisms and ordering.
+Collision, hit detection, actions, physics, controller input, and animation
+stay in Rust. Luau hooks select reusable character policy at explicit
+boundaries, such as damage preparation or a Reflector disposition. Design
+hooks for composability and semantic reuse rather than completeness: a rough
+long-term target is 20–40 primitives and 10–20 lifecycle hooks, not a quota or
+current API claim. Add a hook only after checking whether existing contexts
+compose; if a boundary is missing, define its participants, order, mutable and
+derived fields, cancellation scope, one-shot effects, errors, and rollback
+contract before wiring it. Generic names do not make bespoke operations such as
+`set_armor` or `enable_counter` reusable.
+
+For the contributor wiring checklist and current six-hook/three-command
+surface, see [Luau fighter behavior](luau.md). Keep shared fighter, projectile,
+and throw paths consistent when a lifecycle boundary applies, and add behavior
+coverage for no-op/native equivalence, independent effects, trades and
+cancellation bookkeeping, local side effects, and checkpoint/error rollback.
+The current Reflector migration is only a policy decision; Rust still performs
+its geometry, owner swap, damage scaling, and projectile motion.
 
 The eventual RL interface should expose reset, one-frame step, observation,
 termination, checkpoint and restore. Keep reward definitions in the training

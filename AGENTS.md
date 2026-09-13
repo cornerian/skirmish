@@ -44,3 +44,6 @@ owned by the resource task.
 - Commit and push substantial verified milestones to `origin/main`, as requested.
   The old history is archived on `archive/pre-rust-rewrite-20260909`; `main`
   starts with a fresh root commit, per the user's explicit instruction.
+
+Fighter scripting API extensions should follow
+[the Luau hook and primitive guidance](docs/luau.md#adding-a-hook-or-primitive).
