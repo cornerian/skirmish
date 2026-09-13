@@ -76,6 +76,7 @@ fn spawn(
 ) -> Result<Fighter, Error> {
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
+        script_state: Default::default(),
         position,
         depth: 0.0,
         deferred_position: [0.0; 3],
@@ -400,6 +401,32 @@ pub(crate) fn advance(
         Some(entry) if state.next_frame <= entry.input_lock_frames => [Controller::default(); 2],
         _ => inputs,
     };
+
+    // Character scripts run once per simulation frame before native physics.
+    // Their persistent locals live in Fighter and therefore roll back with
+    // the enclosing Match::step transaction.
+    for player in 0..2 {
+        let Some(program) = data.fighters[player].script.as_ref() else {
+            continue;
+        };
+        let fighter = state.fighters[player].clone();
+        let view = script::FighterView {
+            id: player as u8,
+            action: format!("{:?}", fighter.action),
+            action_frame: fighter.action_frame,
+            velocity: fighter.velocity,
+            grounded: fighter.grounded,
+            percent: fighter.percent,
+            hitlag: fighter.hitlag,
+            hitstun: fighter.hitstun,
+            flags: Default::default(),
+        };
+        let result = program
+            .dispatch(script::Hook::OnFrame, &view, None, &fighter.script_state)
+            .map_err(|error| Error::Data(format!("fighter script hook failed: {error}")))?;
+        state.fighters[player].script_state = result.locals;
+        script::apply_commands(state, player, &result.commands)?;
+    }
 
     // Slippi's recorder clears these transient fields before their producer
     // callbacks. Contacts and landings later in the frame replace them.
@@ -961,13 +988,39 @@ pub(crate) fn advance(
     for (fighter, touched) in state.fighters.iter_mut().zip(shield_touches) {
         fighter.shield.touched = touched;
     }
-    // Preserve both action counters during a simultaneous trade before Damage
-    // replaces their action; attacks that connected start hitlag on this step.
-    for (attacker, hit) in hits
+    let scripted_hits = data.fighters.iter().any(|fighter| fighter.script.is_some());
+    // Run each fighter contact's pre hooks once, before any Damage transition.
+    // Preparation commits script locals/commands to this transactional State;
+    // the resulting value is consumed by the resolution pass below.
+    let mut prepared_hits = [None, None];
+    if scripted_hits {
+        for (attacker, candidate) in hits.iter().enumerate() {
+            let Some((hit, staled, HitContact::Fighter { height, geometry })) = candidate else {
+                continue;
+            };
+            prepared_hits[attacker] = damage::prepare_hit(
+                data,
+                state,
+                attacker,
+                hit,
+                *staled,
+                *height,
+                damage::HitDirection::FighterContact(*geometry),
+                false,
+            )?;
+        }
+    }
+    for (attacker, hit, contact) in hits
         .iter()
         .enumerate()
-        .filter_map(|(attacker, hit)| Some((attacker, hit.as_ref()?.0)))
+        .filter_map(|(attacker, hit)| Some((attacker, hit.as_ref()?.0, hit.as_ref()?.2)))
     {
+        if matches!(contact, HitContact::Fighter { .. })
+            && scripted_hits
+            && prepared_hits[attacker].is_none()
+        {
+            continue;
+        }
         state.fighters[attacker].hit_groups |= 1 << hit.group;
         if data.rules.clank.is_some() {
             clank::record(&mut state.fighters[attacker], hit.group, 1 - attacker)?;
@@ -980,21 +1033,39 @@ pub(crate) fn advance(
             hit.map(|(hit, staled, contact)| (attacker, hit, staled, contact))
         })
     {
-        newly_hit[1 - attacker] = true;
+        if matches!(contact, HitContact::Fighter { .. })
+            && scripted_hits
+            && prepared_hits[attacker].is_none()
+        {
+            continue;
+        }
         match contact {
             HitContact::Shield => {
                 shield_contact[1 - attacker] = true;
+                newly_hit[1 - attacker] = true;
                 shield::apply_contact(data, state, attacker, hit, staled)?;
             }
-            HitContact::Fighter { height, geometry } => damage::apply_hit(
-                data,
-                state,
-                attacker,
-                hit,
-                staled,
-                height,
-                damage::HitDirection::FighterContact(geometry),
-            )?,
+            HitContact::Fighter { height, geometry } => {
+                let prepared = if scripted_hits {
+                    prepared_hits[attacker]
+                        .take()
+                        .expect("prepared fighter hit")
+                } else {
+                    damage::prepare_hit(
+                        data,
+                        state,
+                        attacker,
+                        hit,
+                        staled,
+                        height,
+                        damage::HitDirection::FighterContact(geometry),
+                        false,
+                    )?
+                    .expect("unconditionally accepted native hit")
+                };
+                let _ = damage::resolve_prepared_hit(data, state, prepared)?;
+                newly_hit[1 - attacker] = true;
+            }
         }
         if matches!(contact, HitContact::Fighter { .. }) && data.rules.staling.is_some() {
             state.fighters[attacker]

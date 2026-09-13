@@ -4,6 +4,7 @@
 use super::{
     Action, Error, Event, Fighter, State,
     data::{Bone, FighterData, Hitbox, MatchData},
+    script,
 };
 use crate::fighter::{combat, damage};
 use serde::{Deserialize, Serialize};
@@ -847,6 +848,25 @@ pub(crate) struct FighterContact {
     pub position: [f32; 3],
 }
 
+/// A hit after its pre hooks have run.  Preparation is deliberately separate
+/// from resolution so simultaneous contacts can run hooks once, in contact
+/// order, before any one of them changes the defender's action.
+pub(crate) struct PreparedHit {
+    attacker: usize,
+    victim: usize,
+    hit: Hitbox,
+    staled: super::staling::Hit,
+    hurt_height: damage::HurtHeight,
+    projectile: bool,
+    target: Fighter,
+    was_grounded: bool,
+    previous_facing: f32,
+    damage_facing: f32,
+    down_damage_face_up: Option<bool>,
+    patch: script::HitPatch,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_hit(
     data: &MatchData,
     state: &mut State,
@@ -855,10 +875,38 @@ pub(crate) fn apply_hit(
     staled: super::staling::Hit,
     hurt_height: damage::HurtHeight,
     direction: HitDirection,
-) -> Result<(), Error> {
+    projectile: bool,
+) -> Result<bool, Error> {
+    let Some(prepared) = prepare_hit(
+        data,
+        state,
+        attacker,
+        hit,
+        staled,
+        hurt_height,
+        direction,
+        projectile,
+    )?
+    else {
+        return Ok(false);
+    };
+    resolve_prepared_hit(data, state, prepared)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_hit(
+    data: &MatchData,
+    state: &mut State,
+    attacker: usize,
+    hit: &Hitbox,
+    staled: super::staling::Hit,
+    hurt_height: damage::HurtHeight,
+    direction: HitDirection,
+    projectile: bool,
+) -> Result<Option<PreparedHit>, Error> {
     let victim = 1 - attacker;
     let rules = &data.rules;
-    let target = &state.fighters[victim];
+    let target = state.fighters[victim].clone();
     let was_grounded = target.grounded;
     let previous_facing = target.facing;
     let (damage_facing, angle_degrees) = match direction {
@@ -924,7 +972,7 @@ pub(crate) fn apply_hit(
     }
     // ftCo_Damage_CalcKnockback scales a charging victim before armor.
     let knockback = match &data.rules.smash {
-        Some(smash) if super::smash::charging(target) => {
+        Some(smash) if super::smash::charging(&target) => {
             knockback * smash.charging_knockback_multiplier
         }
         _ => knockback,
@@ -996,6 +1044,200 @@ pub(crate) fn apply_hit(
     if !angle.radians.is_finite() || merged.into_iter().any(|value| !value.is_finite()) {
         return Err(Error::NonFinite);
     }
+    let mut patch = script::HitPatch {
+        cancelled: false,
+        damage: staled.damage,
+        angle: angle_degrees as f32,
+        knockback,
+        apply_damage: true,
+        apply_knockback: true,
+        apply_hitlag: true,
+        apply_hitstun: true,
+        reflect: false,
+    };
+    if data.fighters[attacker].script.is_some() || data.fighters[victim].script.is_some() {
+        let view = |id: usize, fighter: &Fighter| script::FighterView {
+            id: id as u8,
+            action: format!("{:?}", fighter.action),
+            action_frame: fighter.action_frame,
+            velocity: fighter.velocity,
+            grounded: fighter.grounded,
+            percent: fighter.percent,
+            hitlag: fighter.hitlag,
+            hitstun: fighter.hitstun,
+            flags: Default::default(),
+        };
+        let mut hit_view = script::HitView {
+            frame: state.next_frame,
+            attacker: attacker as u8,
+            defender: victim as u8,
+            damage: staled.damage,
+            angle: angle_degrees as f32,
+            base_knockback: hit.base,
+            knockback_growth: hit.growth,
+            knockback,
+            hitbox_group: hit.group,
+            projectile,
+            max_damage: 0,
+        };
+        for (id, hook) in [
+            (attacker, script::Hook::BeforeHit),
+            (victim, script::Hook::BeforeReceiveHit),
+        ] {
+            let Some(program) = data.fighters[id].script.as_ref() else {
+                continue;
+            };
+            let fighter_view = view(id, &state.fighters[id]);
+            let result = if hook == script::Hook::BeforeReceiveHit {
+                program.dispatch_with_patch(
+                    hook,
+                    &fighter_view,
+                    &hit_view,
+                    &patch,
+                    &state.fighters[id].script_state,
+                )
+            } else {
+                program.dispatch(
+                    hook,
+                    &fighter_view,
+                    Some(&hit_view),
+                    &state.fighters[id].script_state,
+                )
+            }
+            .map_err(|error| Error::Data(format!("fighter script hook failed: {error}")))?;
+            state.fighters[id].script_state = result.locals;
+            script::apply_commands(state, id, &result.commands)?;
+            if let Some(next) = result.hit {
+                let prior = patch;
+                patch = next;
+                patch.cancelled |= prior.cancelled;
+                patch.apply_damage &= prior.apply_damage;
+                patch.apply_knockback &= prior.apply_knockback;
+                patch.apply_hitlag &= prior.apply_hitlag;
+                patch.apply_hitstun &= prior.apply_hitstun;
+                hit_view.damage = patch.damage;
+                hit_view.angle = patch.angle;
+                hit_view.knockback = patch.knockback;
+            }
+        }
+    }
+    if patch.cancelled {
+        return Ok(None);
+    }
+    let prepared = PreparedHit {
+        attacker,
+        victim,
+        hit: hit.clone(),
+        staled,
+        hurt_height,
+        projectile,
+        target,
+        was_grounded,
+        previous_facing,
+        damage_facing,
+        down_damage_face_up,
+        patch,
+    };
+    Ok(Some(prepared))
+}
+
+pub(crate) fn resolve_prepared_hit(
+    data: &MatchData,
+    state: &mut State,
+    prepared: PreparedHit,
+) -> Result<bool, Error> {
+    let PreparedHit {
+        attacker,
+        victim,
+        hit,
+        staled,
+        hurt_height,
+        projectile,
+        target,
+        was_grounded,
+        previous_facing,
+        damage_facing,
+        down_damage_face_up,
+        patch,
+    } = prepared;
+    let rules = &data.rules;
+    if !patch.damage.is_finite()
+        || patch.damage < 0.0
+        || !patch.angle.is_finite()
+        || !patch.knockback.is_finite()
+        || patch.knockback < 0.0
+    {
+        return Err(Error::Data(
+            "fighter script returned invalid hit values".into(),
+        ));
+    }
+    let apply_knockback = patch.apply_knockback && patch.knockback != 0.0;
+    let has_knockback = patch.knockback != 0.0;
+    let apply_hitstun = patch.apply_hitstun && has_knockback;
+    let apply_hitlag = patch.apply_hitlag && has_knockback;
+    let damage_motion = rules.damage.damage_motion.as_ref().map(|profile| {
+        damage::damage_motion(
+            patch.knockback,
+            rules.hitstun_scale,
+            profile.thresholds,
+            !target.grounded,
+            hurt_height,
+        )
+    });
+    let attacker_hitlag = combat::hitlag(patch.damage as i32, false, 1.0, &rules.hitlag.physics())
+        .map_err(physics)?;
+    let hitlag = combat::hitlag(
+        patch.damage as i32,
+        matches!(target.action, Action::Squat | Action::SquatWait),
+        1.0,
+        &rules.hitlag.physics(),
+    )
+    .map_err(physics)?;
+    let hitstun = combat::initial_hitstun(patch.knockback, rules.hitstun_scale).map_err(physics)?;
+    let angle = damage::launch_angle(
+        patch.angle as i32,
+        patch.knockback,
+        !target.grounded,
+        &rules.damage.angle_rules(),
+    );
+    let speed = patch.knockback * rules.knockback_speed;
+    let incoming = [
+        -speed * crate::compat::math::trig::cosf(angle.radians) * damage_facing,
+        speed * crate::compat::math::trig::sinf(angle.radians),
+    ];
+    let ground_launch = (was_grounded && rules.damage.ground_launch.is_some()).then(|| {
+        damage::ground_launch(
+            incoming,
+            [target.floor_normal[0], target.floor_normal[1]],
+            down_damage_face_up.is_some()
+                || matches!(damage_motion, Some(damage::DamageMotion::Fly { .. })),
+            &rules.damage.ground_launch.as_ref().unwrap().physics(),
+        )
+    });
+    let incoming = ground_launch.map_or(incoming, |launch| launch.knockback);
+    let merged = damage::merge_knockback(
+        target.knockback,
+        incoming,
+        target.damage_elapsed,
+        rules.damage.knockback_replace_window,
+    );
+    if !angle.radians.is_finite()
+        || incoming.into_iter().any(|value| !value.is_finite())
+        || merged.into_iter().any(|value| !value.is_finite())
+        || !attacker_hitlag.is_finite()
+        || !hitlag.is_finite()
+        || attacker_hitlag < 0.0
+        || hitlag < 0.0
+        || hitstun < 1
+        || ground_launch.is_some_and(|launch| {
+            launch.knockback.into_iter().any(|value| !value.is_finite())
+                || !launch.ground_knockback.is_finite()
+        })
+    {
+        return Err(Error::Data(
+            "fighter script produced invalid resolved hit values".into(),
+        ));
+    }
     // `Fighter_UnkTakeDamage_8006CC30` (percent) and `ftCo_Damage_CalcKnockback`
     // (this hit's own knockback magnitude) both run unconditionally in
     // `Fighter_ProcessHit_8006D1EC`, before its `switch (fp->x1828)` reaches
@@ -1023,8 +1265,8 @@ pub(crate) fn apply_hit(
     // reaction (`ftCo_8008EC90`'s gate runs before `ftCo_Damage_
     // CalcHitlag` would otherwise apply it to either side), so it stays
     // gated alongside the victim's.
-    let reacted = knockback != 0.0;
-    if reacted {
+    let reacted = apply_knockback;
+    if apply_hitlag {
         state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
     }
     super::combat_history::record_hit(
@@ -1035,7 +1277,12 @@ pub(crate) fn apply_hit(
         &data.rules.damage.combo,
         reacted,
     );
-    state.fighters[victim].percent = (state.fighters[victim].percent + staled.damage).min(999.0);
+    if patch.apply_damage {
+        state.fighters[victim].percent = (state.fighters[victim].percent + patch.damage).min(999.0);
+    }
+    if apply_hitlag {
+        state.fighters[victim].hitlag = state.fighters[victim].hitlag.max(hitlag);
+    }
     if reacted {
         let target = &mut state.fighters[victim];
         // ftCo_8008DCE0 first installs the hit direction. Its prone
@@ -1046,8 +1293,7 @@ pub(crate) fn apply_hit(
         } else {
             damage_facing
         };
-        target.hitlag = target.hitlag.max(hitlag);
-        target.hitstun = hitstun as u32;
+        target.hitstun = if apply_hitstun { hitstun as u32 } else { 0 };
         target.velocity = [0.0; 2];
         target.ground_velocity = 0.0;
         target.knockback = merged;
@@ -1082,7 +1328,7 @@ pub(crate) fn apply_hit(
                 ProneOrientation::FaceDown
             });
             // The source stores hitstun in the same union slot used by DownWait.
-            target.down_timer = hitstun as u32;
+            target.down_timer = if apply_hitstun { hitstun as u32 } else { 0 };
         }
         target.damage_elapsed = 0;
         target.locomotion.tilt_x_age = 254;
@@ -1100,15 +1346,58 @@ pub(crate) fn apply_hit(
             .damage
             .floor_response
             .as_ref()
-            .is_some_and(|profile| knockback >= profile.tumble_knockback_threshold);
+            .is_some_and(|profile| patch.knockback >= profile.tumble_knockback_threshold);
     }
     state.events.push(Event::Hit {
         attacker,
         victim,
-        damage: staled.damage,
-        knockback,
+        damage: patch.damage,
+        knockback: patch.knockback,
     });
-    Ok(())
+    // Post-resolution hooks observe the committed hit outcome. Their locals
+    // are still part of the transactional Match::step state, while returned
+    // hit edits are intentionally ignored after resolution.
+    if data.fighters[attacker].script.is_some() || data.fighters[victim].script.is_some() {
+        let hit_view = script::HitView {
+            frame: state.next_frame,
+            attacker: attacker as u8,
+            defender: victim as u8,
+            damage: patch.damage,
+            angle: patch.angle,
+            base_knockback: hit.base,
+            knockback_growth: hit.growth,
+            knockback: patch.knockback,
+            hitbox_group: hit.group,
+            projectile,
+            max_damage: 0,
+        };
+        for (id, hook) in [
+            (attacker, script::Hook::AfterHit),
+            (victim, script::Hook::AfterReceiveHit),
+        ] {
+            let Some(program) = data.fighters[id].script.as_ref() else {
+                continue;
+            };
+            let fighter = state.fighters[id].clone();
+            let view = script::FighterView {
+                id: id as u8,
+                action: format!("{:?}", fighter.action),
+                action_frame: fighter.action_frame,
+                velocity: fighter.velocity,
+                grounded: fighter.grounded,
+                percent: fighter.percent,
+                hitlag: fighter.hitlag,
+                hitstun: fighter.hitstun,
+                flags: Default::default(),
+            };
+            let result = program
+                .dispatch_with_patch(hook, &view, &hit_view, &patch, &fighter.script_state)
+                .map_err(|error| Error::Data(format!("fighter script hook failed: {error}")))?;
+            state.fighters[id].script_state = result.locals;
+            script::apply_commands(state, id, &result.commands)?;
+        }
+    }
+    Ok(true)
 }
 
 /// Priority-1 portions of the ordinary tumble, knockdown and neutral-tech

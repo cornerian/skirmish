@@ -933,7 +933,7 @@ pub(crate) fn update_pairs(
                     data.rules.staling.as_ref(),
                 )?;
                 detach(state, holder, victim);
-                super::damage::apply_hit(
+                let accepted = super::damage::apply_hit(
                     data,
                     state,
                     holder,
@@ -955,8 +955,9 @@ pub(crate) fn update_pairs(
                     staled,
                     crate::fighter::damage::HurtHeight::Middle,
                     super::damage::HitDirection::Throw,
+                    false,
                 )?;
-                if data.rules.staling.is_some() {
+                if accepted && data.rules.staling.is_some() {
                     state.fighters[holder]
                         .staling
                         .queue

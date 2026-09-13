@@ -94,7 +94,7 @@ unsafe extern "C" {
 }
 
 /// Opaque handle to the C oracle's own persistent per-trace `Fighter`
-/// (`tests/oracle/neutral_special.c`'s `NeutralScriptTrace`).
+/// (`tests/oracle/fox_neutral_special.c`'s `NeutralScriptTrace`).
 #[repr(C)]
 struct NeutralScriptTrace {
     _private: [u8; 0],
@@ -540,7 +540,7 @@ proptest! {
 
 #[test]
 fn adapter_statements_are_verbatim_in_the_pinned_sources() {
-    let adapter = include_str!("oracle/neutral_special.c");
+    let adapter = include_str!("oracle/fox_neutral_special.c");
     let source = include_str!("oracle/original/ftfox_inlines.h");
     let block = adapter
         .split("/* BEGIN VERBATIM CHECK LOOP INPUT */\n")

@@ -15,7 +15,7 @@
 use super::{
     Event, State, damage,
     data::{Hitbox, MatchData},
-    shield, staling,
+    script, shield, staling,
 };
 use crate::{
     collision::{
@@ -25,6 +25,7 @@ use crate::{
     fighter::combat::Capsule,
 };
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -283,7 +284,64 @@ fn step(
             .map(|h| h.damage)
             .max()
             .unwrap_or(0);
-        if overlaps && (damage as i32) <= down.reflect.max_damage {
+        let accepts = if overlaps {
+            let fighter = &state.fighters[victim];
+            let mut flags = BTreeMap::new();
+            flags.insert("reflecting".to_owned(), fighter.shield.reflecting);
+            let view = script::FighterView {
+                id: victim as u8,
+                action: format!("{:?}", fighter.action),
+                action_frame: fighter.action_frame,
+                velocity: fighter.velocity,
+                grounded: fighter.grounded,
+                percent: fighter.percent,
+                hitlag: fighter.hitlag,
+                hitstun: fighter.hitstun,
+                flags,
+            };
+            let program = if let Some(program) = data.fighters[victim].script.as_ref() {
+                if program
+                    .has_hook(script::Hook::OnProjectileContact)
+                    .map_err(|error| super::Error::Data(error.to_string()))?
+                {
+                    Some(program.clone())
+                } else {
+                    script::bundled_source(data.fighters[victim].specials.as_ref())
+                        .map(script::Program::new)
+                        .transpose()
+                        .map_err(|error| super::Error::Data(error.to_string()))?
+                }
+            } else {
+                script::bundled_source(data.fighters[victim].specials.as_ref())
+                    .map(script::Program::new)
+                    .transpose()
+                    .map_err(|error| super::Error::Data(error.to_string()))?
+            };
+            let Some(program) = program else {
+                return Ok(Outcome::Keep);
+            };
+            let locals = state.fighters[victim].script_state.clone();
+            let hit = script::HitView {
+                damage: damage as f32,
+                max_damage: down.reflect.max_damage,
+                projectile: true,
+                ..Default::default()
+            };
+            let result = program
+                .dispatch(
+                    script::Hook::OnProjectileContact,
+                    &view,
+                    Some(&hit),
+                    &locals,
+                )
+                .map_err(|error| super::Error::Data(error.to_string()))?;
+            state.fighters[victim].script_state = result.locals;
+            script::apply_commands(state, victim, &result.commands)?;
+            result.hit.is_some_and(|patch| patch.reflect)
+        } else {
+            false
+        };
+        if accepts {
             state.projectiles[index].owner = victim;
             state.projectiles[index].angle += core::f32::consts::PI;
             for hit in &mut state.projectiles[index].hitboxes {
@@ -436,7 +494,7 @@ fn step(
                                 )
                             }),
                     };
-                    damage::apply_hit(
+                    let accepted = damage::apply_hit(
                         data,
                         state,
                         owner,
@@ -448,7 +506,11 @@ fn step(
                             hurt_end: hurt.end,
                             position: contact.position,
                         }),
+                        true,
                     )?;
+                    if !accepted {
+                        continue;
+                    }
                     if data.rules.staling.is_some() {
                         state.fighters[owner]
                             .staling

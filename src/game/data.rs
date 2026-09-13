@@ -215,6 +215,11 @@ impl HitlagData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FighterData {
+    /// Optional Luau behavior program for this fighter. Programs are embedded
+    /// in the native match resource so replay hashes and checkpoints remain
+    /// independent of the host filesystem.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<super::script::Program>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebound: Option<super::clank::Animation>,
     pub name: String,

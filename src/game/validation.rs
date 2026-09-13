@@ -192,6 +192,10 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        if let Some(program) = &fighter.script {
+            script::validate_program(program)
+                .map_err(|error| Error::Data(format!("invalid fighter script: {error}")))?;
+        }
         if let Some(rules) = &rules.clank {
             super::clank::validate(rules, fighter)?;
         } else {
@@ -918,6 +922,9 @@ pub(crate) fn inputs(input: &[Controller; 2]) -> Result<(), Error> {
 
 pub(crate) fn state(state: &State) -> Result<(), Error> {
     for (player, f) in state.fighters.iter().enumerate() {
+        script::validate_state(&f.script_state).map_err(|error| {
+            Error::Data(format!("invalid fighter {player} script state: {error}"))
+        })?;
         require(
             grab::valid_relationship(&state.fighters, player),
             "invalid paired capture state",
