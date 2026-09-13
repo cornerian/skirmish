@@ -6,7 +6,7 @@
 //! effect, every phase's ground/air conversion, and the shared air Phys
 //! arithmetic. Each comparison pins the extracted callback's exact
 //! behaviour with an inline Rust formula (the same style
-//! `fox_side_special_differential.rs` already established), not by
+//! `side_special_differential.rs` already established), not by
 //! constructing a full `Match` -- `tests/game_fox_down_special.rs` and the
 //! self-recorded replay regressions in `crates/cli/tests/replay_match.rs`
 //! separately exercise the Rust engine's own mirror end to end.

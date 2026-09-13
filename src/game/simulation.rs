@@ -114,10 +114,10 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
-        fox_side_special: crate::characters::fox::side::State::default(),
-        fox_up_special: crate::characters::fox::up::State::default(),
+        side_special: crate::characters::fox::side::State::default(),
+        up_special: crate::characters::fox::up::State::default(),
         down_special: crate::characters::fox::down::State::default(),
-        fox_neutral_special: crate::characters::fox::neutral::State::default(),
+        neutral_special: crate::characters::fox::neutral::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -210,25 +210,25 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // The side special's gravity delay is freshly assigned by every phase's
     // own entry; a mid-phase ground<->air conversion preserves it explicitly
     // around this reset (`specials::transfer_ground_air`).
-    fighter.fox_side_special = crate::characters::fox::side::State::default();
+    fighter.side_special = crate::characters::fox::side::State::default();
     // Same convention as the side special's own reset above: the up
     // special's gravity delay, rotate/launch angle and Travel counters are
     // all freshly assigned by their own phase's entry, with mid-phase
     // ground<->air conversions preserving them explicitly around this reset
     // (`specials::transfer_ground_air`, the up special's own `land`).
-    fighter.fox_up_special = crate::characters::fox::up::State::default();
+    fighter.up_special = crate::characters::fox::up::State::default();
     // Fighter_ChangeMotionState unconditionally clears `fp->mv.fx.SpecialLw`;
     // every internal Reflector transition (`crate::characters::fox::down`) restores
     // the whole-move fields (release_lag/is_release/gravity_delay) it
     // preserves across phase changes explicitly around this reset, the same
-    // pattern as `fox_side_special` above.
+    // pattern as `side_special` above.
     fighter.down_special = crate::characters::fox::down::State::default();
     // Blaster keeps no whole-move state across a `simulation::enter` at
     // all: `repeat_armed` is freshly re-evaluated every Loop cycle, and a
     // mid-move ground<->air conversion never happens for this move (see
     // `crate::characters::fox::neutral`'s own module doc), so there is nothing to
     // preserve around this reset, unlike the other three specials above.
-    fighter.fox_neutral_special = crate::characters::fox::neutral::State::default();
+    fighter.neutral_special = crate::characters::fox::neutral::State::default();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }

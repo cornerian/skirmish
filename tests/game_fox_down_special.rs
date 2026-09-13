@@ -354,7 +354,7 @@ fn every_phase_survives_a_checkpoint_round_trip() {
 /// value verbatim (`angle_degrees: 0.0` is the pack's own literal value, not
 /// a placeholder); `bone` is adapted from the pack's own bone 3 to bone 1,
 /// this suite's shared two-bone synthetic skeleton having no equivalent
-/// (see `tests/game_fox_up_special.rs`'s identical adaptation for Fire
+/// (see `tests/game_up_special.rs`'s identical adaptation for Fire
 /// Fox's own Travel hitbox), and `clank`/`rebound` are the pack's own
 /// values (`true`/`false`); this test's own resource wires the ordinary
 /// clank profile they require to validate
@@ -379,7 +379,7 @@ fn reflector_start_hitbox() -> skirmish::game::data::Hitbox {
 
 #[test]
 fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
-    // Reproduced locally (like `tests/game_fox_up_special.rs`'s own Hold/
+    // Reproduced locally (like `tests/game_up_special.rs`'s own Hold/
     // Travel hitbox regressions) rather than edited into the shared
     // `fixtures/game/fox-down-special.json` (used by every other test in
     // this file, whose own step counts -- "Start is 4 frames" -- are tuned
@@ -402,7 +402,7 @@ fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
     }
     let mut game = Match::new(resource, 0).unwrap();
     // Start's entry frame (0) is sampled by this very step (the same
-    // same-frame cascade `tests/game_fox_up_special.rs`'s Travel regression
+    // same-frame cascade `tests/game_up_special.rs`'s Travel regression
     // documents): the pack's own hitbox already connects here.
     let entry = game.step(input(0, down(-0.8))).unwrap();
     assert_eq!(entry.fighters[0].action, Action::SpecialLwStart);

@@ -6,7 +6,7 @@
 //! decision, Landing/Fall (including the frame-13 regression fixed in this
 //! batch), the `FallSpecial` exits and ledge catching. Bit-exact arithmetic
 //! is the C-oracle differential suite's job
-//! (`tests/fox_up_special_differential.rs`); this file owns the wiring --
+//! (`tests/up_special_differential.rs`); this file owns the wiring --
 //! that a real `Match` actually reaches each phase, in the right order,
 //! with the resource's own attribute values.
 
@@ -195,7 +195,7 @@ fn ground_entry_enters_hold_with_gravity_delay_and_jumps_untouched() {
     // x54 == 2.0; ftFx_SpecialHiHold_Phys never reads or ticks it while
     // grounded (confirmed against the pinned source: unlike the side
     // special's own Start/End, Hold's ground Phys is only ft_80084F3C).
-    assert_eq!(state.fighters[0].fox_up_special.gravity_delay, 2.0);
+    assert_eq!(state.fighters[0].up_special.gravity_delay, 2.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -237,7 +237,7 @@ fn air_entry_divides_velocity_and_does_not_yet_restore_jumps() {
     // x54 == 2.0, ticked once by this same step's own Hold air Phys (the
     // gravity delay counts down even on the entry frame, unlike the
     // ground side's own Phys which never reads it at all).
-    assert_eq!(state.fighters[0].fox_up_special.gravity_delay, 1.0);
+    assert_eq!(state.fighters[0].up_special.gravity_delay, 1.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -267,11 +267,11 @@ fn hold_air_gravity_delay_holds_vertical_velocity_before_falling() {
     let state = game.step(input(0, up_stick(0.9))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialHiHoldAir);
     // x54 == 2.0, already ticked once by this same step's own Phys.
-    assert_eq!(state.fighters[0].fox_up_special.gravity_delay, 1.0);
+    assert_eq!(state.fighters[0].up_special.gravity_delay, 1.0);
     assert_eq!(state.fighters[0].velocity[1], 0.0);
     let state = game.step(IDLE).unwrap();
     assert_eq!(state.fighters[0].velocity[1], 0.0);
-    assert_eq!(state.fighters[0].fox_up_special.gravity_delay, 0.0);
+    assert_eq!(state.fighters[0].up_special.gravity_delay, 0.0);
     // The delay has now lapsed: ftCommon_Fall(x60) applies from here on.
     let state = game.step(IDLE).unwrap();
     assert!(state.fighters[0].velocity[1] < 0.0);
@@ -330,7 +330,7 @@ fn hold_ground_anim_end_declines_on_a_platform() {
     let floor_normal = state.fighters[0].floor_normal;
     let expected_floor_angle = libm::atan2f(-floor_normal[0] * facing, floor_normal[1]);
     approx(
-        state.fighters[0].fox_up_special.rotate_model,
+        state.fighters[0].up_special.rotate_model,
         expected_floor_angle,
     );
 }
@@ -747,7 +747,7 @@ fn travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_
     let facing = state.fighters[0].facing;
     let floor_normal = state.fighters[0].floor_normal;
     let expected = libm::atan2f(-floor_normal[0] * facing, floor_normal[1]);
-    approx(state.fighters[0].fox_up_special.rotate_model, expected);
+    approx(state.fighters[0].up_special.rotate_model, expected);
     // Keep sliding until it runs off the shortened floor's own edge.
     let mut state = state;
     for _ in 0..20 {
@@ -766,7 +766,7 @@ fn travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_
     // floor is flat, so every grounded frame recomputed the same value;
     // the point is that it is *this* value, freshly re-derived every
     // frame, not a stale one frozen at launch).
-    approx(state.fighters[0].fox_up_special.rotate_model, expected);
+    approx(state.fighters[0].up_special.rotate_model, expected);
 }
 
 #[test]

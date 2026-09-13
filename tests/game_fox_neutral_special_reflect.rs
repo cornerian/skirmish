@@ -112,7 +112,7 @@ fn fire_laser(game: &mut Match, other: Controller) {
     // The fixture's Start pose is two frames, but the entry frame's own
     // extra `ftAnim_8006EBA4` advance (`docs/validation.md`'s entry-advance
     // table) makes the clip run out one idle frame sooner than a naive
-    // frame count would suggest -- see `game_fox_neutral_special.rs`'s own
+    // frame count would suggest -- see `game_neutral_special.rs`'s own
     // comment on the same fixture.
     game.step([Controller::default(), other]).unwrap();
 }

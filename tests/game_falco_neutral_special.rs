@@ -18,7 +18,7 @@
 //! `1`); the difference this test proves directly is the knockback vector
 //! itself, real Melee's actual rules aside.
 //!
-//! `tests/game_fox_neutral_special.rs` already covers the shared state
+//! `tests/game_neutral_special.rs` already covers the shared state
 //! machine end to end (thresholds, Start/Loop/End cycling, staling, ground-
 //! leaves-to-Fall, terrain despawn, script-driven timing); this file does
 //! not re-derive that coverage, only what is different when `Specials::
@@ -82,7 +82,7 @@ fn hit_this_frame(state: &skirmish::game::State, owner: usize, victim: usize) ->
 }
 
 /// Runs fighter 0 through a full Start entry and returns the first frame
-/// the laser spawns (matching `game_fox_neutral_special.rs`'s own
+/// the laser spawns (matching `game_neutral_special.rs`'s own
 /// `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it` timing note:
 /// the Start clip's own extra entry-frame advance means the fixture's
 /// two-frame clip already runs out one idle frame later).
@@ -156,7 +156,7 @@ fn falcos_laser_hits_with_real_knockback_unlike_foxs_all_zero_laser() {
     // found: Falco's `growth: 100, fixed: 5` (vs. Fox's all-zero) feeds a
     // genuinely nonzero `KnockbackHit` into the ordinary `fighter::combat::
     // knockback` formula, so `target.knockback` comes out nonzero -- unlike
-    // Fox's own laser (`tests/game_fox_neutral_special.rs`'s identical hit
+    // Fox's own laser (`tests/game_neutral_special.rs`'s identical hit
     // path, all-zero attributes), which always produces exactly `[0.0,
     // 0.0]` there. Every confirmed hit still gets at least one frame of
     // hitstun regardless of knockback magnitude
@@ -181,7 +181,7 @@ fn falcos_laser_still_bounces_off_a_shield_like_foxs_does() {
     // `tests/falco_laser_table_differential.rs` confirms the pinned source
     // gives "Falco laser" the byte-identical dispatch stanza "Fox laser"
     // uses -- so this is a light smoke test proving the wiring, not a
-    // second full derivation of `tests/game_fox_neutral_special_reflect.rs`'s
+    // second full derivation of `tests/game_neutral_special_reflect.rs`'s
     // own bounce-vector/Reflector-handoff coverage, which already exercises
     // that same generic code through Fox.
     let mut resource = data();

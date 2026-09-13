@@ -29,8 +29,6 @@ mod edge_support;
 mod escape_air_support;
 #[path = "support/escape.rs"]
 mod escape_support;
-#[path = "support/fox_side_special.rs"]
-mod fox_side_special_support;
 #[path = "support/grab.rs"]
 mod grab_support;
 #[path = "support/idle.rs"]
@@ -41,6 +39,8 @@ mod jab_support;
 mod ledge_support;
 #[path = "support/run.rs"]
 mod run_support;
+#[path = "support/fox_side_special.rs"]
+mod side_special_support;
 #[path = "support/smash.rs"]
 mod smash_support;
 #[path = "support/fox_neutral_special.rs"]
@@ -135,7 +135,7 @@ fn featured_data() -> MatchData {
     let data = escape_air_support::profile(data);
     let data = ledge_support::profile(data);
     let data = special_support::profile(data);
-    let data = fox_side_special_support::profile(data);
+    let data = side_special_support::profile(data);
     let data = idle_support::profile(data);
     taunt_support::profile(data)
 }

@@ -367,7 +367,7 @@ fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
 /// grafted onto the shared fixture by repeating its own last pose to reach
 /// those lengths (the fixture's bone/hitbox data is otherwise irrelevant to
 /// these tests). Exercises the full engine end to end, distinct from
-/// `tests/fox_neutral_special_differential.rs`'s own oracle-only trace.
+/// `tests/neutral_special_differential.rs`'s own oracle-only trace.
 mod script_resources {
     use skirmish::characters::{
         Specials,

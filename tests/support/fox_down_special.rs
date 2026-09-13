@@ -37,7 +37,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
 }
 
 /// Wire the same ordinary clank profile `tests/game_clank.rs` (and
-/// `tests/support/fox_up_special.rs::with_ordinary_clank`) use onto `data`,
+/// `tests/support/up_special.rs::with_ordinary_clank`) use onto `data`,
 /// plus the rebound animation `rules.clank` requires for every fighter
 /// (`validation.rs`'s "rebound animation requires a clank profile").
 /// Reflector's Start hitbox carries the pack's own `clank: true` value; this

@@ -29,12 +29,6 @@ mod escape_air_support;
 mod escape_support;
 #[path = "../../../tests/support/fox_down_special.rs"]
 mod fox_down_special_support;
-#[path = "../../../tests/support/fox_neutral_special.rs"]
-mod fox_neutral_special_support;
-#[path = "../../../tests/support/fox_side_special.rs"]
-mod fox_side_special_support;
-#[path = "../../../tests/support/fox_up_special.rs"]
-mod fox_up_special_support;
 #[path = "../../../tests/support/grab.rs"]
 mod grab_support;
 #[path = "../../../tests/support/idle.rs"]
@@ -43,8 +37,12 @@ mod idle_support;
 mod jab_support;
 #[path = "../../../tests/support/ledge.rs"]
 mod ledge_support;
+#[path = "../../../tests/support/fox_neutral_special.rs"]
+mod neutral_special_support;
 #[path = "../../../tests/support/run.rs"]
 mod run_support;
+#[path = "../../../tests/support/fox_side_special.rs"]
+mod side_special_support;
 #[path = "../../../tests/support/smash.rs"]
 mod smash_support;
 #[path = "../../peppi-adapter/tests/support/mod.rs"]
@@ -53,6 +51,8 @@ mod support;
 mod taunt_support;
 #[path = "../../../tests/support/tilt.rs"]
 mod tilt_support;
+#[path = "../../../tests/support/fox_up_special.rs"]
+mod up_special_support;
 #[path = "../../../tests/support/walk.rs"]
 mod walk_support;
 
@@ -463,7 +463,7 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
 
 #[test]
 fn physical_b_drives_file_backed_neutral_special_and_fires_a_traveling_laser() {
-    let mut data = fox_neutral_special_support::profile(aerial_support::conformance::data());
+    let mut data = neutral_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
     let mut inputs = vec![IDLE; 12];
     inputs[0][0].buttons = BUTTON_B;
@@ -3045,7 +3045,7 @@ fn physical_b_drives_file_backed_fox_ground_illusion_and_detects_its_removal() {
     // not a confirmed fact -- the replay round trip below only requires
     // this recording's own `action_state`/`animation_index` calls to agree
     // with themselves, which they do regardless of that open question.
-    let mut data = fox_side_special_support::profile(aerial_support::conformance::data());
+    let mut data = side_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
     let mut inputs = vec![IDLE; 10];
     inputs[0][0].buttons = BUTTON_B;
@@ -3092,7 +3092,7 @@ fn physical_b_drives_file_backed_fox_ground_illusion_and_detects_its_removal() {
 fn physical_b_drives_file_backed_fox_air_illusion_into_landing_fall_special() {
     // Slippi 43 (LandingFallSpecial, an already-verified mapping, unlike
     // the side-special ids in the ground scenario above).
-    let mut data = fox_side_special_support::profile(aerial_support::conformance::data());
+    let mut data = side_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 6.0], [2.0, 0.0]];
     let mut inputs = vec![IDLE; 60];
     inputs[0][0].buttons = BUTTON_B;
@@ -3268,7 +3268,7 @@ fn physical_b_drives_file_backed_fox_ground_firefox_into_travel_and_landing() {
     // like the side special's own ids (`docs/fox-up-special.md`) -- the
     // replay round trip below only requires this recording's own
     // `action_state`/`animation_index` calls to agree with themselves.
-    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    let mut data = up_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
     let mut inputs = vec![IDLE; 20];
     // Frame 0's own entry press must stay clear of the side special's own
@@ -3324,7 +3324,7 @@ fn physical_b_drives_file_backed_fox_ground_firefox_into_travel_and_landing() {
 #[test]
 fn physical_b_drives_file_backed_fox_air_firefox_into_fall_special() {
     // Slippi 354 (SpecialHiHoldAir)/356 (SpecialAirHi)/358 (SpecialHiFall).
-    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    let mut data = up_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 6.0], [2.0, 0.0]];
     let mut inputs = vec![IDLE; 70];
     inputs[0][0].buttons = BUTTON_B;
@@ -3379,11 +3379,11 @@ fn physical_b_drives_file_backed_fox_air_firefox_into_fall_special() {
 /// again self-consistency evidence, not Melee parity (`docs/parity.md`).
 #[test]
 fn firefox_hold_charge_hitbox_self_recorded_replay_matches() {
-    let mut data = fox_up_special_support::profile(aerial_support::conformance::data());
+    let mut data = up_special_support::profile(aerial_support::conformance::data());
     data.stage.spawns = [[0.0, 0.0], [1.0, 0.0]];
     data.rules.knockback_speed = 0.0;
     let bones = data.fighters[0].bones.clone();
-    let hold = fox_up_special_support::hold_attack_with_pack_hitboxes(&bones);
+    let hold = up_special_support::hold_attack_with_pack_hitboxes(&bones);
     match data.fighters[0].specials.as_mut() {
         Some(skirmish::characters::Specials::Fox { up: Some(up), .. }) => {
             up.hold.ground = hold.clone();

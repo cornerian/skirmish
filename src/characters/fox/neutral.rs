@@ -290,8 +290,8 @@ fn enter_loop(fighter: &mut Fighter, ground: bool, has_script: bool, preserve_ar
     // zeroes it) -- `simulation::enter`'s own blanket per-move-state reset
     // would otherwise drop it, the same pattern `characters::fox::side`'s
     // `gravity_delay` already uses around its own phase transitions.
-    let cmd_vars = fighter.fox_neutral_special.cmd_vars;
-    let repeat_armed = fighter.fox_neutral_special.repeat_armed;
+    let cmd_vars = fighter.neutral_special.cmd_vars;
+    let repeat_armed = fighter.neutral_special.repeat_armed;
     simulation::enter(
         fighter,
         if ground {
@@ -300,9 +300,9 @@ fn enter_loop(fighter: &mut Fighter, ground: bool, has_script: bool, preserve_ar
             Action::SpecialAirNLoop
         },
     );
-    fighter.fox_neutral_special.cmd_vars = cmd_vars;
+    fighter.neutral_special.cmd_vars = cmd_vars;
     if preserve_armed {
-        fighter.fox_neutral_special.repeat_armed = repeat_armed;
+        fighter.neutral_special.repeat_armed = repeat_armed;
     }
     if !has_script {
         // Firing on Loop's own entry frame approximates the source's real
@@ -310,12 +310,12 @@ fn enter_loop(fighter: &mut Fighter, ground: bool, has_script: bool, preserve_ar
         // supplied for this fighter yet (see module doc). With `script`
         // present, `update_animation`'s own per-frame fire check drives this
         // instead, at the exact frame the script sets `cmd_vars[2]`.
-        fighter.fox_neutral_special.fire = true;
+        fighter.neutral_special.fire = true;
     }
 }
 
 fn enter_end(fighter: &mut Fighter, ground: bool) {
-    let cmd_vars = fighter.fox_neutral_special.cmd_vars;
+    let cmd_vars = fighter.neutral_special.cmd_vars;
     simulation::enter(
         fighter,
         if ground {
@@ -324,7 +324,7 @@ fn enter_end(fighter: &mut Fighter, ground: bool) {
             Action::SpecialAirNEnd
         },
     );
-    fighter.fox_neutral_special.cmd_vars = cmd_vars;
+    fighter.neutral_special.cmd_vars = cmd_vars;
 }
 
 /// The script table for one of the six actions this move owns, or `None`
@@ -417,7 +417,7 @@ impl SpecialMove for Move {
                 // port keeps its pre-existing approximation instead: Start
                 // never arms, Loop always can (see module doc).
                 let armed = if parameters.script.is_some() {
-                    fighter.fox_neutral_special.cmd_vars[0] != 0
+                    fighter.neutral_special.cmd_vars[0] != 0
                 } else {
                     matches!(
                         fighter.action,
@@ -425,7 +425,7 @@ impl SpecialMove for Move {
                     )
                 };
                 if fresh_b && armed {
-                    fighter.fox_neutral_special.repeat_armed = true;
+                    fighter.neutral_special.repeat_armed = true;
                 }
                 true
             }
@@ -491,7 +491,7 @@ impl SpecialMove for Move {
         if let Some(script) = &parameters.script {
             if let Some(table) = script_table(script, fighter.action) {
                 apply_script_frame(
-                    &mut fighter.fox_neutral_special.cmd_vars,
+                    &mut fighter.neutral_special.cmd_vars,
                     table,
                     fighter.action_frame as usize,
                 );
@@ -506,10 +506,10 @@ impl SpecialMove for Move {
             if matches!(
                 fighter.action,
                 Action::SpecialNLoop | Action::SpecialAirNLoop
-            ) && fighter.fox_neutral_special.cmd_vars[2] != 0
+            ) && fighter.neutral_special.cmd_vars[2] != 0
             {
-                fighter.fox_neutral_special.cmd_vars[2] = 0;
-                fighter.fox_neutral_special.fire = true;
+                fighter.neutral_special.cmd_vars[2] = 0;
+                fighter.neutral_special.fire = true;
             }
         }
         match fighter.action {
@@ -526,7 +526,7 @@ impl SpecialMove for Move {
             Action::SpecialNLoop
                 if fighter.action_frame as usize >= parameters.loop_phase.ground.frames.len() =>
             {
-                if fighter.fox_neutral_special.repeat_armed {
+                if fighter.neutral_special.repeat_armed {
                     enter_loop(fighter, true, has_script, false);
                 } else {
                     enter_end(fighter, true);
@@ -535,7 +535,7 @@ impl SpecialMove for Move {
             Action::SpecialAirNLoop
                 if fighter.action_frame as usize >= parameters.loop_phase.air.frames.len() =>
             {
-                if fighter.fox_neutral_special.repeat_armed {
+                if fighter.neutral_special.repeat_armed {
                     enter_loop(fighter, false, has_script, false);
                 } else {
                     enter_end(fighter, false);
@@ -569,7 +569,7 @@ impl SpecialMove for Move {
     }
 }
 
-/// Drains `fighter.fox_neutral_special.fire`, spawning the laser into
+/// Drains `fighter.neutral_special.fire`, spawning the laser into
 /// `state.projectiles`. Called from `simulation::advance`'s per-player
 /// loop after ordinary update-actions/animation, matching "item logic
 /// runs after fighters" (`docs/fox-neutral-special.md`).
@@ -586,10 +586,10 @@ pub(crate) fn drain_pending_shot(
     player: usize,
     attack_instances: &mut crate::fighter::stale::InstanceCounter,
 ) -> Option<crate::game::projectile::Projectile> {
-    if !fighter.fox_neutral_special.fire {
+    if !fighter.neutral_special.fire {
         return None;
     }
-    fighter.fox_neutral_special.fire = false;
+    fighter.neutral_special.fire = false;
     let parameters = data.specials.as_ref()?.fox_neutral()?;
     let ecb = fighter.ecb.current;
     let position = [

@@ -7,9 +7,9 @@
 //! `lbVector_Mirror`), the Reflector item-side callback's facing snap and
 //! `angle += pi`, and the reflect damage-scaling truncation/cap. Each
 //! comparison pins the extracted callback's exact behaviour with an inline
-//! Rust formula, matching `fox_neutral_special_differential.rs`'s own
-//! style -- `tests/game_fox_neutral_special.rs` and
-//! `game_fox_neutral_special_reflect.rs` separately exercise the Rust
+//! Rust formula, matching `neutral_special_differential.rs`'s own
+//! style -- `tests/game_neutral_special.rs` and
+//! `game_neutral_special_reflect.rs` separately exercise the Rust
 //! engine's own mirror end to end.
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
@@ -106,7 +106,7 @@ fn normalize_angle_f32(mut angle: f32) -> f32 {
 /// this host's system `libm` (which the pinned C oracle actually calls) by
 /// a handful of ULPs on their own -- an inherent cross-implementation
 /// rounding gap for transcendental functions, not a translation bug, the
-/// same reasoning `fox_up_special_differential.rs`'s own `close_bits`
+/// same reasoning `up_special_differential.rs`'s own `close_bits`
 /// already documents for the identical functions. Only genuinely
 /// trig-derived comparisons use this; the angle-normalization loops above
 /// (no trig call at all) stay bit-exact via `normalize_angle_f32`.
@@ -289,7 +289,7 @@ fn known_values_match() {
     compare_reflected(1.0, -1.0, 0.0);
     compare_reflected(-1.0, -1.0, 1.5);
     // damage_mul = 1.0 rounds identically either way (the exact case the
-    // native regression, `game_fox_neutral_special_reflect.rs`, avoids for
+    // native regression, `game_neutral_special_reflect.rs`, avoids for
     // this reason); damage_mul = 1.5 is the one that actually distinguishes
     // the fixed truncation formula from the bug this batch found and fixed.
     compare_reflect_damage(3.0, 1.0, 999);

@@ -90,7 +90,7 @@ fn ground_entry_from_wait_enters_start_with_gravity_delay_and_jumps_untouched() 
     // increment advances it once more.
     assert_eq!(state.fighters[0].action_frame, 2);
     // x24 == 2.0, ticked once by this same step's own grounded Phys.
-    assert_eq!(state.fighters[0].fox_side_special.gravity_delay, 1.0);
+    assert_eq!(state.fighters[0].side_special.gravity_delay, 1.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -250,7 +250,7 @@ fn b_press_shortens_the_ground_dash_into_end() {
     // x34 == 1.5, then this same step's own End Phys friction (x38 == 0.05).
     assert_eq!(state.fighters[0].ground_velocity, 1.45);
     // x44 == 1.0, ticked once by the same step's End Phys.
-    assert_eq!(state.fighters[0].fox_side_special.gravity_delay, 0.0);
+    assert_eq!(state.fighters[0].side_special.gravity_delay, 0.0);
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn air_to_ground_conversion_preserves_frame_and_gravity_delay() {
             break;
         }
         let frame_before = state.fighters[0].action_frame;
-        let delay_before = state.fighters[0].fox_side_special.gravity_delay;
+        let delay_before = state.fighters[0].side_special.gravity_delay;
         state = game.step(IDLE).unwrap().clone();
         if state.fighters[0].grounded {
             converted = true;
@@ -303,10 +303,7 @@ fn air_to_ground_conversion_preserves_frame_and_gravity_delay() {
             // entry; the generic per-frame increment then advances it once
             // more, like every other transition observed in this suite.
             assert_eq!(state.fighters[0].action_frame, frame_before + 1);
-            assert_eq!(
-                state.fighters[0].fox_side_special.gravity_delay,
-                delay_before
-            );
+            assert_eq!(state.fighters[0].side_special.gravity_delay, delay_before);
         }
     }
     assert!(converted, "must land within 10 frames");
@@ -317,10 +314,10 @@ fn air_start_gravity_delay_holds_vertical_velocity_before_falling() {
     let mut game = Match::new(airborne_data(), 0).unwrap();
     let state = game.step(input(0, side(0.6))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialAirSStart);
-    assert_eq!(state.fighters[0].fox_side_special.gravity_delay, 1.0);
+    assert_eq!(state.fighters[0].side_special.gravity_delay, 1.0);
     let state = game.step(IDLE).unwrap();
     assert_eq!(state.fighters[0].velocity[1], 0.0);
-    assert_eq!(state.fighters[0].fox_side_special.gravity_delay, 0.0);
+    assert_eq!(state.fighters[0].side_special.gravity_delay, 0.0);
     // The delay has lapsed: ftCommon_Fall(x30) now applies every frame.
     let state = game.step(IDLE).unwrap();
     assert!(state.fighters[0].velocity[1] < 0.0);

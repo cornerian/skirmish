@@ -340,9 +340,9 @@ fn enter_from_ground_hold(
         fighter.facing = face_stick(stick[0]);
         let floor_normal = fighter.floor_normal;
         simulation::enter(fighter, Action::SpecialHi);
-        fighter.fox_up_special.travel_frames = a.duration;
+        fighter.up_special.travel_frames = a.duration;
         fighter.ground_velocity = a.speed * fighter.facing;
-        fighter.fox_up_special.rotate_model =
+        fighter.up_special.rotate_model =
             crate::compat::math::trig::atan2f(-floor_normal[0] * fighter.facing, floor_normal[1]);
     } else {
         // ftCommon_8007D60C's behaviorally-observable core: leave the
@@ -378,8 +378,8 @@ fn enter_aerial_launch(
     };
     let facing = fighter.facing;
     simulation::enter(fighter, Action::SpecialAirHi);
-    fighter.fox_up_special.rotate_model = angle;
-    fighter.fox_up_special.travel_frames = a.duration;
+    fighter.up_special.rotate_model = angle;
+    fighter.up_special.travel_frames = a.duration;
     // `ftFx_SpecialAirHi_Enter`: `facing_dir * (x74 * cosf(rotateModel))`, not
     // `(facing_dir * x74) * cosf(rotateModel)` -- f32 multiplication is not
     // associative, so the grouping is kept bit-exact to the source.
@@ -460,7 +460,7 @@ impl SpecialMove for Move {
             // validation.md`'s entry-advance table). Modeled the same way,
             // at the source: `action_frame` is 1 (not 0) from this frame on.
             fighter.action_frame = 1;
-            fighter.fox_up_special.gravity_delay = parameters.attributes.gravity_delay;
+            fighter.up_special.gravity_delay = parameters.attributes.gravity_delay;
             return true;
         }
         if air {
@@ -472,7 +472,7 @@ impl SpecialMove for Move {
                 // `ftFx_SpecialAirHiStart_Enter` makes the identical extra
                 // advance `ftFx_SpecialHi_Enter` does above.
                 fighter.action_frame = 1;
-                fighter.fox_up_special.gravity_delay = parameters.attributes.gravity_delay;
+                fighter.up_special.gravity_delay = parameters.attributes.gravity_delay;
                 return true;
             }
         }
@@ -511,8 +511,8 @@ impl SpecialMove for Move {
                 if len != 0 && fighter.action_frame as usize >= len {
                     fighter.action_frame %= len as u32;
                 }
-                fighter.fox_up_special.travel_frames -= 1.0;
-                if fighter.fox_up_special.travel_frames <= 0.0 {
+                fighter.up_special.travel_frames -= 1.0;
+                if fighter.up_special.travel_frames <= 0.0 {
                     if fighter.grounded {
                         simulation::enter(fighter, Action::SpecialHiLanding);
                     } else {
@@ -560,7 +560,7 @@ impl SpecialMove for Move {
     fn ground_friction_override(&self, fighter: &Fighter, data: &FighterData) -> Option<f32> {
         let p = data.specials.as_ref()?.fox_up()?;
         match fighter.action {
-            Action::SpecialHi => Some(if fighter.fox_up_special.unk >= p.attributes.duration_end {
+            Action::SpecialHi => Some(if fighter.up_special.unk >= p.attributes.duration_end {
                 p.attributes.reverse_accel
             } else {
                 0.0
@@ -585,7 +585,7 @@ impl SpecialMove for Move {
         match fighter.action {
             Action::SpecialHiHoldAir => {
                 helpers::gravity_delayed_fall(
-                    &mut fighter.fox_up_special.gravity_delay,
+                    &mut fighter.up_special.gravity_delay,
                     movement,
                     p.attributes.hold_fall_accel,
                     terminal_velocity,
@@ -594,9 +594,9 @@ impl SpecialMove for Move {
                 true
             }
             Action::SpecialAirHi => {
-                fighter.fox_up_special.unk += 1.0;
-                if fighter.fox_up_special.unk >= p.attributes.duration_end {
-                    let rotate = fighter.fox_up_special.rotate_model;
+                fighter.up_special.unk += 1.0;
+                if fighter.up_special.unk >= p.attributes.duration_end {
+                    let rotate = fighter.up_special.rotate_model;
                     let accel = p.attributes.reverse_accel;
                     // `ftFx_SpecialAirHi_Phys`: `facing_dir * (x78 * cosf(rotateModel))`,
                     // kept bit-exact to the source's own grouping (see
@@ -631,8 +631,8 @@ impl SpecialMove for Move {
             // `unk2` are separate source callbacks, both once per grounded
             // Travel frame; this move ticks both together here since the
             // framework exposes a single grounded-frame hook.
-            fighter.fox_up_special.unk += 1.0;
-            fighter.fox_up_special.unk2 += 1.0;
+            fighter.up_special.unk += 1.0;
+            fighter.up_special.unk2 += 1.0;
         }
     }
 
@@ -645,7 +645,7 @@ impl SpecialMove for Move {
     fn update_ground_contact(&self, fighter: &mut Fighter) {
         if fighter.action == Action::SpecialHi && fighter.grounded {
             let floor_normal = fighter.floor_normal;
-            fighter.fox_up_special.rotate_model = crate::compat::math::trig::atan2f(
+            fighter.up_special.rotate_model = crate::compat::math::trig::atan2f(
                 -floor_normal[0] * fighter.facing,
                 floor_normal[1],
             );
@@ -661,9 +661,9 @@ impl SpecialMove for Move {
             // it is the bound/continue decision below, via `land`.
             _ => return false,
         };
-        let state = fighter.fox_up_special.clone();
+        let state = fighter.up_special.clone();
         helpers::transfer_frame(fighter, destination);
-        fighter.fox_up_special = state;
+        fighter.up_special = state;
         true
     }
 
@@ -705,9 +705,8 @@ impl SpecialMove for Move {
             }
             Action::SpecialAirHi => {
                 // ftFox_SpecialHi_IsBound.
-                let bound_eligible = fighter.fox_up_special.unk2
-                    >= p.attributes.bounce_frames as f32
-                    || !on_platform;
+                let bound_eligible =
+                    fighter.up_special.unk2 >= p.attributes.bounce_frames as f32 || !on_platform;
                 if bound_eligible {
                     // The source's own approach-angle check against the
                     // floor normal, using the velocity the fighter actually
@@ -735,12 +734,12 @@ impl SpecialMove for Move {
                         let (facing, rotate_model) = redirect_from_velocity(pre_landing.velocity);
                         *fighter = pre_landing.clone();
                         fighter.facing = facing;
-                        fighter.fox_up_special.rotate_model = rotate_model;
+                        fighter.up_special.rotate_model = rotate_model;
                     }
                 } else {
-                    let state = fighter.fox_up_special.clone();
+                    let state = fighter.up_special.clone();
                     helpers::transfer_frame(fighter, Action::SpecialHi);
-                    fighter.fox_up_special = state;
+                    fighter.up_special = state;
                 }
                 Ok(true)
             }
@@ -806,7 +805,7 @@ impl SpecialMove for Move {
         }
         let (facing, rotate_model) = redirect_from_velocity(fighter.velocity);
         fighter.facing = facing;
-        fighter.fox_up_special.rotate_model = rotate_model;
+        fighter.up_special.rotate_model = rotate_model;
         true
     }
 }

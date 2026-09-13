@@ -15,7 +15,7 @@ struct Fixture {
 /// exporter-confirmed values, genuinely different from Fox's (see
 /// `characters::fox::neutral::{Attributes,Laser}`'s own doc comments and
 /// `docs/falco.md`); the bone poses themselves are the same invented
-/// two-bone pose `tests/support/fox_neutral_special.rs` uses, not a real
+/// two-bone pose `tests/support/neutral_special.rs` uses, not a real
 /// Falco animation.
 pub fn profile(mut data: MatchData) -> MatchData {
     let fixture: Fixture =

@@ -323,7 +323,7 @@ fn enter_end(fighter: &mut Fighter, parameters: &SideSpecial) {
         fighter.velocity[1] = 0.0;
         simulation::enter(fighter, Action::SpecialAirSEnd);
     }
-    fighter.fox_side_special.gravity_delay = parameters.attributes.end_gravity_delay;
+    fighter.side_special.gravity_delay = parameters.attributes.end_gravity_delay;
 }
 
 /// This move's handle in Fox's registry (`MOVES` in `characters::fox`).
@@ -419,7 +419,7 @@ impl SpecialMove for Move {
         // entry-advance table). Modeled the same way, at the source:
         // `action_frame` is 1 (not 0) from this frame on.
         fighter.action_frame = 1;
-        fighter.fox_side_special.gravity_delay = parameters.attributes.gravity_delay;
+        fighter.side_special.gravity_delay = parameters.attributes.gravity_delay;
         true
     }
 
@@ -518,7 +518,7 @@ impl SpecialMove for Move {
         match fighter.action {
             Action::SpecialAirSStart => {
                 helpers::gravity_delayed_fall(
-                    &mut fighter.fox_side_special.gravity_delay,
+                    &mut fighter.side_special.gravity_delay,
                     movement,
                     parameters.attributes.start_fall_accel,
                     terminal_velocity,
@@ -528,7 +528,7 @@ impl SpecialMove for Move {
             }
             Action::SpecialAirSEnd => {
                 helpers::gravity_delayed_fall(
-                    &mut fighter.fox_side_special.gravity_delay,
+                    &mut fighter.side_special.gravity_delay,
                     movement,
                     parameters.attributes.end_fall_accel,
                     terminal_velocity,
@@ -556,7 +556,7 @@ impl SpecialMove for Move {
             // though gravity is never applied on the ground, so a mid-move
             // ground/air conversion sees the same countdown the air phase
             // would have reached.
-            helpers::tick_ground_delay(&mut fighter.fox_side_special.gravity_delay);
+            helpers::tick_ground_delay(&mut fighter.side_special.gravity_delay);
         }
     }
 
@@ -574,9 +574,9 @@ impl SpecialMove for Move {
             // same-phase conversion, so End is deliberately absent here.
             _ => return false,
         };
-        let gravity_delay = fighter.fox_side_special.gravity_delay;
+        let gravity_delay = fighter.side_special.gravity_delay;
         helpers::transfer_frame(fighter, destination);
-        fighter.fox_side_special.gravity_delay = gravity_delay;
+        fighter.side_special.gravity_delay = gravity_delay;
         true
     }
 
