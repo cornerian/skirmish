@@ -36,8 +36,16 @@ pub struct Teeter {
     /// One sample per Ottotto frame (`animation 210`); the last is used on
     /// the frame `action_frame` reaches it, immediately before OttottoWait.
     pub start: Vec<TeeterFrame>,
+    #[serde(default)]
+    pub start_blend_frames: u8,
+    #[serde(default)]
+    pub start_dynamics_variant: u8,
     /// OttottoWait's single, indefinitely held pose (`animation 211`).
     pub wait: TeeterFrame,
+    #[serde(default)]
+    pub wait_blend_frames: u8,
+    #[serde(default)]
+    pub wait_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -168,6 +176,16 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
             .get(fighter.action_frame as usize)
             .map(|frame| frame.bones.as_slice()),
         Action::OttottoWait => Some(teeter.wait.bones.as_slice()),
+        _ => None,
+    }
+}
+
+/// `docs/pose-blend.md`: the active teeter phase's own `Blend` byte pair.
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let teeter = data.teeter.as_ref()?;
+    match fighter.action {
+        Action::Ottotto => Some(teeter.start_blend_frames),
+        Action::OttottoWait => Some(teeter.wait_blend_frames),
         _ => None,
     }
 }

@@ -66,6 +66,8 @@ pub fn attack(bones: &[Bone], root_translations: Option<Vec<f32>>) -> DashAttack
     DashAttack {
         attack: Attack {
             move_id: Some(5),
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..FRAMES)
                 .map(|frame| AttackFrame {
                     bones: bones.to_vec(),

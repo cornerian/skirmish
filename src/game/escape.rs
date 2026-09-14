@@ -38,6 +38,10 @@ pub struct Parameters {
 #[serde(deny_unknown_fields)]
 pub struct RollMotion {
     pub frames: Vec<RollFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,6 +59,10 @@ pub struct RollFrame {
 #[serde(deny_unknown_fields)]
 pub struct SpotDodgeMotion {
     pub frames: Vec<SpotDodgeFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
 }
 
 /// `ftCo_EscapeN_Phys` ignores TransN motion, so spot-dodge samples carry no
@@ -150,6 +158,18 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
         return Some(&frame.bones);
     }
     spot_dodge(fighter, data).map(|frame| frame.bones.as_slice())
+}
+
+/// `docs/pose-blend.md`: the active roll/spot-dodge profile's own `Blend`
+/// byte pair, mirroring `pose`'s own source selection.
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let parameters = data.escape.as_ref()?;
+    match fighter.action {
+        Action::EscapeF => Some(parameters.forward.blend_frames),
+        Action::EscapeB => Some(parameters.backward.blend_frames),
+        Action::EscapeN => Some(parameters.spot_dodge.blend_frames),
+        _ => None,
+    }
 }
 
 /// `ft_80085004`'s target ground velocity for the current roll sample.

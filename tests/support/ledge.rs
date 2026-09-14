@@ -24,6 +24,10 @@ pub fn profile(mut data: MatchData) -> MatchData {
         };
         let motion = |offsets: &[[f32; 3]]| Motion {
             frames: offsets.iter().copied().map(frame).collect(),
+            blend_frames: 0,
+            dynamics_variant: 0,
+            phase2_blend_frames: 0,
+            phase2_dynamics_variant: 0,
         };
         let attack_offsets = [
             [-0.35, -0.7, 0.0],
@@ -34,6 +38,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
         ];
         let attack = Attack {
             move_id: None,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: attack_offsets
                 .iter()
                 .enumerate()
@@ -73,6 +79,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
             },
             catch: motion(&[[-0.25, -0.5, 0.0], [-0.35, -0.7, 0.0]]),
             wait: frame([-0.35, -0.7, 0.0]),
+            wait_blend_frames: 0,
+            wait_dynamics_variant: 0,
             climb: motion(&[
                 [-0.35, -0.7, 0.0],
                 [-0.1, -0.3, 0.0],

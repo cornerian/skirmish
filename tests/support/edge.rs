@@ -25,7 +25,11 @@ fn frame(bones: &[Bone]) -> TeeterFrame {
 pub fn teeter(bones: &[Bone]) -> Teeter {
     Teeter {
         start: (0..START_FRAMES).map(|_| frame(bones)).collect(),
+        start_blend_frames: 0,
+        start_dynamics_variant: 0,
         wait: frame(bones),
+        wait_blend_frames: 0,
+        wait_dynamics_variant: 0,
     }
 }
 

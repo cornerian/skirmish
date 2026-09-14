@@ -79,8 +79,14 @@ fn tech_attributes(bones: &[Bone], profile: &SurfaceTechRules) -> SurfaceTechAtt
         wall_jump_vertical_velocity: 4.0,
         passive_ceiling_velocity: 3.0,
         passive_wall_poses: pose_track(bones, profile.wall_frames, [5.0, 0.0]),
+        passive_wall_poses_blend_frames: 0,
+        passive_wall_poses_dynamics_variant: 0,
         passive_wall_jump_poses: pose_track(bones, profile.wall_jump_frames, [6.0, 0.0]),
+        passive_wall_jump_poses_blend_frames: 0,
+        passive_wall_jump_poses_dynamics_variant: 0,
         passive_ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 8.0]),
+        passive_ceiling_poses_blend_frames: 0,
+        passive_ceiling_poses_dynamics_variant: 0,
     }
 }
 
@@ -90,7 +96,11 @@ fn response_attributes(
 ) -> SurfaceResponseAttributes {
     SurfaceResponseAttributes {
         wall_poses: pose_track(bones, profile.wall_frames, [7.0, 0.0]),
+        wall_poses_blend_frames: 0,
+        wall_poses_dynamics_variant: 0,
         ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 10.0]),
+        ceiling_poses_blend_frames: 0,
+        ceiling_poses_dynamics_variant: 0,
     }
 }
 
@@ -211,6 +221,8 @@ fn add_ordinary_wall_jump(data: &mut MatchData) {
             horizontal_velocity: 3.0,
             vertical_velocity: 4.0,
             frames,
+            blend_frames: 0,
+            dynamics_variant: 0,
         });
     }
 }
@@ -275,6 +287,7 @@ fn long_damage_data() -> MatchData {
             ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
             air: core::array::from_fn(|_| motion.clone()),
             fly: core::array::from_fn(|_| motion.clone()),
+            blend: None,
         });
         fighter.surface_response = None;
         fighter.surface_tech = None;

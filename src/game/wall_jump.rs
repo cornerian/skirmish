@@ -37,6 +37,10 @@ pub struct Attributes {
     pub vertical_velocity: f32,
     /// Complete fighter-specific PassiveWallJump physics poses.
     pub frames: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -182,6 +186,15 @@ pub fn launch_velocity(
             vertical * vertical_base.powf(exponent.into())
         },
     ]
+}
+
+/// `docs/pose-blend.md`: this profile's own `Blend` byte pair, when
+/// `pose` below would also apply.
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    (fighter.action == Action::PassiveWallJump && fighter.wall_jump.active)
+        .then_some(data.wall_jump.as_ref())
+        .flatten()
+        .map(|attributes| attributes.blend_frames)
 }
 
 pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a Vec<Bone>> {

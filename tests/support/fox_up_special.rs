@@ -83,6 +83,8 @@ pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
     for fighter in &mut data.fighters {
         fighter.rebound = Some(clank::Animation {
             animation_length: 13.9,
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
             poses: (0..15)
                 .map(|frame| {
                     let mut pose = fighter.bones.clone();
@@ -163,6 +165,8 @@ pub fn travel_hitbox() -> Hitbox {
 pub fn hold_attack_with_pack_hitboxes(bones: &[Bone]) -> Attack {
     Attack {
         move_id: Some(20),
+        blend_frames: 0,
+        dynamics_variant: 0,
         frames: (0..44)
             .map(|index| AttackFrame {
                 bones: bones.to_vec(),

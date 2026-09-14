@@ -44,6 +44,7 @@ fn poses(base: &[Bone], height: HurtHeight, frames: usize, x: f32) -> DamagePose
         ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
         air: core::array::from_fn(|_| motion.clone()),
         fly: core::array::from_fn(|_| motion.clone()),
+        blend: None,
     }
 }
 

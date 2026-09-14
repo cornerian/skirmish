@@ -1,5 +1,30 @@
 # Local validation provenance
 
+The 2026-09-14 pose-blend batch's own follow-up replaces its first
+version's single shared `MovementPoses.blend_frames` with a per-subaction
+`Blend{blend_frames, dynamics_variant}` pair mirroring the `skirmish-assets`
+exporter's own schema (`14eaf99`) field for field, on every pose-bearing
+profile (`docs/pose-blend.md`'s own "Scope of this batch" section lists
+every struct touched); `game::pose_blend::resolve_default_byte` now picks
+the byte from whichever profile the current action actually uses, via a new
+`blend_frames`-named sibling on each pose-source module's own `pose`
+function, instead of one value shared across every movement sub-motion.
+Verified end to end (not just unit tests) with a hand-injected `movement_
+poses`/`blend` fragment (Wait `blend_frames = 6`, Dash `blend_frames = 0`,
+the coordinator's own concrete example) driven through the real
+`Match::step` pipeline: `tests/game_dash.rs`'s new test confirms Dash's
+entry snaps instantly and the later Wait re-entry blends over exactly six
+frames with the documented linear-ramp closed form. `fmt`/`clippy`/native/
+c-oracle all pass (one debug-build-only stack-overflow tipping point in
+`tests/game_damage_floor.rs`'s `malformed_floor_profiles_are_rejected_
+transactionally`, caused by the widened structs growing that test's single
+large stack frame, fixed by running its unchanged body on an explicit
+larger-stack thread); the real-replay ratchet against `v13-snapshot-20260914`
+still measures identically to the unmodified base commit (`8160023`) on all
+nine recordings, including the same three (fox-bf, fox-fd-2, fox-fd-4)
+already regressed against their own checked-in baselines at that base,
+unrelated to this batch.
+
 The 2026-09-14 pose-blend batch (`docs/pose-blend.md`) adds `game::pose_blend`
 (`ftAnim_8006EBE8`/`ftAnim_8006E9B4`/`ftAnim_8006FE9C`/`lb_8000C490`) and
 `collision::bones`'s `srt_quat`/`HSD_MtxSRTQuat` port, wired so every pack

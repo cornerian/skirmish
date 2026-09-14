@@ -32,6 +32,10 @@ pub struct TauntAnimation {
     /// entry frame's state (`Fighter_ChangeMotionState` resets `x1988`, and
     /// `ftAnim_8006EBA4` immediately runs the first script frame).
     pub frames: Vec<TauntFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// One decoded command-state sample per pose. Frame 0's `allow_interrupt`
     /// must be `false`, matching `ftCo_800DEAE8`'s own entry assignment
     /// (`fp->allow_interrupt = false`) before any script command can raise
@@ -120,6 +124,11 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
         .frames
         .get(fighter.action_frame as usize)
         .map(|frame| frame.bones.as_slice())
+}
+
+/// `docs/pose-blend.md`: the active taunt side's own `Blend` byte pair.
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    Some(current(fighter, data)?.blend_frames)
 }
 
 fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {

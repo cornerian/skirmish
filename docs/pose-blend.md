@@ -76,15 +76,82 @@ calls `pose_blend::arm` with `explicit: None`; `arm`'s parameter already
 carries the contract for a future batch to thread a real explicit value
 through if a modeled action ever needs one.
 
-**One shared byte per pose-source table, not Melee's real per-subaction
-array.** `MovementPoses.blend_frames` is a single value applied to entry
-into *any* sub-motion that table supplies, not an independent byte per
-subaction (`fp->x28[]`'s real shape). Attacks, specials, grabs, ledges,
-taunts and the other pose sources `simulation::local_pose` selects between
-do not yet carry a `blend_frames` field at all (they fall back to `0`, i.e.
-unblended, exactly like today). Extending every other pose-source struct
-with its own default byte, and turning `MovementPoses`'s single byte into a
-real per-sub-motion table, is follow-up work.
+**Per-subaction byte pair, mirroring the exporter exactly.** Every
+pose-bearing profile carries its own `blend_frames: u8`/`dynamics_variant:
+u8` pair (`data::Blend`; `dynamics_variant` is `ftCo_8009E7B4`'s unrelated
+cosmetic jiggle-bone selector, kept only for schema fidelity, never
+consulted here), matching `fp->x28[]`'s real per-subaction shape and the
+`skirmish-assets` exporter's own `blend_bytes`/`fighter::Subaction` field
+pair (`14eaf99`, `src/gameplay/minimal.rs`) field for field:
+
+- Every attack-shaped profile (`data::Attack`, used directly by jab, tilts,
+  smashes, dash attack, ledge attacks, the knockdown get-up attack, every
+  aerial's `Move.attack`, and every special phase via `Phase{ground, air}:
+  Attack`) carries `blend_frames`/`dynamics_variant` as plain sibling
+  fields next to `frames`, matching `build_attack`'s own JSON object shape
+  verbatim.
+- Every other pose-bearing struct carries the same pair, named to match the
+  exporter's own (sometimes prefixed) JSON keys exactly: `wall_jump::
+  Attributes`, `ledge::Motion` (plus `phase2_blend_frames`/
+  `phase2_dynamics_variant` for `Jump.motion`'s concatenated second phase),
+  `ledge::Parameters.wait_blend_frames`/`wait_dynamics_variant` (`wait`
+  itself stays a bare `Frame`), `escape::RollMotion`, `escape::
+  SpotDodgeMotion`, `escape_air::Parameters` (main frames, plus
+  `landing_poses_blend_frames`/`dynamics_variant`), `edge::Teeter`
+  (`start_`/`wait_` prefixed), `taunt::TauntAnimation`, `clank::Animation`
+  (`poses_` prefixed; Rebound only -- ReboundStop samples a frozen state
+  snapshot, not a figatree, so it has no pack byte), `aerial::Move.
+  landing_poses_blend_frames`/`dynamics_variant`, `grab::Catch`, `grab::
+  Pummel` (`poses_` prefixed), `grab::CaptureDamage` (`high_`/`low_`
+  prefixed), `grab::Escape` (`catch_cut_poses_`/`capture_cut_poses_`
+  prefixed), `grab::Throw` (`poses_` prefixed), `damage::KnockdownAttributes.
+  passive_poses_blend_frames`/`dynamics_variant`, `damage::
+  ProneRecoveryAttributes` (`bound_poses_`/`wait_poses_`/`stand_poses_`
+  prefixed; the optional `damage_poses` field has no pack byte -- the
+  exporter does not populate it either, `docs/pose-blend.md` per its own
+  `build_prone_recovery` doc comment), `damage::FloorTechMotion`, `damage::
+  SurfaceResponseAttributes` (`wall_poses_`/`ceiling_poses_` prefixed),
+  `damage::SurfaceTechAttributes` (`passive_wall_poses_`/
+  `passive_wall_jump_poses_`/`passive_ceiling_poses_` prefixed).
+- `data::MovementPoses` and `damage::DamagePoseAttributes` each carry a
+  same-shaped `blend: Option<_>` sidecar (`MovementPosesBlend`,
+  `DamagePosesBlend`) instead of widening their own bare bone-array fields,
+  matching the exporter's own `"blend": {...}` sidecar convention exactly
+  (one `Blend` entry per named movement field; `ground`/`air`/`fly`-shaped
+  for damage poses).
+
+Every one of these fields is `#[serde(default)]` (or the containing
+`Option` defaults to absent), so packs v10..v13 -- which carry none of
+them -- resolve every profile to `Blend::default()` (`blend_frames: 0`) and
+behave exactly as before this batch.
+
+`game::pose_blend::resolve_default_byte` (called once per fighter per frame
+from `simulation::update_pose_blend`) picks the byte from whichever profile
+the current action actually uses, mirroring `simulation::local_pose`'s own
+dispatch chain arm for arm -- each pose-source module (`grab`, `ledge`,
+`wall_jump`, `damage`, `escape`, `escape_air`, `edge`, `taunt`, `clank`,
+`aerial`, `movement`) exposes a `blend_frames`-named sibling to its own
+`pose`-selecting function, reading the identical profile's own byte instead
+of its bones. This was corrected after an initial version of this batch
+shipped a single `MovementPoses.blend_frames` shared across every movement
+sub-motion, which would have blended Dash (real byte `0`) using Wait's real
+byte (`6`) or vice versa; the real per-subaction table (Fox: `Wait1`/
+`WalkSlow`/`WalkMiddle`/`WalkFast`/`Run` at `6`, `Dash`/`Landing`/every
+aerial/every SpecialN phase at `0`) makes that distinction load-bearing.
+
+Verified end to end against a hand-injected `movement_poses`/`blend`
+fragment (`/mnt/shared/tmp/skirmish-pose-blend-scratch/
+movement_poses_wait6_dash0.json`, mirroring the exporter's own shape with
+`wait.blend_frames = 6`/`dash.blend_frames = 0`) through the real
+`Match::step` pipeline, not just `game::pose_blend`'s own isolated unit
+tests: `tests/game_dash.rs`'s new `dash_snaps_and_the_later_wait_reentry_
+blends_over_the_packs_own_six_frame_byte` drives a real Wait -> Dash ->
+AttackDash -> Wait sequence and confirms Dash's own entry snaps instantly
+while the later Wait re-entry blends from AttackDash's settled pose over
+exactly six frames, landing on `rest + (target - rest) * (k / 6)` after the
+k-th frame -- the same linear-ramp closed form `game::pose_blend`'s own
+`blend_t_sequence_is_exactly_1_over_n_counting_down` unit test derives
+directly from the recursion.
 
 ## bones::Pose and the C oracle
 
@@ -156,12 +223,3 @@ the identical `frame`/`checked_frames` values, confirmed by running the
 same test against that commit's own separate, unmodified worktree. This
 batch does not fix, chase, or otherwise touch that gap; it only establishes
 that pose blending did not move it.
-
-## Validation
-
-With every pack's `blend_frames` absent, `resolve_pending` always resolves to
-`0`, `pose_blend::advance` always takes the `frames == 0` branch and returns
-the raw target unchanged, and `simulation::pose` reads that back out --
-byte-for-byte identical to this codebase's pre-batch pose sampling. See the
-top of `docs/validation.md` for this batch's full-suite and real-replay
-ratchet results.

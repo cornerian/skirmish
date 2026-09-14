@@ -737,3 +737,129 @@ fn rules_dash_none_keeps_match_new_working_and_the_original_dash_behaviour() {
     assert_eq!(state.fighters[0].action, Action::Dash);
     assert_eq!(state.fighters[0].action_frame, 2);
 }
+
+/// Hand-injected `movement_poses`/`blend` byte pair (`docs/pose-blend.md`),
+/// mirroring the coordinator's own concrete example (Fox: `Wait1 = 6`,
+/// `Dash = 0`) end to end through the real `Match::step` pipeline, not just
+/// `game::pose_blend`'s own isolated unit tests: Dash's entry (blend `0`)
+/// must snap its pose instantly, and the later AttackDash -> Wait
+/// transition (Wait's own blend `6`) must blend from AttackDash's settled
+/// rest pose toward Wait's own supplied pose over exactly six frames, with
+/// the documented `t = 1/6, 1/5, ..., 1` sequence's own linear-ramp closed
+/// form (`game::pose_blend`'s own `blend_t_sequence_is_exactly_1_over_n_
+/// counting_down` unit test derives and checks the same closed form
+/// directly against the recursion).
+#[test]
+fn dash_snaps_and_the_later_wait_reentry_blends_over_the_packs_own_six_frame_byte() {
+    use skirmish::game::data::{Blend, MovementPoses, MovementPosesBlend};
+
+    let mut resource = data();
+    // `tests/fixtures/game/integration-match.json`'s skeleton: bone 0 is
+    // the untranslated root, bone 1 is its child, rest translation
+    // `[0.0, 1.0, 0.0]` (`game_movement_poses.rs`'s own doc comment).
+    // `dash_support`'s own `AttackDash` frames reuse `fighter.bones`
+    // unmodified (`tests/support/dash.rs`), so AttackDash's own settled
+    // pose is exactly this rest translation -- the known "previous" pose
+    // the Wait blend below starts from.
+    let rest_y = resource.fighters[0].bones[1].translation[1];
+    let mut dash_pose = resource.fighters[0].bones.clone();
+    dash_pose[1].translation[1] = rest_y + 2.0; // distinct from rest, so a Dash-entry snap is observable
+    let mut wait_pose = resource.fighters[0].bones.clone();
+    let wait_target_y = rest_y + 6.0; // distinct from AttackDash's settled (rest) pose
+    wait_pose[1].translation[1] = wait_target_y;
+    resource.fighters[0].movement_poses = Some(MovementPoses {
+        dash: Some(vec![dash_pose; 4]),
+        wait: Some(vec![wait_pose; 4]),
+        blend: Some(MovementPosesBlend {
+            dash: Some(Blend {
+                blend_frames: 0,
+                dynamics_variant: 0,
+            }),
+            wait: Some(Blend {
+                blend_frames: 6,
+                dynamics_variant: 0,
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let mut game = Match::new(resource, 42).unwrap();
+    let entered = enter_dash(&mut game);
+    // `update_pose_blend` runs before this same frame's own action-
+    // transition logic (`docs/pose-blend.md`), so the frame Dash is first
+    // reported, its own blend is still pending (`simulation::enter` just
+    // armed it) and `pose_blend` still shows the spawn Wait's own
+    // bootstrapped pose (the fighter's very first frame ever has no real
+    // prior pose to blend from, so it snaps to its own target immediately
+    // regardless of Wait's own blend byte -- `game::pose_blend::advance`'s
+    // own documented bootstrap fallback).
+    assert_eq!(entered.fighters[0].pose_blend.blend_frames, None);
+    let joints = entered.fighters[0].pose_blend.joints.as_ref().unwrap();
+    assert!(
+        (joints[1].translation[1] - wait_target_y).abs() < 1e-6,
+        "the frame Dash is first reported must still show spawn Wait's own bootstrapped pose: \
+         got {}, expected {wait_target_y}",
+        joints[1].translation[1]
+    );
+    // The next frame resolves and advances Dash's own blend (byte 0):
+    // since a `frames == 0` blend always returns the raw target
+    // (`game::pose_blend::advance`), this snaps directly to Dash's own
+    // pose, not a partial blend from Wait's.
+    let state = step(&mut game, buttons(0));
+    assert_eq!(state.fighters[0].action, Action::Dash);
+    assert_eq!(state.fighters[0].pose_blend.blend_frames, Some(0));
+    let joints = state.fighters[0].pose_blend.joints.as_ref().unwrap();
+    assert!(
+        (joints[1].translation[1] - (rest_y + 2.0)).abs() < 1e-6,
+        "Dash's blend_frames=0 must snap instantly to its own target pose, not blend from Wait's: \
+         got {}, expected {}",
+        joints[1].translation[1],
+        rest_y + 2.0
+    );
+
+    hold_neutral(&mut game, 1);
+    step(&mut game, buttons(BUTTON_A)); // AttackDash frame 0.
+    for _ in 0..dash_support::FRAMES {
+        step(&mut game, buttons(0));
+    }
+    // This frame's own `update_pose_blend` already ran (with the still-
+    // current AttackDash action) before this same frame's own animation
+    // callback transitioned into Wait, so the blend has not started yet:
+    // `pose_blend` still reports AttackDash's own settled (rest) pose and
+    // a still-pending `blend_frames`, exactly like `simulation::enter`'s
+    // own doc comment describes.
+    let entered = game.state();
+    assert_eq!(entered.fighters[0].action, Action::Wait);
+    assert_eq!(entered.fighters[0].pose_blend.blend_frames, None);
+    let joints = entered.fighters[0].pose_blend.joints.as_ref().unwrap();
+    assert!(
+        (joints[1].translation[1] - rest_y).abs() < 1e-6,
+        "the frame Wait is entered must still show AttackDash's own settled pose: got {}, \
+         expected {rest_y}",
+        joints[1].translation[1]
+    );
+
+    // The next six frames blend from that same settled rest pose toward
+    // Wait's own target, landing exactly on `rest_y + (wait_target_y -
+    // rest_y) * (k / 6)` after the k-th frame -- the same closed form
+    // `game::pose_blend`'s own unit test derives from the recursion's `t`
+    // sequence (`1/6, 1/5, 1/4, 1/3, 1/2, 1`), not an independently guessed
+    // number.
+    for k in 1..=6 {
+        let state = step(&mut game, buttons(0));
+        assert_eq!(state.fighters[0].action, Action::Wait);
+        assert_eq!(state.fighters[0].pose_blend.blend_frames, Some(6));
+        let joints = state.fighters[0].pose_blend.joints.as_ref().unwrap();
+        let expected = rest_y + (wait_target_y - rest_y) * (k as f32 / 6.0);
+        assert!(
+            (joints[1].translation[1] - expected).abs() < 1e-5,
+            "frame {k} of the six-frame Wait blend: got {}, expected {expected}",
+            joints[1].translation[1]
+        );
+    }
+    // Fully blended: stays pinned exactly on Wait's own target from here on.
+    let state = step(&mut game, buttons(0));
+    let joints = state.fighters[0].pose_blend.joints.as_ref().unwrap();
+    assert!((joints[1].translation[1] - wait_target_y).abs() < 1e-6);
+}

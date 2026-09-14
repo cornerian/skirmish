@@ -30,6 +30,8 @@ fn hitbox() -> Hitbox {
 fn build(bones: &[Bone], move_id: u16, frames: usize, hit_from: usize, hit_to: usize) -> Attack {
     Attack {
         move_id: Some(move_id),
+        blend_frames: 0,
+        dynamics_variant: 0,
         frames: (0..frames)
             .map(|frame| AttackFrame {
                 bones: bones.to_vec(),

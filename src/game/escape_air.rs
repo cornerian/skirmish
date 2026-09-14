@@ -34,10 +34,18 @@ pub struct Rules {
 pub struct Parameters {
     /// One EscapeAir physics sample per action frame.
     pub frames: Vec<AirDodgeFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// `Fighter::x2EC`: end frame of the special-landing animation.
     pub landing_animation_end: f32,
     /// Integer animation-frame LandingFallSpecial poses covering that end.
     pub landing_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub landing_poses_blend_frames: u8,
+    #[serde(default)]
+    pub landing_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -124,6 +132,23 @@ fn frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a AirDodgeFra
         .as_ref()?
         .frames
         .get(fighter.action_frame.saturating_sub(1) as usize)
+}
+
+/// `docs/pose-blend.md`: the active EscapeAir/LandingFallSpecial profile's
+/// own `Blend` byte pair, mirroring `pose`'s own source selection.
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    if fighter.action == Action::EscapeAir {
+        return data
+            .escape_air
+            .as_ref()
+            .map(|parameters| parameters.blend_frames);
+    }
+    if fighter.action != Action::LandingFallSpecial {
+        return None;
+    }
+    data.escape_air
+        .as_ref()
+        .map(|parameters| parameters.landing_poses_blend_frames)
 }
 
 /// Physics bones for the current EscapeAir or LandingFallSpecial sample.

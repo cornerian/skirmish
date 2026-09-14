@@ -43,6 +43,13 @@ pub struct Parameters {
     pub attachment: Attachment,
     pub catch: Motion,
     pub wait: Frame,
+    /// `wait`'s own `Blend` byte pair (`docs/pose-blend.md`): `wait` stays
+    /// a bare `Frame`, so the exporter hangs the pair off `Parameters`
+    /// itself, matching every other bare-field convention here.
+    #[serde(default)]
+    pub wait_blend_frames: u8,
+    #[serde(default)]
+    pub wait_dynamics_variant: u8,
     pub climb: Motion,
     pub jump: Jump,
     pub attack: AttackMotion,
@@ -98,6 +105,20 @@ pub struct Frame {
 #[serde(deny_unknown_fields)]
 pub struct Motion {
     pub frames: Vec<Frame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
+    /// Only meaningful (and only ever nonzero) for `Jump.motion`, where a
+    /// concatenated `Motion` covers two real subactions (`ftCo_CliffJump`'s
+    /// own Start+Loop phase pair) and this is the second phase's own
+    /// `Blend`. Every other `Motion` field's own export always leaves this
+    /// `0` (`docs/pose-blend.md`); harmless either way since it is a plain
+    /// default-zero byte, not a discriminant.
+    #[serde(default)]
+    pub phase2_blend_frames: u8,
+    #[serde(default)]
+    pub phase2_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -667,6 +688,27 @@ pub(crate) fn attach(
     fighter.position = [target[0] - anchor[0], target[1] - anchor[1]];
     fighter.depth = target[2] - anchor[2];
     Ok(())
+}
+
+/// `docs/pose-blend.md`: this action's own profile `Blend` byte pair,
+/// mirroring `pose`'s own selection below exactly (each arm reads the
+/// same profile `pose` samples, just its `blend_frames` instead of its
+/// bones).
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let parameters = data.ledge.as_ref()?;
+    Some(match fighter.action {
+        Action::CliffCatch => parameters.catch.blend_frames,
+        Action::CliffWait => parameters.wait_blend_frames,
+        Action::CliffClimb => climb(parameters, fighter.ledge.slow).blend_frames,
+        Action::CliffJump => jump(parameters, fighter.ledge.slow).motion.blend_frames,
+        Action::CliffAttack => {
+            attack_motion(parameters, fighter.ledge.slow)
+                .attack
+                .blend_frames
+        }
+        Action::CliffEscape => escape(parameters, fighter.ledge.slow).blend_frames,
+        _ => return None,
+    })
 }
 
 pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [Bone]> {

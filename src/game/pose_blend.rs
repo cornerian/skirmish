@@ -29,16 +29,61 @@
 //! action ever needs one; `arm`'s `explicit` parameter already carries that
 //! contract.
 //!
-//! The pack schema carries one `blend_frames` byte per pose-source table
-//! (currently only `data::MovementPoses`, `docs/pose-blend.md`) rather than
-//! Melee's real per-subaction array; every pack through v13 has none, so
-//! `resolve_pending` always resolves to `0` for them and blending never
-//! engages -- byte-for-byte identical to this codebase's pre-batch pose
-//! sampling.
+//! The pack schema mirrors the exporter's own per-subaction `blend_frames`/
+//! `dynamics_variant` byte pair (`data::Blend`) on every pose-bearing
+//! profile (`docs/pose-blend.md`), matching Melee's real per-subaction
+//! `fp->x28[]` shape -- not a value shared across unrelated actions.
+//! `resolve_default_byte` below picks the byte from whichever profile the
+//! current action actually uses, mirroring `simulation::local_pose`'s own
+//! dispatch. Every pack through v13 carries no `Blend` data at all, so
+//! every resolution is `0` and blending never engages -- byte-for-byte
+//! identical to this codebase's pre-batch pose sampling.
 
+use super::{
+    Action, Fighter,
+    data::FighterData,
+    {aerial, clank, damage, edge, escape, escape_air, grab, ledge, movement, taunt, wall_jump},
+};
 use crate::collision::bones::{Bone, LocalTransform};
 use crate::compat::math::quaternion;
 use serde::Serialize;
+
+/// This action's own default blend byte, resolved from whichever pose
+/// profile `simulation::local_pose` would also select for it -- never a
+/// value shared across unrelated actions (`docs/pose-blend.md`: Fox's own
+/// real table has `Wait1`/`WalkSlow`/`WalkMiddle`/`WalkFast`/`Run` at `6`
+/// and `Dash`/`Landing`/every aerial/every SpecialN phase at `0`, so a
+/// single shared byte would blend actions that must snap). Mirrors
+/// `simulation::local_pose`'s own dispatch order exactly: each arm below
+/// reads the identical profile that function's matching arm would sample
+/// bones from, just its `blend_frames` instead. `0` (no source profile
+/// applies, e.g. the static rest-pose fallback) matches this codebase's
+/// pre-batch behavior.
+pub(crate) fn resolve_default_byte(fighter: &Fighter, data: &FighterData) -> u8 {
+    grab::blend_frames(fighter, data)
+        .or_else(|| ledge::blend_frames(fighter, data))
+        .or_else(|| wall_jump::blend_frames(fighter, data))
+        .or_else(|| damage::surface_response_blend_frames(fighter, data))
+        .or_else(|| damage::surface_tech_blend_frames(fighter, data))
+        .or_else(|| damage::ground_recovery_blend_frames(fighter, data))
+        .or_else(|| damage::damage_blend_frames(fighter, data))
+        .or_else(|| escape::blend_frames(fighter, data))
+        .or_else(|| escape_air::blend_frames(fighter, data))
+        .or_else(|| edge::blend_frames(fighter, data))
+        .or_else(|| taunt::blend_frames(fighter, data))
+        .or_else(|| match fighter.action {
+            Action::ReboundStop => Some(0), // frozen-pose snapshot, no pack byte
+            Action::Rebound => clank::blend_frames(fighter, data),
+            _ => None,
+        })
+        .or_else(|| {
+            data.attack(fighter.action, fighter.prone, fighter.ledge.slow)
+                .map(|attack| attack.blend_frames)
+        })
+        .or_else(|| aerial::landing_blend_frames(fighter, data))
+        .or_else(|| movement::blend_frames(fighter, data))
+        .unwrap_or(0)
+}
 
 /// Per-fighter pose-blend state, checkpointed as part of `game::Fighter`
 /// like every other physics state.

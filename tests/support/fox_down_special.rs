@@ -58,6 +58,8 @@ pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
     for fighter in &mut data.fighters {
         fighter.rebound = Some(clank::Animation {
             animation_length: 13.9,
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
             poses: (0..15)
                 .map(|frame| {
                     let mut pose = fighter.bones.clone();

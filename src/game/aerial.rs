@@ -27,6 +27,10 @@ pub struct Move {
     pub landing_animation_end: f32,
     /// Integer animation-frame physics poses, covering the declared end frame.
     pub landing_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub landing_poses_blend_frames: u8,
+    #[serde(default)]
+    pub landing_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,4 +262,10 @@ pub(crate) fn landing_pose<'a>(f: &Fighter, data: &'a FighterData) -> Option<&'a
     data.aerials.as_ref()?.moves[index]
         .landing_poses
         .get(f.aerial.landing_elapsed as usize)
+}
+
+/// `docs/pose-blend.md`: the current aerial landing's own `Blend` byte pair.
+pub(crate) fn landing_blend_frames(f: &Fighter, data: &FighterData) -> Option<u8> {
+    let index = landing_index(f.action)?;
+    Some(data.aerials.as_ref()?.moves[index].landing_poses_blend_frames)
 }

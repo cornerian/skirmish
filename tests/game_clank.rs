@@ -59,6 +59,8 @@ fn data(damage: [u32; 2]) -> MatchData {
         fighter.jab.frames = vec![idle.clone(), active.clone(), active.clone(), active, idle];
         fighter.rebound = Some(clank::Animation {
             animation_length: 13.9,
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
             poses: (0..15)
                 .map(|frame| {
                     let mut pose = fighter.bones.clone();

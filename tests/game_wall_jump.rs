@@ -86,6 +86,8 @@ fn data() -> MatchData {
             horizontal_velocity: 3.0,
             vertical_velocity: 4.0,
             frames,
+            blend_frames: 0,
+            dynamics_variant: 0,
         });
     }
     data

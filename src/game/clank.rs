@@ -34,6 +34,10 @@ pub struct Rules {
 pub struct Animation {
     pub animation_length: f32,
     pub poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub poses_blend_frames: u8,
+    #[serde(default)]
+    pub poses_dynamics_variant: u8,
 }
 
 pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
@@ -344,6 +348,16 @@ pub(crate) fn pose<'a>(f: &'a Fighter, data: &'a FighterData) -> Option<&'a Vec<
         Action::Rebound => data.rebound.as_ref()?.poses.get(f.clank.clock as usize),
         _ => None,
     }
+}
+
+/// `docs/pose-blend.md`: Rebound's own `Blend` byte pair. `ReboundStop`
+/// samples a frozen state snapshot, not a figatree, so it has no
+/// corresponding pack byte and is not covered here.
+pub(crate) fn blend_frames(f: &Fighter, data: &FighterData) -> Option<u8> {
+    (f.action == Action::Rebound)
+        .then_some(data.rebound.as_ref())
+        .flatten()
+        .map(|rebound| rebound.poses_blend_frames)
 }
 
 fn physics(error: impl core::fmt::Display) -> Error {

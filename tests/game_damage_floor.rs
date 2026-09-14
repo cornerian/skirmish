@@ -84,6 +84,8 @@ fn roll_motion(bones: &[Bone], roots: &[f32], extension: f32) -> FloorTechMotion
                 }
             })
             .collect(),
+        blend_frames: 0,
+        dynamics_variant: 0,
     }
 }
 
@@ -143,6 +145,8 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         hit.damage = 5;
         let attack = Attack {
             move_id: fighter.jab.move_id,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..4)
                 .map(|frame| AttackFrame {
                     bones: fighter.bones.clone(),
@@ -165,11 +169,17 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         stand_poses[0][1].translation[2] = 7.0;
         let face_up = ProneRecoveryAttributes {
             bound_poses,
+            bound_poses_blend_frames: 0,
+            bound_poses_dynamics_variant: 0,
             wait_poses,
+            wait_poses_blend_frames: 0,
+            wait_poses_dynamics_variant: 0,
             damage_poses: None,
             forward: roll_motion(&fighter.bones, &[0.0, 0.6, 0.9, 0.3], 6.0),
             backward: roll_motion(&fighter.bones, &[0.0, -0.4, -0.7, -0.2, -0.1], -6.0),
             stand_poses,
+            stand_poses_blend_frames: 0,
+            stand_poses_dynamics_variant: 0,
             attack,
         };
         let mut face_down = face_up.clone();
@@ -188,6 +198,8 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         }
         fighter.knockdown = Some(KnockdownAttributes {
             passive_poses,
+            passive_poses_blend_frames: 0,
+            passive_poses_dynamics_variant: 0,
             orientation: ProneOrientationRules {
                 hip_bone: 1,
                 use_z_axis: false,
@@ -332,6 +344,7 @@ fn grounded_launch_down_damage_data() -> skirmish::game::data::MatchData {
             ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
             air: core::array::from_fn(|_| motion.clone()),
             fly: core::array::from_fn(|_| motion.clone()),
+            blend: None,
         });
     }
     resource
@@ -1226,6 +1239,26 @@ fn checkpoint_and_reset_preserve_tech_history_and_floor_suffixes() {
 
 #[test]
 fn malformed_floor_profiles_are_rejected_transactionally() {
+    // This function builds several dozen full `MatchData` fixture variants
+    // as sequential same-scope locals before moving each into `cases`; in
+    // an unoptimized debug build, rustc does not reuse their stack slots
+    // across bindings, so growing any of the widely reused fixture structs
+    // (`Attack`, `ProneRecoveryAttributes`, `KnockdownAttributes`,
+    // `DamagePoseAttributes`, `FloorTechMotion` -- `docs/pose-blend.md`'s
+    // own new `blend_frames`/`dynamics_variant` fields) pushes this one
+    // frame's cumulative size past the default test-thread stack. Running
+    // the unchanged logic on a bigger explicit stack is the standard fix
+    // for this debug-build-only class of pressure; it does not change what
+    // the test asserts.
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(malformed_floor_profiles_are_rejected_transactionally_body)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn malformed_floor_profiles_are_rejected_transactionally_body() {
     let encoded = serde_json::to_string(&roll_data()).unwrap();
     let decoded: skirmish::game::data::MatchData = serde_json::from_str(&encoded).unwrap();
     assert!(

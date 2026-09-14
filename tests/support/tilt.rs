@@ -49,6 +49,8 @@ pub fn attack(
     GroundAttack {
         attack: Attack {
             move_id: Some(move_id),
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..frames)
                 .map(|frame| AttackFrame {
                     bones: bones.to_vec(),

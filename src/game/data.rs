@@ -365,20 +365,29 @@ impl FighterData {
 /// (Squat/SquatWait/SquatRv). `pass` (Pass). `ottotto`/`ottotto_wait`
 /// (Ottotto/OttottoWait). `entry_start` (EntryStart's own figatree, distinct
 /// from `EntryRules`'s action-duration timers, `docs/match-start.md`).
+/// `ftAnim_8006EBE8`'s own motion-state-entry blend byte pair
+/// (`fp->x28[msid]`, `ft/ftanim.c:388-428`): byte 0 is the default blend
+/// frame count `Fighter_ChangeMotionState` falls back to when a call site's
+/// own `anim_blend` argument is the ordinary "use the subaction's default"
+/// sentinel; byte 1 (`dynamics_variant`) is an unrelated cosmetic jiggle-
+/// bone animation-variant selector (`ftCo_8009E7B4`), never consulted by
+/// pose blending -- kept only so this schema matches the exporter's own
+/// `blend_bytes`/`fighter::Subaction` field pair exactly (`docs/
+/// pose-blend.md`). `#[serde(default)]` on both fields, and every
+/// containing `Option` defaulting to absent, so packs v10..v13 (which
+/// carry neither) still load, with every blend inert (`0`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Blend {
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MovementPoses {
-    /// `ftAnim_8006EBE8`'s own default-byte blend frame count
-    /// (`fp->x28[fp->anim_id][0]`, `ft/ftanim.c:388-428`) for entering any
-    /// sub-motion this table supplies, when the entry call site's own
-    /// `anim_blend` argument is the ordinary "use the subaction's default"
-    /// sentinel (`docs/pose-blend.md`). Absent (or `0`) keeps every pack
-    /// through v13's own pre-batch behavior: an instantaneous pose snap on
-    /// entry. This is a single value shared by every field in this table,
-    /// not Melee's real per-subaction byte array; see `docs/pose-blend.md`
-    /// for the scope this simplification covers and the follow-up it defers.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blend_frames: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait: Option<Vec<Vec<Bone>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,9 +452,28 @@ pub struct MovementPoses {
     pub ottotto_wait: Option<Vec<Vec<Bone>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_start: Option<Vec<Vec<Bone>>>,
+    /// Same-keyed sidecar (one entry per field above, by name) of each
+    /// field's own `Blend` byte pair -- the exporter's own convention for a
+    /// bare bone-array field with no per-entry object to hang the pair off
+    /// of (`build_movement_poses`'s own `"blend"` key, `docs/
+    /// pose-blend.md`). Absent (or a missing entry within it) resolves to
+    /// `Blend::default()` (blend disabled), matching every pack through
+    /// v13.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blend: Option<MovementPosesBlend>,
 }
 
 impl MovementPoses {
+    /// `blend`'s own resolved value for the named field (`Blend::default()`
+    /// -- inert -- when `blend` itself, or that field within it, is
+    /// absent).
+    pub(crate) fn blend_for(&self, name: &str) -> Blend {
+        self.blend
+            .as_ref()
+            .and_then(|blend| blend.by_name(name))
+            .unwrap_or_default()
+    }
+
     /// Every field paired with its own name, for validation and for
     /// `game::movement::pose`'s selection (kept in one place so a new field
     /// only needs to be added here once).
@@ -484,6 +512,118 @@ impl MovementPoses {
             ("ottotto_wait", self.ottotto_wait.as_ref()),
             ("entry_start", self.entry_start.as_ref()),
         ]
+    }
+}
+
+/// `MovementPoses.blend`'s own field set, name-for-name identical to
+/// `MovementPoses` itself (see its own doc comment and `docs/
+/// pose-blend.md`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MovementPosesBlend {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_slow: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_middle: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_fast: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_run: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_brake: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knee_bend: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_f: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_b: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_aerial_f: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_aerial_b: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_f: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_b: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial_f: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_aerial_b: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special_f: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_special_b: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing_fall_special: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat_wait: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub squat_rv: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ottotto: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ottotto_wait: Option<Blend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_start: Option<Blend>,
+}
+
+impl MovementPosesBlend {
+    fn by_name(&self, name: &str) -> Option<Blend> {
+        match name {
+            "wait" => self.wait,
+            "walk_slow" => self.walk_slow,
+            "walk_middle" => self.walk_middle,
+            "walk_fast" => self.walk_fast,
+            "turn" => self.turn,
+            "turn_run" => self.turn_run,
+            "dash" => self.dash,
+            "run" => self.run,
+            "run_brake" => self.run_brake,
+            "knee_bend" => self.knee_bend,
+            "jump_f" => self.jump_f,
+            "jump_b" => self.jump_b,
+            "jump_aerial_f" => self.jump_aerial_f,
+            "jump_aerial_b" => self.jump_aerial_b,
+            "fall" => self.fall,
+            "fall_f" => self.fall_f,
+            "fall_b" => self.fall_b,
+            "fall_aerial" => self.fall_aerial,
+            "fall_aerial_f" => self.fall_aerial_f,
+            "fall_aerial_b" => self.fall_aerial_b,
+            "fall_special" => self.fall_special,
+            "fall_special_f" => self.fall_special_f,
+            "fall_special_b" => self.fall_special_b,
+            "landing" => self.landing,
+            "landing_fall_special" => self.landing_fall_special,
+            "squat" => self.squat,
+            "squat_wait" => self.squat_wait,
+            "squat_rv" => self.squat_rv,
+            "pass" => self.pass,
+            "ottotto" => self.ottotto,
+            "ottotto_wait" => self.ottotto_wait,
+            "entry_start" => self.entry_start,
+            _ => None,
+        }
     }
 }
 
@@ -662,6 +802,14 @@ pub struct Attack {
     /// Exactly one physics-pose sample per simulation frame, including recovery.
     /// No implicit interpolation or fallback for missing samples.
     pub frames: Vec<AttackFrame>,
+    /// This subaction's own `Blend` byte pair (`docs/pose-blend.md`). Covers
+    /// every attack-shaped profile: jab, tilts, smashes, dash attack, ledge
+    /// attacks, the knockdown get-up attack, aerials (`aerial::Move.attack`)
+    /// and every special phase (`Phase{ground, air}: Attack`).
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

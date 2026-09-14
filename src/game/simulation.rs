@@ -2068,11 +2068,7 @@ pub(crate) fn update_pose_blend(fighter: &mut Fighter, data: &FighterData) {
         return;
     };
     let target: Vec<bones::Bone> = local.iter().map(Bone::physics).collect();
-    let default_byte = data
-        .movement_poses
-        .as_ref()
-        .and_then(|poses| poses.blend_frames)
-        .unwrap_or(0);
+    let default_byte = pose_blend::resolve_default_byte(fighter, data);
     pose_blend::resolve_pending(&mut fighter.pose_blend, default_byte);
     pose_blend::advance(&mut fighter.pose_blend, &target);
 }

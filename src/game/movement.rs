@@ -205,6 +205,57 @@ pub(crate) fn pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Option<&'a [
     frames.get(index).map(Vec::as_slice)
 }
 
+/// `docs/pose-blend.md`: the current movement sub-motion's own `Blend`
+/// byte pair, mirroring `pose`'s own field selection above (each arm reads
+/// the exact same named field's presence, so a listed action whose own
+/// field is absent still resolves to `None` here, exactly like `pose`).
+pub(crate) fn blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let poses = data.movement_poses.as_ref()?;
+    let name = match fighter.action {
+        Action::Wait if fighter.idle.animation == 2 => "wait",
+        Action::Walk => match fighter.locomotion.walk.kind {
+            WalkKind::Slow => "walk_slow",
+            WalkKind::Middle => "walk_middle",
+            WalkKind::Fast => "walk_fast",
+        },
+        Action::Run => "run",
+        Action::Turn => "turn",
+        Action::RunTurn => "turn_run",
+        Action::Dash => "dash",
+        Action::RunBrake => "run_brake",
+        Action::JumpSquat => "knee_bend",
+        Action::Jump if fighter.locomotion.jump_backward => "jump_b",
+        Action::Jump => "jump_f",
+        Action::JumpAerial if fighter.locomotion.jump_backward => "jump_aerial_b",
+        Action::JumpAerial => "jump_aerial_f",
+        Action::Fall if fighter.locomotion.fall_aerial => "fall_aerial",
+        Action::Fall => "fall",
+        Action::FallSpecial => "fall_special",
+        Action::Landing => "landing",
+        Action::LandingFallSpecial => "landing_fall_special",
+        Action::Squat => "squat",
+        Action::SquatWait => "squat_wait",
+        Action::SquatRv => "squat_rv",
+        Action::Pass => "pass",
+        Action::Ottotto => "ottotto",
+        Action::OttottoWait => "ottotto_wait",
+        Action::EntryStart => "entry_start",
+        _ => return None,
+    };
+    // Only resolve if `pose` would also find this field's own frames
+    // present (and nonempty); an absent/empty field leaves `pose`'s rest-
+    // pose fallback in place, which is never blended.
+    let (_, frames) = poses
+        .fields()
+        .into_iter()
+        .find(|(field, _)| *field == name)?;
+    if frames.is_some_and(|frames| !frames.is_empty()) {
+        Some(poses.blend_for(name).blend_frames)
+    } else {
+        None
+    }
+}
+
 /// A looping sub-motion's exported samples close the loop: the last frame
 /// re-samples the same point in the figatree as frame 0 (confirmed against
 /// `fox-fd.slp`: Fall's own 9-sample `movement_poses.fall` and the

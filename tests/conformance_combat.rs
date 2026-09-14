@@ -113,6 +113,8 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     for fighter in &mut data.fighters {
         fighter.rebound = Some(skirmish::game::clank::Animation {
             animation_length: 13.9,
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
             poses: vec![fighter.bones.clone(); 15],
         });
         for hit in fighter

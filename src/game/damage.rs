@@ -3,7 +3,7 @@
 //! remaining callback ordering stays the documented match-slice policy.
 use super::{
     Action, Error, Event, Fighter, State,
-    data::{Bone, FighterData, Hitbox, MatchData},
+    data::{Blend, Bone, FighterData, Hitbox, MatchData},
     script,
 };
 use crate::fighter::{combat, damage};
@@ -78,6 +78,21 @@ pub struct DamagePoseAttributes {
     pub air: [Vec<Vec<Bone>>; 3],
     /// Fly hurt height low/middle/high.
     pub fly: [Vec<Vec<Bone>>; 3],
+    /// Same-shaped sidecar of each motion's own `Blend` byte pair
+    /// (`docs/pose-blend.md`): `ground`/`air`/`fly` are bare bone-array
+    /// nests with no per-entry object to hang the pair off of, matching the
+    /// exporter's own `"blend": {"ground":.., "air":.., "fly":..}`
+    /// convention. Absent resolves every motion to `Blend::default()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blend: Option<DamagePosesBlend>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamagePosesBlend {
+    pub ground: [[Blend; 3]; 3],
+    pub air: [Blend; 3],
+    pub fly: [Blend; 3],
 }
 
 impl DamagePoseAttributes {
@@ -88,6 +103,19 @@ impl DamagePoseAttributes {
             }
             damage::DamageMotion::Air { level } => &self.air[level as usize],
             damage::DamageMotion::Fly { height } => &self.fly[height.index()],
+        }
+    }
+
+    pub(crate) fn blend_for(&self, motion: damage::DamageMotion) -> Blend {
+        let Some(blend) = &self.blend else {
+            return Blend::default();
+        };
+        match motion {
+            damage::DamageMotion::Ground { level, height } => {
+                blend.ground[level as usize][height.index()]
+            }
+            damage::DamageMotion::Air { level } => blend.air[level as usize],
+            damage::DamageMotion::Fly { height } => blend.fly[height.index()],
         }
     }
 }
@@ -222,6 +250,10 @@ pub struct RecoveryInvincibilityRules {
 #[serde(deny_unknown_fields)]
 pub struct KnockdownAttributes {
     pub passive_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_poses_dynamics_variant: u8,
     pub orientation: ProneOrientationRules,
     pub face_up: ProneRecoveryAttributes,
     pub face_down: ProneRecoveryAttributes,
@@ -246,12 +278,27 @@ pub struct ProneOrientationRules {
 #[serde(deny_unknown_fields)]
 pub struct ProneRecoveryAttributes {
     pub bound_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub bound_poses_blend_frames: u8,
+    #[serde(default)]
+    pub bound_poses_dynamics_variant: u8,
     pub wait_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub wait_poses_blend_frames: u8,
+    #[serde(default)]
+    pub wait_poses_dynamics_variant: u8,
+    /// Not currently exported (`skirmish-assets`'s own `build_prone_
+    /// recovery` doc comment: out of that batch's scope), so no matching
+    /// `damage_poses_blend_frames`/`dynamics_variant` pair exists yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_poses: Option<Vec<Vec<Bone>>>,
     pub forward: FloorTechMotion,
     pub backward: FloorTechMotion,
     pub stand_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub stand_poses_blend_frames: u8,
+    #[serde(default)]
+    pub stand_poses_dynamics_variant: u8,
     pub attack: super::data::Attack,
 }
 
@@ -273,6 +320,10 @@ pub struct FloorTechAttributes {
 pub struct FloorTechMotion {
     /// One headless physics/pose sample per action frame.
     pub frames: Vec<FloorTechFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -298,8 +349,16 @@ pub struct SurfaceResponseRules {
 pub struct SurfaceResponseAttributes {
     /// Complete fighter-specific FlyReflectWall physics poses.
     pub wall_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub wall_poses_blend_frames: u8,
+    #[serde(default)]
+    pub wall_poses_dynamics_variant: u8,
     /// Complete fighter-specific FlyReflectCeiling physics poses.
     pub ceiling_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub ceiling_poses_blend_frames: u8,
+    #[serde(default)]
+    pub ceiling_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -322,10 +381,22 @@ pub struct SurfaceTechAttributes {
     pub passive_ceiling_velocity: f32,
     /// Complete fighter-specific PassiveWall physics poses.
     pub passive_wall_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_wall_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_wall_poses_dynamics_variant: u8,
     /// Complete fighter-specific damage-tech PassiveWallJump physics poses.
     pub passive_wall_jump_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_wall_jump_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_wall_jump_poses_dynamics_variant: u8,
     /// Complete fighter-specific PassiveCeiling physics poses.
     pub passive_ceiling_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_ceiling_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_ceiling_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -1598,6 +1669,13 @@ pub(crate) fn damage_pose<'a>(fighter: &Fighter, data: &'a FighterData) -> Optio
         .or_else(|| frames.last())
 }
 
+/// `docs/pose-blend.md`: the current ordinary Damage motion's own `Blend`
+/// byte pair.
+pub(crate) fn damage_blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let motion = fighter.damage_motion?;
+    Some(data.damage_poses.as_ref()?.blend_for(motion).blend_frames)
+}
+
 /// DownWait's source priority: get-up attack, roll, then stand. This owns the
 /// action even when no option is selected so unrelated state machines cannot
 /// consume input while the fighter remains knocked down.
@@ -1807,6 +1885,20 @@ pub(crate) fn surface_tech_pose<'a>(
     poses.get(fighter.action_frame as usize)
 }
 
+/// `docs/pose-blend.md`: the active damage-tech profile's own `Blend`
+/// byte pair, mirroring `surface_tech_pose`'s own selection.
+pub(crate) fn surface_tech_blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let attributes = data.surface_tech.as_ref()?;
+    Some(match fighter.action {
+        Action::PassiveWall => attributes.passive_wall_poses_blend_frames,
+        Action::PassiveWallJump if !fighter.wall_jump.active => {
+            attributes.passive_wall_jump_poses_blend_frames
+        }
+        Action::PassiveCeiling => attributes.passive_ceiling_poses_blend_frames,
+        _ => return None,
+    })
+}
+
 pub(crate) fn surface_response_pose<'a>(
     fighter: &Fighter,
     data: &'a FighterData,
@@ -1818,6 +1910,17 @@ pub(crate) fn surface_response_pose<'a>(
         _ => return None,
     };
     poses.get(fighter.action_frame as usize)
+}
+
+/// `docs/pose-blend.md`: the active damage-surface-response profile's own
+/// `Blend` byte pair, mirroring `surface_response_pose`'s own selection.
+pub(crate) fn surface_response_blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    let attributes = data.surface_response.as_ref()?;
+    Some(match fighter.action {
+        Action::FlyReflectWall => attributes.wall_poses_blend_frames,
+        Action::FlyReflectCeiling => attributes.ceiling_poses_blend_frames,
+        _ => return None,
+    })
 }
 
 pub(crate) fn reflect(
@@ -1944,6 +2047,32 @@ pub(crate) fn ground_recovery_pose<'a>(
         .frames
         .get(fighter.action_frame as usize)
         .map(|frame| frame.bones.as_slice())
+}
+
+/// `docs/pose-blend.md`: the active ground-recovery profile's own `Blend`
+/// byte pair, mirroring `ground_recovery_pose`'s own selection.
+/// `Action::DownDamage`'s optional `damage_poses` has no exported blend
+/// pair (`docs/pose-blend.md`'s `ProneRecoveryAttributes` note), so that
+/// arm falls through to `ground_motion`'s own byte like every other
+/// unlisted action.
+pub(crate) fn ground_recovery_blend_frames(fighter: &Fighter, data: &FighterData) -> Option<u8> {
+    if let Some(attributes) = &data.knockdown {
+        if fighter.action == Action::Passive {
+            return Some(attributes.passive_poses_blend_frames);
+        }
+        if let Some(variant) = attributes.variant(fighter.prone) {
+            let blend = match fighter.action {
+                Action::DownBound => Some(variant.bound_poses_blend_frames),
+                Action::DownWait => Some(variant.wait_poses_blend_frames),
+                Action::DownStand => Some(variant.stand_poses_blend_frames),
+                _ => None,
+            };
+            if let Some(blend) = blend {
+                return Some(blend);
+            }
+        }
+    }
+    Some(ground_motion(fighter, data)?.blend_frames)
 }
 
 pub(crate) fn ground_recovery_velocity(fighter: &Fighter, data: &FighterData) -> Option<f32> {
