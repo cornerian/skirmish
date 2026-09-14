@@ -402,6 +402,50 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v13 (2026-09-14):** sha256 71f1eb79, 36 MB, supersedes v12
+(published to `cornerian/skirmish-datapacks` but never pinned in this repo --
+its own two-line-restriction fix, `skirmish-assets` commit `820e440`, is
+superseded by this pack before a pin commit for it landed here, so this
+entry's own "supersedes" chain skips straight from v11 to v13). Pokemon
+Stadium's export is fixed properly: all 136 of GrPs.dat's collision lines
+across all 8 `MapJoint`s are exported at their original disc indices (112
+after the pre-existing stage-wide dynamic-range drop) instead of being
+renumbered or dropped, and each joint now carries a boolean
+`enabled_at_start` (true only for joints 4 and 6, the neutral main floor,
+its two side platforms, and the stadium's permanent walls/ceiling/ledges --
+see `POKEMON_STADIUM_NEUTRAL_JOINTS`'s doc comment) recording which lines
+the real game keeps enabled at match start, rather than compacting the
+enabled set into a fresh 0-based numbering (pack v12's own approach, which
+broke correspondence with the real game's `last_ground_id` values) or
+stacking every form's lines together unmarked (pre-v12). The Skirmish loader
+reads `enabled_at_start` as of commit `e38eac3` (default `true` when the
+field is absent, so every earlier pack still loads unchanged). The other
+five stages' `stages/*.json` are byte-identical to v11's once each joint's
+`enabled_at_start` is stripped, and every pairing's fighter sections are
+identical to v11's.
+
+Re-measured every `recordings.json` entry plus `falco-fox-fd` against this
+pack, pin worktree on Skirmish origin/main `e38eac3`. Eight of ten are
+unchanged from their pinned baseline: `fox-fd` 5/128, `fox-fd-2` -5/118,
+`fox-fd-3` -32/91, `fox-bf` 174/297 (already moved forward by upstream
+fixes since pack v11's own pin), `fox-ys` -113/10, `fox-fod` -118/5,
+`fox-dl` -49/74 (left alone, owned elsewhere), `falco-fox-fd` -25/98.
+
+`fox-ps` improves sharply, from 85/-38 to **117/-6**: both the stacked-
+collision landing gap (pack v10 and earlier) and the ground-id renumbering
+artifact (pack v12) are gone. The new first divergence, frame -6 position.x
+on P1 (expected `0xc288d94c`, actual `0xc288d94d`), is a single-ULP
+floating-point gap -- baseline updated to match (`fox-ps-baseline.json`).
+
+`fox-fd-4` regresses, from -5/118 to -13/110 (`last_attack_landed` mismatch,
+expected `0x12` actual `0x00` -- the laser-hit-registration gap): caused by
+`937486e` ("Revert the laser muzzle-bone offset's axis swap; it contradicts
+decomp"), a code revert upstream of this pin, unrelated to the Pokemon
+Stadium collision fix this pack carries (this pairing's own fighter/stage
+data is confirmed byte-identical to v11's). Reported, not chased here (out
+of this pin's own scope); per the no-lower-baseline rule,
+`fox-fd-4-baseline.json` is not touched.
+
 **Published pack v11 (2026-09-14):** sha256 aaa657fd, 36 MB, supersedes v10:
 `specials.neutral.laser.{scale,muzzle_bone}` are embedded for Fox and Falco
 (scale 3.0 for both; muzzle_bone 67 for Fox, 61 for Falco), the geometry the
