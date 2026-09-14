@@ -2009,6 +2009,146 @@ full, unrenumbered line table alongside this flag; only then does
 `fox-ps`'s `last_ground_id` divergence become a fair test of this batch's
 change. `fox-ps-baseline.json` is unchanged by this batch.
 
+## 2026-09-14: post-rotation/post-muzzle-fix Blaster hits land one frame *early*, not late -- swept-vs-point falsified, root cause still open
+
+The root-facing rotation (`13f675d`) and the pre-physics muzzle fix
+(`0111600`, "Fire the Blaster's muzzle from this frame's pre-physics
+fighter position") together narrow the Blaster-hit geometry considerably
+from the coarse, ~3.4-unit-short miss this document's own `fox-fd-2.slp`
+"2026-09-13, published pack v10" entry above measured, and change its
+*shape*: against pack v13, three recordings now diverge on their own
+`percent`/`last_attack_landed` transition landing one Skirmish-internal
+frame **before** the recording, not after -- the opposite direction from
+every laser-timing gap this document previously recorded (the "2026-09-13"
+entry above, and `fox-fd-4-baseline.json`'s/`fox-bf-baseline.json`'s own
+committed notes, both describe a one-frame-*late* hit, fixed at the
+source by the muzzle-bone/ray-scale work those notes cite). Measured
+directly (`make-initialization` + `game::Match::step` driven frame-by-frame
+with each recording's own real controller inputs, bypassing
+`validate-replay`'s stop-on-first-mismatch the way this document's own
+prior "direct, uncommitted probe" entries do):
+
+- `fox-fd-2.slp`: recording's `last_attack_landed`/`percent` transition
+  lands at frame -5 (P1/P2 respectively); Skirmish's own transition lands
+  at -6 (`checked_frames: 117`, matching the current
+  `fox-fd-2-baseline.json` regression this loop leaves unresolved).
+- `fox-fd-4.slp`: recording's transition (the *first* of two Blaster hits
+  in this match) lands at -13; Skirmish's lands at -14
+  (`checked_frames: 109`).
+- `fox-bf.slp`: recording's transition lands at frame 26; Skirmish's lands
+  at 25 (`checked_frames: 148`; this recording's own committed baseline,
+  297/174, predates the rotation and records an unrelated Down-Special
+  `action_age` freeze at frame 174 -- see that baseline's own note -- not
+  reachable again until this Blaster-timing gap is fixed, so `fox-bf`
+  stays red against its own committed baseline regardless of this
+  investigation's outcome).
+
+**Decomp ordering confirmed to match Skirmish's own, ruling out a
+data-staleness/ordering bug.** By GObj priority within one frame, item
+position integration (prio 4) and item commit (prio 5, `it/item.c`) run
+before fighter physics (prio 6, sets root JObj to the post-move `cur_pos`)
+and fighter skeleton/hurtbox matrix setup (prio 7), both of which run
+before the item-vs-fighter hit test itself (`Fighter_8006CB94`, prio
+`0xD`/13, calling `ftColl_8007925C`, `ft/fighter.c:2625-2643`,
+`ft/ftcoll.c:1999-2270`) -- so by hit-test time, both the item and the
+fighter are already post-move for the current frame. `simulation::advance`
+matches this exactly: `move_fighter`/`collision::resolve` run first, the
+resulting post-move `poses` are built next, and only then does
+`projectile::advance` run (which itself advances the projectile's own
+position before its own hurtbox test). No reordering fix applies here.
+
+**Swept-vs-point hitbox-shape hypothesis, falsified across the full
+hitbox grid.** The projectile hitbox capsule `projectile.rs`'s Hurtbox
+block tests against each victim hurtbox is built as a *swept* segment
+(`previous_offset` -> `offset`, i.e. last frame's position to this
+frame's), while decomp's own single-current-frame damage-hit path
+(`ftColl_8007925C` -> `lbColl_8000805C` -> `lbColl_80006E58`) reads as a
+plausible point-only test by contrast -- a shape mismatch that would
+produce exactly a one-frame-early bias. Directly measured (a temporary,
+env-gated instrumentation pass computing, for every hitbox x every victim
+hurtbox pair on the frame each recording's own Skirmish transition lands,
+both the real swept-segment separation and a hypothetical point-only
+(this-frame-endpoint-only) separation; not committed, removed after
+measurement):
+
+- `fox-fd-2.slp` at its own wrong-early frame -6: exactly one negative
+  (overlapping) pair in the whole grid, hitbox 0 (the leading capsule)
+  against hurtbox 7, separation -0.372 -- already overlapping using only
+  this frame's own endpoint, no sweep required.
+- `fox-fd-4.slp` at its own wrong-early frame -14: three simultaneous
+  negative pairs, all on hitbox 0, against hurtboxes 1 (-1.262), 2
+  (-2.497) and 5 (-0.270) -- more decisively already-overlapping than
+  `fox-fd-2.slp`.
+- `fox-bf.slp` at its own wrong-early frame 25: the pair the real (swept)
+  code actually fires on, hitbox 0 against hurtbox 2, does miss under a
+  point-only test (its swept segment, `prev_offset=5.055 -> offset=
+  -1.459`, crosses hurtbox 2's span `[1.89, 2.71]`, but the endpoint alone
+  falls short). However, hitbox 1 (the second capsule) against the *same*
+  hurtbox 2 is independently at separation -0.116 -- also a genuine,
+  non-swept, point-time overlap, on the identical frame, one frame clean
+  (+6.48) the frame before. Because the real loop breaks on the first
+  overlapping hitbox in index order, it never reaches hitbox 1 today; a
+  point-only change would only make it reach hitbox 1, which fires on the
+  same wrong-early frame anyway.
+
+So a point-only fix would not move any of the three recordings' hit
+frames: two show the wrong-early overlap on the exact pair the current
+code already uses, and the third (`fox-bf.slp`) would just fire from a
+different capsule index on the identical frame. Not implemented, per this
+document's own convention of reporting a falsified hypothesis rather than
+applying it anyway.
+
+**`fox-fd-3.slp` checked as a fourth candidate and ruled out as a control,
+not a bug case.** This recording's own second Blaster shot (spawned -14,
+a trailing capsule -- hitbox 2, offset -6.51, not hitbox 3/-14.06 as
+first suspected -- catching P4's head, bone 41, mid-jump) was measured
+the same way: at frame -4, the recording's own `last_attack_landed`/
+`percent` already agree bit-for-bit with Skirmish's (both `18`/`3.0`);
+the only residual is a ~1e-5-magnitude position delta (e.g. `-17.047989`
+vs. the recording's `-17.047997`), consistent with ordinary float-
+accumulation drift, not a timing bug. This recording does not exhibit the
+one-frame-early symptom and is not counted among the three above.
+
+**Victim side confirmed bit-exact throughout; projectile-side ground
+truth unavailable for the three recordings that do show the bug.** A
+wide-window probe (roughly 20-30 frames before each shot's own spawn
+through its hit frame + 1) found the victim fighter's own position
+matching the recording exactly (delta `0.000000` to six decimal places)
+at *every* frame in that window, for all three recordings -- ruling the
+victim/hurtbox side out entirely. The equivalent check on the projectile
+side is not possible for `fox-fd-2.slp`, `fox-fd-4.slp` or `fox-bf.slp`:
+all three are recorded on Slippi client `2.0.1`
+(`tests/fixtures/slippi/parity/manifest.json`), and
+`crates/peppi-adapter/src/envelope.rs`'s own `Event::Item` handling
+requires `version.gte(3, 0)` ("Item events are unavailable before Slippi
+3.0") -- these files genuinely never recorded item/projectile position
+data, not a parsing gap. Only `fox-fd-3.slp` (Slippi `3.9.0`, this
+document's own "the only one recorded on a newer Slippi client" note
+above) carries it, which is exactly why `real_parity_laser_muzzle.rs`
+could hardcode real recorded laser positions only for that file -- and
+that recording is the control case above, not one of the three with the
+bug.
+
+**Conclusion, most likely explanation, not confirmed by direct
+measurement.** With the ordering match, the swept-vs-point falsification
+and the victim-side/no-compounding-mechanism findings above, the
+remaining candidate consistent with everything measured is the same
+already-documented, already out-of-scope bone-animation-sample muzzle
+residual `real_parity_laser_muzzle.rs`/`docs/validation.md`'s own
+2026-09-14 entry already track (`RESIDUAL = [0.19955, 0.35594]`, a
+spawn-time-only offset that -- since neither the recording's nor
+Skirmish's own laser re-accelerates after spawn, `projectile.rs`'s own
+module doc, confirmed here by an exactly-constant `±7.0`/frame position
+delta in Skirmish's own trajectory for all three shots -- would stay
+constant rather than grow across the shot's flight, the same algebra that
+document's own entry already uses). This is inference from the absence of
+any contrary evidence, not a direct measurement: no ground truth exists to
+confirm it for these three recordings, per the Slippi-version gap above.
+Reported per this loop's own stop condition (the original task's own
+explicit fallback for "decomp order already matches Skirmish's") rather
+than guessed at further; no baseline file moves as a result of this
+entry.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
