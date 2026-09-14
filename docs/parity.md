@@ -402,6 +402,31 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v11 (2026-09-14):** sha256 aaa657fd, 36 MB, supersedes v10:
+`specials.neutral.laser.{scale,muzzle_bone}` are embedded for Fox and Falco
+(scale 3.0 for both; muzzle_bone 67 for Fox, 61 for Falco), the geometry the
+2026-09-14 laser muzzle-bone/ray-scale fix (`docs/validation.md`) needs but
+that pack v10 did not yet carry. The exporter's map_head point composition
+also switched from reading a point joint's raw local translation to a full
+FK ancestor-chain evaluator (`skirmish-assets` commit `0ceac40`); every one
+of the six tournament stages' `stages/*.json` is byte-identical to v2's, so
+this is confirmed numerically inert for the current dataset, not a data
+change.
+
+Re-measuring every `recordings.json` entry plus `falco-fox-fd` against this
+pack: seven of ten are unchanged from their pinned baseline (`fox-fd` 5/128,
+`fox-fd-3` -32/91, `fox-bf` 49/172, `fox-ys` -113/10, `fox-fod` -118/5,
+`fox-dl` -123/0, `falco-fox-fd` -25/98). `fox-fd-2` (-5/118 baseline) and
+`fox-fd-4` (-5/118 baseline) both regress, to -11/112 and -13/110
+respectively -- the same Turn/Dash `action_state` mismatch (owned by the
+Battlefield loop, `36a5a36`) commit `46bcb87`'s own full sweep already
+found and reported for `fox-fd-2` against pack v10, upstream of where the
+laser fix's own effect on these two recordings would be observed. Not
+caused by this pack (the stage/laser changes above have no bearing on
+Turn/Dash), not chased further here (out of this pin's own scope, already
+tracked), and not masked: neither baseline is lowered, per this project's
+own no-lower-baseline rule.
+
 **Published pack v10 (2026-09-13):** sha256 e4189b85, 36 MB, supersedes v9:
 the specials' per-frame script command variables (`specials.neutral.script`,
 `specials.side.script`) are embedded for Fox and Falco, so the Blaster's
