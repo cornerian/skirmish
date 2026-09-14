@@ -802,6 +802,16 @@ reported 0.
 
 ## A second real recording: `fox-fd-4.slp`
 
+**2026-09-14 update:** this recording's own frame-`-14` Blaster-one-
+frame-early divergence (see below) was directly tested against the
+working hypothesis that the victim's `LandingFallSpecial` pose-sample
+index was off by one; that hypothesis is falsified (`docs/
+validation.md`'s own 2026-09-14 pose-sample-index investigation entry has
+the full method, including that the real triggering hurtbox on this
+frame is bone 22, not bone 41, and an exhaustive index-offset sweep from
+`-15` to `+5` that never avoids the frame-`-14` registration). No
+baseline change; not chased further.
+
 A second, independently recorded Fox-vs-Fox Final Destination match,
 `tests/fixtures/slippi/parity/fox-fd-4.slp` (`14_56_00 [C2] Fox + Fox
 (FD).slp`, same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus,
@@ -1047,6 +1057,15 @@ reporting the recording's own `state_age = 1.0`) and against `fox-fd.slp`
 unrelated matter (above), reported rather than chased in this batch.
 
 ## A first Battlefield recording: `fox-bf.slp`
+
+**2026-09-14 update:** this recording's own frame-`25` Blaster-one-
+frame-early divergence (see below) and `fox-fd-4.slp`'s own frame-`-14`
+instance were both directly tested against the working hypothesis that
+the victim's `KneeBend`/`LandingFallSpecial` pose-sample index was
+off by one; that hypothesis is falsified for both (`docs/validation.md`'s
+own 2026-09-14 pose-sample-index investigation entry has the full method,
+the real triggering hurtbox bone for each case, and the exhaustive
+index-offset sweep). No baseline changes; not chased further.
 
 The first recording on a stage other than Final Destination,
 `tests/fixtures/slippi/parity/fox-bf.slp` (`18_21_03 Fox + Fox (BF).slp`,

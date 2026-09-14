@@ -1,5 +1,154 @@
 # Local validation provenance
 
+The 2026-09-14 pose-sample-index investigation (the real-replay parity
+loop, `fox-fd-4.slp`/`fox-bf.slp`, `docs/parity.md`) tests, and falsifies,
+the working hypothesis that `fox-fd-4.slp`'s frame `-14` and `fox-bf.slp`'s
+frame `25` Blaster-hit-one-frame-early divergences are a figatree
+sample-index off-by-one in `LandingFallSpecial`'s or `JumpSquat`
+(`KneeBend`)'s own pose mapping. No code change follows from this entry;
+it is a negative result, reported per this loop's own stop condition
+rather than guessed at with an unjustified fix.
+
+**Method.** Both cases were reproduced exactly against pack
+`v14-snapshot-20260915` (`make-initialization`/`validate-replay`,
+matching this loop's own stated facts bit-for-bit: `fox-fd-4.slp` matches
+109 frames, first divergence `-14`, P2's `last_attack_landed` (expected
+`0x00`, actual `0x12`); `fox-bf.slp` matches 148 frames, first divergence
+`25`, P1's `percent` (expected `0.0`, actual `3.0`)). `uv run --with
+py-slippi` against both `.slp` fixtures confirms the victim's own
+recorded `state_age` on the relevant frames: `fox-fd-4.slp` P4 (Slippi
+port index 3) is `LandingFallSpecial` (state `0x2b`) at `state_age`
+`0.0, 3.01, 6.02, 9.03, 12.04, 15.05, 18.06...` across frames `-19`
+through `-13`, position bit-exact against Skirmish's own
+(`48.55747985839844` at frame `-14`); `fox-bf.slp` P1 (port index 0)
+enters `KneeBend` (state `0x18`) at frame `25` with `state_age = 0.0`,
+position bit-exact (`-2.576564`).
+
+Temporary, uncommitted instrumentation (`SKIRMISH_POSE_DEBUG=1`, plus a
+`SKIRMISH_POSE_INDEX_OFFSET_{KNEEBEND,LANDINGFALLSPECIAL}` override, both
+removed before this commit) was added to `game::movement::pose`,
+`game::escape_air::pose`, `game::simulation` (a `debug_bone_hurtboxes`
+helper mirroring `projectile.rs`'s own `hurtbox.physics().transform(pose,
+1.0)` call exactly, not just a bare joint origin) and
+`game::projectile`'s own hurtbox loop, to read back, live, which pose
+source and sample index `local_pose` actually uses on the divergent
+frame, and to print the real hurtbox capsule (`start`/`end`/`radius`,
+transformed through the bone's true world matrix) the live collision
+test itself evaluates.
+
+**Finding 1: both indices are already decomp-correct, matching the
+recording bit-for-bit -- there is no entry-advance bug here.**
+`ftCo_KneeBend_Enter` (`ftCo_KneeBend.c:19-25`, read in full) calls only
+`Fighter_ChangeMotionState(gobj, ftCo_MS_KneeBend, 0U, 0.0F, 1.0F, 0.0F,
+NULL)`; unlike Dash/Turn/Squat/EscapeAir/aerials/Fox specials (this
+file's own entry-advance table), it makes no second, explicit
+`ftAnim_8006EBA4` call, so decomp's own `cur_anim_frame` is genuinely
+`0.0` on `KneeBend`'s entry frame -- exactly matching both the
+recording's own `state_age = 0.0` and Skirmish's own live
+`fighter.action_frame = 0` at the point `movement::pose`'s `JumpSquat`
+arm reads it (confirmed live, not just by reading the decomp source).
+`ftCo_LandingFallSpecial_Enter` (`ftCo_Landing.c:103-112`) similarly
+makes no second call; its own `anim_speed` argument to
+`Fighter_ChangeMotionState`, `(0.1F + fp->x2EC) / landing_lag`, is
+already modeled exactly by `fighter.aerial.landing_rate`/`landing_elapsed`
+(`game::escape_air.rs`), confirmed live to be bit-exact against the
+recording's own `state_age` at every sampled frame above, including the
+divergent frame itself (`landing_elapsed = 15.05` at Skirmish frame
+`-14`, matching the recording's own `state_age` exactly). `escape_air::
+pose`'s `LandingFallSpecial` arm already indexes `landing_poses` by
+`landing_elapsed as usize` (`15`), not by raw `action_frame` -- the
+correct, already-fixed mapping; `movement::pose`'s own raw-`action_frame`
+`LandingFallSpecial` arm (which *would* be a bug, since it ignores the
+non-unit anim rate entirely) is never reached for either recording's
+instance, because `local_pose`'s priority chain tries `escape_air::pose`
+first and it always succeeds whenever `data.escape_air` is present.
+
+**Finding 2: the actual triggering hurtbox in `fox-fd-4.slp`'s case is
+bone 22, not bone 41 -- `game::projectile`'s own labeled `'hitboxes` loop
+breaks on the *first* victim hurtbox that overlaps, in `data.hurtboxes`'
+own declared order (`bone 4, 22, 41, 41, 55, 25, 56, 26, 12, 6, 13, 7,
+18`), before ever reaching bone 41's own two capsules.** Live
+instrumentation of the real collision test (not a standalone geometric
+estimate) confirms the swept laser capsule (`start [38.325, 7.959, 0]`,
+`end [45.325, 7.959, 0]`, `radius 1.1718`) overlaps bone 22's hurtbox
+(`hurt_index 1`, `radius 2.4`, world `start [47.145, 6.350, 0.327]`,
+`end [45.681, 5.506, -0.853]`) on exactly Skirmish's frame `-14`
+(`action_frame 5`, `landing_elapsed 15.05`, position `48.55748`
+-- the same frame this loop's own prior fact-finding attributed to bone
+41). Bone 41's own two capsules are never even evaluated by the live
+test on this frame, since the loop already broke at bone 22.
+
+**Finding 3: no sample-index offset -- in either direction, across a wide
+sweep -- reproduces "miss at the early frame, hit at the recorded
+frame" for either case; the sample-index hypothesis is falsified.** Using
+the temporary override to force `local_pose`'s selected index away from
+its own already-decomp-correct value and re-running
+`make-initialization`/`validate-replay` end to end (not a standalone
+geometry estimate) for every offset:
+
+- `fox-fd-4.slp` (`LandingFallSpecial`, bone 22's own overlap): every
+  offset from `-15` through `+5` (the entire practically reachable range;
+  larger offsets either clamp to one of these or push the action well
+  past its own `landing_animation_end` into `Wait`, which this recording
+  never reaches at this point) reproduces the *identical* frame `-14`
+  mismatch. The bone-22 overlap on this frame is not sensitive to which
+  nearby figatree sample is used at all.
+- `fox-bf.slp` (`KneeBend`, bone 41's own overlap): offsets `-2` through
+  `+1` (indices `0` and `1`, both clamped at the entry frame's own floor)
+  all reproduce the frame `25` mismatch unchanged. Offset `+2` (index
+  `2`) does avoid the frame `25` overlap -- `checked_frames` extends to
+  `149` -- but the *same* constant offset then also suppresses the
+  recording's own real hit one frame later: the new first divergence at
+  offset `+2` is frame `26`, P1's `percent` (expected `3.0`, actual
+  `0.0`, i.e. the hit that should land now never does, through at least
+  that frame). No single constant offset reproduces both halves of the
+  recording's own behavior (miss at `25`, hit at `26`) simultaneously.
+
+**Conclusion.** Both victims' positions are already bit-exact, and both
+victims' own tracked animation-rate counters (`action_frame` for
+`KneeBend`, `landing_elapsed` for `LandingFallSpecial`) are already
+bit-exact against the recording's own `state_age` on every sampled frame,
+including the divergent one. The figatree sample index each pose source
+selects from these already-correct counters is therefore also already
+decomp-correct, confirmed both by reading the relevant `_Enter` functions
+in full and by exhaustively sweeping the actual index used against the
+live collision test. The residual difference between Skirmish's geometry
+and Melee's on these two frames is real (`docs/parity.md`'s own overlap
+figures) but is not an `action_frame`-to-sample-index mapping bug in
+either `game::movement` or `game::escape_air`; it most likely lives in
+the exported pack's own hurtbox or pose geometry for these two poses (the
+same shape as this document's own "pack's own bone-67 `loop_phase.air`
+animation-sample data, not chased further" conclusion for the laser
+muzzle bone) or in the attacker's own laser capsule extent/growth, not
+the victim's pose. Not chased further this batch, per this loop's own
+stop condition; `docs/parity.md`'s and this file's own baselines are
+unchanged (no code change accompanies this entry).
+
+**Other actions reading `fighter.action_frame` unadjusted for their own
+pose-sample index (`game::movement::pose`'s match arms):** `RunTurn`,
+`RunBrake`, `Jump`/`JumpAerial` (forward and backward), `Fall`/
+`FallAerial`/`FallSpecial` (the plain-fall pose, not the
+`LandingFallSpecial` continuation above), ordinary `Landing`, `Squat`
+(already correct: `start_squat` biases `action_frame` to `1` at entry,
+the same shape as Dash/Turn), `SquatRv`, `Pass`, `Ottotto` and
+`EntryStart` are all subject to the identical "does this action's own
+decomp `_Enter` make a second, explicit `ftAnim_8006EBA4` call" question
+this entry answers for `KneeBend`/`LandingFallSpecial`. `RunTurn`
+(`ftCo_TurnRun_Enter`, `ftCo_TurnRun.c:44-51`), ordinary `Landing`
+(`ftCo_Landing_Enter`) and `Fall` (`ftCo_Fall_Enter`) are already
+individually confirmed elsewhere in this file (the Dash-exception entry
+above) to make no such call, matching their current raw-index treatment.
+The rest are unverified by this entry and are not touched: Finding 3
+above shows that even where the entry-advance analysis alone says "no
+adjustment needed" (exactly the case for both `KneeBend` and
+`LandingFallSpecial`), a residual geometry mismatch can still exist for
+reasons entirely outside the entry-advance/sample-index model -- so a
+decomp-only reading of `ftCo_RunBrake_Enter`/`ftCo_Jump_Enter`/
+`ftCo_FallSpecial_Enter`/`ftCo_SquatRv_Enter`/`ftCo_Pass_Enter`/
+`ftCo_OttottoWait_Enter`/`ftCo_Entry_Enter`, without the same kind of
+live, end-to-end empirical check this entry performed, would not be a
+justified basis for changing any of them.
+
 The 2026-09-14 pose-blend batch's own follow-up replaces its first
 version's single shared `MovementPoses.blend_frames` with a per-subaction
 `Blend{blend_frames, dynamics_variant}` pair mirroring the `skirmish-assets`
