@@ -1036,14 +1036,23 @@ pub(crate) fn update_actions(
             } else {
                 -f.facing
             };
-            let smash_this_frame = input.stick[0] * facing_after >= p.dash_threshold
-                && f.locomotion.tilt_x_age < p.dash_window;
-            if smash_this_frame {
+            // `fn_800C9C2C` (`ftCo_Turn.c:160-171`) sets `x8` when the
+            // *current* frame's stick clears the smash threshold within
+            // the smash window -- once set, `x8` stays set (this function
+            // never clears it) until a fresh `ftCo_Turn_Enter`/`_Smash`
+            // reinitializes it. The *separate*, final gate right before
+            // `ftCo_Dash_Enter` (`ftCo_Turn_IASA`, `:128-135`) rechecks
+            // only the stick-vs-threshold half of that same expression --
+            // deliberately not the window -- so a stale `x670_timer_
+            // lstick_tilt_x` (the stick has been held past the deadzone
+            // for a while) cannot block a conversion `x8` already latched.
+            let stick_past_threshold = input.stick[0] * facing_after >= p.dash_threshold;
+            if stick_past_threshold && f.locomotion.tilt_x_age < p.dash_window {
                 f.locomotion.turn_smash = true;
             }
             if (just_turned || !f.locomotion.turn_has_turned)
                 && f.locomotion.turn_smash
-                && smash_this_frame
+                && stick_past_threshold
             {
                 // ftCo_Turn_IASA's own fn_800C9C2C/dash-back conversion
                 // (ftCo_Turn.c:97-148,160-169) gates the actual `ftCo_
@@ -1087,6 +1096,19 @@ pub(crate) fn update_actions(
                 //   stick for many further frames -- neither condition
                 //   holds, so no later frame re-triggers the conversion
                 //   (`docs/parity.md`'s own frame -11 regression report).
+                // - `fox-bf.slp` P4 (frame 150): a *smash*-entered Turn
+                //   (from `Dash`'s own dash-back check, `try_dash`) whose
+                //   flip lands the very next frame (`just_turned` fires),
+                //   but by then the stick has been held past the smash
+                //   deadzone continuously since the frame before entry, so
+                //   `tilt_x_age` has already reached `dash_window` -- `x8`
+                //   was already latched at entry (`start_turn(f, p, true)`
+                //   sets `turn_smash` directly), so the window only needed
+                //   to hold once, not still on this exact frame; requiring
+                //   it again here (this arm's own earlier bug) wrongly
+                //   blocked the conversion despite `x8`/`turn_smash`
+                //   already being set and the stick still clearing the
+                //   plain threshold.
                 //
                 // `ftCo_Dash_Enter` (`ftCo_Dash.c:49-70`) reads `fp->
                 // facing_dir` directly for its own initial velocity and

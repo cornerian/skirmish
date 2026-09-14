@@ -1456,8 +1456,50 @@ The two conditions together cover all three recordings' own cases; see
 (`game_dash`'s `a_fresh_reversal_after_turn_already_flipped_does_not_
 convert_to_dash`). `fox-fd-2.slp` returns to its own pre-existing 118/-5
 frontier (baseline unchanged); `fox-bf.slp` returns to 273/`149`,
-unchanged from just above -- the frame 150 divergence is not
-re-diagnosed in this entry.
+unchanged from just above.
+
+**Fixed: the frame 150 divergence, a second, independent bug in the same
+arm.** P4 enters a smash-entered Turn (from `Dash`'s own dash-back check)
+at frame 149 with `tilt_x_age` `1`, comfortably under `dash_window` (`2`),
+latching `turn_smash`; the ordinary Anim-side flip lands the very next
+frame (150), but by then the stick has been held continuously since the
+frame before entry, so `tilt_x_age` has reached `2`, no longer under the
+window. `fn_800C9C2C` (`ftCo_Turn.c:160-171`) is the *only* place the
+window gates anything: it latches `x8` when the window holds, and never
+clears it once latched; `ftCo_Turn_IASA`'s own final check right before
+`ftCo_Dash_Enter` (`:128-135`) rechecks only the stick-vs-threshold half
+of that expression, deliberately not the window. The prior fix's own
+`smash_this_frame` variable bundled the window into *both* the latch step
+and the final gate, so a stale window still wrongly blocked an
+already-latched conversion. `update_actions`'s `Action::Turn` arm now
+splits the two: a windowless `stick_past_threshold` feeds the final gate,
+while the window still gates only the fresh-latch step. `docs/
+validation.md` has the full native-test breakdown (`game_dash`'s new
+`a_smash_entered_turn_still_converts_once_the_window_has_gone_stale`,
+constructing the exact three-frame shape with the fixture's own
+`dash_window` overridden to match the real pack's value).
+
+297 frames now match (`-123` through `173`), up from 273;
+`fox-bf-baseline.json` moves to reflect this, measured against the newly
+published gameplay-export pack v11 (identical numbers to v10, a pure
+pack-version bump). The new first divergence is frame 174, field
+`action_age` on P1 (expected `1.0`, actual `0.0`), on the frame P1
+enters Fox's own Down Special (Reflector/Shine) Start phase (Slippi
+action state `360`, `SpecialLwStart`) -- not the already-fixed "extra
+entry advance" class alone: the recording's own `state_age` holds at a
+constant `1.0` for four further real frames (174-177) while B stays
+held, before continuing to increment normally (178: `2.0`, 179: `3.0`)
+and converting to the Loop phase at 180. This looks like a genuine
+scripted animation-rate freeze -- matching the already-modeled
+`RunBrake` `run_brake_marker_frame`/`run_brake_freeze_speed` pattern, a
+different mechanism from the entry-advance class this whole batch has
+otherwise been fixing -- rather than a simple offset, and the
+held-duration does not appear tied to the release timing itself:
+`ftFx_SpecialLw_Enter`/`SetVars` sets `fp->cmd_vars[1] = 4` (matching
+the observed four-frame freeze), a plausible but unconfirmed script
+marker value, not yet exported as pack data or independently verified.
+Reported per this loop's own stop condition (unmodeled system needing
+design/pack-data verification) rather than guessed at.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

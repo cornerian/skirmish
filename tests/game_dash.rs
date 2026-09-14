@@ -290,6 +290,49 @@ fn a_fresh_reversal_after_turn_already_flipped_does_not_convert_to_dash() {
     assert_eq!(state.fighters[0].facing, -1.0);
 }
 
+/// `fox-bf.slp`: P4 enters a *smash*-entered Turn (from Dash's own
+/// dash-back check) at frame 149 whose flip lands the very next frame
+/// (150), but by then the stick has been held past the smash deadzone
+/// continuously since the frame before entry, so `tilt_x_age` has already
+/// reached `dash_window` by the flip frame. `fn_800C9C2C` (`ftCo_Turn.c:
+/// 160-171`) only consults the window to decide whether to *latch* `x8`;
+/// the separate, final check right before `ftCo_Dash_Enter` (`ftCo_Turn.c:
+/// 128-135`) rechecks only the stick-vs-threshold half of that expression,
+/// not the window, so an already-latched conversion must still fire even
+/// once the window has gone stale.
+#[test]
+fn a_smash_entered_turn_still_converts_once_the_window_has_gone_stale() {
+    let mut resource = data();
+    resource.fighters[0]
+        .locomotion
+        .as_mut()
+        .unwrap()
+        .dash_window = 2;
+    let mut game = Match::new(resource, 42).unwrap();
+    enter_dash(&mut game);
+    // One held-neutral frame (still early phase) before the reversal, so
+    // the reversal itself lands one frame before the middle phase begins.
+    hold_neutral(&mut game, 1);
+    // Frame 3 (still early phase): a fresh reversal, tilt_x_age 0.
+    let state = step(&mut game, stick(0, [-1.0, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Dash, "still early phase");
+    assert_eq!(state.fighters[0].locomotion.tilt_x_age, 0);
+    // Frame 4 (middle phase): tilt_x_age is 1, still < dash_window (2), so
+    // the smash-entry check passes and Turn is entered (not yet flipped).
+    let state = step(&mut game, stick(0, [-1.0, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(state.fighters[0].facing, 1.0, "not yet flipped");
+    assert_eq!(state.fighters[0].locomotion.tilt_x_age, 1);
+    assert!(state.fighters[0].locomotion.turn_smash);
+    // Frame 5: the ordinary Anim-side flip lands this frame (`just_turned`
+    // fires), but tilt_x_age is now 2, no longer < dash_window (2) -- the
+    // window alone would block a fresh latch here, but `turn_smash` was
+    // already latched at entry, so the conversion still fires.
+    let state = step(&mut game, stick(0, [-1.0, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Dash);
+    assert_eq!(state.fighters[0].facing, -1.0);
+}
+
 #[test]
 fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     // Early phase: an opposite stick matches neither the forward-smash nor

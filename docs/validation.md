@@ -1,5 +1,67 @@
 # Local validation provenance
 
+The 2026-09-14 Turn-to-Dash stale-window fix (the real-replay parity loop,
+`fox-bf.slp`, `docs/parity.md`) stops `game::locomotion::update_actions`'s
+`Action::Turn` arm from re-checking `tilt_x_age`/`dash_window` on its own
+final gate, right before entering `Dash`. `fn_800C9C2C` (`ftCo_Turn.c:160-
+171`) is the *only* place the window is consulted: it latches `fp->mv.co.
+turn.x8` when the current frame's stick clears the smash threshold within
+the window, and never clears it once set. `ftCo_Turn_IASA`'s own final
+check, right before `ftCo_Dash_Enter` (`:128-135`), rechecks only the
+stick-vs-threshold half of that same expression -- deliberately not the
+window -- so a stick held past the deadzone for a while (a stale `x670_
+timer_lstick_tilt_x`) cannot block a conversion `x8` already latched.
+
+Confirmed directly against `fox-bf.slp`: P4 enters a *smash*-entered Turn
+(from `Dash`'s own dash-back check, `try_dash`) at frame 149, whose own
+`x670`-equivalent (`tilt_x_age`) is `1`, comfortably under `dash_window`
+(`2`) -- the entry latches `turn_smash` there. The ordinary Anim-side flip
+lands the very next frame (150), but by then the stick has been held
+continuously since the frame before entry, so `tilt_x_age` has reached
+`2`, no longer `< dash_window`. The prior fix's own `smash_this_frame`
+variable bundled the window check into *both* the latch step and the
+final gate, so this exact case still wrongly blocked the conversion.
+`update_actions`'s `Action::Turn` arm now splits the two: `stick_past_
+threshold` (no window) feeds the final gate directly, while the window
+still gates only whether `turn_smash` gets freshly latched this frame.
+
+**Tests**: `game_dash`'s new `a_smash_entered_turn_still_converts_once_
+the_window_has_gone_stale` overrides the fixture's own `dash_window` to
+`2` (matching the real pack's value) and constructs the exact three-frame
+shape: a fresh reversal one frame before the middle phase begins
+(`tilt_x_age` `0`), a smash-entry on the middle phase's own first frame
+(`tilt_x_age` `1`, `< 2`, latches `turn_smash`), then the flip frame
+(`tilt_x_age` `2`, `not < 2`) still converting to `Dash` with facing
+flipped. The existing `a_stronger_stick_mid_turn_converts_straight_to_
+dash_without_waiting_for_the_flip` and `a_fresh_reversal_after_turn_
+already_flipped_does_not_convert_to_dash` (the fox-fd-2 regression test)
+both continue to pass unchanged. `cargo fmt --check`, `cargo clippy
+--workspace --all-targets` and `cargo test --workspace` (both default and
+`c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v11: `fox-bf.slp`
+now matches 297 frames (`-123` through `173`), up from 273;
+`fox-bf-baseline.json` moves to reflect this (also moving its own
+`export_version` from `v10` to `v11`, confirmed identical numbers to
+`v10` -- a pure pack-version bump). The new first divergence is frame
+174, field `action_age` on P1 (expected `1.0`, actual `0.0`), on the
+frame P1 enters Fox's own Down Special (Reflector/Shine) Start phase
+(Slippi action state `360`, `SpecialLwStart`) -- not the already-fixed
+"extra entry advance" class alone: the recording shows `state_age`
+holding at a constant `1.0` for four further real frames (174-177)
+while the B button stays held, before continuing to increment normally
+(178: `2.0`, 179: `3.0`) and converting to the Loop phase at 180. This
+looks like a genuine scripted animation-rate freeze (matching the
+already-modeled `RunBrake` `run_brake_marker_frame`/`run_brake_freeze_
+speed` pattern, a different mechanism from the entry-advance class this
+whole batch has otherwise been fixing) rather than a simple offset, and
+the held-duration does not appear to depend on the release timing:
+`ftFx_SpecialLw_Enter`/`SetVars` sets `fp->cmd_vars[1] = 4` (matching
+the observed four-frame freeze), a plausible but unconfirmed script
+marker value, not yet exported as pack data or independently verified.
+Reported per this loop's own stop condition (unmodeled system needing
+design/pack-data verification) rather than guessed at.
+
 The 2026-09-14 Turn-to-Dash conversion regression fix (the real-replay
 parity loop, `fox-bf.slp`/`fox-fd-2.slp`, `docs/parity.md`) narrows the
 prior "instant bypass" fix (`36a5a36`, this file's own earlier entry
