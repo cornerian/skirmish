@@ -1,5 +1,18 @@
 # Local validation provenance
 
+The 2026-09-14 pose-blend batch (`docs/pose-blend.md`) adds `game::pose_blend`
+(`ftAnim_8006EBE8`/`ftAnim_8006E9B4`/`ftAnim_8006FE9C`/`lb_8000C490`) and
+`collision::bones`'s `srt_quat`/`HSD_MtxSRTQuat` port, wired so every pack
+through v13 (which carries no `MovementPoses.blend_frames`) stays
+byte-for-byte identical to pre-batch pose sampling. `fmt`/`clippy`/native/
+c-oracle all pass; the real-replay ratchet against
+`v13-snapshot-20260914` measures identically on this batch and on the
+unmodified base commit (`8160023`) for all nine recordings -- including the
+three (fox-bf, fox-fd-2, fox-fd-4) that were already regressed against
+their own checked-in baselines at that base, unrelated to this batch. See
+`docs/pose-blend.md`'s own "Validation" section for the full table and the
+explicit-blend decomp call-site survey.
+
 The 2026-09-14 bones C-oracle batch's own follow-up closes the "does not
 match this document's own root-facing entry" thread that batch's own
 entry (below) left open, with a live-path probe rather than further

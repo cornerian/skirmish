@@ -79,17 +79,33 @@ fn return_world(mut world: Vec<Matrix>) {
 
 pub type Vector = [f32; 3];
 pub type Matrix = [[f32; 4]; 3];
+/// Quaternion components in x, y, z, w order, matching `HSD_MtxSRTQuat`'s
+/// own `Quaternion*` parameter (`sysdolphin/baselib/mtx.c:412-434`) and
+/// `crate::compat::math::quaternion::Quaternion`. Kept as a local alias
+/// (rather than importing that module) so `collision::bones` stays a
+/// primitive layer `compat::math` does not need to depend on.
+pub type Quaternion = [f32; 4];
 pub const IDENTITY: Matrix = [
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, 0.0],
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct LocalTransform {
     pub translation: Vector,
-    /// Euler X/Y/Z angles in radians, using HSD's formula.
+    /// Euler X/Y/Z angles in radians, using HSD's formula. Ignored once
+    /// `rotation_quaternion` is `Some`.
     pub rotation: Vector,
+    /// `JOBJ_USE_QUATERNION` (`sysdolphin/baselib/jobj.h`, tested at
+    /// `jobj.c:167`): when set, this joint's rotation is a quaternion
+    /// instead of Euler angles, and `srt` builds its matrix through
+    /// `HSD_MtxSRTQuat` (`sysdolphin/baselib/mtx.c:412-434`) instead of
+    /// `HSD_MtxSRT`. Set by the pose-blend recursion (`game::pose_blend`,
+    /// porting `lb_8000C490`, `melee/lb/lb_00B0.c:469-550`) when a bone's
+    /// blended rotation is not close enough to the figatree sample to copy
+    /// it directly.
+    pub rotation_quaternion: Option<Quaternion>,
     pub scale: Vector,
 }
 
@@ -98,6 +114,7 @@ impl Default for LocalTransform {
         Self {
             translation: [0.0; 3],
             rotation: [0.0; 3],
+            rotation_quaternion: None,
             scale: [1.0; 3],
         }
     }
@@ -247,9 +264,15 @@ impl Drop for Pose {
     }
 }
 
-/// Original HSD_MtxSRT. The optional scale is the parent's accumulated HSD scale.
-/// Like C, this primitive retains IEEE behavior; Pose validates finite results.
+/// Original HSD_MtxSRT, dispatching to `srt_quat` for a
+/// `JOBJ_USE_QUATERNION` joint (`jobj.c:167-174`'s own branch on
+/// `jobj->flags & 0x20000`, ahead of either matrix routine). The optional
+/// scale is the parent's accumulated HSD scale. Like C, this primitive
+/// retains IEEE behavior; Pose validates finite results.
 pub fn srt(local: LocalTransform, parent_scale: Option<Vector>) -> Matrix {
+    if let Some(quaternion) = local.rotation_quaternion {
+        return srt_quat(local.scale, quaternion, local.translation, parent_scale);
+    }
     let [sx, sy, sz] = local.scale;
     let [rx, ry, rz] = local.rotation;
     let (sin_x, cos_x) = (
@@ -299,6 +322,82 @@ pub fn srt(local: LocalTransform, parent_scale: Option<Vector>) -> Matrix {
             local.translation[2],
         ],
     ]
+}
+
+/// `MTXScale`/`PSMTXScale`: identity with `scale` on the diagonal
+/// (`sdk/mtx.c`'s `C_MTXScale`, `dolphin/mtx/mtx.c:766-781`; no floating
+/// point operation beyond assignment, so the PS/scalar variants cannot
+/// disagree).
+fn scale_matrix(scale: Vector) -> Matrix {
+    [
+        [scale[0], 0.0, 0.0, 0.0],
+        [0.0, scale[1], 0.0, 0.0],
+        [0.0, 0.0, scale[2], 0.0],
+    ]
+}
+
+/// `PSMTXTrans`: identity with `translation` in column 3 (`dolphin/mtx/
+/// mtx.c:706-723`; again no arithmetic, only assignment, so the PS-asm
+/// original and this scalar reproduction cannot disagree).
+fn translate_matrix(translation: Vector) -> Matrix {
+    [
+        [1.0, 0.0, 0.0, translation[0]],
+        [0.0, 1.0, 0.0, translation[1]],
+        [0.0, 0.0, 1.0, translation[2]],
+    ]
+}
+
+/// `MTXQuat`/`C_MTXQuat` (`dolphin/mtx/mtx.c`, pinned in `tests/oracle/
+/// original/sdk_mtx.c`; selected as `MTXQuat` by `sysdolphin/baselib/
+/// mtx.h:88`'s `#define MTXQuat C_MTXQuat`, the scalar SDK build `HSD_
+/// MtxSRTQuat` links against). Converts a quaternion to a rotation matrix
+/// by its accumulated squared norm (`s = 2 / |q|^2`) rather than assuming a
+/// unit quaternion, preserving the source's own operation grouping.
+fn quat_to_matrix(q: Quaternion) -> Matrix {
+    let [x, y, z, w] = q;
+    let s = 2.0 / (w * w + (z * z + (x * x + y * y)));
+    let xs = x * s;
+    let ys = y * s;
+    let zs = z * s;
+    let wx = w * xs;
+    let wy = w * ys;
+    let wz = w * zs;
+    let xx = x * xs;
+    let xy = x * ys;
+    let xz = x * zs;
+    let yy = y * ys;
+    let yz = y * zs;
+    let zz = z * zs;
+    [
+        [1.0 - (yy + zz), xy - wz, xz + wy, 0.0],
+        [xy + wz, 1.0 - (xx + zz), yz - wx, 0.0],
+        [xz - wy, yz + wx, 1.0 - (xx + yy), 0.0],
+    ]
+}
+
+/// `HSD_MtxSRTQuat` (`sysdolphin/baselib/mtx.c:412-434`): the quaternion
+/// counterpart to `srt` above, used for a `JOBJ_USE_QUATERNION` joint.
+/// Reproduces the source's own matrix-building sequence (`MTXScale`, an
+/// optional parent-scale `MTXConcat`, `MTXQuat`, an optional inverse
+/// parent-scale `MTXConcat`, then `PSMTXTrans`/`MTXConcat`) by composing
+/// through the already-pinned `concat` (`C_MTXConcat`) at each step, rather
+/// than algebraically fusing the steps the way the Euler `srt` above does --
+/// there is no equivalent fused HSD source to match term-for-term here.
+pub fn srt_quat(
+    scale: Vector,
+    quaternion: Quaternion,
+    translation: Vector,
+    parent_scale: Option<Vector>,
+) -> Matrix {
+    let mut m = scale_matrix(scale);
+    if let Some(parent) = parent_scale {
+        m = concat(&scale_matrix(parent), &m);
+    }
+    m = concat(&quat_to_matrix(quaternion), &m);
+    if let Some([px, py, pz]) = parent_scale {
+        m = concat(&scale_matrix([1.0 / px, 1.0 / py, 1.0 / pz]), &m);
+    }
+    concat(&translate_matrix(translation), &m)
 }
 
 /// Original scalar C_MTXConcat: parent matrix multiplied by local matrix.

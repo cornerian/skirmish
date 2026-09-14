@@ -432,6 +432,7 @@ fn bench_micro(c: &mut Criterion) {
             local: bones::LocalTransform {
                 translation: bone.translation,
                 rotation: bone.rotation,
+                rotation_quaternion: None,
                 scale: bone.scale,
             },
             classical_scale: bone.classical_scale,

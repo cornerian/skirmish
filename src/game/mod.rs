@@ -24,6 +24,7 @@ pub mod ledge;
 pub mod locomotion;
 pub mod movement;
 pub mod nudge;
+pub mod pose_blend;
 pub mod projectile;
 pub mod rebirth;
 pub mod script;
@@ -419,6 +420,10 @@ pub struct Fighter {
     pub hitboxes: [hitboxes::Track; 4],
     pub staling: staling::State,
     pub previous_input: Controller,
+    /// `x8A4_animBlendFrames`/`x8A8_anim_frame` and the current blended
+    /// local joint transforms (`docs/pose-blend.md`). Checkpointed like
+    /// every other physics state.
+    pub pose_blend: pose_blend::PoseBlend,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

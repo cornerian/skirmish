@@ -160,6 +160,7 @@ fn spawn(
         hitboxes: [hitboxes::Track::default(); 4],
         staling: staling::State::default(),
         previous_input: Controller::default(),
+        pose_blend: pose_blend::PoseBlend::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], geometry)?;
     fighter.last_ground_line = fighter.ground_line;
@@ -240,6 +241,12 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     }
     fighter.action = action;
     fighter.action_frame = 0;
+    // `ftAnim_8006EBE8`: arms the joint-pose blend for the destination
+    // action (`docs/pose-blend.md`). `None` defers `blend_frames` to the
+    // pack's own default byte, resolved by `update_pose_blend` on this
+    // action's first anim-phase update, since this generic entry point has
+    // no `&FighterData` to look the pack value up with itself.
+    pose_blend::arm(&mut fighter.pose_blend, None);
     // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
     fighter.skip_floor = None;
     // Ordinary transitions (Ft_MF_None) reset the scripted collision state.
@@ -517,6 +524,15 @@ pub(crate) fn advance(
             }
             continue;
         }
+        // `ftAnim_8006E9B4`: the anim phase's own per-frame pose-blend
+        // update runs before anything else this frame reads a pose
+        // (hurtboxes/hitboxes/ECB-from-bones/muzzle, both below and in the
+        // active-fighter path later this function) and before the
+        // destination state's own anim callback, matching the source's own
+        // ordering (`fighter.c:1684-1694`). An eliminated, respawning or
+        // dead fighter (handled by the `continue`s above) has no pose to
+        // blend.
+        update_pose_blend(fighter, &data.fighters[player]);
         sample_input_history(fighter, &data.fighters[player], &data.rules, input);
         if fighter.hitlag > 0.0 {
             let previous_position = fighter.position;
@@ -1986,8 +2002,12 @@ fn return_physics_bones(mut buffer: Vec<bones::Bone>) {
     });
 }
 
-pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
-    let local = if let Some(pose) = grab::pose(fighter, data) {
+/// This frame's raw local pose, before any joint-pose blend is applied:
+/// the same per-source selection `pose` has always used (`docs/
+/// movement-poses.md` and friends), shared with `update_pose_blend` so
+/// both read the identical figatree sample.
+fn local_pose<'a>(fighter: &'a Fighter, data: &'a FighterData) -> Result<&'a [Bone], Error> {
+    Ok(if let Some(pose) = grab::pose(fighter, data) {
         pose
     } else if let Some(pose) = ledge::pose(fighter, data) {
         pose
@@ -2023,9 +2043,69 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else {
         &data.bones
+    })
+}
+
+/// `ftAnim_8006E9B4`/`ftAnim_8006FE9C` (`docs/pose-blend.md`): the anim
+/// phase's own per-frame pose-blend update, run once per fighter per frame
+/// (`simulation::advance`) strictly before any hurtbox/hitbox/ECB-from-bones/
+/// muzzle sampling and before the destination state's own anim callback,
+/// exactly like the source runs `ftAnim_8006E9B4` before the script/anim
+/// callback (`fighter.c:1684-1694`). `pose` (below) reads the result.
+///
+/// Runs before this frame's own action-transition logic (matching the
+/// source's own ordering), so `local_pose` can transiently read an
+/// `action_frame` one past the current action's own supplied animation --
+/// exactly the frame the source's own anim-completion check is about to
+/// act on. Unlike `pose`, this silently skips the update on that error
+/// instead of propagating it: with every pack's `blend_frames` at `0`
+/// (every pack through v13), `pose` below never consults the skipped
+/// update's stale result anyway, so this has no observable effect today.
+/// A real nonzero `blend_frames` pack would need this ordering revisited
+/// (`docs/pose-blend.md`).
+pub(crate) fn update_pose_blend(fighter: &mut Fighter, data: &FighterData) {
+    let Ok(local) = local_pose(fighter, data) else {
+        return;
     };
+    let target: Vec<bones::Bone> = local.iter().map(Bone::physics).collect();
+    let default_byte = data
+        .movement_poses
+        .as_ref()
+        .and_then(|poses| poses.blend_frames)
+        .unwrap_or(0);
+    pose_blend::resolve_pending(&mut fighter.pose_blend, default_byte);
+    pose_blend::advance(&mut fighter.pose_blend, &target);
+}
+
+pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose, Error> {
+    let local = local_pose(fighter, data)?;
     let mut bones = take_physics_bones();
-    bones.extend(local.iter().map(Bone::physics));
+    // Only ever consult the stored blend when it is actually active
+    // (`blend_frames > 0`): every pack through v13 supplies none, so this
+    // always takes the raw-sample branch below, decoupled from whether
+    // `update_pose_blend` ran (or was skipped) this exact frame -- the
+    // byte-for-byte pre-batch behavior this batch must not disturb.
+    let blended = fighter
+        .pose_blend
+        .blend_frames
+        .is_some_and(|frames| frames > 0)
+        .then_some(fighter.pose_blend.joints.as_ref())
+        .flatten()
+        .filter(|joints| joints.len() == local.len());
+    if let Some(joints) = blended {
+        bones.extend(
+            local
+                .iter()
+                .zip(joints)
+                .map(|(bone, transform)| bones::Bone {
+                    parent: bone.parent,
+                    classical_scale: bone.classical_scale,
+                    local: *transform,
+                }),
+        );
+    } else {
+        bones.extend(local.iter().map(Bone::physics));
+    }
     if let Some(root) = bones.first_mut() {
         // `ft/fighter.c:1172-1174`, run on every `Fighter_ChangeMotionState`:
         // `ftPartSetRotX(fp, 0, 0.0F); ftPartSetRotY(fp, 0, (M_PI_2 *

@@ -368,6 +368,17 @@ impl FighterData {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MovementPoses {
+    /// `ftAnim_8006EBE8`'s own default-byte blend frame count
+    /// (`fp->x28[fp->anim_id][0]`, `ft/ftanim.c:388-428`) for entering any
+    /// sub-motion this table supplies, when the entry call site's own
+    /// `anim_blend` argument is the ordinary "use the subaction's default"
+    /// sentinel (`docs/pose-blend.md`). Absent (or `0`) keeps every pack
+    /// through v13's own pre-batch behavior: an instantaneous pose snap on
+    /// entry. This is a single value shared by every field in this table,
+    /// not Melee's real per-subaction byte array; see `docs/pose-blend.md`
+    /// for the scope this simplification covers and the follow-up it defers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blend_frames: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait: Option<Vec<Vec<Bone>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -550,6 +561,7 @@ impl Bone {
             local: bones::LocalTransform {
                 translation: self.translation,
                 rotation: self.rotation,
+                rotation_quaternion: None,
                 scale: self.scale,
             },
         }

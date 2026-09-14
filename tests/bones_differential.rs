@@ -5,8 +5,8 @@
 
 use proptest::prelude::*;
 use skirmish::collision::bones::{
-    Bone, BoneCapsule, IDENTITY, LocalTransform, Matrix, Pose, Vector, concat, srt,
-    transform_point, transform_vector,
+    Bone, BoneCapsule, IDENTITY, LocalTransform, Matrix, Pose, Quaternion, Vector, concat, srt,
+    srt_quat, transform_point, transform_vector,
 };
 
 #[link(name = "skirmish_oracle", kind = "static")]
@@ -32,15 +32,46 @@ unsafe extern "C" {
     /// every joint's resulting 3x4 world matrix into `out_matrices`
     /// (row-major, 12 floats per joint). `parent[i] < 0` means no parent;
     /// every other `parent[i]` must be `< i` (already resolved).
+    /// `use_quaternion[i]` selects `JOBJ_USE_QUATERNION`, driving that
+    /// joint's rotation from the corresponding four floats of `quaternion`
+    /// (x, y, z, w) through `HSD_MtxSRTQuat` instead of `rotation`/
+    /// `HSD_MtxSRT`.
     fn oracle_bones_pose(
         parent: *const i32,
         classical_scale: *const i32,
         scale: *const f32,
         rotation: *const f32,
         translation: *const f32,
+        use_quaternion: *const i32,
+        quaternion: *const f32,
         count: i32,
         out_matrices: *mut f32,
     );
+}
+
+/// A single root `HSD_JObj` (no parent) has no separate concat step, so its
+/// world matrix *is* its own local `HSD_MtxSRTQuat` result -- a direct,
+/// uncomposed comparison against `srt_quat(.., None)`.
+fn reference_srt_quat(scale: Vector, quaternion: Quaternion, translation: Vector) -> Matrix {
+    let mut out = [0.0_f32; 12];
+    let rotation = [0.0_f32; 3];
+    // SAFETY: every input array has exactly the documented number of live
+    // elements for a single joint (`count == 1`), and `out` has the twelve
+    // floats `oracle_bones_pose` writes per joint.
+    unsafe {
+        oracle_bones_pose(
+            [-1_i32].as_ptr(),
+            [0_i32].as_ptr(),
+            scale.as_ptr(),
+            rotation.as_ptr(),
+            translation.as_ptr(),
+            [1_i32].as_ptr(),
+            quaternion.as_ptr(),
+            1,
+            out.as_mut_ptr(),
+        )
+    };
+    core::array::from_fn(|row| core::array::from_fn(|column| out[row * 4 + column]))
 }
 
 fn reference_srt(local: LocalTransform, parent: Option<Vector>) -> Matrix {
@@ -145,8 +176,27 @@ proptest! {
         translation in prop::array::uniform3(-100.0_f32..100.0),
         parent in prop::option::of(prop::array::uniform3(0.25_f32..4.0)),
     ) {
-        let local = LocalTransform { scale, rotation, translation };
+        let local = LocalTransform { scale, rotation, rotation_quaternion: None, translation };
         close_matrix(srt(local, parent), reference_srt(local, parent));
+    }
+
+    #[test]
+    fn quaternion_srt_tracks_original_with_host_trig_free_tolerance(
+        scale in prop::array::uniform3(-5.0_f32..5.0),
+        quaternion in prop::array::uniform4(-5.0_f32..5.0)
+            .prop_filter("avoid MTXQuat's own zero-quaternion assert/divide", |q| {
+                q.iter().map(|x| x * x).sum::<f32>() >= 0.25
+            }),
+        translation in prop::array::uniform3(-100.0_f32..100.0),
+    ) {
+        let actual = srt_quat(scale, quaternion, translation, None);
+        let expected = reference_srt_quat(scale, quaternion, translation);
+        // `HSD_MtxSRTQuat` has no `sinf`/`cosf` of its own (`MTXQuat` is
+        // pure multiply/add), so unlike the Euler `srt` above this has no
+        // host-libm-vs-MSL trig noise to tolerate; `close_matrix`'s wider
+        // bound is kept anyway since `scale`/`quaternion` here range much
+        // larger than the capsule/hierarchy unit tests below.
+        close_matrix(actual, expected);
     }
 
     #[test]
@@ -155,7 +205,7 @@ proptest! {
         translation in prop::array::uniform3(-100.0_f32..100.0),
         parent in prop::option::of(prop::array::uniform3(0.1_f32..10.0)),
     ) {
-        let local = LocalTransform { scale, rotation: [0.0; 3], translation };
+        let local = LocalTransform { scale, rotation: [0.0; 3], rotation_quaternion: None, translation };
         for (a, b) in srt(local, parent).into_iter().flatten()
             .zip(reference_srt(local, parent).into_iter().flatten()) { same(a, b); }
     }
@@ -239,6 +289,90 @@ fn hierarchical_capsule_endpoints_match_original_matrix_operations() {
     assert_eq!(world.radius, 0.75);
 }
 
+/// `Pose::evaluate` end to end (not just `srt_quat` in isolation) on a
+/// two-joint hierarchy: a plain-Euler scaled parent and a quaternion-flagged
+/// child, exercising `HSD_JObjMakeMatrix`'s own parent-scale-compensated
+/// `HSD_MtxSRTQuat` branch (`jobj.c:167-174`) through the real pinned oracle,
+/// the same joint-count/topology shape `real_pose`'s 73-joint test drives
+/// for the Euler-only branch.
+#[test]
+fn quaternion_joint_matches_oracle_under_a_scaled_parent() {
+    let parent = LocalTransform {
+        translation: [4.0, 5.0, 6.0],
+        scale: [2.0, 3.0, 4.0],
+        ..LocalTransform::default()
+    };
+    // A quarter-turn about Y as a quaternion, `EulerToQuat`-equivalent but
+    // supplied directly here to isolate `srt_quat`/`HSD_MtxSRTQuat` from
+    // `quaternion::from_euler`.
+    let half = core::f32::consts::FRAC_PI_4;
+    let child = LocalTransform {
+        translation: [2.0, -3.0, 1.0],
+        scale: [0.5, 1.5, 0.25],
+        rotation_quaternion: Some([0.0, half.sin(), 0.0, half.cos()]),
+        ..LocalTransform::default()
+    };
+    let bones = [
+        Bone {
+            local: parent,
+            ..Bone::default()
+        },
+        Bone {
+            parent: Some(0),
+            local: child,
+            ..Bone::default()
+        },
+    ];
+    let rust = Pose::evaluate(&bones).unwrap();
+
+    // One combined call, exactly like `real_pose::oracle_pose` below: the
+    // driver builds the real parent/child `HSD_JObj` link itself, so
+    // `has_scl(jobj->parent)`/`jobj->parent->scl` supplies the correct
+    // accumulated parent scale to the child's own `HSD_MtxSRTQuat` call,
+    // and `PSMTXConcat` composes the world matrix internally -- unlike two
+    // separate single-joint calls, which would each see `parent == NULL`
+    // and silently skip the parent-scale compensation this test exists to
+    // cover.
+    let parent_idx = [-1_i32, 0];
+    let classical = [0_i32, 0];
+    let use_quaternion = [0_i32, 1];
+    let scale: Vec<f32> = parent.scale.into_iter().chain(child.scale).collect();
+    let rotation: Vec<f32> = parent.rotation.into_iter().chain([0.0; 3]).collect();
+    let translation: Vec<f32> = parent
+        .translation
+        .into_iter()
+        .chain(child.translation)
+        .collect();
+    let quaternion: Vec<f32> = [0.0; 4]
+        .into_iter()
+        .chain(child.rotation_quaternion.unwrap())
+        .collect();
+    let mut out = [0.0_f32; 24];
+    // SAFETY: every array has exactly two live elements per joint's own
+    // field width (documented on `oracle_bones_pose`), and `out` has the
+    // `12 * count == 24` floats the driver writes.
+    unsafe {
+        oracle_bones_pose(
+            parent_idx.as_ptr(),
+            classical.as_ptr(),
+            scale.as_ptr(),
+            rotation.as_ptr(),
+            translation.as_ptr(),
+            use_quaternion.as_ptr(),
+            quaternion.as_ptr(),
+            2,
+            out.as_mut_ptr(),
+        );
+    }
+    let oracle_parent: Matrix =
+        core::array::from_fn(|row| core::array::from_fn(|column| out[row * 4 + column]));
+    let oracle_child_world: Matrix =
+        core::array::from_fn(|row| core::array::from_fn(|column| out[12 + row * 4 + column]));
+
+    close_matrix(*rust.world_matrix(0).unwrap(), oracle_parent);
+    close_matrix(*rust.world_matrix(1).unwrap(), oracle_child_world);
+}
+
 /// Real 73-joint pose, real classical-scale flags, real HSD_JObjMakeMatrix:
 /// unlike the synthetic two-bone case above, this drives the pinned decomp
 /// function itself (`tests/oracle/bones_pose.c`, `HSD_JObjMakeMatrix` +
@@ -268,15 +402,28 @@ mod real_pose {
         let mut scale = Vec::with_capacity(count * 3);
         let mut rotation = Vec::with_capacity(count * 3);
         let mut translation = Vec::with_capacity(count * 3);
+        let mut use_quaternion = Vec::with_capacity(count);
+        let mut quaternion = Vec::with_capacity(count * 4);
         for bone in bones {
             scale.extend_from_slice(&bone.local.scale);
-            rotation.extend_from_slice(&bone.local.rotation);
             translation.extend_from_slice(&bone.local.translation);
+            match bone.local.rotation_quaternion {
+                Some(q) => {
+                    rotation.extend_from_slice(&[0.0; 3]);
+                    use_quaternion.push(1);
+                    quaternion.extend_from_slice(&q);
+                }
+                None => {
+                    rotation.extend_from_slice(&bone.local.rotation);
+                    use_quaternion.push(0);
+                    quaternion.extend_from_slice(&[0.0; 4]);
+                }
+            }
         }
         let mut out = vec![0.0_f32; count * 12];
-        // SAFETY: every array has exactly `count` (or `3 * count`) live
-        // elements as documented on the FFI declaration, and `out` has
-        // `12 * count` live elements for the driver to write into.
+        // SAFETY: every array has exactly `count` (or `3 * count`/`4 *
+        // count`) live elements as documented on the FFI declaration, and
+        // `out` has `12 * count` live elements for the driver to write into.
         unsafe {
             super::oracle_bones_pose(
                 parent.as_ptr(),
@@ -284,6 +431,8 @@ mod real_pose {
                 scale.as_ptr(),
                 rotation.as_ptr(),
                 translation.as_ptr(),
+                use_quaternion.as_ptr(),
+                quaternion.as_ptr(),
                 count as i32,
                 out.as_mut_ptr(),
             );
@@ -343,6 +492,7 @@ mod real_pose {
                     local: skirmish::collision::bones::LocalTransform {
                         translation: bone.translation,
                         rotation: bone.rotation,
+                        rotation_quaternion: None,
                         scale: bone.scale,
                     },
                 })

@@ -11,6 +11,12 @@ typedef float Mtx[3][4];
 typedef float Mtx44[4][4];
 typedef struct { float x, y, z; } Vec3;
 typedef Vec3 Vec;
+/* `dolphin/mtx/mtx.c`'s own quaternion type (x, y, z, w order), needed now
+ * that `sdk_mtx_original.inc` also selects `C_MTXQuat`
+ * (`sdk_mtx.functions.json`, added for `bones_pose.c`'s own quaternion-path
+ * coverage; unused by any function this file itself calls). */
+typedef struct { float x, y, z, w; } Quaternion;
+typedef Quaternion* QuaternionPtr;
 #define ASSERTMSGLINE(line, condition, message) do { if (!(condition)) abort(); } while (0)
 #include "hsd_mtx_original.inc"
 #include "sdk_mtx_original.inc"
