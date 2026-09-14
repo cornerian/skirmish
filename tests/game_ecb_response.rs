@@ -58,6 +58,7 @@ fn boxed_data() -> MatchData {
             right_wall: 2..3,
             left_wall: 3..4,
             dynamic: 0..0,
+            enabled_at_start: None,
         }],
     });
     data.stage.motion = Some(Rules {

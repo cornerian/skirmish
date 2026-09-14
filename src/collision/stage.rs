@@ -101,6 +101,15 @@ pub struct Joint {
     pub left_wall: Range<usize>,
     pub right_wall: Range<usize>,
     pub dynamic: Range<usize>,
+    /// This joint's `CollJoint_Enabled` state right after the stage's
+    /// `on_init` (e.g. `grStadium_OnInit`, `gr/grpstadium.c:163-184`, disables
+    /// Pokemon Stadium's joints 0,1,2,3,5,7 and leaves 4 and 6), as opposed to
+    /// `mpLibLoad`'s own load-time default of enabling every joint
+    /// (`mp/mplib.c:878-936`). Absent in packs before this field existed,
+    /// which keeps every joint enabled, matching those packs' unchanged
+    /// behavior (they never modeled `on_init` disabling either).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_at_start: Option<bool>,
 }
 
 impl Joint {
@@ -111,6 +120,11 @@ impl Joint {
             Surface::LeftWall => self.left_wall.clone(),
             Surface::RightWall => self.right_wall.clone(),
         }
+    }
+
+    /// Defaults to enabled; see the field's own doc comment.
+    fn enabled_at_start(&self) -> bool {
+        self.enabled_at_start.unwrap_or(true)
     }
 
     fn in_range(&self, query: Query) -> bool {
@@ -211,10 +225,15 @@ impl core::fmt::Display for StageError {
 impl core::error::Error for StageError {}
 
 /// Immutable validated view; no global bounding cache or callback state.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Stage<'a> {
     lines: &'a [Line],
     joints: &'a [Joint],
+    /// Precomputed once in [`Stage::new`] from every joint's
+    /// [`Joint::enabled_at_start`] and line ranges; see [`Stage::line_active`],
+    /// the single choke point every line-enablement check in this module
+    /// goes through.
+    active: Vec<bool>,
 }
 
 impl<'a> Stage<'a> {
@@ -251,7 +270,28 @@ impl<'a> Stage<'a> {
                 }
             }
         }
-        Ok(Self { lines, joints })
+        let active = active_lines(lines.len(), joints);
+        Ok(Self {
+            lines,
+            joints,
+            active,
+        })
+    }
+
+    /// Whether `id` currently takes part in collision queries: enabled by its
+    /// own line flags (`mpLibLoad`'s per-line default plus any authored
+    /// disabled/empty lines) and not confined to a joint that was disabled at
+    /// stage start (`Joint::enabled_at_start`). `mpJointListAdd`/
+    /// `mpLib_80057BC0` (`mp/mplib.c:5415-5481`/`5508-5566`) toggle a
+    /// disabled joint's own `LINE_FLAG_ENABLED` bit on every line in its
+    /// floor/ceiling/left_wall/right_wall *and* `dynamic` ranges together, so
+    /// `enabled_at_start` is folded in here rather than carried on `Line`
+    /// itself, keeping the borrowed line table and its original indices
+    /// untouched. The sole choke point: every line-enablement check in this
+    /// module (`neighbor`, `sweep_filtered`) calls this instead of testing
+    /// `ENABLED` on its own.
+    fn line_active(&self, id: usize) -> bool {
+        self.lines[id].flags & ENABLED != 0 && self.active[id]
     }
 
     /// mpLineGetPrev/Next, including fallback links without flag checks.
@@ -268,7 +308,7 @@ impl<'a> Stage<'a> {
             } else {
                 (line.start, adjacent.end)
             };
-            if adjacent.flags & ENABLED != 0
+            if self.line_active(id)
                 && adjacent.flags & HIDDEN == 0
                 && f64::from(distance_squared(a, b)) < 4.0
             {
@@ -447,9 +487,7 @@ impl<'a> Stage<'a> {
                     continue;
                 }
                 let line = &self.lines[id];
-                if line.flags & kind.flag() == 0
-                    || line.flags & ENABLED == 0
-                    || line.flags & EMPTY != 0
+                if line.flags & kind.flag() == 0 || !self.line_active(id) || line.flags & EMPTY != 0
                 {
                     continue;
                 }
@@ -646,6 +684,34 @@ fn finite(values: impl IntoIterator<Item = f32>) -> bool {
     values.into_iter().all(f32::is_finite)
 }
 
+/// Builds the joint-derived active mask consumed by [`Stage::line_active`].
+/// A line inside any enabled joint's ranges is active; a line confined to
+/// disabled joints only is not. A line no joint's floor/ceiling/wall/dynamic
+/// range references defaults active, unaffected by this rule (matching every
+/// line's original, joint-independent `ENABLED` bit).
+fn active_lines(line_count: usize, joints: &[Joint]) -> Vec<bool> {
+    let mut claimed = vec![false; line_count];
+    let mut claimed_enabled = vec![false; line_count];
+    for joint in joints {
+        let enabled = joint.enabled_at_start();
+        for range in [
+            &joint.floor,
+            &joint.ceiling,
+            &joint.left_wall,
+            &joint.right_wall,
+            &joint.dynamic,
+        ] {
+            for id in range.clone() {
+                claimed[id] = true;
+                claimed_enabled[id] |= enabled;
+            }
+        }
+    }
+    (0..line_count)
+        .map(|id| !claimed[id] || claimed_enabled[id])
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,5 +820,78 @@ mod tests {
             ),
             Err(StageError::JointRange(0))
         ));
+    }
+
+    /// A joint disabled at stage start (Pokemon Stadium's own transformation
+    /// joints, `grStadium_OnInit`) is inert: no landing, and the enabled
+    /// joint's line keeps its original table index (`last_ground_id` stays
+    /// comparable). Synthetic two-joint stage: the disabled joint's floor
+    /// sits between the fighter and the enabled floor below it.
+    #[test]
+    fn disabled_joint_floor_is_inert_and_keeps_original_indices() {
+        let lines = [
+            Line {
+                start: [-2.0, 5.0],
+                end: [2.0, 5.0],
+                flags: FLOOR | ENABLED,
+                ..Line::default()
+            },
+            Line {
+                start: [-2.0, 0.0],
+                end: [2.0, 0.0],
+                flags: FLOOR | ENABLED,
+                ..Line::default()
+            },
+        ];
+        let joints = [
+            Joint {
+                id: 0,
+                flags: ENABLED,
+                bounds_min: [-2.0, 4.0],
+                bounds_max: [2.0, 6.0],
+                floor: 0..1,
+                enabled_at_start: Some(false),
+                ..Joint::default()
+            },
+            Joint {
+                id: 1,
+                flags: ENABLED,
+                bounds_min: [-2.0, -1.0],
+                bounds_max: [2.0, 1.0],
+                floor: 1..2,
+                ..Joint::default()
+            },
+        ];
+        let stage = Stage::new(&lines, &joints).unwrap();
+        let query = Query {
+            from: [0.0, 10.0],
+            to: [0.0, -5.0],
+            ..Query::default()
+        };
+        let contact = stage.sweep(Surface::Floor, query).unwrap().unwrap();
+        assert_eq!(contact.line_id, 1);
+        assert_eq!(contact.joint_id, 1);
+        assert_eq!(contact.position, [0.0, 0.0, 0.0]);
+    }
+
+    /// Packs from before this field existed (v10..v12) never wrote
+    /// `enabled_at_start`; it must deserialize as `None` and every joint must
+    /// stay enabled, so those packs load and behave unchanged.
+    #[test]
+    fn absent_enabled_at_start_deserializes_as_enabled() {
+        let json = r#"{
+            "id": 0,
+            "flags": 0,
+            "bounds_min": [0.0, 0.0],
+            "bounds_max": [0.0, 0.0],
+            "floor": {"start": 0, "end": 0},
+            "ceiling": {"start": 0, "end": 0},
+            "left_wall": {"start": 0, "end": 0},
+            "right_wall": {"start": 0, "end": 0},
+            "dynamic": {"start": 0, "end": 0}
+        }"#;
+        let joint: Joint = serde_json::from_str(json).unwrap();
+        assert_eq!(joint.enabled_at_start, None);
+        assert!(joint.enabled_at_start());
     }
 }

@@ -297,6 +297,7 @@ fn all_lines(count: usize) -> Joint {
         left_wall: 0..count,
         right_wall: 0..count,
         dynamic: 0..0,
+        enabled_at_start: None,
     }
 }
 
@@ -798,7 +799,7 @@ proptest! {
         let joints = [
             Joint { id: 5, flags: joint_flags[0], bounds_min: [-40.0;2], bounds_max: [40.0;2],
                 floor: 0..split, ceiling: 0..split, left_wall: 0..split, right_wall: 0..split,
-                dynamic: split..lines.len() },
+                dynamic: split..lines.len(), enabled_at_start: None },
             Joint { id: 2, flags: joint_flags[1], ..all_lines(lines.len()) },
         ];
         let query = Query {

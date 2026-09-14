@@ -72,6 +72,7 @@ fn geometry(lines: Vec<stage::Line>) -> StageGeometry {
         left_wall: range(stage::LEFT_WALL),
         right_wall: range(stage::RIGHT_WALL),
         dynamic: 0..0,
+        enabled_at_start: None,
     };
     StageGeometry {
         lines,

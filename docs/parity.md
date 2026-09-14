@@ -1920,6 +1920,51 @@ sweep table above, since `SpawnPolicy::Explicit` is bit-identical to
 numbers are unchanged (its note records the re-measurement). No other
 recording's baseline moves in this batch.
 
+## 2026-09-14: Pokemon Stadium's collision joints and `last_ground_id`'s -50 offset
+
+Skirmish's stage loader never modeled a stage's `on_init`: `mpLibLoad`
+(`melee/mp/mplib.c:878-936`) sets every collision joint's `CollJoint_Enabled`
+bit at load, and Pokemon Stadium's `grStadium_OnInit` (`melee/gr/
+grpstadium.c:163-184`) then disables joints 0, 1, 2, 3, 5 and 7 via
+`mpLib_80057BC0`, leaving only joints 4 and 6 enabled at match start (the two
+belonging to whichever transformation is active; the other six joints' lines
+belong to the stage's four other transformations). Every pack through v12
+left all eight joints permanently enabled instead, mirroring only
+`mpLibLoad`'s pre-`on_init` state -- and v12's own exporter additionally
+dropped/renumbered Pokemon Stadium's disabled-transformation lines rather
+than keeping the full mpcoll table (the "24 lines from the stage-wide
+`dynamic` surface range... dropped as transformation-swap scratch space"
+noted against v10 in the tournament-stage batch section above; v12 carries
+the same gap). `fox-ps`'s own `last_ground_id` observation against pack v12
+diverges from the recording by a constant -50 across every frame it's
+checked, rather than scattered per-frame noise -- exactly the signature of a
+shortened/renumbered line table: every ground id past the cut lines up 50
+short of the recording's real, original-order index, not a physics
+disagreement.
+
+This batch adds `collision::stage::Joint::enabled_at_start: Option<bool>`
+(absent, i.e. every pack through v12, means enabled, so those packs load and
+behave byte-identically) and a precomputed per-line active mask
+(`active_lines`) that `Stage::line_active` -- the single choke point every
+line-enablement check in `collision::stage` goes through (`neighbor`, used
+by `extended_endpoints`/`project`'s adjacency walk, and `sweep_filtered`'s
+per-line candidate check) -- folds in alongside each line's own `ENABLED`
+bit. A line confined to a joint disabled at stage start (including that
+joint's `dynamic` range, which `mpJointListAdd`/`mpLib_80057BC0`,
+`melee/mp/mplib.c:5415-5481`/`5508-5566`, toggle identically to the four
+static ranges) takes no part in any query -- no landing, no wall/ceiling
+contact, not eligible for ground snapping or ledge grabs -- while keeping
+its original table index, since `last_ground_id` and any other line-id-
+bearing observation must stay comparable to the recording's.
+
+This closes the *modeling* gap, not `fox-ps`'s own baseline: the -50 offset
+is a pack-content problem (the dropped/renumbered lines), and
+`enabled_at_start` only lets a complete, correctly indexed table encode
+which joints start disabled. v13 is expected to re-export Pokemon Stadium's
+full, unrenumbered line table alongside this flag; only then does
+`fox-ps`'s `last_ground_id` divergence become a fair test of this batch's
+change. `fox-ps-baseline.json` is unchanged by this batch.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

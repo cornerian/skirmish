@@ -216,3 +216,30 @@ step is unchanged: it just untars whatever the lock file points at, and
 `real_parity*`'s data discovery already prefers `.bin` over `.json`,
 whichever the tarball contains.
 
+## Schema: `geometry.joints[i].enabled_at_start` (2026-09-14)
+
+`stage.geometry.joints[i]` (`collision::stage::Joint`) gains one optional
+boolean, `enabled_at_start`: whether this collision joint's
+`CollJoint_Enabled` bit is set right after the stage's own `on_init` runs
+(e.g. `grStadium_OnInit`, `melee/gr/grpstadium.c:163-184`, which disables
+Pokemon Stadium's joints 0, 1, 2, 3, 5 and 7 and leaves 4 and 6 enabled --
+the two joints belonging to whichever transformation is active at match
+start), as distinct from `mpLibLoad`'s own load-time default of enabling
+every joint before any `on_init` runs (`melee/mp/mplib.c:878-936`).
+
+Absent in every pack up to and including v12 (those exporters never modeled
+`on_init`); Skirmish treats an absent field as `true`, so existing packs
+load and behave byte-identically. When present and `false`, every line in
+that joint's `floor`, `ceiling`, `left_wall`, `right_wall` *and* `dynamic`
+ranges is excluded from collision queries -- no landing, no wall/ceiling
+contact, not eligible for ground snapping or ledge grabs -- mirroring
+`mpJointListAdd`/`mpLib_80057BC0` (`melee/mp/mplib.c:5415-5481`/
+`5508-5566`), which toggle `LINE_FLAG_ENABLED` identically across all five
+of a joint's ranges, `dynamic` included. `geometry.lines[]` itself is never
+renumbered or shortened by this field: every line keeps its original
+mpcoll table index, since Slippi's `last_ground_id` observation is that
+original index. See `docs/parity.md`'s 2026-09-14 stage-joints entry for
+why Pokemon Stadium's own exported table still needs a v13 re-export (a
+separate, pack-content fix) before this field closes that stage's
+`last_ground_id` divergence.
+
