@@ -671,6 +671,38 @@ pub(crate) fn advance(
     // one snapshot here matches every fighter's own value).
     let frame_start_positions = state.fighters.each_ref().map(|fighter| fighter.position);
 
+    // A pending Blaster shot must be captured here, not from the `poses`
+    // computed after this frame's movement loop below. In the decomp, the
+    // shot fires from inside the fighter's own animation proc
+    // (`Fighter_8006A360`, GObj priority 1, registered `fighter.c:898`;
+    // the `ftFox_SpecialN_PrepareBlasterShot` call that reaches
+    // `ftFx_SpecialN_CreateBlasterShot` is at `fighter.c:1693-1694`),
+    // strictly before both the spawned item's own first-frame anim/phys
+    // procs (`Item_802697D4`/`Item_80269978`, priorities 4/5,
+    // `it/item.c:954-963`, which apply the shot's first velocity step and
+    // ray-scale growth the same frame -- `projectile::advance`'s existing
+    // same-frame step already matches this and is untouched here) and the
+    // fighter's own physics/collision procs (`Fighter_8006CB94` priority
+    // 0xD and `Fighter_8006D9AC` priority 0x10, both `fighter.c:907`).
+    // `update_animation`/`update_actions` above already set `fire` and
+    // this frame's pose (`action`/`action_frame`) -- that is this frame's
+    // own anim phase, matching the decomp's priority-1 proc -- but
+    // `frame_start_positions` just above is still this frame's
+    // pre-physics position (last frame's post-collision position), since
+    // `move_fighter` has not run yet at this point. Evaluating the pose
+    // now, before the movement loop below advances `fighter.position`,
+    // reproduces that ordering instead of firing from the post-move
+    // position; the previous post-move evaluation put the muzzle roughly
+    // one frame of translation ahead of the recorded fox-fd-3 laser spawn
+    // (docs/validation.md's muzzle-residual entries).
+    let fire_pose: [Option<bones::Pose>; 2] = core::array::from_fn(|player| {
+        if state.fighters[player].neutral_special.fire {
+            pose(&state.fighters[player], &data.fighters[player]).ok()
+        } else {
+            None
+        }
+    });
+
     for player in 0..2 {
         if !active[player] {
             continue;
@@ -802,7 +834,7 @@ pub(crate) fn advance(
             &mut state.fighters[player],
             &data.fighters[player],
             player,
-            &poses[player],
+            fire_pose[player].as_ref().unwrap_or(&poses[player]),
             &mut state.attack_instances,
         ) {
             let projectile_kind = projectile.kind;
