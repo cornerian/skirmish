@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use skirmish::{inventory, menus::Unlocks};
-use skirmish_cli::{initialization, menu_cli, pack};
+use skirmish_cli::{hurt_validator, initialization, menu_cli, pack};
 use skirmish_equivalence::{match_trace, runner, trace};
 use skirmish_replay::{match_validation, slippi};
 use std::{
@@ -94,6 +94,28 @@ enum Commands {
         inputs: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
         seed: u32,
+    },
+    /// Measure Skirmish's recorded-observation hurtbox-vs-laser contact timing
+    /// against real Slippi 3.x recordings' own recorded hit frame (see
+    /// `crates/cli/src/hurt_validator.rs` and `docs/hurt-validator.md`).
+    HurtValidator {
+        /// Directory of `.slp` files to scan recursively.
+        #[arg(
+            long,
+            default_value = "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX"
+        )]
+        dataset_dir: PathBuf,
+        /// Gameplay-export pack root (matchup subdirectories with
+        /// `match-data.json`/`.bin`); defaults to `SKIRMISH_GAMEPLAY_DATA`.
+        #[arg(long)]
+        pack_root: Option<PathBuf>,
+        #[arg(long, default_value_t = 1200)]
+        time_budget_seconds: u64,
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Also write the full per-event JSON report here.
+        #[arg(long)]
+        report: Option<PathBuf>,
     },
     /// Inventory tracked upstream C, C++, headers and assembly with content hashes.
     Inventory { upstream: PathBuf },
@@ -305,6 +327,27 @@ fn main() -> Result<()> {
                 },
                 BufWriter::new(io::stdout().lock()),
             )?;
+        }
+        Commands::HurtValidator {
+            dataset_dir,
+            pack_root,
+            time_budget_seconds,
+            limit,
+            report,
+        } => {
+            let pack_root = pack_root
+                .or_else(|| std::env::var_os("SKIRMISH_GAMEPLAY_DATA").map(PathBuf::from))
+                .context("--pack-root or SKIRMISH_GAMEPLAY_DATA must be set")?;
+            let outcome = hurt_validator::run(hurt_validator::Args {
+                dataset_dir,
+                pack_root,
+                time_budget: Duration::from_secs(time_budget_seconds),
+                limit,
+            })?;
+            if let Some(report) = report {
+                fs::write(&report, serde_json::to_string_pretty(&outcome)?)?;
+            }
+            hurt_validator::print_report(&outcome);
         }
         Commands::Inventory { upstream } => println!(
             "{}",
