@@ -1503,6 +1503,37 @@ composition in `stage.rs` directly; once it republishes corrected
 `fox-dl-baseline.json`/`fox-ps-baseline.json`'s `-123`/`0` will move
 without any further Skirmish-side change.
 
+## 2026-09-14 re-measurement of every ratchet recording against pack v10
+
+A full sweep of every recording in `recordings.json` plus the standalone
+`falco-fox-fd.slp`, all against the published gameplay-export pack v10
+(`/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913`),
+run directly via `make-initialization`/`validate-replay` (not through
+`cargo test`, to see every recording's own number in one pass rather than
+stopping at the first regression). No baseline file is lowered by this
+sweep; `fox-fd-4-baseline.json` moves forward (see below) and every other
+baseline is confirmed unchanged.
+
+| Recording | Matched frames | First divergence | Field | Status |
+|---|---|---|---|---|
+| `fox-fd` | 128 | 5 | `position.x`, 1 ULP | unchanged; open (`docs/math.md`) |
+| `fox-fd-2` | 112 | -11 | `action_state` (Turn vs Dash) | unchanged; **known regression, owned by the Battlefield loop (`36a5a36`)** |
+| `fox-fd-3` | 91 | -32 | `velocities.self_x_air`, 1 ULP | unchanged; open (`docs/math.md`) |
+| `fox-fd-4` | 118 | -5 | `percent` (P4, expected `6.0`/`0x40c00000`, actual `3.0`/`0x40400000`) | **moved forward from 110/-13**, upstream zero-knockback fix; new divergence below |
+| `fox-bf` | 172 | 49 | `shield` (P4) | unchanged; open, not yet diagnosed |
+| `fox-ys` | 10 | -113 | `position.y`, 1 ULP | unchanged; genuine ULP, reported (above) |
+| `fox-fod` | 5 | -118 | `position.y`, 1 ULP | unchanged; genuine ULP, reported (above) |
+| `fox-dl` | 0 | -123 | `position.y` | unchanged; blocked on exporter spawn-composition fix (above) |
+| `fox-ps` | 0 | -123 | `position.x` | unchanged; blocked on exporter spawn-composition fix (above) |
+| `falco-fox-fd` | 98 | -25 | `position.x`, 1 ULP | unchanged; genuine ULP, reported (`docs/validation.md`) |
+
+`fox-fd-4.slp`'s own improvement (110/-13 -> 118/-5) is not this loop's own
+fix: it lands purely from the Battlefield loop's zero-knockback fix
+(`f196f0e`/`36a5a36`, `docs/validation.md`), which independently resolves
+the exact `LandingFallSpecial`-interruption shape this loop had reported
+open at -13 (`fox-fd-4-baseline.json`'s own prior note). Re-diagnosed
+below as the next divergence in this loop's own queue.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."
