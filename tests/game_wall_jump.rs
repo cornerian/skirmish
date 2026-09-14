@@ -247,7 +247,9 @@ fn sampled_wall_jump_bones_drive_headless_ecb_updates() {
         },
         flags: 5,
     };
-    resource.fighters[0].wall_jump.as_mut().unwrap().frames[1][1].translation[0] = -6.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    resource.fighters[0].wall_jump.as_mut().unwrap().frames[1][1].translation[2] = -6.0;
     resource.stage.motion = Some(MotionRules {
         tracks: vec![Track {
             lines: 1..2,

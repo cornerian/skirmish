@@ -81,10 +81,15 @@ fn connect(data: MatchData) -> State {
 
 #[test]
 fn contact_quadrants_select_signed_angle_and_damage_facing() {
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); `hit.bone = 0`
+    // reads this hitbox straight off the root joint, so the world-x-facing
+    // quadrant sign lives in z now, not x (y is untouched, since the root's
+    // rotation is about the y axis).
     for (center, facing, signs) in [
-        ([-1.0, -1.0, 0.0], -1.0, [1.0, 1.0]),
-        ([1.0, -1.0, 0.0], 1.0, [-1.0, 1.0]),
-        ([-1.0, 1.0, 0.0], -1.0, [1.0, -1.0]),
+        ([0.0, -1.0, -1.0], -1.0, [1.0, 1.0]),
+        ([0.0, -1.0, 1.0], 1.0, [-1.0, 1.0]),
+        ([0.0, 1.0, -1.0], -1.0, [1.0, -1.0]),
     ] {
         let state = connect(data(center));
         let victim = &state.fighters[1];

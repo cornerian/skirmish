@@ -27,7 +27,11 @@ fn repeated_pose(base: &[Bone], x: f32, frames: usize) -> Vec<Vec<Bone>> {
     (0..frames)
         .map(|frame| {
             let mut pose = base.to_vec();
-            pose[1].translation[0] = x + frame as f32;
+            // Model space +Z is forward (`simulation::pose`'s root joint now
+            // rotates +Z to face world +X, `ft/fighter.c:1174`); this drives
+            // both the bone-sampled ECB and hurtbox contact below, so it
+            // needs the world-x-producing axis, z, not x.
+            pose[1].translation[2] = x + frame as f32;
             pose
         })
         .collect()

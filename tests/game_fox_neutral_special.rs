@@ -289,22 +289,32 @@ fn muzzle_bone_spawn_position_differs_from_the_ecb_midpoint_fallback() {
 /// `fox_neutral_special::profile`'s own doc), not from `FighterData.bones`
 /// -- so every phase/frame's own bone 1 is mutated uniformly here, not
 /// just the base skeleton the fixture above touches (which this move's own
-/// pose selection never actually reads). With bone 1 parented directly to
-/// the identity bone 0 and its own translation left at zero, `bones::srt`'s
-/// Euler composition (row0 = `[cos_y, 0, sin_y, 0]`, row1 = `[0, 1, 0, 0]`,
-/// row2 = `[-sin_y, 0, cos_y, 0]`) at rotation `(0, pi/2, 0)` reduces to
-/// `world_offset = (local.z, local.y, -local.x)`, independent of the
-/// fighter's own position/facing root (a pure rotation contributes no
-/// translation). Comparing against the same fixture with bone 1 left at
-/// its identity rotation (`world_offset = local` unchanged) isolates
-/// exactly that rotation's own contribution to the spawn x-coordinate,
-/// canceling out the fighter's own position and the projectile's own
-/// already-applied first-frame velocity (identical in both runs): the
-/// decomp-literal offset `(0, 1.2325000762939453, 4.263599872589111)`
-/// (`ftfoxspecialn.c:32-51`) must add its `z` term (`4.2636`) to world x
-/// through this rotation, not its `x` term (`0`, what a wrongly swapped
-/// `(4.2636, 1.2325, 0)` offset would add instead -- see
-/// `drain_pending_shot`'s own doc for the full decomp citation,
+/// pose selection never actually reads). Bone 1 is parented to bone 0 (the
+/// root joint), which `simulation::pose` now gives its own Y rotation of
+/// `pi/2 * facing` (`ft/fighter.c:1174`'s `ftPartSetRotY`, this loop's own
+/// fix) with translation still zero, so bone 0 and bone 1's own rotations
+/// -- both pure Y-axis rotations, and pure-Y rotations about a shared axis
+/// compose additively regardless of order -- add: total rotation
+/// `pi/2 * facing + bone_1.rotation[1]`. This fixture's fighter 0 spawns
+/// left of fighter 1 (`[0.0, 0.0]` vs `[15.0, 0.0]`) and so faces it with
+/// `facing == 1.0`, contributing a constant `+pi/2` baseline from bone 0
+/// alone. To isolate bone 1's own rotation contribution the same way this
+/// test did before that baseline existed, `spawn_x` is called with
+/// `-pi/2` (total rotation `0`) and `0.0` (total rotation `pi/2`) rather
+/// than `0.0`/`pi/2` directly. `bones::srt`'s Euler composition (row0 =
+/// `[cos_y, 0, sin_y, 0]`, row1 = `[0, 1, 0, 0]`, row2 = `[-sin_y, 0,
+/// cos_y, 0]`) at total rotation `pi/2` reduces to `world_offset =
+/// (local.z, local.y, -local.x)`; at total rotation `0` it is `world_offset
+/// = local` unchanged (translation is zero throughout the chain, so a pure
+/// rotation contributes no translation either way). Comparing the two
+/// isolates exactly the rotation's own contribution to the spawn
+/// x-coordinate, canceling out the fighter's own position and the
+/// projectile's own already-applied first-frame velocity (identical in
+/// both runs): the decomp-literal offset `(0, 1.2325000762939453,
+/// 4.263599872589111)` (`ftfoxspecialn.c:32-51`) must add its `z` term
+/// (`4.2636`) to world x through this rotation, not its `x` term (`0`,
+/// what a wrongly swapped `(4.2636, 1.2325, 0)` offset would add instead
+/// -- see `drain_pending_shot`'s own doc for the full decomp citation,
 /// `lb_8000B1CC`'s literal, unpermuted `MTXMultVec`, for why no axis swap
 /// belongs here at all).
 #[test]
@@ -337,8 +347,8 @@ fn muzzle_bone_rotation_proves_the_offset_is_not_axis_swapped() {
         assert!(spawned_this_frame(&spawn_state, 0));
         spawn_state.projectiles[0].position[0]
     };
-    let identity_x = spawn_x(0.0);
-    let rotated_x = spawn_x(core::f32::consts::FRAC_PI_2);
+    let identity_x = spawn_x(-core::f32::consts::FRAC_PI_2);
+    let rotated_x = spawn_x(0.0);
     #[allow(clippy::excessive_precision)]
     let expected_delta = 4.263_599_872_589_111;
     assert!(

@@ -38,7 +38,9 @@ fn data(damage: [u32; 2]) -> MatchData {
         fighter.hurtboxes[0].end = [0.0, 2.0, 0.0];
         let mut hit = fighter.jab.frames[1].hitboxes[0].clone();
         hit.bone = 0;
-        hit.center = [2.5, 1.0, 0.0];
+        // Model space +Z is forward (`simulation::pose`'s root joint now
+        // rotates +Z to face world +X, `ft/fighter.c:1174`).
+        hit.center = [0.0, 1.0, 2.5];
         hit.damage = damage[player];
         hit.clank = true;
         hit.rebound = true;
@@ -319,7 +321,9 @@ fn same_group_slots_share_suppression_and_fully_disabled_groups_can_hit_again() 
     }
     let fighter = &mut resource.fighters[0];
     let mut body = fighter.jab.frames[1].hitboxes[0].clone();
-    body.center = [4.0, 1.0, 0.0];
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    body.center = [0.0, 1.0, 4.0];
     body.radius = 0.5;
     body.clank = false;
     fighter.jab.frames[1].hitboxes.push(body.clone());
@@ -464,7 +468,9 @@ fn a_body_hit_overrides_pending_rebound_on_the_same_collision_pass() {
         if let Some(first) = frame.hitboxes.first().cloned() {
             let mut body = first;
             body.group = 1;
-            body.center = [4.0, 1.0, 0.0];
+            // Model space +Z is forward (`simulation::pose`'s root joint
+            // now rotates +Z to face world +X, `ft/fighter.c:1174`).
+            body.center = [0.0, 1.0, 4.0];
             body.radius = 0.5;
             body.clank = false;
             frame.hitboxes.push(body);

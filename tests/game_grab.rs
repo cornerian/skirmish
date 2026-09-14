@@ -93,7 +93,9 @@ fn catch_contact_uses_the_sampled_bone_pose_and_miss_recovers() {
     animated.stage.spawns = [[0.0, 0.0], [2.0, 0.0]];
     let parameters = animated.fighters[0].grab.as_mut().unwrap();
     for frame in &mut parameters.catch.frames {
-        frame.bones[1].translation[0] = 2.0;
+        // Model space +Z is forward (`simulation::pose`'s root joint now
+        // rotates +Z to face world +X, `ft/fighter.c:1174`).
+        frame.bones[1].translation[2] = 2.0;
         if let Some(grabbox) = frame.grabboxes.first_mut() {
             grabbox.start = [0.0; 3];
             grabbox.end = [0.0; 3];
@@ -105,7 +107,7 @@ fn catch_contact_uses_the_sampled_bone_pose_and_miss_recovers() {
     assert_eq!(caught.fighters[0].grab.victim, Some(1));
 
     for frame in &mut animated.fighters[0].grab.as_mut().unwrap().catch.frames {
-        frame.bones[1].translation[0] = 0.0;
+        frame.bones[1].translation[2] = 0.0;
     }
     let mut misses = Match::new(animated, 0).unwrap();
     step(&mut misses, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
@@ -134,13 +136,15 @@ fn airborne_capture_keeps_the_high_family_through_pummel_escape_and_checkpoint()
     for frame in &mut catch.frames {
         frame.bones[1].translation[1] = 3.0;
     }
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
     resource.fighters[1]
         .grab
         .as_mut()
         .unwrap()
         .capture_damage
         .high[0][1]
-        .translation[0] += 2.0;
+        .translation[2] += 2.0;
 
     let mut game = Match::new(resource, 16).unwrap();
     assert!(!game.state().fighters[1].grounded);
@@ -190,13 +194,15 @@ fn rising_holder_pose_converts_low_capture_to_high_without_resetting_its_clock()
     for pose in &mut resource.fighters[0].grab.as_mut().unwrap().pummel.poses {
         pose[1].translation[1] = 4.0;
     }
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
     resource.fighters[1]
         .grab
         .as_mut()
         .unwrap()
         .capture_damage
         .high[0][1]
-        .translation[0] += 2.0;
+        .translation[2] += 2.0;
     let mut game = held(resource);
     let waiting = game.state().fighters[1].clone();
     assert_eq!(waiting.action, Action::CaptureWaitLw);
@@ -256,8 +262,13 @@ fn losing_floor_support_converts_low_capture_to_high_and_replays() {
     let mut resource = data();
     resource.stage.floor.right = 1.0;
     resource.rules.grab.as_mut().unwrap().capture_lift_threshold = 100.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); these poses only
+    // need to differ from the rest pose to distinguish state, not to reach
+    // any particular world position, but z keeps them on the same forward
+    // axis as every other bone-offset fixture in this file.
     for pose in &mut resource.fighters[0].grab.as_mut().unwrap().pummel.poses {
-        pose[1].translation[0] = 3.0;
+        pose[1].translation[2] = 3.0;
     }
     resource.fighters[1]
         .grab
@@ -265,7 +276,7 @@ fn losing_floor_support_converts_low_capture_to_high_and_replays() {
         .unwrap()
         .capture_damage
         .high[0][1]
-        .translation[0] += 2.0;
+        .translation[2] += 2.0;
     let mut game = held(resource);
     let waiting = game.state().fighters[1].clone();
     assert_eq!(waiting.action, Action::CaptureWaitLw);
@@ -303,9 +314,14 @@ fn dash_and_run_use_dash_catch_poses_preserve_momentum_and_replay_misses() {
         .frames
     {
         if let Some(grabbox) = frame.grabboxes.first_mut() {
-            frame.bones[1].translation[0] = 6.0;
-            grabbox.start[0] = 0.0;
-            grabbox.end[0] = 0.0;
+            // Model space +Z is forward (`simulation::pose`'s root joint
+            // now rotates +Z to face world +X, `ft/fighter.c:1174`): the
+            // reach comes from bone 1's own translation, so the fixture's
+            // default grabbox offset (also z now, `tests/support/grab.rs`)
+            // is zeroed on the same axis.
+            frame.bones[1].translation[2] = 6.0;
+            grabbox.start[2] = 0.0;
+            grabbox.end[2] = 0.0;
             grabbox.radius = 0.2;
         }
     }
@@ -558,7 +574,9 @@ fn capture_ignores_victim_actions_and_checkpoint_replays_the_pair_exactly() {
 #[test]
 fn fresh_pummel_has_priority_over_throw_and_replays_its_single_captured_hit() {
     let mut resource = data();
-    resource.fighters[0].grab.as_mut().unwrap().pummel.poses[1][1].translation[0] += 2.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    resource.fighters[0].grab.as_mut().unwrap().pummel.poses[1][1].translation[2] += 2.0;
     let mut game = held(resource);
     let held_position = game.state().fighters[1].position;
 
@@ -743,7 +761,9 @@ fn captured_damage_pose_freezes_in_hitlag_then_returns_to_the_paired_wait() {
         .capture_damage
         .low;
     *reaction = vec![resource.fighters[1].bones.clone(); 8];
-    reaction[0][1].translation[0] += 1.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    reaction[0][1].translation[2] += 1.0;
     let mut game = held(resource);
     let waiting_position = game.state().fighters[1].position;
 
@@ -822,8 +842,12 @@ fn passive_timer_buttons_and_latched_stick_mash_release_into_cut_actions() {
         },
         flags: 5,
     };
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); this pose drives
+    // the bone-sampled ECB just installed above, so it needs the same
+    // forward axis as every other bone-ECB fixture.
     for pose in &mut victim.grab.as_mut().unwrap().escape.capture_cut_poses {
-        pose[1].translation[0] = 6.0;
+        pose[1].translation[2] = 6.0;
     }
     let mut game = held(resource);
     let held_distance = game.state().fighters[1].position[0] - game.state().fighters[0].position[0];
@@ -1052,12 +1076,15 @@ fn grounded_only_catch_rejects_airborne_targets() {
 #[test]
 fn blast_exit_breaks_the_pair_before_stock_loss_is_published() {
     let mut resource = data();
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); this must push the
+    // captured victim out of the blast zone along world x.
     resource.fighters[0]
         .grab
         .as_mut()
         .unwrap()
         .attachment
-        .holder_point[0] = 100.0;
+        .holder_point[2] = 100.0;
     let mut game = Match::new(resource, 0).unwrap();
     let state = step(&mut game, input(0, BUTTON_Z, [0.0; 2], [0.0; 2]));
     assert!(state.events.contains(&Event::Knockout {

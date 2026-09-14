@@ -33,8 +33,13 @@ pub fn profile(mut data: MatchData) -> MatchData {
                     grabboxes: if frame < 3 {
                         vec![Capsule {
                             bone: 1,
-                            start: [1.0, 0.0, 0.0],
-                            end: [1.0, 0.0, 0.0],
+                            // Model space +Z is forward (`simulation::pose`'s
+                            // root joint now rotates +Z to face world +X,
+                            // `ft/fighter.c:1174`); this synthetic fixture's
+                            // own bone 1 carries no rotation of its own, so a
+                            // forward reach is z, not x.
+                            start: [0.0, 0.0, 1.0],
+                            end: [0.0, 0.0, 1.0],
                             radius: 0.8,
                         }]
                     } else {
@@ -68,7 +73,11 @@ pub fn profile(mut data: MatchData) -> MatchData {
             catch,
             attachment: Attachment {
                 holder_bone: 1,
-                holder_point: [0.6, 0.0, 0.0],
+                // Model space +Z is forward (`simulation::pose`'s root joint
+                // now rotates +Z to face world +X, `ft/fighter.c:1174`); this
+                // synthetic fixture's own bone 1 carries no rotation of its
+                // own, so a forward reach is z, not x.
+                holder_point: [0.0, 0.0, 0.6],
                 victim_bone: 1,
                 victim_point: [0.0; 3],
             },

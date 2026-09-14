@@ -1994,6 +1994,21 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     };
     let mut bones = take_physics_bones();
     bones.extend(local.iter().map(Bone::physics));
+    if let Some(root) = bones.first_mut() {
+        // `ft/fighter.c:1172-1174`, run on every `Fighter_ChangeMotionState`:
+        // `ftPartSetRotX(fp, 0, 0.0F); ftPartSetRotY(fp, 0, (M_PI_2 *
+        // fp->facing_dir)); ftPartSetRotZ(fp, 0, 0.0F);` -- the root joint
+        // (bone 0, TopN)'s own local rotation, hard-set from facing alone
+        // every state change, not accumulated animation. Every supplied
+        // per-frame pose keeps bone 0's own rotation at rest (matching its
+        // guaranteed-zero translation, `FighterData`'s own `movement` doc
+        // comment), so setting rather than adding is equivalent, but this
+        // matches the decomp's own unconditional set instead of relying on
+        // that invariant silently.
+        root.local.rotation[0] = 0.0;
+        root.local.rotation[1] = core::f32::consts::FRAC_PI_2 * fighter.facing;
+        root.local.rotation[2] = 0.0;
+    }
     if fighter.action == Action::JumpAerial
         && data
             .locomotion
@@ -2003,10 +2018,19 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     {
         root.local.rotation[1] += fighter.locomotion.multi_jump_yaw;
     }
-    // Native match coordinates: local +X faces forward, +Y up, +Z depth.
+    // Native match coordinates: model space +Z faces forward, +Y is up (the
+    // root joint's own rotation above turns model +Z to face along world
+    // +X). This external root matrix supplies only the fighter's world
+    // translation, exactly like `Fighter_ChangeMotionState`'s own
+    // `HSD_JObjSetTranslate(jobj, &fp->cur_pos)` on the same root jobj: no
+    // rotation and no facing mirror belong here -- that was this function's
+    // own former bug (`diag(facing, 1, facing)`), which left bone-derived
+    // world positions mirrored into depth instead of rotated to face world
+    // +X/-X, since `facing == 1.0` made the mirror an identity no-op instead
+    // of the real 90-degree turn.
     let root = [
         [
-            fighter.facing,
+            1.0,
             0.0,
             0.0,
             fighter.position[0] + fighter.death.camera_offset[0],
@@ -2020,7 +2044,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         [
             0.0,
             0.0,
-            fighter.facing,
+            1.0,
             fighter.depth + fighter.death.camera_offset[2],
         ],
     ];

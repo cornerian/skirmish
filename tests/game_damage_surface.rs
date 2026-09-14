@@ -61,7 +61,11 @@ fn pose_track(bones: &[Bone], frames: u32, translation: [f32; 2]) -> Vec<Vec<Bon
     (0..frames)
         .map(|frame| {
             let mut pose = bones.to_vec();
-            pose[1].translation[0] += translation[0] + frame as f32 * 0.25;
+            // Model space +Z is forward (`simulation::pose`'s root joint
+            // now rotates +Z to face world +X, `ft/fighter.c:1174`); y is
+            // untouched by that rotation, but the "x" component of this
+            // track's own offset needs the world-x-producing axis, z.
+            pose[1].translation[2] += translation[0] + frame as f32 * 0.25;
             pose[1].translation[1] += translation[1] + frame as f32 * 0.25;
             pose
         })
@@ -197,7 +201,9 @@ fn add_ordinary_wall_jump(data: &mut MatchData) {
     for fighter in &mut data.fighters {
         let mut frames = vec![fighter.bones.clone(); 8];
         for pose in &mut frames {
-            pose[1].translation[0] += 20.0;
+            // Model space +Z is forward (`simulation::pose`'s root joint
+            // now rotates +Z to face world +X, `ft/fighter.c:1174`).
+            pose[1].translation[2] += 20.0;
         }
         fighter.wall_jump = Some(WallJumpAttributes {
             can_walljump: true,

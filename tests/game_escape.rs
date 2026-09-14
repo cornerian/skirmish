@@ -141,8 +141,12 @@ fn sampled_roll_bones_move_the_hurtbox_only_on_their_frame() {
         let mut resource = data();
         resource.stage.spawns = [[-7.0, 0.0], [2.0, 0.0]];
         if !displaced {
+            // Model space +Z is forward (`simulation::pose`'s root joint
+            // now rotates +Z to face world +X, `ft/fighter.c:1174`); the
+            // fixture's own displacement (`fixtures/game/escape.json`) now
+            // lives on z, not x.
             resource.fighters[1].escape.as_mut().unwrap().forward.frames[6].bones[1].translation
-                [0] = 0.0;
+                [2] = 0.0;
         }
         let mut game = Match::new(resource, 42).unwrap();
         escape_from_guard(&mut game, guard([-1.0, 0.0], [0.0; 2]));

@@ -452,7 +452,12 @@ fn multijumps_use_fresh_then_held_input_after_each_command_marker() {
 #[test]
 fn multijump_turn_rotates_bone_physics_and_flips_facing_at_halfway() {
     let mut data = multi_jump_data();
-    data.fighters[0].bones[1].translation[0] = 8.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); this synthetic
+    // bone-ECB fixture's own bone 1 carries no rotation of its own and is a
+    // direct child of the root, so a forward reach that the yaw then rotates
+    // is z, not x.
+    data.fighters[0].bones[1].translation[2] = 8.0;
     data.fighters[0].collision_box = CollisionBox::Bones {
         indices: [0, 1, 0, 1, 0, 1],
         parameters: ecb::JointParameters {

@@ -62,7 +62,9 @@ fn sample_bones(data: &mut MatchData, extension: f32) {
         },
         flags: 5,
     };
-    fighter.jab.frames[1].bones[1].translation[0] = extension;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    fighter.jab.frames[1].bones[1].translation[2] = extension;
 }
 
 fn attack() -> [Controller; 2] {
@@ -174,7 +176,9 @@ fn bones_ecb(data: &mut MatchData, root: [f32; 3], child: [f32; 3]) {
 fn airborne_bones_ecb_has_no_two_unit_padding() {
     let mut resource = data();
     resource.stage.floor.y = -7.0;
-    bones_ecb(&mut resource, [0.0, 0.0, 0.0], [-5.0, 0.0, 0.0]);
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    bones_ecb(&mut resource, [0.0, 0.0, 0.0], [0.0, 0.0, -5.0]);
     let game = Match::new(resource, 4).unwrap();
     let f = &game.state().fighters[0];
     assert!(

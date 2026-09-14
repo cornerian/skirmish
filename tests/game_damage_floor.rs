@@ -70,7 +70,13 @@ fn roll_motion(bones: &[Bone], roots: &[f32], extension: f32) -> FloorTechMotion
             .map(|(index, &root_translation)| {
                 let mut bones = bones.to_vec();
                 if index != 0 {
-                    bones[1].translation[0] = extension;
+                    // Model space +Z is forward (`simulation::pose`'s root
+                    // joint now rotates +Z to face world +X,
+                    // `ft/fighter.c:1174`); this synthetic bone-ECB fixture's
+                    // own bone 1 carries no rotation of its own and is a
+                    // direct child of the root, so a forward "arm extension"
+                    // reach is z, not x.
+                    bones[1].translation[2] = extension;
                 }
                 FloorTechFrame {
                     bones,
@@ -145,14 +151,18 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
                 })
                 .collect(),
         };
+        // Model space +Z is forward (`simulation::pose`'s root joint now
+        // rotates +Z to face world +X, `ft/fighter.c:1174`); bone 1 here
+        // carries no rotation of its own and is a direct child of the root,
+        // so a forward bone-ECB reach is z, not x.
         let mut passive_poses = vec![fighter.bones.clone(); profile().passive_frames as usize];
-        passive_poses[1][1].translation[0] = 8.0;
+        passive_poses[1][1].translation[2] = 8.0;
         let mut bound_poses = vec![fighter.bones.clone(); profile().down_bound_frames as usize];
-        bound_poses[1][1].translation[0] = 9.0;
+        bound_poses[1][1].translation[2] = 9.0;
         let mut wait_poses = vec![fighter.bones.clone(); profile().down_wait_frames as usize];
-        wait_poses[0][1].translation[0] = 10.0;
+        wait_poses[0][1].translation[2] = 10.0;
         let mut stand_poses = vec![fighter.bones.clone(); stand_frames];
-        stand_poses[0][1].translation[0] = 7.0;
+        stand_poses[0][1].translation[2] = 7.0;
         let face_up = ProneRecoveryAttributes {
             bound_poses,
             wait_poses,
@@ -163,9 +173,9 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
             attack,
         };
         let mut face_down = face_up.clone();
-        face_down.bound_poses[1][1].translation[0] = 12.0;
-        face_down.wait_poses[0][1].translation[0] = 13.0;
-        face_down.stand_poses[0][1].translation[0] = 14.0;
+        face_down.bound_poses[1][1].translation[2] = 12.0;
+        face_down.wait_poses[0][1].translation[2] = 13.0;
+        face_down.stand_poses[0][1].translation[2] = 14.0;
         face_down.forward = roll_motion(&fighter.bones, &[0.0, 1.2, 1.8, 0.6], 15.0);
         face_down.backward = roll_motion(&fighter.bones, &[0.0, -0.8, -1.4, -0.4, -0.2], -15.0);
         for hit in face_down
@@ -287,7 +297,9 @@ fn down_damage_data(face_down: bool) -> skirmish::game::data::MatchData {
             variant.wait_poses.resize(30, bones.clone());
             let mut poses = vec![bones.clone(); 3];
             for pose in &mut poses {
-                pose[1].translation[0] = extension;
+                // Model space +Z is forward (`simulation::pose`'s root joint
+                // now rotates +Z to face world +X, `ft/fighter.c:1174`).
+                pose[1].translation[2] = extension;
             }
             variant.damage_poses = Some(poses);
         }

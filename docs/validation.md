@@ -1,5 +1,138 @@
 # Local validation provenance
 
+The 2026-09-14 root-facing fix (`simulation::pose`, replacing the
+`diag(facing, 1, facing)` mirror this document's own muzzle-bone entries
+below have been probing around): the game turns a fighter's model
+(built facing model-space +Z) to face world +X by rotating the root
+joint, `ft/fighter.c:1174`'s `ftPartSetRotY(fp, 0, (M_PI_2 *
+fp->facing_dir))`, exactly the mechanism the existing `multi_jump_yaw`
+adjustment already used on `root.local.rotation[1]`. `simulation::pose`
+instead applied a mirror on the *external* root matrix
+(`diag(facing, 1, facing)`), which is the identity for `facing == 1.0`
+-- so every bone-derived world position for a facing-right fighter kept
+model +Z as depth instead of rotating it to face +X: hurtboxes and
+bone-attached hitboxes extended forward into depth, the ECB left/right
+came from the sideways (model +X) extent instead of the forward one,
+and the laser muzzle offset (below) landed in depth. The root joint (bone
+0) now gets local rotation `Y = FRAC_PI_2 * facing`, set through the same
+`srt`/trig evaluator every other rotated bone uses (not a hand-written
+matrix), with `X`/`Z` reset to `0.0` to match `ftPartSetRotX`/`ftPartSetRotZ`
+on the same call; the external root matrix is now translation-only,
+matching `Fighter_ChangeMotionState`'s own
+`HSD_JObjSetTranslate(jobj, &fp->cur_pos)` on the same root jobj. The
+misleading "local +X faces forward" comment is fixed to describe model
++Z.
+
+**Probe, fox-fd-3.slp frame -14** (P1 Fox firing airborne,
+`cur_pos (-28.223993, 8.3501)`, facing +1), reconciled two ways against
+the pre-fix probe already on record below (bone 67 world translation
+`(-28.488976, 17.2495, 4.989484)`, rotation rows `[0.998, 0.043,
+0.050]`/`[-0.048, 1.056, -0.060]`/`[-0.046, -0.170, 1.132]`): (1)
+left-multiplying that recorded matrix by `R(+pi/2)` (bone 0's own new
+rotation sits at the root of the chain) gives a predicted post-fix
+muzzle of `(-18.618, 18.295, -0.001)`; (2) an uncommitted free-run probe
+(fox-fd-3's own recorded inputs, driven past its own unrelated -32 ULP
+mismatch so frame -14 is reachable) gives an observed laser spawn of
+`(-11.618954, 18.295034)`, which is the muzzle *after* the item's own
+already-applied first-frame `speed = 7.0` move (this document's own
+existing note below); subtracting that move gives `(-18.618954,
+18.295034)`, matching the independent matrix derivation to 0.001. No
+double rotation anywhere in the chain. Relative to `cur_pos`, the true
+muzzle offset is `(9.605, 9.945)`; the fox-fd-3 recording's own laser
+item position (`x = -13.0461` at frame -14, velocity 7) puts the target
+at `cur_pos + (8.1779, 9.789)`. Delta: `(1.427, 0.156)`. The same check
+on fox-bf.slp frame 23 (P4 Fox/Falco, facing -1, same
+`SpecialAirNLoop` `action_frame = 6`) gives a mirrored true offset of
+`(-9.605, 9.945)` from the shooter -- the same magnitude, confirming the
+transform is deterministic and facing-consistent, not coincidental.
+
+**Sample-index check** (a candidate explanation for the 1.4-unit
+residual, since `Action::SpecialN*`/`SpecialAirN*` have the identical
+`ftAnim_8006EBA4` entry-advance `neutral.rs:505`'s own comment already
+documents, but `simulation::attack_frame` only applies the matching
+`aerial::attack_sample_index` (`-1`) correction for the five aerial-attack
+actions, not for specials): patched (uncommitted) to also apply `-1`
+(`fire-1`, `frames[5]`) and separately `+1` (`fire+1`, `frames[7]`) for
+the six neutral-special actions, then re-ran the same free-run probe.
+
+| sample index | true muzzle offset from `cur_pos` | delta from `(8.1779, 9.789)` |
+| --- | --- | --- |
+| `fire-1` (`frames[5]`) | `(9.603, 9.991)` | `(1.425, 0.202)` -- worse on y |
+| `fire` (`frames[6]`, current) | `(9.605, 9.945)` | `(1.427, 0.156)` |
+| `fire+1` (`frames[7]`) | -- | panics: "attack pose frame is outside the supplied animation" (array too short; not a valid index) |
+
+Neither alternative reproduces the recording within 1e-3 (or within an
+order of magnitude of it), and `fire+1` is out of bounds. The residual is
+the pack's own bone-67 `loop_phase.air` animation-sample data (this
+document's own existing "not chased further" conclusion below), not an
+indexing bug, not a double rotation. Both experimental patches were
+reverted; they are not part of this fix. The `attack_frame`
+aerial-vs-specials entry-advance asymmetry is real (confirmed by reading
+`aerial::attack_index`/`aerial::attack_sample_index` against
+`characters::fox::neutral::attack`/`owned`) but does not explain this
+residual; it is an open lead for whoever next touches `simulation::
+attack_frame` or Fox's other specials (`down`/`side`/`up`), independent
+of this fix.
+
+**Consumer audit**: every production consumer of bone world positions
+(`src/collision/ecb.rs`, `src/game/collision.rs::sample`,
+`src/game/grab.rs`, `src/game/ledge.rs`, `src/game/shield.rs::geometry`,
+`src/game/projectile.rs`'s reflect geometry, `src/game/hitboxes.rs`)
+reads `pose.world_matrix`/`transform_point` generically with no
+hardcoded axis assumption; all of these were already correct and needed
+no change. Every fallout was in synthetic test fixtures across ~25 files
+that encoded "forward = local +X" (matching the old mirror) directly in
+bone translations, hitbox/hurtbox/grabbox/attachment offsets, or (one
+case, `tests/fixtures/game/integration-match.json`'s jab hitbox, whose
+bone 1 carries its own Z-axis rotation) the bone's own rotation and
+translation together, requiring the general `B' = D * B` reconstruction
+(`D = R(-pi/2)`) rather than a simple component swap. All fixed, cited,
+and covered by tests; `cargo fmt --check`, `cargo clippy --workspace
+--all-targets` and `cargo test --workspace` (default and `c-oracle`
+features) all pass, 187/187 binaries.
+
+**Real-replay ratchet, pack v11** (`SKIRMISH_GAMEPLAY_DATA=
+/mnt/archive/datasets/melee/skirmish-gameplay/v11-snapshot-20260914`),
+measured before (clean `origin/main`, same pack) and after this fix:
+
+| recording | before (checked_frames) | after | delta |
+| --- | --- | --- | --- |
+| fox-fd | 128 | 128 | 0 |
+| fox-fd-2 | 118 | 117 | -1 |
+| fox-fd-3 | 91 | 91 | 0 |
+| fox-fd-4 | 110* | 109 | -1 |
+| fox-bf | 273 | 148 | -125 |
+| fox-ys | 10 | 10 | 0 |
+| fox-fod | 5 | 5 | 0 |
+| fox-dl | 74 | 74 | 0 |
+| fox-ps | 85 | 85 | 0 |
+| falco-fox-fd | 98 | 98 | 0 |
+
+\* fox-fd-4's checked-in baseline is `-5`/118; clean `origin/main` with
+pack v11 alone (no fix) already measures `-13`/110, an 8-frame drift
+from the pack update itself, discovered incidentally, unrelated to this
+fix.
+
+fox-fd-2 and fox-fd-4 both move by exactly one frame, both on the same
+field (`last_attack_landed`, expected `0x00` actual `0x12`, one frame
+earlier than the recording): consistent with the laser now reaching its
+target roughly `0.2` frames early, since the muzzle evaluates `1.43`
+units ahead of the recording's own spawn point (a 1.43-unit head start
+at speed 7/frame is about 0.2 frames). fox-bf's own regression (frame 25,
+P1 `percent` 0.0 -> 3.0) is the same mechanism at a moment where the
+1.43-unit margin happens to flip a hit/no-hit call; once flipped, the
+rest of that recording diverges from that point on (ordinary
+chaos-sensitivity of a deterministic real-time sim following one flipped
+early event, not evidence the underlying error is 125-units large). The
+fix is decomp-correct and does not itself regress; it exposes -- for the
+first time, since the old mirror aimed the same pre-existing muzzle-bone
+gap into gameplay-irrelevant depth instead of the gameplay plane -- the
+already-documented, not-yet-closed bone-67 `loop_phase.air` sample
+limitation below. No baseline file has been changed; the ratchet is
+knowingly red on these three recordings pending that residual, which
+this document leaves open rather than guesses at further, matching this
+document's own established stop condition.
+
 The 2026-09-14 Turn-to-Dash stale-window fix (the real-replay parity loop,
 `fox-bf.slp`, `docs/parity.md`) stops `game::locomotion::update_actions`'s
 `Action::Turn` arm from re-checking `tilt_x_age`/`dash_window` on its own

@@ -205,7 +205,10 @@ fn rebirth_actions_cannot_be_hit_or_leave_the_platform_during_wait() {
                 element: Default::default(),
                 group: 0,
                 bone: 0,
-                center: [2.0, 6.0, 0.0],
+                // Model space +Z is forward (`simulation::pose`'s root
+                // joint now rotates +Z to face world +X,
+                // `ft/fighter.c:1174`).
+                center: [0.0, 6.0, 2.0],
                 radius: 2.0,
                 damage: 9,
                 shield_damage: 0,

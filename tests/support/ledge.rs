@@ -46,7 +46,11 @@ pub fn profile(mut data: MatchData) -> MatchData {
                             element: Default::default(),
                             group: 0,
                             bone: 0,
-                            center: [1.0, 0.8, 0.0],
+                            // Model space +Z is forward (`simulation::pose`'s
+                            // root joint now rotates +Z to face world +X,
+                            // `ft/fighter.c:1174`), so a forward reach off
+                            // bone 0 (the root joint itself) is z, not x.
+                            center: [0.0, 0.8, 1.0],
                             radius: 1.0,
                             damage: 7,
                             shield_damage: 0,

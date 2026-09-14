@@ -36,7 +36,11 @@ fn hitbox() -> Hitbox {
         element: Default::default(),
         group: 0,
         bone: 1,
-        center: [1.5, 0.0, 0.0],
+        // Model space +Z is forward (`simulation::pose`'s root joint now
+        // rotates +Z to face world +X, `ft/fighter.c:1174`); this synthetic
+        // fixture's own bone 1 carries no rotation of its own, so a forward
+        // reach is z, not x.
+        center: [0.0, 0.0, 1.5],
         radius: 1.25,
         damage: 10,
         shield_damage: 0,

@@ -278,8 +278,10 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
     resource.rules.hitlag.damage_scale = 0.0;
     resource.rules.knockback_speed = 0.0;
     let movement = &mut resource.fighters[0].aerials.as_mut().unwrap().moves[0];
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
     for (frame, x) in [(0, -6.0), (1, -2.0), (2, -2.0)] {
-        movement.attack.frames[frame].bones[1].translation = [x, 1.0, 0.0];
+        movement.attack.frames[frame].bones[1].translation = [0.0, 1.0, x];
         movement.attack.frames[frame].hitboxes = vec![Hitbox {
             clank: false,
             rebound: false,
@@ -513,7 +515,9 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
     let frame = &mut resource.fighters[0].aerials.as_mut().unwrap().moves[0]
         .attack
         .frames[0];
-    frame.bones[1].translation[0] = 2.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`).
+    frame.bones[1].translation[2] = 2.0;
     frame.hitboxes.push(Hitbox {
         clank: false,
         rebound: false,

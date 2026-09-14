@@ -148,7 +148,10 @@ fn resource() -> MatchData {
     start.bones[1].translation = [0.0, 1.0, 0.0];
     start.bones[1].rotation = [0.0; 3];
     let mut end = start.clone();
-    end.bones[1].translation[0] = 8.0;
+    // Model space +Z is forward (`simulation::pose`'s root joint now
+    // rotates +Z to face world +X, `ft/fighter.c:1174`); this hitbox must
+    // sweep along world x, so it moves on z, not x.
+    end.bones[1].translation[2] = 8.0;
     let idle = AttackFrame {
         bones,
         hitboxes: vec![],

@@ -35,7 +35,9 @@ fn an_airborne_aerial_hits_grounded_shield_without_percent_or_stale_queue_change
     hit.radius = 0.25;
     let movement = &mut data.fighters[0].aerials.as_mut().unwrap().moves[0];
     for frame in &mut movement.attack.frames[..2] {
-        frame.bones[1].translation = [4.0, -0.4, 0.0];
+        // Model space +Z is forward (`simulation::pose`'s root joint now
+        // rotates +Z to face world +X, `ft/fighter.c:1174`).
+        frame.bones[1].translation = [0.0, -0.4, 4.0];
         frame.hitboxes = vec![hit.clone()];
     }
     let mut game = Match::new(data, 7).unwrap();

@@ -399,7 +399,10 @@ fn an_opponent_hit_releases_ledge_ownership_before_entering_damage() {
                 element: Default::default(),
                 group: 0,
                 bone: 0,
-                center: [1.3, 0.0, 0.0],
+                // Model space +Z is forward (`simulation::pose`'s root
+                // joint now rotates +Z to face world +X,
+                // `ft/fighter.c:1174`).
+                center: [0.0, 0.0, 1.3],
                 radius: 0.8,
                 damage: 5,
                 shield_damage: 0,
