@@ -107,13 +107,34 @@ fn commands(f: &mut Fighter, movement: &Move) {
     if f.aerial.applied_frame == Some(f.action_frame) {
         return;
     }
-    let flags = movement.flags[f.action_frame as usize];
+    // `attack_sample_index` compensates for the entry-time advance
+    // (`update`'s own `action_frame = 1`): this move's own `flags` array is
+    // indexed by elapsed action frames since entry, not decomp's raw
+    // `cur_anim_frame`.
+    let flags = movement.flags[attack_sample_index(f.action_frame) as usize];
     f.aerial.applied_frame = Some(f.action_frame);
     f.aerial.landing_lag_enabled = flags.landing_lag;
     f.aerial.allow_interrupt = flags.allow_interrupt;
     if flags.reverse_facing {
         f.facing = -f.facing;
     }
+}
+
+/// `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick` (`ftCo_AttackAir.c`)
+/// both call `Fighter_ChangeMotionState` then `ftAnim_8006EBA4(gobj)`
+/// explicitly, the same extra advance `ftCo_Dash_Enter`/`ftCo_Turn_Enter`
+/// make (`locomotion::start_dash`'s own comment, `docs/validation.md`'s
+/// entry-advance table). `update`'s own aerial-attack entry models that at
+/// the source (`action_frame = 1`, not `0`, from the entry frame on), but
+/// unlike Dash/Turn -- whose own duration thresholds are themselves read
+/// directly from decomp's `cur_anim_frame` and so need no adjustment --
+/// this move's own supplied `Move.attack.frames`/`Move.flags` sample
+/// arrays are indexed by elapsed action frames since entry (confirmed by
+/// the existing hitbox/autocancel/interrupt tests, which regress under raw
+/// `action_frame` indexing): both this module's own consumers and
+/// `simulation::attack_frame`'s shared lookup subtract 1 to compensate.
+pub(crate) fn attack_sample_index(action_frame: u32) -> u32 {
+    action_frame.saturating_sub(1)
 }
 
 /// Install the destination action before any of its input callbacks run.
@@ -130,7 +151,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData) {
         return;
     }
     if let Some(index) = attack_index(f.action) {
-        if f.action_frame as usize >= p.moves[index].attack.frames.len() {
+        if attack_sample_index(f.action_frame) as usize >= p.moves[index].attack.frames.len() {
             super::simulation::enter(f, Action::Fall);
         } else {
             commands(f, &p.moves[index]);
@@ -184,6 +205,17 @@ pub(crate) fn update(f: &mut Fighter, data: &FighterData, input: Controller) -> 
             Direction::Down => 4,
         };
         super::simulation::enter(f, ATTACKS[index]);
+        // `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick` (`ftCo_AttackAir.c`)
+        // both call `Fighter_ChangeMotionState` then `ftAnim_8006EBA4(gobj)`
+        // explicitly -- the same extra advance already fixed at the source
+        // for Dash/Turn/Squat's own entries (`locomotion::start_dash`'s own
+        // comment, `docs/validation.md`'s entry-advance table): `action_frame`
+        // is 1 (not 0) from this frame on, so `attack_frame`'s own raw-
+        // indexed `Attack.frames` lookup (shared with jab/tilt/smash, whose
+        // own entries already assume this) and this move's own `flags`
+        // sample below both already read decomp's own `cur_anim_frame`
+        // unadjusted, needing no compensating shift.
+        f.action_frame = 1;
         commands(f, &p.moves[index]);
         return true;
     }

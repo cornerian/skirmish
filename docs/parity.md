@@ -1211,8 +1211,32 @@ straight_to_dash_without_waiting_for_the_flip`).
 published gameplay-export pack v10. The new first divergence is frame
 37, field `action_age` on P1 (expected `1.0`, actual `0.0`), on the
 frame P1 enters `AttackAirLw` (Fox's down-air) -- the same class of
-"extra entry advance" bug already fixed for Dash/Turn/Squat/EscapeAir,
-now found in a new action, not pursued further in this entry.
+"extra entry advance" bug already fixed for Dash/Turn/Squat/EscapeAir.
+
+**Fixed: AttackAir's own shared entry has the same extra advance.**
+`ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick` (`ftCo_AttackAir.c`,
+the shared entry for AttackAirN/F/B/Hi/Lw alike) call `Fighter_
+ChangeMotionState` then `ftAnim_8006EBA4(gobj)` explicitly, the
+identical extra advance already fixed for Dash/Turn/Squat/Fox's neutral
+special. `game::aerial::update` now sets `action_frame = 1` at entry,
+covering all five moves through their shared entry point. Unlike Dash/
+Turn/Squat, this move's own supplied `Move.attack.frames`/`Move.flags`
+sample arrays are indexed by elapsed action frames since entry (the
+same situation EscapeAir's own fix already established a pattern for):
+`aerial::commands`, `aerial::update_animation`'s length check and the
+shared `simulation::attack_frame` hitbox/pose lookup (used by jab/tilt/
+smash/dash-attack too, whose own entries make no such extra advance)
+now subtract 1 through a new `aerial::attack_sample_index` helper when
+serving an aerial attack specifically. `docs/validation.md` has the
+full native-test breakdown (`game_aerial_actions`'s new `attack_air_
+reports_the_replay_verified_state_age_of_one_on_entry`, plus the
+existing hitbox/autocancel/cstick-repeat tests' own hardcoded
+`action_frame` values, bumped by exactly 1 to match).
+
+172 frames now match (`-123` through `48`), up from 160;
+`fox-bf-baseline.json` moves to reflect this, measured against the same
+published gameplay-export pack v10. The new first divergence is frame
+49, field `shield` on P4, not yet diagnosed in this entry.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

@@ -7,6 +7,7 @@ use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match,
     data::{Hitbox, MatchData},
 };
+use skirmish_replay::{observation, slippi::Port};
 use support::{ATTACKS, LANDINGS, STICKS, data, game, input, step};
 
 fn attack(stick: [f32; 2]) -> Controller {
@@ -15,6 +16,31 @@ fn attack(stick: [f32; 2]) -> Controller {
         stick,
         ..Default::default()
     }
+}
+
+/// `fox-bf.slp`: P1's own down-air (`AttackAirLw`) reports `state_age = 1.0`
+/// on the exact frame it is entered, not `0.0` like an ordinary entry.
+/// `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick` (`ftCo_AttackAir.c`, the
+/// shared entry for all five aerial attacks) call `Fighter_ChangeMotionState`
+/// then `ftAnim_8006EBA4(gobj)` explicitly, the same extra advance already
+/// fixed at the source for Dash/Turn/Squat/Fox's neutral special
+/// (`locomotion::start_dash`'s own comment, `docs/validation.md`'s
+/// entry-advance table): `aerial::update` now sets `action_frame = 1` (not
+/// `0`) from the entry frame on, so the general `action_age` rule already
+/// reports the replay-verified `1.0` without its own branch. Unlike Dash/
+/// Turn's own duration thresholds, this move's own supplied `Move.attack.
+/// frames`/`Move.flags` sample arrays are indexed by elapsed action frames
+/// since entry, not decomp's raw `cur_anim_frame`, so `aerial::commands`,
+/// `aerial::update_animation`'s length check and `simulation::attack_frame`'s
+/// shared lookup all subtract 1 (`aerial::attack_sample_index`) to keep
+/// reading the same effective sample sequence as before this fix.
+#[test]
+fn attack_air_reports_the_replay_verified_state_age_of_one_on_entry() {
+    let mut game = game();
+    let state = step(&mut game, attack([0.0, -1.0]));
+    assert_eq!(state.fighters[0].action, Action::AttackAirLw);
+    let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observed.fighters[0].action_age, 1.0);
 }
 
 // ftCo_AttackAir_GetMsidFromCStick: neutral deadzone, angle, then facing.
@@ -68,7 +94,10 @@ fn held_or_opposite_cstick_does_not_repeat_after_attack_end_but_neutral_rearms()
     for frame in 1..8 {
         let state = step(&mut game, if frame % 2 == 0 { right } else { left });
         assert_eq!(state.fighters[0].action, Action::AttackAirF);
-        assert_eq!(state.fighters[0].action_frame, frame + 1);
+        // `ftCo_AttackAir_EnterFromMsid`'s own extra `ftAnim_8006EBA4` entry
+        // advance (`aerial::attack_sample_index`'s own doc comment) keeps
+        // `action_frame` one ahead of a plain per-frame count from 0.
+        assert_eq!(state.fighters[0].action_frame, frame + 2);
     }
     assert_eq!(step(&mut game, right).fighters[0].action, Action::Fall);
     assert_eq!(step(&mut game, left).fighters[0].action, Action::Fall);
@@ -284,7 +313,11 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
     )));
     assert_eq!(hit.fighters[0].hitboxes[0].current[0], 2.0);
     assert_eq!(hit.fighters[0].facing, -1.0);
-    assert_eq!(hit.fighters[0].action_frame, 1);
+    // `ftCo_AttackAir_EnterFromMsid`'s own extra entry-time advance
+    // (`aerial::attack_sample_index`'s own doc comment) keeps `action_frame`
+    // one ahead of a plain per-frame count from 0; the hitbox/flag lookups
+    // above already read the elapsed-frame-1 sample correctly regardless.
+    assert_eq!(hit.fighters[0].action_frame, 2);
     let checkpoint = game.checkpoint();
     let mut expected = vec![];
     for _ in 0..4 {
@@ -299,9 +332,11 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
         );
         expected.push(state);
     }
-    assert_eq!(expected[0].fighters[0].action_frame, 1);
-    assert_eq!(expected[2].fighters[0].action_frame, 1);
-    assert_eq!(expected[3].fighters[0].action_frame, 2);
+    // Frozen through the hitlag window at the same entry-shifted value the
+    // "hit" step already landed on, then advancing by 1 once it ends.
+    assert_eq!(expected[0].fighters[0].action_frame, 2);
+    assert_eq!(expected[2].fighters[0].action_frame, 2);
+    assert_eq!(expected[3].fighters[0].action_frame, 3);
     game.restore_checkpoint(&checkpoint).unwrap();
     for state in expected {
         assert_eq!(step(&mut game, Controller::default()), &state);

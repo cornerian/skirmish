@@ -1,5 +1,49 @@
 # Local validation provenance
 
+The 2026-09-14 AttackAir entry-advance fix (the real-replay parity loop,
+`fox-bf.slp`, `docs/parity.md`) covers another sibling instance of the
+entry-advance bug: `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick`
+(`ftCo_AttackAir.c`, the shared entry for all five aerial attacks --
+AttackAirN/F/B/Hi/Lw alike) call `Fighter_ChangeMotionState` then
+`ftAnim_8006EBA4(gobj)` explicitly, the identical extra advance already
+fixed at the source for Dash/Turn/Squat/Fox's neutral special
+(`locomotion::start_dash`'s own comment, this file's own entry-advance
+table). Fixed at the source the same way: `game::aerial::update` now sets
+`fighter.action_frame = 1` (not `0`) immediately after `simulation::enter`,
+covering all five aerial attacks through their shared entry point.
+
+Unlike Dash/Turn/Squat -- whose own duration thresholds are themselves
+read directly from decomp's `cur_anim_frame` and so need no further
+change -- this move's own supplied `Move.attack.frames`/`Move.flags`
+sample arrays are indexed by elapsed action frames since entry, the same
+situation `EscapeAir`'s own fix (`fox-fd-4.slp`) already established a
+pattern for: both this module's own consumers (`aerial::commands`,
+`aerial::update_animation`'s length check) and the shared `simulation::
+attack_frame` hitbox/pose lookup (used by jab/tilt/smash/dash-attack too,
+whose own entries make no such extra advance and so still read raw
+`action_frame` directly) now subtract 1 through a new `aerial::
+attack_sample_index` helper when serving an aerial attack specifically,
+keeping the same effective sample sequence as before this fix. Confirmed
+by the existing hitbox/autocancel/cstick-repeat tests in `tests/
+game_aerial_actions.rs`, which regressed under a naive raw-`action_frame`
+version of this fix and needed their own already-hardcoded `action_frame`
+values bumped by exactly 1 (the same kind of update the Dash-entry fix's
+own pre-existing tests needed when that fix first landed).
+
+**Tests**: `game_aerial_actions`'s new
+`attack_air_reports_the_replay_verified_state_age_of_one_on_entry` pins
+the replay-verified `state_age = 1.0` on a down-air's own entry frame
+(`fox-bf.slp`'s own P1 down-air, matching the general `action_age` rule
+directly, no branch needed since the extra advance is modeled at the
+source here). `cargo fmt --check`, `cargo clippy --workspace
+--all-targets` and `cargo test --workspace` (both default and
+`c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10: 172 frames now
+match (`-123` through `48`), up from 160; `fox-bf-baseline.json` moves to
+reflect this. The new first divergence is frame 49, field `shield` on
+P4, not yet diagnosed in this entry.
+
 The 2026-09-13 Falco Laser batch wires `Specials::Falco.neutral` (gameplay
 export v10's `fighters/falco.json` carries it for the first time, same
 schema as Fox's own `characters::fox::neutral::NeutralSpecial`). The task

@@ -2021,10 +2021,20 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
+    // Aerial attacks' own entry-time advance (`aerial::attack_sample_index`'s
+    // own doc comment) means their supplied `Attack.frames` are indexed by
+    // elapsed action frames since entry, unlike jab/tilt/smash/dash-attack's
+    // own entries, which make no such extra advance and so read raw
+    // `action_frame` (decomp's own `cur_anim_frame`) directly.
+    let index = if aerial::attack_index(fighter.action).is_some() {
+        aerial::attack_sample_index(fighter.action_frame)
+    } else {
+        fighter.action_frame
+    };
     data.attack(fighter.action, fighter.prone, fighter.ledge.slow)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames
-        .get(fighter.action_frame as usize)
+        .get(index as usize)
         .ok_or_else(|| Error::Physics("attack pose frame is outside the supplied animation".into()))
 }
 
