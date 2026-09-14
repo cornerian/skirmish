@@ -1534,6 +1534,84 @@ the exact `LandingFallSpecial`-interruption shape this loop had reported
 open at -13 (`fox-fd-4-baseline.json`'s own prior note). Re-diagnosed
 below as the next divergence in this loop's own queue.
 
+**Update (2026-09-14): the Pokemon Stadium half of this diagnosis was
+wrong.** `fox-ps.slp`'s "few-ULP gap on spawn index 0" was not the
+exporter's parent-chain composition bug after all -- the fixture itself was
+recorded on modified stage data. Checked directly with `py-slippi` against
+every Fox-involved Pokemon Stadium replay in `slippi-public-dataset-v3.7/
+data/FOX` (18 files): the split is exact and follows the recording's own
+Slippi client version, not measurement noise. Every Slippi 2.0.1 replay's P1
+spawn (14 files, including `12_35_58 Fox + Fox (PS).slp`) reads
+`(-39.999996185302734, 31.99999237060547)`, bit-for-bit the pack's own
+`stage.spawns[0]`; every Slippi 3.9.0 replay's P1 spawn (4 files, including
+the original `18_54_44 Fox + Fox (PS).slp` fixture) reads exactly
+`(-40.0, 32.0)` instead -- a clean half-unit shift in `x` and an exact
+integer `y`, the signature of a netplay build's own modified stage table
+entry, not floating-point residue from a missing joint-chain composition.
+Fourteen independent 2.0.1 recordings agreeing with the pack bit-for-bit
+rule out both "the pack is slightly wrong" and "this is coincidence": the
+pack's `stage.spawns[0]` was already correct, and the original `fox-ps.slp`
+fixture was the wrong file to measure it against.
+
+`fox-ps.slp` was replaced 2026-09-14 with `12_35_58 Fox + Fox (PS).slp`
+(same CC0-1.0 corpus, Slippi 2.0.1, Fox vs Fox, P1/P4) -- see
+`tests/fixtures/slippi/parity/manifest.json`'s updated entry and its own
+`note` field. Re-measured against gameplay-export pack v10: the frame -123
+spawn divergence is gone (both spawns now match bit-for-bit); 85 frames
+match (-123 through -39). The new first divergence is frame -38, P4's
+`action_state` (expected `0x001d`/`Fall`, actual `0x002a`/`Landing`, three
+frames before the recording's own landing) -- a genuine, previously-hidden
+divergence now visible for the first time because the spawn-frame bug no
+longer masks it; `fox-ps-baseline.json`'s own `note` has the frame-by-frame
+trace and points at a likely stage-geometry export gap near Pokemon
+Stadium's side platforms (`x=40`), not chased further in this batch.
+
+Dream Land's own diagnosis above is not re-examined by this update and
+remains an open, separately-tracked exporter-code item (`fox-dl.slp`'s
+unequal per-port `y` offsets, `0.2215` vs `0.3215`); this batch does not
+touch `fox-dl.slp` or its baseline.
+
+### Fixture-selection rule: a recording's first frame must bit-match the pack's spawn points
+
+The `fox-ps.slp` history above is a general lesson, not a one-off: **a real
+recording is only a valid parity fixture for a given stage if its very
+first frame's spawn positions bit-match that stage's exported
+`stage.spawns`.** If they don't, the recording was captured on stage data
+the pack does not (and, for a retail-verified exporter, should not) agree
+with, and every measurement against it starts already wrong -- not because
+of a Skirmish bug, but because the fixture and the pack disagree about
+where the match begins. `fox-ps.slp`'s own history is the concrete case:
+newer Slippi *netplay* builds (confirmed here for 3.9.0) have shipped
+modified stage data for at least Pokemon Stadium, changing spawn point 0
+from the retail value by a clean half-unit in `x`; nothing about Skirmish's
+simulation or the gameplay-export pipeline explains or should reproduce
+that. A recording made on such a build is not "real Melee" for this
+purpose in the way the corpus's ordinary 2.0.1 recordings are -- it is real
+*netplay*, on stage data the retail disc (and the exporter, which reads the
+retail disc) never shipped.
+
+Practical rule for picking or auditing a fixture: prefer the oldest
+available Slippi version for a given stage/matchup unless there is a
+specific reason to want a newer one, and, before trusting a new baseline,
+check the recording's own first-frame position against the pack's
+`stage.spawns` for that pairing (`py-slippi`'s `pre.position`, or just run
+`make-initialization`/`validate-replay` and look at `checked_frames`: `0`
+with the very first field being a spawn-position mismatch is the symptom).
+`crates/cli/tests/parity_fixture_spawns.rs` now automates exactly this
+check for every recording in `recordings.json`: for each pairing whose pack
+has landed under `SKIRMISH_GAMEPLAY_DATA`, it reads the fixture's own first
+selected frame, assigns spawn points by participant order (ports sorted
+ascending, the same convention `initialization::build` uses -- the pack's
+spawns are assigned by participant order, not by which physical port a
+player sat at), and asserts each player's position bit-matches the
+corresponding `stage.spawns` entry, failing loudly with the offending
+recording, port and expected/actual bit patterns if not. It skips (rather
+than fails) a recording whose pack has not been published yet, exactly like
+`real_parity.rs`, and carries one explicit, documented exception
+(`KNOWN_PACK_DATA_SPAWN_GAPS = ["fox-dl"]`) for `fox-dl.slp`'s own
+already-tracked *pack*-data gap above, so a known, separately-owned
+exporter bug does not fail this check the way a bad fixture should.
+
 ## Practical consequence
 
 None of these three, individually or together, is "Skirmish matches Melee."

@@ -439,11 +439,11 @@
       }
     },
     {
-      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/batch_00/18_54_44 Fox + Fox (PS).slp",
+      "source_path": "/mnt/archive/datasets/melee/slippi-public-dataset-v3.7/data/FOX/12_35_58 Fox + Fox (PS).slp",
       "file": "fox-ps.slp",
-      "bytes": 2652413,
-      "sha256": "25908e83f262dde488fa2e88ec424122851af1be89f6909617a8c484af2223e0",
-      "version": "3.9.0",
+      "bytes": 3384755,
+      "sha256": "3c6535c6082325da6b93885e9450f93069c79fc3cd175ca182200318475a5bb7",
+      "version": "2.0.1",
       "stage_id": 3,
       "stage": "pokemon-stadium",
       "players": [
@@ -460,27 +460,28 @@
           "stocks": 4
         }
       ],
-      "random_seed": 2702921816,
+      "random_seed": 2752137841,
       "first_frame": -123,
-      "last_frame": 8601,
-      "physical_frames": 8725,
+      "last_frame": 14463,
+      "physical_frames": 14587,
       "pairing": "fox-ps",
+      "note": "Replaced 2026-09-14: the previous fox-ps.slp (18_54_44 Fox + Fox (PS).slp, Slippi 3.9.0) was recorded on a netplay build whose Pokemon Stadium data is modified -- its first frame puts P1 at exactly (-40.0, 32.0), while every Slippi 2.0.1-era Pokemon Stadium replay in this corpus (checked directly with py-slippi) puts P1 at (-39.999996185302734, 31.99999237060547), bit-for-bit the gameplay-export pack's own stage.spawns[0]. The pack was correct; the fixture was recorded on modified stage data. See docs/parity.md's fixture-selection rule.",
       "expected_summary": {
         "parser": "peppi 2.1.2",
-        "sha256": "25908e83f262dde488fa2e88ec424122851af1be89f6909617a8c484af2223e0",
-        "bytes": 2652413,
-        "version": [3, 9, 0],
+        "sha256": "3c6535c6082325da6b93885e9450f93069c79fc3cd175ca182200318475a5bb7",
+        "bytes": 3384755,
+        "version": [2, 0, 1],
         "stage": 3,
         "ports": ["P1", "P4"],
-        "physical_frames": 8725,
-        "surviving_frames": 8725,
+        "physical_frames": 14587,
+        "surviving_frames": 14587,
         "discarded_frames": 0,
-        "selected_frames": 8725,
+        "selected_frames": 14587,
         "first_frame": -123,
-        "last_frame": 8601,
-        "latest_finalized_frame": 8601,
+        "last_frame": 14463,
+        "latest_finalized_frame": null,
         "timeline": "last_recorded",
-        "end_method": "Game"
+        "end_method": "NoContest"
       }
     }
   ]
