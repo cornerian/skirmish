@@ -73,6 +73,24 @@ pub struct Projectile {
     /// One `staling::Entry` allocated at spawn, matching a fighter's own
     /// attack-instance allocation on first use of a distinct attack.
     pub staling_identity: crate::fighter::stale::Entry,
+    /// `item->xDD4_itemVar.ray.scale`'s own growth toward the article's own
+    /// `max_scale` cap (`Item_UpdateRayAnimation`,
+    /// `characters::fox::neutral::Laser::scale`'s own doc has the full
+    /// citation and hitbox-offset-vs-radius distinction). `None` when the
+    /// spawning move's own resource omits `laser.scale`: hitbox offsets are
+    /// then used unscaled, this port's pre-existing behavior.
+    pub scale: Option<RayScale>,
+}
+
+/// `item->xDD4_itemVar.ray.scale`'s own current value, growth rate and cap.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct RayScale {
+    pub current: f32,
+    /// `|ray.speed| / 11.25`, precomputed once at spawn since `ray.speed`
+    /// itself never changes after (this projectile system never
+    /// re-accelerates a shot).
+    pub per_frame: f32,
+    pub cap: f32,
 }
 
 impl Projectile {
@@ -103,6 +121,7 @@ pub(crate) fn spawn(
     lifetime: f32,
     hitboxes: Vec<Hitbox>,
     move_id: u16,
+    scale_cap: Option<f32>,
     attack_instances: &mut crate::fighter::stale::InstanceCounter,
 ) -> Projectile {
     let [vx, _] = velocity(angle, speed);
@@ -118,6 +137,11 @@ pub(crate) fn spawn(
         lifetime,
         hitboxes,
         staling_identity,
+        scale: scale_cap.map(|cap| RayScale {
+            current: 0.0,
+            per_frame: speed.abs() / 11.25,
+            cap,
+        }),
     }
 }
 
@@ -189,6 +213,29 @@ fn step(
     state.projectiles[index].position[0] += vx;
     state.projectiles[index].position[1] += vy;
     state.projectiles[index].facing = if vx >= 0.0 { 1.0 } else { -1.0 };
+
+    // `Item_UpdateRayAnimation`'s own scale growth (`Laser::scale`'s own
+    // doc has the full citation): the Anim callback this models runs
+    // before Coll, so this frame's own hitbox test below already sees the
+    // incremented value, including a freshly spawned shot's own first
+    // increment the same frame it spawns (matching this function's own
+    // same-frame Anim/Phys/Coll convention). `it_8027129C`'s own hitbox
+    // state machine (`itcoll.c:1108-1119`) carries the *previous* frame's
+    // world offset into the swept test's start (`hit->x58 = hit->x4C`)
+    // before recomputing `x4C` fresh -- so the swept segment's two ends use
+    // two different scale factors during the shot's own growth window, not
+    // one shared value; `previous_scale_factor`/`scale_factor` reproduce
+    // that pairing (both fall back to `1.0`, an unscaled offset, when this
+    // shot's own `scale` is `None`).
+    let previous_scale_factor = state.projectiles[index]
+        .scale
+        .map_or(1.0, |scale| scale.current);
+    if let Some(scale) = &mut state.projectiles[index].scale {
+        scale.current = (scale.current + scale.per_frame).min(scale.cap);
+    }
+    let scale_factor = state.projectiles[index]
+        .scale
+        .map_or(1.0, |scale| scale.current);
 
     // Terrain despawn: a real swept ray-vs-stage-line cast (`it_8026E9A4` ->
     // `mpCheckAllRemap` -> `mpCheckMultiple`, checking floor|ceiling|
@@ -427,15 +474,19 @@ fn step(
         let position = state.projectiles[index].position;
         let mut connected = false;
         'hitboxes: for hit in state.projectiles[index].hitboxes.clone() {
+            // Growth scales the hitbox's own offset from the tracked
+            // position, not its radius (`Laser::scale`'s own doc:
+            // `lb_8000B1CC` only ever writes a position, never
+            // `HitCapsule.scale`, the separate radius field).
             let offset = [
-                position[0] + hit.center[0] * facing,
-                position[1] + hit.center[1],
-                position[2] + hit.center[2],
+                position[0] + hit.center[0] * facing * scale_factor,
+                position[1] + hit.center[1] * scale_factor,
+                position[2] + hit.center[2] * scale_factor,
             ];
             let previous_offset = [
-                previous_position[0] + hit.center[0] * facing,
-                previous_position[1] + hit.center[1],
-                previous_position[2] + hit.center[2],
+                previous_position[0] + hit.center[0] * facing * previous_scale_factor,
+                previous_position[1] + hit.center[1] * previous_scale_factor,
+                previous_position[2] + hit.center[2] * previous_scale_factor,
             ];
             let swept = Capsule {
                 start: previous_offset,

@@ -218,6 +218,123 @@ fn the_laser_travels_before_hitting_and_despawns_on_contact() {
     );
 }
 
+/// `drain_pending_shot`'s own doc has the full citation: the laser's real
+/// spawn position is the `RThumbNb` hold joint's own world position, not
+/// the ECB vertical midpoint this move fell back to before `specials.
+/// neutral.laser.muzzle_bone` was exported. This pins the wiring (a
+/// present `muzzle_bone` routes through the bone-based branch instead of
+/// the ECB-midpoint fallback) against this fixture's own existing bone 1;
+/// exact real-recording numbers (Fox's own bone `67`, offset `(0,
+/// 1.2325000762939453, 4.263599872589111)`) are verified separately, by
+/// re-measuring `fox-fd-2.slp`/`fox-fd-3.slp` against the real gameplay
+/// export (`docs/fox-neutral-special.md`), not by a unit test against a
+/// two-bone synthetic skeleton that cannot reproduce Fox's own animated
+/// pose.
+fn spawn_position_with_muzzle_bone(bone_translation_y: Option<f32>) -> [f32; 3] {
+    let mut resource = data();
+    resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
+    if let Some(y) = bone_translation_y {
+        resource.fighters[0].bones[1].translation = [0.0, y, 0.0];
+        if let Some(skirmish::characters::Specials::Fox {
+            neutral: Some(neutral),
+            ..
+        }) = &mut resource.fighters[0].specials
+        {
+            neutral.laser.muzzle_bone = Some(1);
+        } else {
+            panic!("fixture's own Fox neutral special must be present");
+        }
+    }
+    let mut game = Match::new(resource, 0).unwrap();
+    game.step(input(0, press_b())).unwrap();
+    let spawn_state = game.step(IDLE).unwrap().clone();
+    assert!(spawned_this_frame(&spawn_state, 0));
+    spawn_state.projectiles[0].position
+}
+
+#[test]
+fn muzzle_bone_spawn_position_differs_from_the_ecb_midpoint_fallback() {
+    let fallback = spawn_position_with_muzzle_bone(None);
+    let bone_based = spawn_position_with_muzzle_bone(Some(20.0));
+    assert!(fallback[0].is_finite() && fallback[1].is_finite());
+    assert!(bone_based[0].is_finite() && bone_based[1].is_finite());
+    // A present `muzzle_bone` must route through the bone-based branch, not
+    // the ECB-midpoint fallback: load-bearing evidence that
+    // `drain_pending_shot` actually reads `laser.muzzle_bone`/the fighter's
+    // own pose, not a coincidence of the fixture's own fixed ECB. (This
+    // fixture's own generic pose fallback does not vary a bone's *own*
+    // world position with its `bones[_].translation` the way a real
+    // animated skeleton would -- exact real numbers, Fox's own bone `67`
+    // against a real animated pose, are verified separately by
+    // re-measuring `fox-fd-2.slp`/`fox-fd-3.slp`, not by this unit test.)
+    assert_ne!(
+        fallback[1], bone_based[1],
+        "a present muzzle_bone must be used for the spawn position, not the ECB \
+         midpoint fallback"
+    );
+}
+
+/// `Laser::scale`'s own doc has the full citation: a laser's own hitbox
+/// offsets grow from `0.0` toward the pack's `scale` cap over its first
+/// few frames (`Item_UpdateRayAnimation`), not the full offset immediately.
+#[test]
+fn ray_scale_grows_from_zero_and_caps_at_the_pack_value() {
+    let mut resource = data();
+    // Far enough apart that the shot (speed 7/frame) outlives its own
+    // ~5-frame growth window before it could ever reach fighter 1, but
+    // still inside this fixture's own +/-100 floor/blast bounds.
+    resource.stage.spawns = [[0.0, 0.0], [60.0, 0.0]];
+    let cap = 3.0;
+    if let Some(skirmish::characters::Specials::Fox {
+        neutral: Some(neutral),
+        ..
+    }) = &mut resource.fighters[0].specials
+    {
+        neutral.laser.scale = Some(cap);
+    } else {
+        panic!("fixture's own Fox neutral special must be present");
+    }
+    let mut game = Match::new(resource, 0).unwrap();
+    game.step(input(0, press_b())).unwrap();
+    let spawn_state = game.step(IDLE).unwrap().clone();
+    assert!(spawned_this_frame(&spawn_state, 0));
+    let first = spawn_state.projectiles[0]
+        .scale
+        .expect("scale growth must be modeled when the pack supplies laser.scale");
+    assert!(
+        first.current > 0.0 && first.current < cap,
+        "the spawn frame's own first Anim increment must be strictly between 0 and \
+         the cap: got {}",
+        first.current
+    );
+    let mut last = first.current;
+    let mut reached_cap = false;
+    for _ in 0..20 {
+        let state = game.step(IDLE).unwrap();
+        let Some(projectile) = state.projectiles.first() else {
+            break;
+        };
+        let current = projectile
+            .scale
+            .expect("scale stays modeled for this shot")
+            .current;
+        assert!(
+            current >= last,
+            "scale must grow monotonically: {current} after {last}"
+        );
+        assert!(current <= cap, "scale must never exceed the pack's own cap");
+        last = current;
+        if current == cap {
+            reached_cap = true;
+            break;
+        }
+    }
+    assert!(
+        reached_cap,
+        "scale must reach the cap within its own growth window"
+    );
+}
+
 #[test]
 fn staling_reduces_repeated_laser_damage() {
     let mut resource = data();

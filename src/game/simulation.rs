@@ -789,11 +789,13 @@ pub(crate) fn advance(
     // neutral`) spawns now, then every active projectile (a freshly
     // spawned one included, matching the source's own same-frame item
     // Anim/Phys/Coll run) advances once.
+    #[allow(clippy::needless_range_loop)]
     for player in 0..2 {
         if let Some(projectile) = crate::characters::fox::neutral::drain_pending_shot(
             &mut state.fighters[player],
             &data.fighters[player],
             player,
+            &poses[player],
             &mut state.attack_instances,
         ) {
             let projectile_kind = projectile.kind;

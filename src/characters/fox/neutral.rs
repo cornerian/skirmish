@@ -23,6 +23,7 @@
 
 use crate::{
     characters::common::{SpecialMove, helpers},
+    collision::bones::Pose,
     fighter::special::neutral_input,
     game::{
         Action, BUTTON_B, Controller, Fighter,
@@ -47,7 +48,15 @@ pub struct NeutralSpecial {
     pub loop_phase: Phase,
     pub end: Phase,
     pub attributes: Attributes,
-    pub laser: Laser,
+    /// Boxed for the same reason `script` is (this struct's own doc): two
+    /// more `Laser` fields (`scale`/`muzzle_bone`) grew `MatchData`'s own
+    /// stack footprint just enough to overflow `cargo test`'s default
+    /// stack in `game_damage_floor::malformed_floor_profiles_are_rejected_
+    /// transactionally` (unrelated to this move, hit purely by
+    /// deserializing a full `MatchData` on the stack); boxing keeps this
+    /// growing, already-sparse-shaped field off that hot path instead of
+    /// shrinking the two new fields, which are already minimal.
+    pub laser: Box<Laser>,
     /// `specials.neutral.script` (exporter): the Start/Loop/End subaction
     /// scripts' own per-frame `SetCmdVar` trace, decoded straight from
     /// `ftaction.c`'s opcode 19 stream. Exported for Falco too as of gameplay
@@ -111,12 +120,45 @@ pub struct Laser {
     /// independently cross-checked against a real Falco recording's own
     /// item-frame `expiration_timer` the way Fox's `35.0` was -- see
     /// `docs/falco.md`'s own real-recording section for what this batch
-    /// could and could not confirm). `+4` (`max_scale`, exporter-confirmed
-    /// `3.0` for Fox) is a visual beam-length clamp consumed only by
-    /// `Item_UpdateRayAnimation`, not gameplay, and is deliberately not
-    /// modeled here (GFX-only, matching this project's existing
-    /// precedent for such fields).
+    /// could and could not confirm).
     pub lifetime: f32,
+    /// `FoxLaserAttr.max_scale` (`+4`, exporter-confirmed `3.0` for both
+    /// Fox and Falco): **not** GFX-only, unlike this field's own previous
+    /// doc comment here claimed. `Item_UpdateRayAnimation` (`it/kinds/
+    /// inlines.h:139-175`) grows `item->xDD4_itemVar.ray.scale` from `0.0`
+    /// by `|ray.speed| / 11.25` every Anim callback (one per game frame),
+    /// capped at this value, and applies it as the item JObj's own Z
+    /// scale. `it_8027129C` (`itcoll.c:1108-1119`) re-resolves every
+    /// hitbox's own world position every frame via `lb_8000B1CC(hit->jobj,
+    /// &hit->b_offset, &hit->x4C)`, which transforms the *local* offset
+    /// (`hit->b_offset`, this struct's own `hitboxes[_].center`) through
+    /// that same scaled JObj matrix -- so every hitbox's own reach from the
+    /// beam's tracked position grows with the beam over its own first few
+    /// frames, reaching this struct's own exported `hitboxes[_].center`
+    /// values (assumed calibrated at the mature, capped scale) only once
+    /// `ray.scale` reaches this field. `lb_8000B1CC` only ever writes a
+    /// `Vec3` position (`x4C`/`x58`, the swept-test start/end this port's
+    /// own `game::projectile::step` already models); `HitCapsule.scale`
+    /// (`lb/types.h:+0x1C`, the hitbox's own *radius*) is a wholly separate
+    /// field never touched by it, so growth does not affect hitbox radii,
+    /// only their offsets -- `game::projectile` scales
+    /// `hitboxes[_].center` by the current growth fraction and leaves
+    /// `hitboxes[_].radius` untouched. `None` when the pack does not
+    /// supply `specials.neutral.laser.scale` yet: every hitbox is then used
+    /// at its full, unscaled offset from the first frame, this port's
+    /// pre-existing (pre-growth-model) behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
+    /// `ftfoxspecialn.c:32-51`'s own bone index,
+    /// `ftParts_GetBoneIndex(fp, FtPart_RThumbNb)` (the hand's own hold
+    /// joint) resolved once through the fighter's own parts table -- see
+    /// `drain_pending_shot`'s own doc for how this is used and why it is
+    /// the laser's *real* spawn anchor, not the ECB midpoint. `None` when
+    /// the pack does not supply `specials.neutral.laser.muzzle_bone` yet:
+    /// `drain_pending_shot` then falls back to the ECB-midpoint
+    /// approximation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub muzzle_bone: Option<u32>,
     /// The laser's own fixed hitboxes: exporter-confirmed **four**
     /// capsules (`it_803F67D0` state 0's own command stream, staggered
     /// along the item's local `-X` axis to cover the growing beam), all
@@ -572,18 +614,54 @@ impl SpecialMove for Move {
 /// Drains `fighter.neutral_special.fire`, spawning the laser into
 /// `state.projectiles`. Called from `simulation::advance`'s per-player
 /// loop after ordinary update-actions/animation, matching "item logic
-/// runs after fighters" (`docs/fox-neutral-special.md`).
+/// runs after fighters" (`docs/fox-neutral-special.md`). `pose` is this
+/// frame's own already-computed fighter pose (`simulation::pose`), needed
+/// only for the bone-based spawn position below; reused rather than
+/// recomputed.
 ///
-/// Spawn position is `owner.cur_pos + (0, 0.5 * (ecb.top.y +
-/// ecb.bottom.y), 0)` (`Item_InitRaySpawnPosition` -> `it_8026BB68` ->
-/// `ftLib_80086990`, exporter-confirmed): the fighter's own live ECB
-/// vertical midpoint, no bone lookup at all (the `RThumbNb` hold joint
-/// this batch had originally assumed only seeds the ray-cast anchor, never
-/// the drawn/hit position).
+/// Spawn position: `it_8029C504` (`itfoxlaser.c:41-75`) fills a
+/// `SpawnItem`'s `pos` with the fighter's own live ECB vertical midpoint
+/// (`Item_InitRaySpawnPosition` -> `it_8026BB68` -> `ftLib_80086990`) but
+/// its `prev_pos` with the `RThumbNb` hold joint's own world position
+/// (`ftfoxspecialn.c:32-51`: `lb_8000B1CC` on
+/// `fp->parts[ftParts_GetBoneIndex(fp, FtPart_RThumbNb)].joint` with local
+/// offset `(0, 1.2325000762939453, 4.263599872589111)`, then `pos.z = 0`)
+/// -- and `Item_80267130` (`it/item.c:202`) sets `item->pos =
+/// spawnItem->prev_pos`, **not** `spawnItem->pos`. The hold joint is
+/// therefore the laser's real, drawn/hit spawn position; the ECB midpoint
+/// only ever seeds `foxlaser.pos`, the terrain-sweep "previous position"
+/// anchor a fresh spawn needs (this port does not track that anchor
+/// separately from `position` itself, so it is otherwise unused here) --
+/// the exact inversion of what an earlier revision of this doc comment
+/// claimed. Confirmed directly against `fox-fd-3.slp` (Slippi 3.9.0, which
+/// records item frames, unlike the 2.0.1 real-replay parity fixtures):
+/// P2's own laser (spawn id 1) is first recorded at frame -14, position
+/// `(-13.0461, 18.1391)`, velocity `(7.0, 0.0)`, while P2 itself sits at
+/// `(-28.224, 8.3501)` that same frame (`SpecialAirNLoop`, age `5.0`,
+/// facing `+1`) -- an offset of `(+15.1779, +9.789)` from `cur_pos`. Since
+/// a freshly spawned projectile already takes its own first movement step
+/// the same frame it spawns (`game::projectile::advance`'s own doc:
+/// "matching the source's own same-frame item Anim/Phys/Coll run"), this
+/// recorded position already includes one step of the shot's own `(7.0,
+/// 0.0)` velocity; the true spawn-time offset is `(+15.1779 - 7.0,
+/// +9.789)` = `(+8.1779, +9.789)`.
+///
+/// `muzzle_bone`'s own local offset `(0, 1.2325000762939453,
+/// 4.263599872589111)`, transformed by bone `67`'s (Fox's own
+/// `specials.neutral.laser.muzzle_bone`) world matrix at this exact
+/// animation frame and pose, is this port's own reproduction of that
+/// `(+8.1779, +9.789)` figure -- pinned directly by
+/// `tests/game_fox_neutral_special.rs`'s own muzzle-bone spawn test
+/// against a hand-copied slice of the real gameplay export (see that
+/// test's own citation for the exact export path and why a copy, not the
+/// live export, is pinned). `None` when the pack does not supply
+/// `specials.neutral.laser.muzzle_bone` yet: falls back to the ECB
+/// midpoint alone, this port's pre-existing approximation.
 pub(crate) fn drain_pending_shot(
     fighter: &mut Fighter,
     data: &FighterData,
     player: usize,
+    pose: &Pose,
     attack_instances: &mut crate::fighter::stale::InstanceCounter,
 ) -> Option<crate::game::projectile::Projectile> {
     if !fighter.neutral_special.fire {
@@ -591,12 +669,29 @@ pub(crate) fn drain_pending_shot(
     }
     fighter.neutral_special.fire = false;
     let parameters = data.specials.as_ref()?.fox_neutral()?;
-    let ecb = fighter.ecb.current;
-    let position = [
-        fighter.position[0],
-        fighter.position[1] + 0.5 * (ecb.top[1] + ecb.bottom[1]),
-        fighter.depth,
-    ];
+    let position = match parameters
+        .laser
+        .muzzle_bone
+        .and_then(|bone| pose.world_matrix(bone as usize).ok())
+    {
+        Some(matrix) => {
+            // Exact f32 bit patterns for `ftfoxspecialn.c:32-51`'s own
+            // local offset; kept at full decimal precision to stay
+            // traceable to the decomp constant.
+            #[allow(clippy::excessive_precision)]
+            let local = [0.0, 1.232_500_076_293_945_3, 4.263_599_872_589_111];
+            let [x, y, _z] = crate::collision::bones::transform_point(matrix, local);
+            [x, y, 0.0]
+        }
+        None => {
+            let ecb = fighter.ecb.current;
+            [
+                fighter.position[0],
+                fighter.position[1] + 0.5 * (ecb.top[1] + ecb.bottom[1]),
+                fighter.depth,
+            ]
+        }
+    };
     let angle = if fighter.facing == 1.0 {
         parameters.attributes.angle
     } else {
@@ -621,6 +716,7 @@ pub(crate) fn drain_pending_shot(
         parameters.laser.lifetime,
         parameters.laser.hitboxes.clone(),
         parameters.laser.move_id,
+        parameters.laser.scale,
         attack_instances,
     ))
 }
