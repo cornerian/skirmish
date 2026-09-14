@@ -1,5 +1,53 @@
 # Local validation provenance
 
+The 2026-09-14 laser muzzle-bone axis-convention fix (the real-replay
+parity loop) corrects a coordinate mismatch in the muzzle-bone spawn
+position landed by the prior laser fix (`585a11c`): `ftfoxspecialn.c:32-
+51`'s own local offset `(0, 1.2325000762939453, 4.263599872589111)` is
+written in the decomp's own bone-local axis order, but `simulation::pose`
+composes bone-local points in Skirmish's own convention, "local +X faces
+forward, +Y up, +Z depth" (`simulation.rs`'s own comment) -- the opposite
+of decomp's own Z-forward convention for this offset. `drain_pending_shot`
+was passing the raw decomp triple unchanged, putting the 4.2636 forward
+magnitude in the depth slot instead of the forward slot. Fixed by swapping
+the offset's first and third components before the transform.
+
+Found and measured, not assumed: a probe stepping `fox-fd-3.slp` (Slippi
+3.9.0, carries item frames) through P2's own airborne Blaster spawn (frame
+-14, `SpecialAirNLoop` age 5, P2 at `(-28.224, 8.3501)`) against a local
+copy of the real gameplay export (`specials.neutral.laser.muzzle_bone`
+present) showed the *un-swapped* code landing the projectile at
+`(-21.224148, 18.295034)` post-spawn-frame -- close to P2's own position
+in `x` (i.e. almost no forward offset at all, since the un-swapped code
+put the large 4.2636 magnitude into depth, not forward) -- against the
+recording's own `(-13.0461, 18.1391)`. After the swap: `(-17.181887,
+18.347374)`. Real-recording target (accounting for one already-applied
+frame of the shot's own `7.0` velocity, per `game::projectile::advance`'s
+own same-frame-spawn convention): `x` needs `(-13.0461 - 7.0) =
+-20.0461` before this frame's move, i.e. an offset of `+8.1779` from
+`cur_pos.x`; the swapped code's own pre-move `x` is `-24.224148`, an
+offset of `+3.999852` -- roughly half the target, a real improvement
+(halving the gap from the un-swapped code's own near-zero offset) but
+**not a bit-exact fix**. The axis swap is evidence-based (a direct citation
+of `simulation.rs`'s own stated convention, not a guess) and strictly
+improves accuracy in this decisive test, but the remaining `~4.18`-unit
+gap in `x` (and a smaller one in `y`) means either the muzzle bone's own
+local *rotation* (not just a fixed axis relabeling) needs composing --
+`RThumbNb` is a hand joint, whose own orientation changes through the
+animation, unlike a simple axis swap can capture -- or the sampled pose
+data `simulation::pose` resolves for `SpecialAirNLoop` does not carry an
+accurate arm-extended reach for this bone at this frame. Re-measured
+against a local copy of the real export: `fox-fd-2.slp` still cannot show
+this fix's own effect (still blocked at frame -11 by the unrelated Turn/
+Dash regression, `docs/parity.md`'s own measurement table); `fox-fd-4.slp`
+still diverges at the same frame -5, but the value moved measurably closer
+to the recording's own `6.0` -- `percent` `0x40b75c29` (`~5.742`) versus
+the previous `0x40400000` (`3.0`), against 0x40c00000 (`6.0`) expected.
+Reported per this loop's own stop condition (a genuine remaining gap, not
+guessed at further given the geometry/pose-sampling uncertainty) rather
+than iterated on blind; whoever picks this up next should start from the
+concrete numbers above, not re-derive them.
+
 The 2026-09-13 projectile-owner-hitlag fix (the real-replay parity loop on
 `fox-fd-2.slp`, `docs/parity.md`) stops a projectile's own owner from
 taking hitlag when its shot connects. Diagnosed directly against

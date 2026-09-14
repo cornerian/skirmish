@@ -675,11 +675,16 @@ pub(crate) fn drain_pending_shot(
         .and_then(|bone| pose.world_matrix(bone as usize).ok())
     {
         Some(matrix) => {
-            // Exact f32 bit patterns for `ftfoxspecialn.c:32-51`'s own
-            // local offset; kept at full decimal precision to stay
+            // `ftfoxspecialn.c:32-51`'s own local offset is `(0,
+            // 1.2325000762939453, 4.263599872589111)` in the decomp's own
+            // bone-local axis convention (Z forward); `simulation::pose`'s
+            // own convention is X forward, Z depth (`simulation.rs`'s own
+            // "Native match coordinates" comment), so the decomp's Z
+            // (forward) and X (depth, here always 0) swap here. Exact f32
+            // bit patterns, kept at full decimal precision to stay
             // traceable to the decomp constant.
             #[allow(clippy::excessive_precision)]
-            let local = [0.0, 1.232_500_076_293_945_3, 4.263_599_872_589_111];
+            let local = [4.263_599_872_589_111, 1.232_500_076_293_945_3, 0.0];
             let [x, y, _z] = crate::collision::bones::transform_point(matrix, local);
             [x, y, 0.0]
         }
