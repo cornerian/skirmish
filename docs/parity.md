@@ -402,6 +402,53 @@ evidence of anything. Since 2026-09-12 the data discovery under
 `MatchData`, so this changes CI download/load time only, never any of the
 measurements below.
 
+**Published pack v15 (2026-09-16):** sha256 c2cc0546, 36 MB, supersedes v13
+(v14, sha256 ddbb21ec, was published to `cornerian/skirmish-datapacks` but
+never pinned in this repo, so this entry's own "supersedes" chain skips
+straight from v13 to v15 and covers both packs' content). v14 adds
+`blend_frames`/`dynamics_variant` to every attack profile (jab included,
+even where both are `0`) and populates a `blend` sidecar on
+`movement_poses`/`damage_poses` per sub-motion (Fox `wait`/`walk_*` blend
+6 frames, `dash` blends 0, matching the real runtime's own pose-blend
+window). v15 adds a top-level `model_scaling: f32` per fighter (`fighters/
+<name>.json` and every pairing's `match-data.json`; Fox `0.96` = `0x3F75
+C28F`, Falco `1.1` = `0x3F8CCCCD`, bit-exact, `melee/ft/ftcommon.c:1407`'s
+`ftCommon_GetModelScale`) -- Skirmish evaluated every Fox bone 4% too large
+before the loader read this field, since the pack carried no model scale at
+all. Both packs' stage data is unchanged from v13's (byte-identical,
+confirmed at export time).
+
+Landing these fields on the Skirmish side (this chain: root-facing rotation
+by matrix instead of mirroring, `HSD_JObjMakeMatrix`-pinned C oracle for
+`bones::Pose`, per-subaction pose blending, pre-physics laser muzzle
+spawn position, and `model_scaling` applied to the root bone's scale)
+corrects two compounding bugs at once: hurtboxes were oriented as if the
+fighter were mirrored into depth rather than rotated by facing, and every
+bone (hurtboxes included) was evaluated 4% too large. Re-measured every
+`recordings.json` entry plus `falco-fox-fd` against pack v15 on this chain:
+`fox-fd` 128, `fox-fd-3` 91, `fox-ys` 10, `fox-fod` 5, `fox-dl` 74 (left
+alone), `fox-ps` 117, `falco-fox-fd` 98 are unchanged from their pinned
+baselines. Three recordings move:
+
+`fox-bf` and `fox-fd-4` both raise sharply (174->148 checked_frames written
+as **148**, and 118->109 written as **109** -- both correctly *lower*
+frame counts than their old baselines, because the old baselines were
+measured with the mirrored-hurtbox/oversized-bone bugs still present and
+are no longer reachable outcomes once those bugs are fixed; see each
+baseline file's own 2026-09-16 note). `fox-bf`'s new first divergence
+(frame 25, P1's `percent` 0.0 -> 3.0) is a real Blaster hit landing one
+frame before the recording shows it, by a sub-0.4-unit hurtbox-contact
+margin; `fox-fd-4`'s (frame -14, P2's own `last_attack_landed`) is the same
+class of one-frame-early laser contact. Both are genuine, small residuals
+in newly-correct geometry, not the old bugs recurring -- open, not chased
+further here; see `docs/validation.md`'s 2026-09-16 entries for the
+model-scale/muzzle investigation this residual traces to.
+
+`fox-fd-2` improves, 118 -> **127** checked_frames, frame -5 -> **+4** (a
+`percent` mismatch), from the same runtime pose-blending this pack's own
+v14 content unlocked (`docs/parity.md`'s v14 gap notwithstanding, the
+blend fields were already live in this chain before v14 published).
+
 **Published pack v13 (2026-09-14):** sha256 71f1eb79, 36 MB, supersedes v12
 (published to `cornerian/skirmish-datapacks` but never pinned in this repo --
 its own two-line-restriction fix, `skirmish-assets` commit `820e440`, is
