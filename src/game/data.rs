@@ -291,6 +291,21 @@ pub struct FighterData {
     pub teeter: Option<super::edge::Teeter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taunt: Option<super::taunt::Taunt>,
+    /// `ftCo_DatAttrs.model_scaling` (`melee/ft/ftcommon.c:1407`,
+    /// `ftCommon_GetModelScale`: `fp->x34_scale.y * co_attrs.model_scaling`).
+    /// Fox is `0.96`, Falco `1.1`; most fighters are `1.0`. Applied exactly
+    /// where `Fighter_UpdateModelScale` (`melee/ft/fighter.c:213-228`) puts
+    /// it: the root bone's own `HSD_JObjSetScale`, in `simulation::pose`.
+    /// That decomp function's own `x34_scale.z` branch (`scale.x =
+    /// x34_scale.z != 1.0 ? x34_scale.z : modelScale`) is Flat Zone's own
+    /// per-fighter squash/stretch, a stage hazard this profile does not
+    /// model; this field only ever supplies `modelScale`
+    /// (`x34_scale.y` times `model_scaling`, with `x34_scale.y` itself
+    /// always `1.0` outside Flat Zone) that both `scale.x` (via the `else`
+    /// arm) and `scale.y`/`scale.z` receive. `None` keeps `1.0`, matching
+    /// every pack through v14.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_scaling: Option<f32>,
 }
 
 impl FighterData {

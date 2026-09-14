@@ -2116,6 +2116,16 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         root.local.rotation[0] = 0.0;
         root.local.rotation[1] = core::f32::consts::FRAC_PI_2 * fighter.facing;
         root.local.rotation[2] = 0.0;
+        // `Fighter_UpdateModelScale` (`melee/ft/fighter.c:213-228`):
+        // `HSD_JObjSetScale(jobj, &scale)` on this same root jobj, with
+        // `scale = (modelScale, modelScale, modelScale)` outside Flat Zone
+        // (`x34_scale.z == 1.0`, the branch this profile always takes --
+        // see `FighterData::model_scaling`'s own doc comment). `modelScale
+        // = x34_scale.y * co_attrs.model_scaling`, and this profile always
+        // has `x34_scale.y == 1.0` (no Flat Zone), so `model_scaling` alone
+        // supplies it.
+        let model_scale = data.model_scaling.unwrap_or(1.0);
+        root.local.scale = [model_scale, model_scale, model_scale];
     }
     if fighter.action == Action::JumpAerial
         && data

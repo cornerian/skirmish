@@ -500,6 +500,276 @@ mod real_pose {
         )
     }
 
+    /// Generalizes `load_frame_6_bones` to either `loop_phase` sub-phase
+    /// (`"air"`/`"ground"`) and an arbitrary sample index, for the
+    /// model-scale muzzle investigation below. Bone 0's own local rotation
+    /// is forced to facing `+1` (`FRAC_PI_2`), matching `game::simulation::
+    /// pose` and `load_frame_6_bones`'s own convention.
+    fn load_phase_frame_bones(
+        phase: &str,
+        frame_index: usize,
+    ) -> Option<Vec<skirmish::collision::bones::Bone>> {
+        let root = env::var("SKIRMISH_GAMEPLAY_DATA").ok()?;
+        let path = PathBuf::from(&root).join("fox-fd").join("match-data.json");
+        if !path.exists() {
+            println!(
+                "skip: {} does not exist; SKIRMISH_GAMEPLAY_DATA={root} is set, but the fox-fd \
+                 export has not landed there yet.",
+                path.display()
+            );
+            return None;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+        let data: MatchData =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+        let specials = data.fighters[0]
+            .specials
+            .as_ref()
+            .and_then(|specials| match specials {
+                skirmish::characters::Specials::Fox { neutral, .. }
+                | skirmish::characters::Specials::Falco { neutral, .. } => neutral.as_ref(),
+            })
+            .expect("fox-fd's P1 fighter carries Fox's own neutral-special resources");
+        let attack = match phase {
+            "air" => &specials.loop_phase.air,
+            "ground" => &specials.loop_phase.ground,
+            other => panic!("unknown phase {other}"),
+        };
+        let frame = attack
+            .frames
+            .get(frame_index)
+            .unwrap_or_else(|| panic!("{phase} loop_phase has no frame {frame_index}"));
+        Some(
+            frame
+                .bones
+                .iter()
+                .map(|bone| skirmish::collision::bones::Bone {
+                    parent: bone.parent,
+                    classical_scale: bone.classical_scale,
+                    local: skirmish::collision::bones::LocalTransform {
+                        translation: bone.translation,
+                        rotation: bone.rotation,
+                        rotation_quaternion: None,
+                        scale: bone.scale,
+                    },
+                })
+                .collect(),
+        )
+    }
+
+    /// Settles the model-scale muzzle numeric question (`docs/
+    /// validation.md`'s 2026-09-16 entry) against the real pinned
+    /// `HSD_JObjMakeMatrix` oracle, not a hand-rolled reimplementation,
+    /// over bone 0 scaled to Fox's real
+    /// `co_attrs.model_scaling` (`0.96`), rotated `(0, FRAC_PI_2, 0)` for
+    /// facing `+1` -- exactly what `simulation::pose` now does to the root
+    /// bone. Both `bones::Pose::evaluate` and the C oracle agree bit-for-
+    /// bit-within-trig-tolerance on joint 67's world matrix and the muzzle
+    /// point (offset `(0, 1.2325000762939453, 4.263599872589111)`, z forced
+    /// to `0`) for `loop_phase.air.frames[5]` and `loop_phase.ground.
+    /// frames[5]`; that agreement is pinned below.
+    ///
+    /// **Finding, reported honestly rather than fudged:** neither of the
+    /// two classical-scale configurations the task's own facts raised as
+    /// candidates -- bone 0 keeping the pack's real `classical_scale =
+    /// true`, or bone 0 forced non-classical -- changes this result by even
+    /// one ULP (both configurations print bit-identical matrices below).
+    /// That is expected, not a driver bug: every joint on the path to
+    /// joint 67 (bones 0, 1, 2, 3, 4, 21, 22, 53-57, 67) is itself
+    /// `classical_scale = true` in the real export, so `HSD_JObjMakeMatrix`
+    /// (`jobj.c:143-160`) already frees bone 0's own `scl` bookkeeping to
+    /// `NULL` (a classical joint with no parent always does, regardless of
+    /// its own scale value) and that `NULL` propagates unchanged down the
+    /// entire classical chain -- every joint's `HSD_MtxSRT` call receives
+    /// `vec4 == NULL` and skips the parent-scale compensation branch
+    /// entirely, both before and after bone 0's scale changes. The two
+    /// configurations are provably identical here: `HSD_MtxSRT`'s
+    /// compensation only ever corrects *non-uniform* parent scale (each
+    /// term is a ratio of two parent-scale axes); bone 0's scale is
+    /// uniform, so even on the runs where compensation *would* fire, every
+    /// ratio is `1.0` and it is a no-op. The resulting muzzle position
+    /// (`(9.220837, 9.547137)` air, `(9.281918, 7.6406856)` ground, pinned
+    /// below) is the oracle-faithful answer this batch implements -- it
+    /// does **not** reproduce the Slippi-replay-derived targets
+    /// `(9.4055, 9.5890)`/`(9.4696, 7.6837)` (residual roughly `0.18-0.19`
+    /// on x, `0.04` air / `0.34` ground on y). `lb_8000B1CC`
+    /// (`melee/lb/lb_00B0.c:105-137`, read in full for this loop) is the
+    /// real function that computes this exact muzzle point, and for a
+    /// non-root joint with a nonzero local offset it is a single
+    /// `HSD_JObjSetupMatrix` + `MTXMultVec(arg0->mtx, pos0, pos1)` -- the
+    /// same one-matrix-times-one-vector operation this test performs, not
+    /// a translation/rotation split. A hybrid combining joint 67's
+    /// *unscaled* (root-scale-1.0) rotation columns with its *scaled*
+    /// translation column does reproduce both Slippi targets to `1e-4`
+    /// (checked numerically outside this test), but no permutation of
+    /// `HSD_JObjMakeMatrix`'s own classical-scale/compensation bookkeeping
+    /// -- the only scale-removal mechanism that function has -- produces
+    /// that hybrid for a uniformly-scaled root; reproducing it would need
+    /// a different mechanism entirely (an AObj-style translation override,
+    /// or a pipeline/timing difference upstream of this pose, such as the
+    /// pre-physics-position fix `docs/validation.md`'s laser-muzzle entry
+    /// already found for a different divergence). This batch does not
+    /// invent one to force a match -- it implements the scale exactly
+    /// where `Fighter_UpdateModelScale` puts it and reports the residual.
+    #[test]
+    fn model_scale_muzzle_matches_oracle_not_slippi() {
+        let offset = [0.0_f32, 1.232_500_1_f32, 4.263_6_f32];
+        // (phase, frame index, oracle-faithful target, Slippi-replay target)
+        let cases = [
+            (
+                "air",
+                5,
+                (9.220_837_f32, 9.547_137_f32),
+                (9.4055_f32, 9.5890_f32),
+            ),
+            (
+                "ground",
+                5,
+                (9.281_918_f32, 7.640_685_6_f32),
+                (9.4696_f32, 7.6837_f32),
+            ),
+        ];
+        for (phase, frame_index, oracle_target, slippi_target) in cases {
+            let Some(mut bones) = load_phase_frame_bones(phase, frame_index) else {
+                println!(
+                    "skip: SKIRMISH_GAMEPLAY_DATA is not set; the model-scale investigation \
+                     needs the published gameplay export."
+                );
+                return;
+            };
+            bones[0].local.rotation = [0.0, core::f32::consts::FRAC_PI_2, 0.0];
+            bones[0].local.scale = [0.96, 0.96, 0.96];
+
+            for force_non_classical in [false, true] {
+                let mut bones = bones.clone();
+                if force_non_classical {
+                    bones[0].classical_scale = false;
+                }
+                let rust = Pose::evaluate(&bones).unwrap();
+                let rust_matrix = *rust.world_matrix(67).unwrap();
+                let rust_muzzle = transform_point(&rust_matrix, offset);
+
+                let oracle = oracle_pose(&bones);
+                let oracle_matrix = oracle[67];
+                let oracle_muzzle = super::reference_transform(&oracle_matrix, offset, false);
+
+                for (a, b) in rust_matrix
+                    .into_iter()
+                    .flatten()
+                    .zip(oracle_matrix.into_iter().flatten())
+                {
+                    assert!(
+                        (a - b).abs() <= 4e-6 * b.abs().max(1.0) + 2e-3,
+                        "{phase} frame {frame_index} joint 67: {rust_matrix:?} != {oracle_matrix:?}"
+                    );
+                }
+                assert!(
+                    (rust_muzzle[0] - oracle_target.0).abs() <= 2e-3
+                        && (rust_muzzle[1] - oracle_target.1).abs() <= 2e-3,
+                    "{phase} frame {frame_index} (non_classical={force_non_classical}): rust \
+                     muzzle {rust_muzzle:?} strayed from the oracle-faithful pinned target \
+                     {oracle_target:?}"
+                );
+                println!(
+                    "{phase} frame {frame_index} (non_classical={force_non_classical}): rust \
+                     {rust_muzzle:?} oracle {oracle_muzzle:?} oracle-faithful-target \
+                     {oracle_target:?} slippi-target {slippi_target:?} residual ({:.4}, {:.4})",
+                    rust_muzzle[0] - slippi_target.0,
+                    rust_muzzle[1] - slippi_target.1,
+                );
+            }
+        }
+    }
+
+    /// End-to-end schema/wiring pin: loads `fighters[0].model_scaling` from
+    /// a hand-edited *scratch* copy of the real `fox-fd/match-data.json`
+    /// (`0.96` injected, matching Fox's real `co_attrs.model_scaling`;
+    /// never the durable `/mnt/archive` pack itself) and applies it to
+    /// bone 0's scale exactly the way `simulation::pose` now does
+    /// (`root.local.scale = [model_scaling; 3]`, only after the facing
+    /// rotation set, matching that function's own ordering), rather than
+    /// hardcoding `0.96` in the test the way
+    /// `model_scale_muzzle_matches_oracle_not_slippi` above does. Confirms
+    /// `MatchData`'s new `model_scaling` field round-trips through serde
+    /// from a pack file and lands on the same oracle-faithful muzzle this
+    /// batch already settled and documented above -- this is a wiring
+    /// check, not a second numeric investigation, so it reuses that test's
+    /// own pinned target and residual-vs-Slippi framing rather than
+    /// restating it.
+    #[test]
+    fn model_scale_field_from_a_scratch_pack_matches_the_pinned_oracle_target() {
+        let Ok(root) = env::var("SKIRMISH_MODEL_SCALE_FIXTURE") else {
+            println!(
+                "skip: SKIRMISH_MODEL_SCALE_FIXTURE is not set; this test needs a scratch copy \
+                 of fox-fd/match-data.json with fighters[0].model_scaling hand-injected (never \
+                 /mnt/archive)."
+            );
+            return;
+        };
+        let path = PathBuf::from(&root).join("fox-fd").join("match-data.json");
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+        let data: MatchData =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+        let model_scaling = data.fighters[0]
+            .model_scaling
+            .expect("the scratch fixture hand-injects fighters[0].model_scaling");
+        assert_eq!(
+            model_scaling, 0.96,
+            "this scratch fixture's own hand-injected value"
+        );
+
+        let offset = [0.0_f32, 1.232_500_1_f32, 4.263_6_f32];
+        let cases = [
+            ("air", 5, (9.220_837_f32, 9.547_137_f32)),
+            ("ground", 5, (9.281_918_f32, 7.640_685_6_f32)),
+        ];
+        for (phase, frame_index, oracle_target) in cases {
+            let specials = data.fighters[0]
+                .specials
+                .as_ref()
+                .and_then(|specials| match specials {
+                    skirmish::characters::Specials::Fox { neutral, .. }
+                    | skirmish::characters::Specials::Falco { neutral, .. } => neutral.as_ref(),
+                })
+                .expect("fox-fd's P1 fighter carries Fox's own neutral-special resources");
+            let attack = match phase {
+                "air" => &specials.loop_phase.air,
+                "ground" => &specials.loop_phase.ground,
+                other => panic!("unknown phase {other}"),
+            };
+            let frame = attack
+                .frames
+                .get(frame_index)
+                .unwrap_or_else(|| panic!("{phase} loop_phase has no frame {frame_index}"));
+            let mut bones: Vec<skirmish::collision::bones::Bone> = frame
+                .bones
+                .iter()
+                .map(|bone| skirmish::collision::bones::Bone {
+                    parent: bone.parent,
+                    classical_scale: bone.classical_scale,
+                    local: skirmish::collision::bones::LocalTransform {
+                        translation: bone.translation,
+                        rotation: bone.rotation,
+                        rotation_quaternion: None,
+                        scale: bone.scale,
+                    },
+                })
+                .collect();
+            bones[0].local.rotation = [0.0, core::f32::consts::FRAC_PI_2, 0.0];
+            bones[0].local.scale = [model_scaling; 3];
+
+            let rust = Pose::evaluate(&bones).unwrap();
+            let rust_matrix = *rust.world_matrix(67).unwrap();
+            let rust_muzzle = transform_point(&rust_matrix, offset);
+            assert!(
+                (rust_muzzle[0] - oracle_target.0).abs() <= 2e-3
+                    && (rust_muzzle[1] - oracle_target.1).abs() <= 2e-3,
+                "{phase} frame {frame_index}: scratch-pack-driven muzzle {rust_muzzle:?} strayed \
+                 from the pinned oracle-faithful target {oracle_target:?}"
+            );
+        }
+    }
+
     #[test]
     fn fox_special_air_n_loop_frame_6_matches_oracle_for_every_joint() {
         let Some(mut bones) = load_frame_6_bones() else {

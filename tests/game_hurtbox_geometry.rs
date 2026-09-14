@@ -18,9 +18,19 @@ fn data(center: [f32; 3]) -> MatchData {
     data.rules.time_limit_frames = 9_999;
     data.stage.spawns = [[0.0, 0.0]; 2];
     data.stage.blast = [-200.0, 200.0, -200.0, 200.0];
-    data.fighters[1].bones[0].scale = [4.0, 0.5, 1.0];
+    // Bone 1, not bone 0: `simulation::pose` now overwrites the root bone's
+    // own scale from `FighterData::model_scaling` (`Fighter_
+    // UpdateModelScale`'s own uniform `HSD_JObjSetScale`), so a non-uniform
+    // scale set directly on bone 0 no longer survives to the evaluated
+    // pose. Bone 1's own translation is zeroed so its world matrix is
+    // exactly bone 0's facing rotation composed with this anisotropic
+    // scale, matching this test's original geometry (`Rotation(facing) *
+    // diag(4.0, 0.5, 1.0)`, the same 3x3 block either way `HSD_MtxSRT`'s
+    // own scale-on-the-right convention combines them).
+    data.fighters[1].bones[1].translation = [0.0; 3];
+    data.fighters[1].bones[1].scale = [4.0, 0.5, 1.0];
     data.fighters[1].hurtboxes = vec![Hurtbox {
-        bone: 0,
+        bone: 1,
         start: [0.0; 3],
         end: [0.0; 3],
         radius: 1.0,

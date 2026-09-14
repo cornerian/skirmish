@@ -1,5 +1,76 @@
 # Local validation provenance
 
+The 2026-09-16 model-scale investigation settles, against the real pinned
+`HSD_JObjMakeMatrix` oracle (`tests/bones_differential.rs`'s `real_pose`
+module, extended for this loop), whether Fox's Blaster muzzle position
+requires `co_attrs.model_scaling` (`0.96` for Fox, `1.1` for Falco, `melee/
+ft/ftcommon.c:1407`'s `ftCommon_GetModelScale`, applied by
+`Fighter_UpdateModelScale`, `melee/ft/fighter.c:213-228`) and, if so, what
+the oracle-faithful muzzle position actually is. Skirmish evaluated every
+Fox bone 4% too large before this loop (the pack carried no model scale at
+all): the root bone's own scale defaulted to `1.0` instead of `0.96`.
+
+**Implementation.** `game::data::FighterData` gained `model_scaling:
+Option<f32>` (default `1.0`, exporter field `fighters[i].model_scaling`);
+`game::simulation::pose` applies it to the root bone's own `local.scale`
+immediately after that function's existing facing-rotation set, exactly
+where `Fighter_UpdateModelScale` calls `HSD_JObjSetScale` on the same jobj
+(`fp->x34_scale.z`'s own Flat Zone branch is noted in both doc comments
+but not modeled -- this profile always takes the `else` arm, i.e. uniform
+`(modelScale, modelScale, modelScale)`).
+
+**Oracle numbers.** Bone 0 scaled to `(0.96, 0.96, 0.96)`, rotated `(0,
+FRAC_PI_2, 0)` for facing `+1` (`simulation::pose`'s own convention),
+evaluated over Fox's real 73-joint `fox-fd` export
+(`specials.neutral.loop_phase.{air,ground}.frames[5]`): joint 67's world
+matrix and the Blaster muzzle (offset `(0, 1.2325000762939453,
+4.263599872589111)`, z forced to `0`) match bit-for-bit-within-trig-
+tolerance between `bones::Pose::evaluate` and the real `HSD_JObjMakeMatrix`
+oracle, under both of the classical-scale configurations the task's own
+facts raised as candidates: bone 0 keeping the pack's real
+`classical_scale = true`, and bone 0 forced non-classical. Those two
+configurations are numerically *identical* here (not just close) --
+verified, not assumed: every joint on the path to joint 67 (bones 0, 1, 2,
+3, 4, 21, 22, 53-57, 67) is itself `classical_scale = true` in the real
+export, so a classical bone 0 with no parent always frees its own `scl`
+bookkeeping to `NULL` regardless of its own scale value (`jobj.c:143-`
+`152`), and that `NULL` propagates unchanged down the entire classical
+chain -- every joint's `HSD_MtxSRT` call receives `vec4 == NULL` and skips
+the parent-scale compensation branch. Forcing bone 0 non-classical instead
+makes its `scl` a real, non-NULL `(0.96, 0.96, 0.96)`, but since that value
+is uniform, `HSD_MtxSRT`'s own compensation terms (each a ratio of two
+parent-scale axes) are all `1.0` -- a no-op either way.
+
+The resulting oracle-faithful muzzle, and the one this batch's own pinned
+test (`model_scale_muzzle_matches_oracle_not_slippi`) asserts:
+
+| case | oracle-faithful muzzle | Slippi-replay target | residual |
+| --- | --- | --- | --- |
+| air frame 5 | `(9.220837, 9.547137)` | `(9.4055, 9.5890)` | `(-0.1847, -0.0419)` |
+| ground frame 5 | `(9.281918, 7.6406856)` | `(9.4696, 7.6837)` | `(-0.1877, -0.0430)` |
+
+**This does not reproduce the Slippi-replay-derived targets, reported
+honestly rather than fudged.** A hybrid combining joint 67's *unscaled*
+(root-scale-`1.0`) rotation columns with its *scaled* (root-scale-`0.96`)
+translation column does reproduce both Slippi targets to `1e-4` (checked
+numerically outside the pinned test), but no permutation of
+`HSD_JObjMakeMatrix`'s own classical-scale/compensation bookkeeping -- the
+only scale-removal mechanism that function has -- produces that hybrid for
+a uniformly-scaled root, as the paragraph above shows by direct
+calculation, not assumption. `lb_8000B1CC` (`melee/lb/lb_00B0.c:105-137`,
+read in full for this loop -- the actual decomp function
+`ftFx_SpecialN_FtGetHoldJoint` calls to compute this exact muzzle point)
+is a single `HSD_JObjSetupMatrix` + `MTXMultVec(arg0->mtx, pos0, pos1)` for
+a non-root joint with a nonzero local offset, matching exactly what this
+loop's own oracle test performs -- not a translation/rotation split.
+Reproducing the hybrid would need a mechanism this loop did not find
+within `HSD_JObjMakeMatrix`/`HSD_MtxSRT`/`lb_8000B1CC` themselves (an
+AObj-style translation override, or a pipeline/timing difference upstream
+of this pose, in the spirit of the pre-physics-position fix the entry
+below this one already found for a different Blaster-muzzle divergence).
+This batch implements `model_scaling` exactly where the decomp puts it and
+reports the residual rather than inventing a correction to force a match.
+
 The 2026-09-14 pose-sample-index investigation (the real-replay parity
 loop, `fox-fd-4.slp`/`fox-bf.slp`, `docs/parity.md`) tests, and falsifies,
 the working hypothesis that `fox-fd-4.slp`'s frame `-14` and `fox-bf.slp`'s

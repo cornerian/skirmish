@@ -115,9 +115,20 @@ fn grabs_use_the_hurt_bone_matrix_for_directional_radius() {
     let directional = |center: [f32; 3]| {
         let mut resource = data();
         resource.stage.spawns = [[0.0, 0.0]; 2];
-        resource.fighters[1].bones[0].scale = [4.0, 0.5, 1.0];
+        // Bone 1, not bone 0: `simulation::pose` now overwrites the root
+        // bone's own scale from `FighterData::model_scaling`
+        // (`Fighter_UpdateModelScale`'s own uniform `HSD_JObjSetScale`), so
+        // a non-uniform scale set directly on bone 0 no longer survives to
+        // the evaluated pose. Bone 1's own translation is zeroed so its
+        // world matrix is exactly bone 0's facing rotation composed with
+        // this anisotropic scale, matching this test's original geometry
+        // (`Rotation(facing) * diag(4.0, 0.5, 1.0)`, the same 3x3 block
+        // either way `HSD_MtxSRT`'s own scale-on-the-right convention
+        // combines them).
+        resource.fighters[1].bones[1].translation = [0.0; 3];
+        resource.fighters[1].bones[1].scale = [4.0, 0.5, 1.0];
         let hurt = &mut resource.fighters[1].hurtboxes[0];
-        hurt.bone = 0;
+        hurt.bone = 1;
         hurt.start = [0.0; 3];
         hurt.end = [0.0; 3];
         hurt.radius = 1.0;
