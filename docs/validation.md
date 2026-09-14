@@ -62,6 +62,113 @@ divergence remains frame 150 (`action_state` on P4, expected `Dash`,
 actual `Turn`) -- another instance of the same conversion class, on a
 fresh recording position, not yet re-diagnosed.
 
+The 2026-09-14 laser muzzle-bone offset-order fix (the real-replay parity
+loop, following directly on the axis-convention entry below) reverts that
+entry's own axis swap: it was evidence-shaped but wrong. Reading the pinned
+decomp directly (not just the citation this loop started from) settles the
+question `ftfoxspecialn.c:32-51`'s own comment left open: `lb_8000B1CC`
+(`lb_00B0.c:105-140`), the function `ftFox_SpecialN_PrepareBlasterShot`
+(`ftfoxspecialn.c:159-169`, the real fire path reached from
+`ftFx_SpecialN_CreateBlasterShot`'s own `accessory4_cb`) calls to resolve
+the muzzle position, has exactly one non-degenerate branch for a joint
+with a parent (always true for a hand bone): `MTXMultVec(arg0->mtx, pos0,
+pos1)`, decomp's own scalar matrix-vector multiply, reading `pos0`'s
+`x`/`y`/`z` fields in that literal order -- this port's own
+`transform_point` already matches that literally, field for field. There
+is no axis relabeling anywhere in this call chain: `simulation.rs`'s
+"local +X forward" comment (the previous entry's own cited justification
+for swapping) describes the *root* transform's own axes, not a license to
+permute an arbitrary bone-local offset decomp itself never permutes.
+Verified against a second, independent source of evidence, not just
+re-reading the same citation: two functions share
+`ftFox_SpecialN_GetHoldJoint`'s own inline body with different `z_offset`
+constants -- `ftFx_SpecialN_FtGetHoldJoint` (`z_offset = 4.2636`, called by
+`PrepareBlasterShot`, the real fire path) and `ftFx_SpecialN_ItGetHoldJoint`
+(`z_offset = 0.0136`, called only by `ftFx_Throw_Anim`, the unrelated
+held-blaster-*prop* throw arc, `ftfoxspecialn.c:611-612`/
+`itfoxblaster.c:183-186`) -- confirming `4.2636` is genuinely the right
+constant for this move's own fire path, not a mix-up between the two.
+
+Also confirmed, and newly falsified by direct measurement rather than
+guessed at further: a probe (uncommitted, per this document's own
+established pattern) stepping `fox-fd-3.slp` to P1's own frame -14
+airborne spawn (`SpecialAirNLoop` age 5, `cur_pos (-28.223993, 8.3501)`,
+matching the recording exactly) and dumping the *exact* pose
+`simulation::pose` already hands to both `drain_pending_shot` and this
+frame's own hurtbox capsule transforms (`simulation.rs`'s `poses[player]`
+array feeds both call sites directly -- pose selection was never the
+defect the previous entry suspected) shows bone 67's own world matrix at
+that frame is close to identity: translation `(-28.488976, 17.2495,
+4.989484)`, rotation columns `[0.998, 0.043, 0.050]` / `[-0.048, 1.056,
+-0.060]` / `[-0.046, -0.170, 1.132]`. Sweeping every one of `loop_phase.
+air`'s own ten sampled frames (not just the one that happened to fire)
+shows the same shape throughout: bone 67's own translation never sits
+more than about a unit ahead of `fighter.position`, in any of the ten
+frames, let alone the roughly 8.44-unit forward reach (relative to the
+bone's own translation) the recording's own item position requires
+(target world position `(-20.0461, 18.1391)`, i.e. `cur_pos + (+8.1779,
++9.7890)`, before the item's own already-applied first-frame `7.0`
+velocity move). No permutation of the fixed decomp offset's three
+components through a near-identity 3x3 can reach that magnitude -- the
+raw (now-correct) transform lands within `0.0002` of `fighter.position[0]`
+itself (`raw_no_swap_result = (-28.224148, 18.295034, ...)`, versus
+`cur_pos.x = -28.223993`), and the previous entry's own swapped value
+(`(-24.181887, 18.347374)`, an offset of only `+4.0421`) was closer only
+by coincidence -- borrowing displacement from the offset's own `y`/`z`
+terms through this matrix's small off-diagonal entries, not a real
+forward reach. The gap is in the exported `loop_phase.air` bone-67
+animation samples themselves (an arm-extension pose that does not reach
+as far forward as the real game's own rendering implies), not in this
+transform; this loop's own fix is provably correct against the decomp
+source (pinned by a new unit test,
+`muzzle_bone_rotation_proves_the_offset_is_not_axis_swapped`, using a
+rotated synthetic bone where a swapped-vs-correct offset is independently
+hand-derivable and unambiguous -- the existing translation-only fixture
+cannot distinguish the two, since an identity-rotation bone passes a
+component swap through unchanged in the one axis that test checks), but
+does not by itself close `fox-fd-3.slp`'s own item-position gap. Not
+chased further here: closing it needs either a more accurate exported
+pose for this move (an exporter-side fix, out of this loop's own scope)
+or abandoning the hold-joint approach for this move entirely, and this
+loop's own stop condition is a measured, cited gap, not a guess.
+
+One more thread pulled and reported, not resolved: `docs/fox-neutral-
+special.md`'s own pre-existing "Known gaps" entry ("The muzzle spawn
+position uses the hold-joint bone directly rather than confirming
+`ftLib_80086990`'s own transform") reads, on a literal parse, as if it
+concluded the *opposite* of this loop's own finding -- that the real game
+never uses the hold joint for spawn position at all, and the ECB-midpoint
+fallback was "confirmed correct." Given this loop's own direct reading of
+`ftFox_SpecialN_PrepareBlasterShot` (a real, unambiguous call to the
+hold-joint transform on the real fire path), the more likely reading is
+that the older note is about an *indirection* -- `spawn.prev_pos` itself
+being populated from the hold-joint result before `it/item.c:202` reads
+it, not about the hold joint being irrelevant -- but this loop did not
+trace `it_8029C6A4`/`ftLib_80086990`/`it_8026BB68` far enough to confirm
+that reading over the literal one. Flagged for whoever next touches this
+move, rather than silently left for a future reader to trip over.
+
+Re-measured against a scratch copy of `/mnt/archive/datasets/melee/
+skirmish-gameplay/v2/fox-fd` (not the pinned published pack; never
+committed, never pointed at permanently): `fox-fd-3.slp` itself is still
+blocked at frame -32/91 by the pre-existing, unrelated one-ULP
+`velocities.self_x_air` gap this document's own 2026-09-11 entry already
+reported (unchanged by this fix, as expected -- frame -32 is upstream of
+-14). `fox-fd-2.slp` now measures frame -11/112 against this local pack
+(P2's own `action_state`, Turn vs Dash) -- the same already-documented,
+separately owned regression the previous entry reported (not this loop's
+own fix; `locomotion.rs` is explicitly out of this loop's own scope).
+`fox-fd-4.slp` measures frame -13/110 (P2's own `last_attack_landed`)
+against this same local pack, earlier than the currently committed
+baseline (`-5`, measured against the pinned v10 pack); given `fox-fd-2`
+shows the identical Turn/Dash regression independently, this is most
+likely that same, separately owned issue reaching further than v10's own
+measurement happened to show, not a regression from this fix -- but this
+loop did not chase it further, and `fox-fd-4-baseline.json` is
+**unchanged** (the rule is "update only if it improves"; this local
+measurement is worse, not better, than the pinned baseline, so no update
+is warranted either way).
+
 The 2026-09-14 laser muzzle-bone axis-convention fix (the real-replay
 parity loop) corrects a coordinate mismatch in the muzzle-bone spawn
 position landed by the prior laser fix (`585a11c`): `ftfoxspecialn.c:32-

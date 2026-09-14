@@ -274,6 +274,82 @@ fn muzzle_bone_spawn_position_differs_from_the_ecb_midpoint_fallback() {
     );
 }
 
+/// Pins `drain_pending_shot`'s own literal-order `transform_point` call
+/// against a rotated (not just translated) muzzle bone, where a wrongly
+/// swapped offset and the correct, decomp-literal one produce clearly
+/// different -- and independently hand-derivable -- world positions,
+/// unlike the translation-only fixture above (whose identity-rotation
+/// bone cannot distinguish the two: swapping two offset components that
+/// both pass through an identity rotation unchanged changes nothing a
+/// Y-only assertion would catch).
+///
+/// `simulation::pose` reads a fired frame's own bones from `data.attack`'s
+/// sampled `AttackFrame.bones` (this fixture's `start`/`loop_phase`
+/// ground/air phases all embed the same invented two-bone pose, per
+/// `fox_neutral_special::profile`'s own doc), not from `FighterData.bones`
+/// -- so every phase/frame's own bone 1 is mutated uniformly here, not
+/// just the base skeleton the fixture above touches (which this move's own
+/// pose selection never actually reads). With bone 1 parented directly to
+/// the identity bone 0 and its own translation left at zero, `bones::srt`'s
+/// Euler composition (row0 = `[cos_y, 0, sin_y, 0]`, row1 = `[0, 1, 0, 0]`,
+/// row2 = `[-sin_y, 0, cos_y, 0]`) at rotation `(0, pi/2, 0)` reduces to
+/// `world_offset = (local.z, local.y, -local.x)`, independent of the
+/// fighter's own position/facing root (a pure rotation contributes no
+/// translation). Comparing against the same fixture with bone 1 left at
+/// its identity rotation (`world_offset = local` unchanged) isolates
+/// exactly that rotation's own contribution to the spawn x-coordinate,
+/// canceling out the fighter's own position and the projectile's own
+/// already-applied first-frame velocity (identical in both runs): the
+/// decomp-literal offset `(0, 1.2325000762939453, 4.263599872589111)`
+/// (`ftfoxspecialn.c:32-51`) must add its `z` term (`4.2636`) to world x
+/// through this rotation, not its `x` term (`0`, what a wrongly swapped
+/// `(4.2636, 1.2325, 0)` offset would add instead -- see
+/// `drain_pending_shot`'s own doc for the full decomp citation,
+/// `lb_8000B1CC`'s literal, unpermuted `MTXMultVec`, for why no axis swap
+/// belongs here at all).
+#[test]
+fn muzzle_bone_rotation_proves_the_offset_is_not_axis_swapped() {
+    let spawn_x = |rotation_y: f32| {
+        let mut resource = data();
+        resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
+        if let Some(skirmish::characters::Specials::Fox {
+            neutral: Some(neutral),
+            ..
+        }) = &mut resource.fighters[0].specials
+        {
+            neutral.laser.muzzle_bone = Some(1);
+            for attack in [
+                &mut neutral.start.ground,
+                &mut neutral.start.air,
+                &mut neutral.loop_phase.ground,
+                &mut neutral.loop_phase.air,
+            ] {
+                for frame in &mut attack.frames {
+                    frame.bones[1].rotation = [0.0, rotation_y, 0.0];
+                }
+            }
+        } else {
+            panic!("fixture's own Fox neutral special must be present");
+        }
+        let mut game = Match::new(resource, 0).unwrap();
+        game.step(input(0, press_b())).unwrap();
+        let spawn_state = game.step(IDLE).unwrap().clone();
+        assert!(spawned_this_frame(&spawn_state, 0));
+        spawn_state.projectiles[0].position[0]
+    };
+    let identity_x = spawn_x(0.0);
+    let rotated_x = spawn_x(core::f32::consts::FRAC_PI_2);
+    #[allow(clippy::excessive_precision)]
+    let expected_delta = 4.263_599_872_589_111;
+    assert!(
+        (rotated_x - identity_x - expected_delta).abs() < 1e-3,
+        "a pi/2 y-rotation must add the offset's own z-component (4.2636) to world \
+         x, not its x-component (0), which a swapped offset would give instead: \
+         identity_x={identity_x}, rotated_x={rotated_x}, delta={}",
+        rotated_x - identity_x
+    );
+}
+
 /// `Laser::scale`'s own doc has the full citation: a laser's own hitbox
 /// offsets grow from `0.0` toward the pack's `scale` cap over its first
 /// few frames (`Item_UpdateRayAnimation`), not the full offset immediately.

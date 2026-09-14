@@ -675,16 +675,49 @@ pub(crate) fn drain_pending_shot(
         .and_then(|bone| pose.world_matrix(bone as usize).ok())
     {
         Some(matrix) => {
-            // `ftfoxspecialn.c:32-51`'s own local offset is `(0,
-            // 1.2325000762939453, 4.263599872589111)` in the decomp's own
-            // bone-local axis convention (Z forward); `simulation::pose`'s
-            // own convention is X forward, Z depth (`simulation.rs`'s own
-            // "Native match coordinates" comment), so the decomp's Z
-            // (forward) and X (depth, here always 0) swap here. Exact f32
-            // bit patterns, kept at full decimal precision to stay
-            // traceable to the decomp constant.
+            // `ftFox_SpecialN_PrepareBlasterShot` (`ftfoxspecialn.c:159-169`,
+            // the real fire path reached from `ftFx_SpecialN_
+            // CreateBlasterShot`/accessory4 -- *not*
+            // `ftFx_SpecialN_ItGetHoldJoint`'s own tiny `0.0136` offset,
+            // which `ftfoxspecialn.c:611-612`/`itfoxblaster.c:183-186` use
+            // only for `ftFx_Throw_Anim`'s unrelated held-blaster-prop
+            // throw arc) calls `ftFx_SpecialN_FtGetHoldJoint`, whose own
+            // local offset is literally `(0, 1.2325000762939453,
+            // 4.263599872589111)` (`ftfoxspecialn.c:32-51`). That offset
+            // reaches the muzzle bone's own world matrix through
+            // `lb_8000B1CC` (`lb_00B0.c:105-140`): when the joint has a
+            // parent (always true for a hand bone), its only non-degenerate
+            // branch is a direct `MTXMultVec(arg0->mtx, pos0, pos1)` --
+            // decomp's own scalar C_MTXMultVec, matching this port's
+            // `transform_point` exactly, with `pos0`'s `x`/`y`/`z` fields
+            // read in that literal order. There is no axis relabeling
+            // anywhere in this call chain: `simulation.rs`'s "local +X
+            // forward" comment describes the *root* transform's own axes,
+            // not a license to permute an arbitrary bone-local offset
+            // that decomp itself never permutes. The previous swap
+            // (`94c60f3`) was evidence-shaped but wrong -- passing the raw
+            // triple unmodified, as below, is what the decomp's own
+            // `MTXMultVec` call actually does.
+            //
+            // This alone is not a bit-exact fix: a probe stepping
+            // `fox-fd-3.slp` to P1's own frame -14 airborne spawn (docs/
+            // validation.md's 2026-09-14 entry) shows this bone's own
+            // sampled `SpecialAirNLoop` loop-phase world matrix is close to
+            // identity at every one of its ten frames (translation never
+            // more than ~1 unit ahead of `fighter.position`), so no
+            // permutation of this fixed offset through it can reach the
+            // recording's own required ~8.4-unit forward displacement --
+            // the raw (correct) transform lands within noise of
+            // `fighter.position[0]` itself, and the previous swap only
+            // looked closer by coincidence (borrowing displacement from the
+            // offset's own Y/Z terms through this matrix's small off-
+            // diagonal entries, not a real forward reach). The gap is in
+            // the exported `loop_phase.air` bone-67 animation samples
+            // themselves (an under-reaching arm-extension pose), not in
+            // this transform; not chased further here, matching this
+            // document's own established "report, don't chase" precedent.
             #[allow(clippy::excessive_precision)]
-            let local = [4.263_599_872_589_111, 1.232_500_076_293_945_3, 0.0];
+            let local = [0.0, 1.232_500_076_293_945_3, 4.263_599_872_589_111];
             let [x, y, _z] = crate::collision::bones::transform_point(matrix, local);
             [x, y, 0.0]
         }
