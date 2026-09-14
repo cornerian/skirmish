@@ -12,6 +12,7 @@ use skirmish_replay::{
     match_validation::{self as replay_match, Initialization, Outcome, Report},
     observation,
     slippi::{Port, Replay, Timeline, Version},
+    spawn_policy::SpawnPolicy,
 };
 use std::{fs, process::Command};
 
@@ -157,6 +158,7 @@ impl Recording {
             ports: PORTS,
             next_frame: FIRST,
             warmup: Vec::new(),
+            spawn_policy: SpawnPolicy::Vanilla,
         };
         let mut game = replay_match::initialize(&initialization).unwrap();
         let states = inputs
@@ -1810,6 +1812,7 @@ fn file_backed_cstick_aerial_and_l_cancel_match_and_changed_selection_diverges()
         ports: PORTS,
         next_frame: FIRST,
         warmup: vec![],
+        spawn_policy: SpawnPolicy::Vanilla,
     };
     let mut inputs = vec![IDLE; 56];
     inputs[2][0].cstick = [1.0, 0.0];

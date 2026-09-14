@@ -1666,46 +1666,217 @@ remains an open, separately-tracked exporter-code item (`fox-dl.slp`'s
 unequal per-port `y` offsets, `0.2215` vs `0.3215`); this batch does not
 touch `fox-dl.slp` or its baseline.
 
-### Fixture-selection rule: a recording's first frame must bit-match the pack's spawn points
+**Update (2026-09-14, later the same day): the Dream Land half of the
+original diagnosis was also wrong, for a different reason than Pokemon
+Stadium's.** It is not the exporter's spawn-marker parent-chain composition
+bug either, and, unlike Pokemon Stadium, it is not a fixture-selection
+mistake (a recording captured on a netplay build) -- `fox-dl.slp` is a
+console-era Slippi 2.0.1 recording, the same class of file the corpus's
+other fixtures are. The actual root cause is that a real recording's spawn
+position is *match-start state*, not purely a function of stage data: the
+retail game resolves it once per match from `VsSceneController`'s per-slot
+`spawn_point` through `gm/gmvs.c`'s `getSpawnPoint`/spawn-assignment loop
+into `gr/stage.c`'s `Stage_80224E64` and `gr/ground.c`'s `Ground_801C2D24`,
+and at least two different environments are now confirmed to produce
+different results there. Checked directly (`skirmish-cli inspect-replay`
+plus `py-slippi` cross-checks against every stage-legal recording available):
+Slippi *netplay* builds (confirmed for 3.9.0) inject UnclePunch's "Neutral
+Spawns" table (`External/NeutralSpawn/NeutralSpawn.asm`, injection
+`8016e510`) instead of the vanilla points -- this is what actually explains
+the original Pokemon Stadium gap, not exporter data. Every Fox-vs-Fox Dream
+Land recording checked, however, is console 2.0.1 and starts at `(-46.6,
+37.0)`/`(47.3891, 37.0)`: `x` is bit-exact vanilla (`data.stage.spawns`,
+confirmed against the pack), but `y` (`37.0`) matches neither the pack's own
+vanilla `y` (`37.2215..`/`37.3215..`) nor the Neutral Spawns table's `y`
+(`37.2`) -- a third, still-unidentified console-era codeset, not a bug in
+the exporter and not fixed by this batch (`crates/skirmish-replay/src/
+spawn_policy.rs`'s `classify_spawn_provenance` reports it `unknown_codeset`,
+one of the three possible outcomes, not a failure).
+`skirmish-assets`'s `stage.rs` composition question from the original
+diagnosis may still be worth checking independently some day, but it is not
+what explains either stage's actual gap, and no exporter fix is pending on
+it anymore.
 
-The `fox-ps.slp` history above is a general lesson, not a one-off: **a real
-recording is only a valid parity fixture for a given stage if its very
-first frame's spawn positions bit-match that stage's exported
-`stage.spawns`.** If they don't, the recording was captured on stage data
-the pack does not (and, for a retail-verified exporter, should not) agree
-with, and every measurement against it starts already wrong -- not because
-of a Skirmish bug, but because the fixture and the pack disagree about
-where the match begins. `fox-ps.slp`'s own history is the concrete case:
-newer Slippi *netplay* builds (confirmed here for 3.9.0) have shipped
-modified stage data for at least Pokemon Stadium, changing spawn point 0
-from the retail value by a clean half-unit in `x`; nothing about Skirmish's
-simulation or the gameplay-export pipeline explains or should reproduce
-that. A recording made on such a build is not "real Melee" for this
-purpose in the way the corpus's ordinary 2.0.1 recordings are -- it is real
-*netplay*, on stage data the retail disc (and the exporter, which reads the
-retail disc) never shipped.
+The practical fix does not require identifying that codeset: `SpawnPolicy`
+(below) makes match initialization take the replay's *own* recorded spawn
+position (`SpawnPolicy::Explicit`, filled by `make-initialization` from
+frame -123's own post-frame position) rather than assume the resource
+pack's vanilla `stage.spawns` describes every real recording. `fox-dl.slp`'s
+baseline moves from `checked_frames: 0`/`first_divergent_frame: -123` (the
+spawn-frame mismatch, now understood as this batch's own real, if
+unidentified, codeset difference rather than an exporter defect) to
+`checked_frames: 74`/`first_divergent_frame: -49`, a genuine one-ULP
+`position.y` gap (`0x4213427c` vs `0x4213427b`, the same class of gap
+already reported open elsewhere in this document and in `docs/math.md`),
+found because Skirmish now starts the simulation from the same point the
+real console did instead of a few tenths of a unit away. See "2026-09-14:
+SpawnPolicy" below for the full mechanism and every current fixture's
+classification.
+
+### Fixture-selection rule: a recording's first frame must be a real, understood recording -- not necessarily vanilla
+
+`fox-ps.slp`'s history above is a genuine lesson, but its original framing
+(**"a real recording is only a valid parity fixture if its first frame's
+spawn positions bit-match the pack's `stage.spawns`"**) turned out to be too
+strong once Dream Land's own gap was correctly diagnosed (above): a fixture
+whose first frame does *not* bit-match vanilla is not automatically a bad
+fixture -- `fox-dl.slp` never was one, even though it fails that literal
+test. The real distinguishing question is not "does this bit-match
+vanilla", it is "did this recording start somewhere `make-initialization`
+can reproduce exactly", which is a strictly weaker and more accurate
+requirement now that `SpawnPolicy::Explicit` (below) takes each recording's
+own frame -123 position rather than assuming vanilla. `fox-ps.slp`'s
+original defect was real, but it was specifically that the *previous*
+`18_54_44 Fox + Fox (PS).slp` fixture was recorded on a Slippi *netplay*
+build (confirmed for 3.9.0) shipping modified Pokemon Stadium stage data
+(UnclePunch's Neutral Spawns table, not a stage-data difference at all) --
+not that its spawn merely differed from vanilla.
 
 Practical rule for picking or auditing a fixture: prefer the oldest
 available Slippi version for a given stage/matchup unless there is a
-specific reason to want a newer one, and, before trusting a new baseline,
-check the recording's own first-frame position against the pack's
-`stage.spawns` for that pairing (`py-slippi`'s `pre.position`, or just run
-`make-initialization`/`validate-replay` and look at `checked_frames`: `0`
-with the very first field being a spawn-position mismatch is the symptom).
-`crates/cli/tests/parity_fixture_spawns.rs` now automates exactly this
-check for every recording in `recordings.json`: for each pairing whose pack
+specific reason to want a newer one (older, console-era recordings are the
+population `SpawnPolicy`'s two known tables and this project's other
+parity work are calibrated against), and, before trusting a new baseline,
+classify the recording's own first-frame position with
+`classify_spawn_provenance` (`skirmish_replay::spawn_policy`; run `make-
+initialization` and read `spawn_provenance` in its printed summary, or
+`crates/cli/tests/parity_fixture_spawns.rs` for the whole corpus at once).
+`vanilla` or `slippi_neutral` both mean the recording started on a fully
+understood codeset; `unknown_codeset` (`fox-dl.slp`'s own case) does not
+disqualify the fixture, but it does mean nobody has yet explained *why* the
+recording started there, which is worth chasing down when it recurs, not a
+one-time embarrassment to except.
+
+`crates/cli/tests/parity_fixture_spawns.rs` automates the classification
+step for every recording in `recordings.json`: for each pairing whose pack
 has landed under `SKIRMISH_GAMEPLAY_DATA`, it reads the fixture's own first
 selected frame, assigns spawn points by participant order (ports sorted
 ascending, the same convention `initialization::build` uses -- the pack's
 spawns are assigned by participant order, not by which physical port a
-player sat at), and asserts each player's position bit-matches the
-corresponding `stage.spawns` entry, failing loudly with the offending
-recording, port and expected/actual bit patterns if not. It skips (rather
-than fails) a recording whose pack has not been published yet, exactly like
-`real_parity.rs`, and carries one explicit, documented exception
-(`KNOWN_PACK_DATA_SPAWN_GAPS = ["fox-dl"]`) for `fox-dl.slp`'s own
-already-tracked *pack*-data gap above, so a known, separately-owned
-exporter bug does not fail this check the way a bad fixture should.
+player sat at), classifies the pair with `classify_spawn_provenance`, and
+prints/records the class -- it no longer asserts a bit-match and carries no
+exception list (the previous `KNOWN_PACK_DATA_SPAWN_GAPS = ["fox-dl"]` is
+gone): `unknown_codeset` is an expected, valid outcome for a real
+recording, not a failure to except. It still skips (rather than fails) a
+recording whose pack has not been published yet, exactly like
+`real_parity.rs`. As of this batch, every currently published recording
+classifies `vanilla` except `fox-dl` (`unknown_codeset`); see "2026-09-14:
+SpawnPolicy" below for the full table.
+
+## 2026-09-14: SpawnPolicy -- match initialization from the replay's own recorded spawn
+
+A fighter's spawn position at match start is *recording-environment* state,
+not purely stage data. The retail game resolves it once per match from
+`VsSceneController`'s per-slot `spawn_point` (defaulting to the slot index
+itself, `gm/gmvs.c`'s `getSpawnPoint`, ~1754) through the per-slot
+spawn-assignment loop (~1905-1935) into `gr/stage.c`'s `Stage_80224E64` and
+`gr/ground.c`'s `Ground_801C2D24`. Two environments besides vanilla NTSC
+1.02 are now confirmed to produce different starting positions there, and a
+third is confirmed present but not yet explained (all measured directly
+against real recordings, not assumed):
+
+- **Vanilla**: the resource pack's own `stage.spawns`
+  (`skirmish-assets`, verified against the retail ISO, md5
+  `0e63d4223b01d9aba596259dc155a174`). Every Slippi 2.0.1 console recording
+  checked across FD/BF/YS/FoD/PS starts bit-for-bit here.
+- **Slippi netplay's "Neutral Spawns"** (`External/NeutralSpawn/
+  NeutralSpawn.asm`, injection `8016e510`, confirmed present in public
+  Slippi 3.9.0 replays): singles rows indexed by participant order among
+  active slots (row index 0/1, the same convention `data.stage.spawns[player]`
+  already uses). As exact `f32` literals:
+
+  | Stage | id | P0 | P1 | P2 | P3 |
+  |---|---|---|---|---|---|
+  | Final Destination | `0x20` | `(-60, 10)` | `(60, 10)` | `(-20, 10)` | `(20, 10)` |
+  | Battlefield | `0x1F` | `(-38.8, 35.2)` | `(38.8, 35.2)` | `(0, 8)` | `(0, 62.4)` |
+  | Yoshi's Story | `0x08` | `(-42, 26.6)` | `(42, 28)` | `(0, 46.9)` | `(0, 4.9)` |
+  | Dream Land | `0x1C` | `(-46.6, 37.2)` | `(47.4, 37.3)` | `(0, 7)` | `(0, 58.5)` |
+  | Fountain of Dreams | `0x02` | `(-41.25, 21)` | `(41.25, 27)` | `(0, 5.25)` | `(0, 48)` |
+  | Pokemon Stadium | `0x03` | `(-40, 32)` | `(40, 32)` | `(70, 7)` | `(-70, 7)` |
+
+  Teams rows also exist in the same source and are documented here for
+  completeness, but are unused (team matches are not implemented,
+  `ensure!(!start.is_teams, ...)`): FD `(-60,10),(-20,10),(60,10),(20,10)`;
+  BF `(-38.8,35.2),(-38.8,5),(38.8,35.2),(38.8,5)`; YS
+  `(-42,26.6),(-42,5),(42,28),(42,5)`; DL
+  `(-46.6,37.2),(-46.6,5),(47.4,37.3),(47.4,5)`; FoD
+  `(-41.25,21),(-41.25,5),(41.25,27),(41.25,5)`; PS
+  `(-40,32),(-40,5),(40,32),(40,5)`. All 22 netplay Dream Land replays
+  checked match the singles table exactly.
+- **An unidentified console-era codeset**: all 192 checked console 2.0.1
+  Dream Land replays start at `(-46.6, 37.0)`/`(47.3891, 37.0)` -- vanilla
+  `x`, but a `y` neither table above produces. Not explained by this batch;
+  see the corrected Dream Land diagnosis above.
+
+`skirmish_replay::spawn_policy::SpawnPolicy` (`crates/skirmish-replay/src/
+spawn_policy.rs`) makes the choice part of `match_validation::Initialization`
+explicitly, as a plain, required, serialized field (so a checkpoint's own
+resource identity names its spawn policy; two initializations cannot
+silently disagree about it while otherwise looking equivalent):
+
+- `Vanilla` -- the pack's own `stage.spawns`, unchanged. The default for
+  every non-replay match; behaviour predates this type.
+- `SlippiNeutral` -- resolves the table above from `data.stage.name` at
+  construction time.
+- `Explicit { spawns }` -- caller-supplied positions, in the same
+  participant-order convention as `data.stage.spawns`.
+
+Facing is unaffected by any of this: `fighter::entry::spawn_facing` (sign of
+the resolved spawn `x`, matching `gmvs.c`'s `fn_8016DEEC`/`direction`) reads
+whatever `data.stage.spawns` ends up holding after
+`SpawnPolicy::resolve`, so a policy only ever changes positions, never the
+facing rule.
+
+`make-initialization` (`crates/cli/src/initialization.rs::build`) always
+fills `SpawnPolicy::Explicit` from each port's own frame -123 *post*-frame
+position (participant order), not the pack's `stage.spawns`: `post`, not
+`pre`, because that is the field the whole validation harness compares
+(`observation::expected`'s `post.position`, the `"fighter-post-v11"`
+policy), and because the match-start warp-in does not move a fighter within
+a frame, so a genuinely-vanilla recording's `post.position` at frame -123
+already equals `data.stage.spawns` bit-exactly -- `Explicit` reproduces that
+for every codeset, identified or not, rather than assuming vanilla and
+failing to align when a recording (like `fox-dl.slp`) turns out not to be.
+`build` also returns a read-only `spawn_provenance` diagnostic
+(`classify_spawn_provenance`, printed in `make-initialization`'s stdout
+summary) naming which known codeset, if either, the replay's own spawn
+happens to match -- purely informational, it never changes what
+`Explicit` resolves to.
+
+**Every currently published fixture's classification** (pack v10,
+`crates/cli/tests/parity_fixture_spawns.rs`, `SKIRMISH_GAMEPLAY_DATA`
+pointed at `v10-snapshot-20260913`):
+
+| Fixture | Classification |
+|---|---|
+| `fox-fd` | vanilla |
+| `fox-fd-2` | vanilla |
+| `fox-fd-3` | vanilla |
+| `fox-fd-4` | vanilla |
+| `fox-bf` | vanilla |
+| `fox-ys` | vanilla |
+| `fox-fod` | vanilla |
+| `fox-dl` | unknown_codeset |
+| `fox-ps` | vanilla |
+
+(`falco-fox-fd.slp`, the standalone fixture outside `recordings.json`, is
+not covered by this table; it is not part of the corpus this test iterates.)
+
+**Re-measurement**, both against pack v10, via `make-initialization`/
+`validate-replay` directly (matching the 2026-09-14 sweep's own convention
+above): every recording except `fox-dl` is numerically unchanged from the
+sweep table above, since `SpawnPolicy::Explicit` is bit-identical to
+`Vanilla` whenever a recording's own frame -123 already matched the pack
+(true for all of them except `fox-dl`).
+
+| Recording | Matched frames | First divergence | Field | Status |
+|---|---|---|---|---|
+| `fox-dl` | 74 (was 0) | -49 (was -123) | `position.y` (P3), 1 ULP (`0x4213427c` vs `0x4213427b`) | **moved forward**; genuine one-ULP gap, same class as elsewhere in this document; not diagnosed further |
+| `fox-ps` | 85 (unchanged) | -38 (unchanged) | `action_state` (P4) | unchanged; see `fox-ps-baseline.json`'s own note |
+
+`fox-dl-baseline.json` is updated to `74`/`-49`; `fox-ps-baseline.json`'s
+numbers are unchanged (its note records the re-measurement). No other
+recording's baseline moves in this batch.
 
 ## Practical consequence
 

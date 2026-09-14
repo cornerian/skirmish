@@ -62,7 +62,8 @@ fn entry_fall_matches_the_recording_under_pack_v4() {
     };
     let data: MatchData = serde_json::from_slice(&bytes).unwrap();
     let replay = Replay::read(BufReader::new(File::open(REPLAY).unwrap())).unwrap();
-    let init = initialization::build(data, &replay, None).unwrap();
+    let built = initialization::build(data, &replay, None).unwrap();
+    let init = built.initialization;
     assert_eq!(init.ports, [Port::P1, Port::P4]);
     let mut game = match match_validation::initialize(&init) {
         Ok(game) => game,

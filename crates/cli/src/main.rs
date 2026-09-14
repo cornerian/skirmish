@@ -203,15 +203,24 @@ fn main() -> Result<()> {
             let data = pack::load_match_data(&match_data)?;
             let replay = slippi::Replay::read(BufReader::new(File::open(replay)?))?;
             let built = initialization::build(data, &replay, seed)?;
-            fs::write(&output, serde_json::to_string_pretty(&built)?)?;
+            fs::write(
+                &output,
+                serde_json::to_string_pretty(&built.initialization)?,
+            )?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
                     "output": output,
-                    "ports": built.ports,
-                    "seed": built.seed,
-                    "next_frame": built.next_frame,
-                    "warmup_steps": built.warmup.len(),
+                    "ports": built.initialization.ports,
+                    "seed": built.initialization.seed,
+                    "next_frame": built.initialization.next_frame,
+                    "warmup_steps": built.initialization.warmup.len(),
+                    "spawn_policy": built.initialization.spawn_policy,
+                    // Provenance hint: whether the replay's own frame -123
+                    // spawn positions happen to coincide with a known
+                    // codeset. Purely informational -- see
+                    // `skirmish_replay::spawn_policy` and docs/parity.md.
+                    "spawn_provenance": built.spawn_provenance.as_str(),
                 }))?
             );
         }

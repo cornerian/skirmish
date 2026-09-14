@@ -1,7 +1,7 @@
 //! File-backed comparison against the actual native match stepper. Replay
 //! observations are never used to correct the evolving simulator state.
-use crate::{observation, slippi};
-use anyhow::{Result, ensure};
+use crate::{observation, slippi, spawn_policy::SpawnPolicy};
+use anyhow::{Context, Result, ensure};
 use replay_validation::{Checkpoint, FrameStepper, Transition, ValidationError};
 use serde::{Deserialize, Serialize};
 use skirmish::game;
@@ -17,6 +17,11 @@ pub struct Initialization {
     pub ports: [Port; 2],
     pub next_frame: i32,
     pub warmup: Vec<[game::Controller; 2]>,
+    /// Where the match's fighters start; see `crate::spawn_policy`.
+    /// Required, not defaulted: the resource identity a checkpoint carries
+    /// must name its own spawn policy rather than let two initializations
+    /// silently disagree about it while otherwise looking equivalent.
+    pub spawn_policy: SpawnPolicy,
 }
 
 pub fn initialize(initialization: &Initialization) -> Result<game::Match> {
@@ -31,8 +36,12 @@ pub fn initialize(initialization: &Initialization) -> Result<game::Match> {
         initialization.ports[0] as u32,
         initialization.ports[1] as u32,
     ];
-    let mut game =
-        game::Match::new_with_slots(initialization.data.clone(), initialization.seed, slots)?;
+    let mut data = initialization.data.clone();
+    data.stage.spawns = initialization
+        .spawn_policy
+        .resolve(&data.stage.name, data.stage.spawns)
+        .context("resolving spawn_policy")?;
+    let mut game = game::Match::new_with_slots(data, initialization.seed, slots)?;
     for input in &initialization.warmup {
         game.step(*input)?;
     }

@@ -1,7 +1,7 @@
 {
-  "first_divergent_frame": -123,
-  "checked_frames": 0,
+  "first_divergent_frame": -49,
+  "checked_frames": 74,
   "export_version": "v10",
-  "updated": "2026-09-12",
-  "note": "Measured on 2026-09-12 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-dl, match-data.json). Diverges on the very first compared frame (-123), field position.y on P3 (expected 37.0 exactly, actual 37.2215003967285): under investigation, Dream Land's own spawn/floor snapping (stage.floor.y, the spawn point's y versus the collision line) versus the exported stage geometry (docs/parity.md)."
+  "updated": "2026-09-14",
+  "note": "Re-measured 2026-09-14 against gameplay-export pack v10 (/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/fox-dl, match-data.json) after adding SpawnPolicy: make-initialization now fills SpawnPolicy::Explicit from the replay's own frame -123 post-frame positions ([-46.599998474121094, 37.0]/[47.38909912109375, 37.0]) instead of assuming the recording started at the pack's vanilla stage.spawns ([-46.599998474121094, 37.2215..]/[47.38909912109375, 37.3215..]). The frame -123 spawn divergence this baseline previously recorded is gone (moved forward from -123/0 to -49/74); the earlier note's diagnosis (an exporter spawn-marker parent-chain composition bug in skirmish-assets's stage.rs) was superseded 2026-09-14 and is wrong for Dream Land specifically -- see docs/parity.md's 'Fixture-selection rule' and spawn-provenance sections. classify_spawn_provenance reports this recording's own first frame as unknown_codeset: its x already bit-matches vanilla, but its y (37.0) matches neither the pack's vanilla stage.spawns nor Slippi netplay's Neutral Spawns table (37.2), an unidentified console-era codeset, not an exporter bug and not fixed by this batch. New first divergence: frame -49, field position.y on P3 (expected 0x4213427c = 36.81492614746094, actual 0x4213427b = 36.81492233276367) -- a genuine one-ULP gap, the same class already reported open elsewhere (docs/parity.md, docs/math.md), not diagnosed further in this batch."
 }

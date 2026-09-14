@@ -12,6 +12,7 @@ use skirmish::game::data::MatchData;
 use skirmish_replay::{
     match_validation::Initialization,
     slippi::{Replay, Timeline, peppi},
+    spawn_policy::{SpawnPolicy, SpawnProvenance, classify_spawn_provenance},
 };
 
 /// Public Slippi/CSS external character IDs, in the same order and naming
@@ -114,6 +115,17 @@ fn stage_external_id(name: &str) -> Option<u16> {
         .map(|(_, id)| *id)
 }
 
+/// `build`'s result: the `Initialization` itself plus a read-only
+/// diagnostic naming which (if either) known codeset the replay's own
+/// spawn positions happen to match. The diagnostic is derived, not part of
+/// the initialization's resource identity; recompute it from
+/// `classify_spawn_provenance` if a caller needs it again later.
+#[derive(Debug)]
+pub struct Built {
+    pub initialization: Initialization,
+    pub spawn_provenance: SpawnProvenance,
+}
+
 /// Build an `Initialization` from `data` and `replay`'s `GameStart`/timeline.
 ///
 /// `seed_override`, when given, is used instead of the replay's own recorded
@@ -132,11 +144,17 @@ fn stage_external_id(name: &str) -> Option<u16> {
 /// `docs/replays.md`). Since no warmup-stepping is implemented yet, this
 /// function requires the replay's first selected frame to already be -123
 /// and refuses otherwise, rather than silently misaligning the checkpoint.
-pub fn build(
-    mut data: MatchData,
-    replay: &Replay,
-    seed_override: Option<u32>,
-) -> Result<Initialization> {
+///
+/// `spawn_policy` is always `SpawnPolicy::Explicit`, filled from each
+/// port's own frame -123 *post*-frame position (participant order: ports
+/// sorted ascending assigned to index 0/1, matching `data.stage.spawns`'s
+/// own convention) -- the replay's own recorded first frame, not an
+/// assumption that the recording started at the resource pack's vanilla
+/// `stage.spawns`. A real recording can start somewhere else
+/// (`crate::spawn_policy`'s module doc; `docs/parity.md`'s 2026-09-14
+/// sections), so a validated replay must always begin from what it actually
+/// recorded.
+pub fn build(mut data: MatchData, replay: &Replay, seed_override: Option<u32>) -> Result<Built> {
     let start = &replay.game().start;
     ensure!(!start.is_teams, "team matches are not implemented");
     ensure!(
@@ -226,12 +244,50 @@ pub fn build(
         peppi::frame::FIRST_INDEX
     );
 
-    Ok(Initialization {
-        data,
-        seed,
-        ports,
-        next_frame,
-        warmup: Vec::new(),
+    // `spawn_policy` is filled from this same first frame's own *post*-frame
+    // position, not the resource pack's `data.stage.spawns`: a real
+    // recording's spawn point is match-start state, not purely stage data
+    // (`crate spawn_policy`'s module doc). `post`, not `pre`, matches the
+    // field the whole validation harness compares against
+    // (`observation::expected`'s `post.position`,
+    // `match_validation::Report`'s `"fighter-post-v11"` policy): during the
+    // match-start warp-in nothing moves within a frame, so a fixture whose
+    // recorded spawn is genuinely vanilla already has `post.position ==
+    // data.stage.spawns` at this frame, and `Explicit` reproduces that
+    // bit-exactly for every codeset, identified or not.
+    let indices = replay.frame_indices(Timeline::LastRecorded)?;
+    let &first_index = indices.first().context("replay has no selected frames")?;
+    let frame = replay
+        .frame(first_index)
+        .context("failed to read the replay's first selected frame")?;
+    ensure!(
+        frame.id == next_frame,
+        "replay's first selected frame index does not correspond to frame id {next_frame} (found {})",
+        frame.id
+    );
+    let mut spawns = [[0.0_f32; 2]; 2];
+    for (index, port) in ports.iter().enumerate() {
+        let actor = frame
+            .actors
+            .iter()
+            .find(|actor| actor.port == *port && !actor.follower)
+            .with_context(|| {
+                format!("replay's first frame has no non-follower actor at port {port:?}")
+            })?;
+        spawns[index] = [actor.post.position.x, actor.post.position.y];
+    }
+    let spawn_provenance = classify_spawn_provenance(&data.stage.name, data.stage.spawns, spawns);
+
+    Ok(Built {
+        initialization: Initialization {
+            data,
+            seed,
+            ports,
+            next_frame,
+            warmup: Vec::new(),
+            spawn_policy: SpawnPolicy::Explicit { spawns },
+        },
+        spawn_provenance,
     })
 }
 
@@ -278,11 +334,31 @@ mod tests {
         for fighter in &mut data.fighters {
             fighter.name = "Fox".to_string();
         }
-        let initialization = build(data, &replay, None).unwrap();
+        let built = build(data, &replay, None).unwrap();
+        let initialization = built.initialization;
         assert_eq!(initialization.ports, [Port::P1, Port::P4]);
         assert_eq!(initialization.seed, 3_778_252_302);
         assert_eq!(initialization.next_frame, peppi::frame::FIRST_INDEX);
         assert!(initialization.warmup.is_empty());
+        // The synthetic fixture's own `stage.spawns` (-2,0)/(2,0) is not the
+        // real recording's spawn point, so `spawn_policy` must be `Explicit`
+        // with the replay's own frame -123 post-frame positions, not
+        // whatever this stand-in match data happened to carry.
+        let SpawnPolicy::Explicit { spawns } = initialization.spawn_policy else {
+            panic!(
+                "expected an Explicit spawn_policy, got {:?}",
+                initialization.spawn_policy
+            );
+        };
+        assert_ne!(spawns, [[-2.0, 0.0], [2.0, 0.0]]);
+        // Final Destination's real spawn points are (-60,10)/(60,10), which
+        // is both the pack's own vanilla value and (coincidentally, per
+        // `docs/parity.md`) UnclePunch's Neutral Spawns singles entry for
+        // FD; a synthetic `MatchData` never carries the real pack's
+        // `stage.spawns`, so this recording classifies against the table,
+        // not against this fixture's own arbitrary "vanilla".
+        assert_eq!(spawns, [[-60.0, 10.0], [60.0, 10.0]]);
+        assert_eq!(built.spawn_provenance, SpawnProvenance::SlippiNeutral);
     }
 
     #[test]

@@ -1,20 +1,26 @@
-//! Guards `tests/fixtures/slippi/parity/*.slp` against the class of bug that
-//! made the original `fox-ps.slp` fixture (Slippi 3.9.0) diverge on frame
-//! one against every measurement: newer Slippi netplay builds have shipped
-//! modified stage data for at least Pokemon Stadium (confirmed 2026-09-14,
-//! see `docs/parity.md`'s "Fixture-selection rule"), so a recording made on
-//! such a build can put a fighter at a spawn position the gameplay-export
-//! pack disagrees with before any simulation step ever runs -- making the
-//! ratchet's "first divergence" measure a fixture-provenance bug, not a
-//! Skirmish bug.
+//! Classifies every `tests/fixtures/slippi/parity/*.slp` fixture's own
+//! first selected frame against the two known spawn codesets
+//! (`skirmish_replay::spawn_policy`): the resource pack's vanilla NTSC 1.02
+//! `stage.spawns`, and Slippi netplay's "Neutral Spawns" table. A fixture
+//! whose first frame matches neither -- Dream Land's own unidentified
+//! console-era gap is the known case, `docs/parity.md`'s 2026-09-14
+//! sections have the measurement -- is not a bug in this check: `make-
+//! initialization` (`crates/cli/src/initialization.rs::build`) fills
+//! `SpawnPolicy::Explicit` from each recording's own frame -123 post-frame
+//! position, not an assumption that the recording started at the pack's
+//! vanilla spawn, so an "unknown codeset" fixture is still a perfectly
+//! valid parity target: the sim starts at what the replay actually
+//! recorded either way.
 //!
-//! This asserts every listed recording's own first selected frame places
-//! each player bit-exactly at the pack's own `stage.spawns` for that
-//! recording's pairing, using the same participant-order assignment
-//! `crates/cli/src/initialization.rs::build` uses (ports sorted ascending;
-//! the lower port gets `spawns[0]`, the higher port `spawns[1]`). A fixture
-//! that fails this check is not a valid parity target regardless of what its
-//! own baseline says, since nothing has run yet at the frame this compares.
+//! This used to be a hard bit-exact check against the pack's `stage.spawns`
+//! alone, with one explicit exception (`fox-dl`) for a gap that turned out
+//! not to be an exporter bug at all (see the history in docs/parity.md).
+//! Classifying every fixture, rather than excepting the ones that don't
+//! match vanilla, removes the need for that kind of exception list going
+//! forward: a newly added fixture that starts on a different codeset is
+//! automatically "unknown codeset", not a silent fixture-selection mistake
+//! that (before `SpawnPolicy::Explicit` existed) would have made every
+//! downstream frame count meaningless.
 //!
 //! Skipped (like `real_parity.rs`) when `SKIRMISH_GAMEPLAY_DATA` is unset,
 //! and per-recording when that pairing's `match-data.{json,bin}` has not
@@ -22,7 +28,10 @@
 use serde::Deserialize;
 use skirmish::game::data::MatchData;
 use skirmish_cli::pack;
-use skirmish_replay::slippi::{Port, Replay, Timeline};
+use skirmish_replay::{
+    slippi::{Port, Replay, Timeline},
+    spawn_policy::{SpawnProvenance, classify_spawn_provenance},
+};
 use std::{env, fs, fs::File, io::BufReader, path::PathBuf};
 
 const FIXTURES: &str = concat!(
@@ -42,23 +51,12 @@ struct Recording {
     pairing: String,
 }
 
-/// Recordings with a known, separately-tracked *pack-data* spawn mismatch --
-/// not a fixture problem, so this check must not fail loudly for them.
-/// `docs/parity.md`'s "Dream Land / Pokemon Stadium" section traces
-/// `fox-dl.slp`'s gap (spawn `.y` `37.0` recorded vs `37.2215`/`37.3215`
-/// exported) to the exporter's own spawn-marker parent-chain composition
-/// (`skirmish-assets`'s `stage.rs`, fixed in a dedicated exporter-side loop,
-/// not here); it is already covered by `fox-dl-baseline.json`'s own
-/// `checked_frames: 0`. Remove an id once the pack republishes corrected
-/// spawns and this check passes for it unaided.
-const KNOWN_PACK_DATA_SPAWN_GAPS: &[&str] = &["fox-dl"];
-
 #[test]
-fn fixture_first_frame_spawns_bit_match_the_pack() {
+fn fixture_first_frame_spawns_are_classified() {
     let Ok(root) = env::var("SKIRMISH_GAMEPLAY_DATA") else {
         println!(
-            "skip: SKIRMISH_GAMEPLAY_DATA is not set; the fixture-vs-pack spawn check needs the \
-             published gameplay export. See docs/gameplay-export.md."
+            "skip: SKIRMISH_GAMEPLAY_DATA is not set; the fixture spawn-provenance check needs \
+             the published gameplay export. See docs/gameplay-export.md."
         );
         return;
     };
@@ -72,16 +70,8 @@ fn fixture_first_frame_spawns_bit_match_the_pack() {
         recordings_path.display()
     );
 
-    let mut failures = Vec::new();
+    let mut classified = Vec::new();
     for recording in &recordings.recordings {
-        if KNOWN_PACK_DATA_SPAWN_GAPS.contains(&recording.id.as_str()) {
-            println!(
-                "skip: {}: known, separately-tracked pack-data spawn gap (docs/parity.md, \
-                 fox-dl-baseline.json), not a fixture problem",
-                recording.id
-            );
-            continue;
-        }
         let pairing_dir = PathBuf::from(&root).join(&recording.pairing);
         let Some(match_data_path) = pack::discover_match_data(&pairing_dir) else {
             println!(
@@ -138,36 +128,46 @@ fn fixture_first_frame_spawns_bit_match_the_pack() {
             ports.len()
         );
 
+        // `post`, not `pre`: this is the same field `make-initialization`
+        // fills `SpawnPolicy::Explicit` from and the whole validation
+        // harness compares (`observation::expected`'s `post.position`).
+        let mut explicit = [[0.0_f32; 2]; 2];
         for (spawn_index, port) in ports.iter().enumerate() {
             let actor = frame
                 .actors
                 .iter()
                 .find(|actor| actor.port == *port && !actor.follower)
                 .expect("port found while building the sorted list above");
-            let expected = data.stage.spawns[spawn_index];
-            let actual = [actor.pre.position.x, actor.pre.position.y];
-            if expected[0].to_bits() != actual[0].to_bits()
-                || expected[1].to_bits() != actual[1].to_bits()
-            {
-                failures.push(format!(
-                    "{}: {port:?}'s first-frame position does not bit-match the pack's \
-                     stage.spawns[{spawn_index}] (expected [{:#010x}, {:#010x}] = {expected:?}, \
-                     fixture has [{:#010x}, {:#010x}] = {actual:?}) -- this fixture may have been \
-                     recorded on a Slippi build with modified stage data; see docs/parity.md's \
-                     \"Fixture-selection rule\"",
-                    recording.id,
-                    expected[0].to_bits(),
-                    expected[1].to_bits(),
-                    actual[0].to_bits(),
-                    actual[1].to_bits(),
-                ));
-            }
+            explicit[spawn_index] = [actor.post.position.x, actor.post.position.y];
         }
+
+        let provenance = classify_spawn_provenance(&data.stage.name, data.stage.spawns, explicit);
+        println!(
+            "{}: classified {:?} (stage.spawns = {:?}, first-frame post.position = {:?})",
+            recording.id, provenance, data.stage.spawns, explicit
+        );
+        classified.push((recording.id.clone(), provenance));
     }
+
     assert!(
-        failures.is_empty(),
-        "{} fixture(s) do not bit-match the pack's spawn points:\n{}",
-        failures.len(),
-        failures.join("\n")
+        !classified.is_empty(),
+        "every recording in {} was skipped (no published pack for any pairing)",
+        recordings_path.display()
+    );
+    println!(
+        "classified {} fixture(s): {} vanilla, {} slippi_neutral, {} unknown_codeset",
+        classified.len(),
+        classified
+            .iter()
+            .filter(|(_, p)| *p == SpawnProvenance::Vanilla)
+            .count(),
+        classified
+            .iter()
+            .filter(|(_, p)| *p == SpawnProvenance::SlippiNeutral)
+            .count(),
+        classified
+            .iter()
+            .filter(|(_, p)| *p == SpawnProvenance::UnknownCodeset)
+            .count(),
     );
 }

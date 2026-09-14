@@ -3,6 +3,7 @@
 
 pub mod match_validation;
 pub mod observation;
+pub mod spawn_policy;
 
 pub use peppi_adapter as slippi;
 pub use replay_validation::{
