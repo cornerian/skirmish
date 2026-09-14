@@ -8,6 +8,7 @@
   "damage_calc_angle": "combat_hitstun",
   "shield_collision": "combat_collision",
   "shield_mtx": "hsd_mtx",
+  "bones_pose_mtx": "hsd_mtx",
   "shield_sdk": "sdk_mtx",
   "aerial_angles": "ftcommon",
   "aerial_rate": "aerial_landing",

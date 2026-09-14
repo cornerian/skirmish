@@ -1,5 +1,81 @@
 # Local validation provenance
 
+The 2026-09-14 bones C-oracle batch adds `tests/oracle/bones_pose.c`, a
+driver that compiles the pinned `has_scl`/`HSD_JObjMakeMatrix`
+(`sysdolphin/baselib/jobj.c:127-196`, `tests/oracle/original/jobj.c`,
+selected via `tests/oracle/jobj.functions.json`) and calls it top-down over
+a caller-built `HSD_JObj` chain, exactly as `Pose::evaluate`'s own
+topological walk visits a bone only after its parent. `HSD_MtxSRT` is
+re-extracted under its own adapter (`bones_pose_mtx`, aliasing `hsd_mtx` in
+`adapters.json`) with the pinned MSL `sinf`/`cosf`
+(`skirmish_msl_sinf`/`skirmish_msl_cosf`, already built for
+`math_differential.rs`) substituted for host libm via macro, renamed to
+avoid colliding with `bones.c`'s own libm-backed copy (`docs/math.md`'s FMA
+audit explains why that one stays on libm). `PSMTXConcat` maps to the
+already-pinned `C_MTXConcat` (paired-single assembly has no scalar
+reference otherwise). `HSD_VecAlloc`/`HSD_VecFree`, the quaternion branch
+(`HSD_MtxSRTQuat`) and the AObj-override branch (`MTXMultVec`) are stubbed;
+none of the three is reachable for an ordinary bone chain with no
+AObj-driven joints (see `bones_pose.c`'s own header comment for the full
+ABI-adaptation list).
+
+`tests/bones_differential.rs`'s new `real_pose` module feeds this oracle
+Fox's actual exported `SpecialAirNLoop` frame-6 pose (73 joints,
+`SKIRMISH_GAMEPLAY_DATA/fox-fd/match-data.json`,
+`fighters[0].specials.neutral.loop_phase.air.frames[6].bones`, unset/missing
+skips cleanly like every other real-pack test) with bone 0's own local
+rotation forced to `(0, FRAC_PI_2, 0)` exactly as `game::simulation::pose`
+does, and asserts `Pose::evaluate`'s all 73 world matrices against the
+oracle's, plus joint 67's muzzle position (local offset `(0,
+1.2325000762939453, 4.263599872589111)`, root translated to `cur_pos
+(-28.223993, 8.3501, 0)`, z forced to 0) after applying the same external
+root through both `concat`/`transform_point` and the C oracle's own
+`C_MTXConcat`/`oracle_bones_transform`. Every comparison uses this file's
+own existing `close_matrix` tolerance (`4e-6 * b.abs().max(1.0) + 2e-3`),
+not raw bit equality: `math_differential.rs`'s own
+`sinf_matches_the_pinned_msl_body`/`cosf_matches_the_pinned_msl_body`
+already establish that even this crate's MSL-derived `compat::math::trig`
+only tracks the pinned MSL C body within `1e-5` absolute (real hardware
+ships `sinf`/`cosf` fused; this port's control-flow-faithful translation
+does not reproduce the exact fusion) -- noise that compounds over a
+73-joint chain of concatenated rotations, exactly the reason this file's
+own `euler_srt_tracks_original_with_host_trig_tolerance` already uses the
+same tolerance for a single joint.
+
+**Result**: the oracle confirms, within that documented tolerance, that
+`bones::Pose::evaluate`/`evaluate_with_root` already match
+`HSD_JObjMakeMatrix` for this real 73-joint pose -- joint 67's muzzle
+position (root-facing fix applied, z forced to 0) is `(-20.912, 20.391638)`
+from *both* `bones::Pose` and the C oracle. No `bones.rs` change follows
+from this batch: per this investigation's own stop condition, an
+independently-derived, independently-compiled oracle agreeing with the
+evaluator means the residual is not in the evaluator.
+
+That number is worth flagging precisely because it does *not* match this
+document's own root-facing entry below, which predicts `(-18.618, 18.295)`
+for this exact `cur_pos`/joint by hand-rotating a separately recorded
+*pre-fix* probe matrix. Re-deriving that same pre-fix matrix directly from
+this pack's own `frames[6]` data (bone 0 left at rest, external root
+un-rotated) does not reproduce the entry's recorded pre-fix numbers either
+-- notably, row 1 (the Y row, invariant under any Y-axis root rotation,
+pre- or post-fix, by construction) comes out `(0.0088, 0.9542, 0.4112,
+17.4625)` from this pack's data on both sides of the fix, not the entry's
+recorded `(-0.048, 1.056, -0.060, 17.2495)`. So that entry's own "pre-fix
+probe" matrix was not captured from an isolated evaluation of this exact
+sampled pose; it came from a live, many-frame `fox-fd-3.slp` free-run
+(the entry's own text: "driven past its own unrelated -32 ULP mismatch"),
+whose accumulated state at frame -14 apparently differs from this pack's
+clean `frames[6]` sample in some way this batch did not chase further --
+consistent with, and not contradicting, that same entry's own conclusion
+that the residual is the pack's bone-67 animation-sample data, not a
+double rotation or an indexing bug. This batch's own oracle-confirmed
+number, `(-20.912, 20.391638)`, matches the independent exporter port
+(`(-20.912, 20.392)` per its own report) essentially exactly, which is
+itself evidence the evaluator and the pack data it was fed here are both
+behaving consistently; it is the recording-derived target
+(`(-20.0461, 18.1391)`) and this document's own pre-fix-probe-derived
+prediction that disagree with that pair, not the other way around.
+
 The 2026-09-14 root-facing fix (`simulation::pose`, replacing the
 `diag(facing, 1, facing)` mirror this document's own muzzle-bone entries
 below have been probing around): the game turns a fighter's model

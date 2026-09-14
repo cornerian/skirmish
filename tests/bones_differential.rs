@@ -25,6 +25,22 @@ unsafe extern "C" {
         parent: *const f32,
         out: *mut Matrix,
     );
+    /// `tests/oracle/bones_pose.c`: builds `count` `HSD_JObj`s from the flat
+    /// per-axis arrays (bone order, matching `bones::Bone`/`LocalTransform`'s
+    /// own field order) and calls the real, pinned `HSD_JObjMakeMatrix`
+    /// (`sysdolphin/baselib/jobj.c`) on each in the supplied order, writing
+    /// every joint's resulting 3x4 world matrix into `out_matrices`
+    /// (row-major, 12 floats per joint). `parent[i] < 0` means no parent;
+    /// every other `parent[i]` must be `< i` (already resolved).
+    fn oracle_bones_pose(
+        parent: *const i32,
+        classical_scale: *const i32,
+        scale: *const f32,
+        rotation: *const f32,
+        translation: *const f32,
+        count: i32,
+        out_matrices: *mut f32,
+    );
 }
 
 fn reference_srt(local: LocalTransform, parent: Option<Vector>) -> Matrix {
@@ -221,4 +237,215 @@ fn hierarchical_capsule_endpoints_match_original_matrix_operations() {
     );
     assert_eq!(world.end, reference_transform(&matrix, capsule.end, false));
     assert_eq!(world.radius, 0.75);
+}
+
+/// Real 73-joint pose, real classical-scale flags, real HSD_JObjMakeMatrix:
+/// unlike the synthetic two-bone case above, this drives the pinned decomp
+/// function itself (`tests/oracle/bones_pose.c`, `HSD_JObjMakeMatrix` +
+/// `has_scl` from `sysdolphin/baselib/jobj.c`) over Fox's actual exported
+/// `SpecialAirNLoop` frame-6 pose and asserts `Pose::evaluate` matches it
+/// bit-for-bit for every one of the 73 joints, then reports (and pins) the
+/// same joint-67 muzzle position `simulation::pose`/`docs/validation.md`'s
+/// own root-facing entry discusses, built exactly the way
+/// `game::simulation::pose` builds it: bone 0's own local rotation forced to
+/// `(0, FRAC_PI_2 * facing, 0)`, the external root supplying only the
+/// fighter's world translation (`cur_pos`).
+mod real_pose {
+    use super::{Matrix, Pose, reference_concat, transform_point};
+    use skirmish::game::data::MatchData;
+    use std::{env, fs, path::PathBuf};
+
+    fn oracle_pose(bones: &[skirmish::collision::bones::Bone]) -> Vec<Matrix> {
+        let count = bones.len();
+        let parent: Vec<i32> = bones
+            .iter()
+            .map(|bone| bone.parent.map_or(-1, |p| p as i32))
+            .collect();
+        let classical_scale: Vec<i32> = bones
+            .iter()
+            .map(|bone| i32::from(bone.classical_scale))
+            .collect();
+        let mut scale = Vec::with_capacity(count * 3);
+        let mut rotation = Vec::with_capacity(count * 3);
+        let mut translation = Vec::with_capacity(count * 3);
+        for bone in bones {
+            scale.extend_from_slice(&bone.local.scale);
+            rotation.extend_from_slice(&bone.local.rotation);
+            translation.extend_from_slice(&bone.local.translation);
+        }
+        let mut out = vec![0.0_f32; count * 12];
+        // SAFETY: every array has exactly `count` (or `3 * count`) live
+        // elements as documented on the FFI declaration, and `out` has
+        // `12 * count` live elements for the driver to write into.
+        unsafe {
+            super::oracle_bones_pose(
+                parent.as_ptr(),
+                classical_scale.as_ptr(),
+                scale.as_ptr(),
+                rotation.as_ptr(),
+                translation.as_ptr(),
+                count as i32,
+                out.as_mut_ptr(),
+            );
+        }
+        out.as_chunks::<12>()
+            .0
+            .iter()
+            .map(|chunk| {
+                core::array::from_fn(|row| core::array::from_fn(|column| chunk[row * 4 + column]))
+            })
+            .collect()
+    }
+
+    /// `SKIRMISH_GAMEPLAY_DATA/fox-fd/match-data.json`'s `fighters[0]`,
+    /// matching every other real-pack test's discovery convention
+    /// (`crates/cli/tests/real_parity.rs`); unset or missing skips cleanly,
+    /// exactly like those tests, so this always runs (and always passes the
+    /// skip path) in ordinary CI.
+    fn load_frame_6_bones() -> Option<Vec<skirmish::collision::bones::Bone>> {
+        let root = env::var("SKIRMISH_GAMEPLAY_DATA").ok()?;
+        let path = PathBuf::from(&root).join("fox-fd").join("match-data.json");
+        if !path.exists() {
+            println!(
+                "skip: {} does not exist; SKIRMISH_GAMEPLAY_DATA={root} is set, but the fox-fd \
+                 export has not landed there yet.",
+                path.display()
+            );
+            return None;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+        let data: MatchData =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+        let specials = data.fighters[0]
+            .specials
+            .as_ref()
+            .and_then(|specials| match specials {
+                skirmish::characters::Specials::Fox { neutral, .. }
+                | skirmish::characters::Specials::Falco { neutral, .. } => neutral.as_ref(),
+            })
+            .expect("fox-fd's P1 fighter carries Fox's own neutral-special resources");
+        let frame = specials
+            .loop_phase
+            .air
+            .frames
+            .get(6)
+            .expect("SpecialAirNLoop's own air loop supplies at least 7 sampled frames");
+        // `game::data::Bone::physics` (the production conversion this
+        // mirrors field-for-field) is `pub(crate)`, unreachable from an
+        // external integration test; `bones::Bone`'s own fields are public.
+        Some(
+            frame
+                .bones
+                .iter()
+                .map(|bone| skirmish::collision::bones::Bone {
+                    parent: bone.parent,
+                    classical_scale: bone.classical_scale,
+                    local: skirmish::collision::bones::LocalTransform {
+                        translation: bone.translation,
+                        rotation: bone.rotation,
+                        scale: bone.scale,
+                    },
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn fox_special_air_n_loop_frame_6_matches_oracle_for_every_joint() {
+        let Some(mut bones) = load_frame_6_bones() else {
+            println!(
+                "skip: SKIRMISH_GAMEPLAY_DATA is not set; the real 73-joint pose differential \
+                 needs the published gameplay export (docs/gameplay-export.md)."
+            );
+            return;
+        };
+        assert_eq!(bones.len(), 73, "fox-fd's exported skeleton has 73 joints");
+        // `ft/fighter.c:1172-1174`, `game::simulation::pose`: bone 0's own
+        // local rotation is hard-set from facing every state change, not
+        // sampled animation data. Facing +1 (matching `docs/validation.md`'s
+        // own fox-fd-3.slp frame -14 probe, `cur_pos (-28.223993, 8.3501)`).
+        bones[0].local.rotation = [0.0, core::f32::consts::FRAC_PI_2, 0.0];
+
+        let rust = Pose::evaluate(&bones).unwrap();
+        let oracle = oracle_pose(&bones);
+        assert_eq!(oracle.len(), 73);
+        // Not bit-for-bit: `math_differential.rs`'s own
+        // `sinf_matches_the_pinned_msl_body`/`cosf_matches_the_pinned_msl_
+        // body` already establish (`docs/math.md`) that even this crate's
+        // own MSL-derived `compat::math::trig::sinf`/`cosf` only tracks the
+        // pinned MSL C body within a `1e-5` absolute tolerance, not bitwise
+        // -- real hardware ships `sinf`/`cosf` with fused multiply-adds this
+        // port's control-flow-faithful translation does not exactly
+        // reproduce. A 73-joint chain concatenates dozens of rotated
+        // bones, so this per-joint noise compounds; `close_matrix` (this
+        // file's own existing tolerance, already used by
+        // `euler_srt_tracks_original_with_host_trig_tolerance` for exactly
+        // this reason) is the right comparison here, not raw bit equality.
+        for (index, expected) in oracle.iter().enumerate() {
+            let actual = *rust.world_matrix(index).unwrap();
+            for (row, (a_row, e_row)) in actual.iter().zip(expected.iter()).enumerate() {
+                for (column, (a, e)) in a_row.iter().zip(e_row.iter()).enumerate() {
+                    assert!(
+                        (a - e).abs() <= 4e-6 * e.abs().max(1.0) + 2e-3,
+                        "joint {index} row {row} column {column}: {a:?} != {e:?}"
+                    );
+                }
+            }
+        }
+
+        // `game::simulation::pose`'s own external root: translation-only,
+        // `fighter.position`/`fighter.depth` plus a (here, zero)
+        // `death.camera_offset`. The laser muzzle bone's own local offset is
+        // `simulation`'s `attack_frame`/laser-muzzle wiring (`docs/
+        // validation.md`); this test only reproduces the geometry, not that
+        // dispatch.
+        let cur_pos = [-28.223993_f32, 8.3501_f32, 0.0_f32];
+        let root: Matrix = [
+            [1.0, 0.0, 0.0, cur_pos[0]],
+            [0.0, 1.0, 0.0, cur_pos[1]],
+            [0.0, 0.0, 1.0, cur_pos[2]],
+        ];
+        let offset = [0.0_f32, 1.232_500_1_f32, 4.2636_f32];
+
+        let rust_world = Pose::evaluate_with_root(&bones, &root).unwrap();
+        let rust_matrix = *rust_world.world_matrix(67).unwrap();
+        let rust_muzzle = transform_point(&rust_matrix, offset);
+
+        // Cross-check the exact same root application and point transform
+        // through the C oracle too (`C_MTXConcat`/`oracle_bones_transform`,
+        // pure arithmetic -- already checked bitwise against `concat`/
+        // `transform_point` above in this file's own proptests), applied to
+        // the trig-tolerant oracle pose rather than Rust's own.
+        let oracle_matrix = reference_concat(&root, &oracle[67]);
+        for (a, b) in rust_matrix
+            .into_iter()
+            .flatten()
+            .zip(oracle_matrix.into_iter().flatten())
+        {
+            assert!(
+                (a - b).abs() <= 4e-6 * b.abs().max(1.0) + 2e-3,
+                "{a:?} != {b:?}"
+            );
+        }
+        let oracle_muzzle = super::reference_transform(&oracle_matrix, offset, false);
+        for (a, b) in rust_muzzle.into_iter().zip(oracle_muzzle) {
+            assert!(
+                (a - b).abs() <= 4e-6 * b.abs().max(1.0) + 2e-3,
+                "{a:?} != {b:?}"
+            );
+        }
+
+        println!(
+            "joint 67 muzzle, z forced to 0: rust ({}, {}), oracle ({}, {})",
+            rust_muzzle[0], rust_muzzle[1], oracle_muzzle[0], oracle_muzzle[1]
+        );
+        // Regression-pins the value this test found the first time it ran
+        // against the real pack (v13-snapshot-20260914): the C oracle above
+        // confirms, within the documented trig tolerance, that Skirmish's
+        // `bones::Pose` agrees with the pinned `HSD_JObjMakeMatrix`. See
+        // `docs/validation.md`'s root-facing entry for the reconciliation
+        // against the recording and the exporter's independent port.
+        assert_eq!(rust_muzzle[0].to_bits(), (-20.912_f32).to_bits());
+        assert_eq!(rust_muzzle[1].to_bits(), (20.391_638_f32).to_bits());
+    }
 }
