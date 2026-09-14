@@ -253,6 +253,43 @@ fn a_stronger_stick_mid_turn_converts_straight_to_dash_without_waiting_for_the_f
     );
 }
 
+/// `fox-fd-2.slp`: P2 enters an ordinary `Turn` and holds a smash-magnitude
+/// stick continuously well past its own flip (`docs/parity.md`'s frame -11
+/// regression report) -- the held stick is already stale (`tilt_x_age` past
+/// `dash_window`) by the time the flip naturally lands, and once flipped, a
+/// later *fresh* reversal (crossing back through neutral first, so
+/// `tilt_x_age` genuinely resets) still does not convert to `Dash`: only the
+/// exact frame `has_turned` itself flips (`just_turned`) or any frame
+/// strictly before that flip (`!turn_has_turned`) can trigger the
+/// conversion, matching the fix's own `(just_turned ||
+/// !turn_has_turned)` gate (`game::locomotion::update_actions`).
+#[test]
+fn a_fresh_reversal_after_turn_already_flipped_does_not_convert_to_dash() {
+    let mut game = Match::new(data(), 42).unwrap();
+    let state = step(&mut game, stick(0, [-0.5, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(state.fighters[0].facing, 1.0, "not yet flipped");
+    // Return to neutral for the rest of the ordinary 3-frame countdown
+    // (`standing_turn_frames`) plus the one additional frame the flip
+    // itself lands on, so it lands on a neutral-stick frame and cannot
+    // possibly convert on its own.
+    let mut state = state;
+    for _ in 0..4 {
+        state = step(&mut game, buttons(0));
+    }
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(
+        state.fighters[0].facing, -1.0,
+        "flipped naturally, unconverted"
+    );
+    // A fresh, full-magnitude reversal back toward the post-flip facing --
+    // crossing back through the neutral frame above first, so `tilt_x_age`
+    // is genuinely fresh here, not stale -- still does not convert.
+    let state = step(&mut game, stick(0, [-0.9, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(state.fighters[0].facing, -1.0);
+}
+
 #[test]
 fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
     // Early phase: an opposite stick matches neither the forward-smash nor

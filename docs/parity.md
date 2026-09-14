@@ -1427,7 +1427,37 @@ the full breakdown.
 published gameplay-export pack v10. The new first divergence is frame
 150, field `action_state` on P4 (expected `Dash`, actual `Turn`) -- the
 same class of Turn-to-Dash conversion divergence already fixed once on
-this recording (frame 33), not yet re-diagnosed for this instance.
+this recording (frame 33).
+
+**Fixed (regression): the frame-33 fix's own "instant bypass" over-
+corrected, regressing `fox-fd-2.slp` from 118 to 112 frames (frame -11,
+P2, expected `Turn`, actual `Dash`).** `ftCo_Turn_IASA`'s own `fn_
+800C9C2C` conversion gates the actual `ftCo_Dash_Enter` call on `fp->
+mv.co.turn.just_turned`, a one-frame pulse true only on the exact frame
+`ftCo_Turn_Anim_Inner` (the ordinary, Anim-side flip) itself flips `has_
+turned`. The frame-33 fix dropped `just_turned` entirely in favor of
+`!turn_has_turned` alone: correct for an ordinary Turn converting
+*before* its own flip (`fox-bf.slp` P4, frame 33), but wrong two other
+ways -- it blocks a *smash-entered* Turn whose ordinary flip lands
+almost immediately (`frames_to_turn = 0` from entry, `fox-bf.slp` P1,
+frame -4: by the time this IASA-equivalent check runs, `has_turned` is
+*already* true, since Anim precedes it the same frame, even though the
+flip just happened and should still convert), and it wrongly lets a
+long-since-flipped Turn re-convert on any later fresh reversal
+(`fox-fd-2.slp` P2, frame -11: flipped at frame -15, then holds a
+smash-magnitude stick for many further frames -- including a fresh
+reversal at -11 -- without the recording ever converting).
+`update_actions`'s `Action::Turn` arm now gates the conversion on
+`(just_turned || !turn_has_turned)`: `just_turned` is threaded back
+through the per-frame pipeline exactly as it was before the frame-33
+fix removed it, set by the unchanged, decomp-literal Anim-side flip.
+The two conditions together cover all three recordings' own cases; see
+`docs/validation.md` for the full breakdown and the new native test
+(`game_dash`'s `a_fresh_reversal_after_turn_already_flipped_does_not_
+convert_to_dash`). `fox-fd-2.slp` returns to its own pre-existing 118/-5
+frontier (baseline unchanged); `fox-bf.slp` returns to 273/`149`,
+unchanged from just above -- the frame 150 divergence is not
+re-diagnosed in this entry.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

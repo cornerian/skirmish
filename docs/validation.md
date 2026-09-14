@@ -1,5 +1,67 @@
 # Local validation provenance
 
+The 2026-09-14 Turn-to-Dash conversion regression fix (the real-replay
+parity loop, `fox-bf.slp`/`fox-fd-2.slp`, `docs/parity.md`) narrows the
+prior "instant bypass" fix (`36a5a36`, this file's own earlier entry
+below) that had regressed `fox-fd-2.slp` from 118 to 112 frames.
+`ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion gates the actual
+`ftCo_Dash_Enter` call on `fp->mv.co.turn.just_turned`, a one-frame pulse
+that reads true only on the exact frame `ftCo_Turn_Anim_Inner` (the
+ordinary, Anim-side flip) flips `has_turned`, and is cleared again at the
+end of that same IASA call: once a Turn has already resolved its own
+flip, no later frame's stick -- however strong, however fresh -- can
+trigger this conversion again. The prior fix dropped `just_turned`
+entirely in favor of `!turn_has_turned` alone, which correctly covers an
+*ordinary* Turn converting before its own natural flip (`fox-bf.slp`'s
+own P4, frame 33) but wrongly *blocks* a *smash-entered* Turn whose
+ordinary Anim-side flip lands almost immediately (`frames_to_turn = 0`
+from entry): by the time `update_actions`'s own IASA-equivalent check
+runs, `has_turned` is *already* true (Anim precedes IASA the same
+frame), even though the flip just happened this exact frame and should
+still convert (`fox-bf.slp`'s own P1, frame -4) -- and wrongly *allows* a
+long-since-flipped Turn to re-convert on any later fresh reversal
+(`fox-fd-2.slp`'s own P2, frame -11: flipped at frame -15, then holds a
+smash-magnitude stick for many further frames, including a fresh
+reversal at -11, without ever converting in the recording).
+
+`game::locomotion::update_actions`'s `Action::Turn` arm now gates the
+conversion on `(just_turned || !turn_has_turned)`: `just_turned` is
+threaded back through the per-frame pipeline (`update_animation`'s own
+return value, `update_actions`' own parameter, both at the `locomotion`
+and `simulation` layers) exactly as it was before the prior fix removed
+it, and set by the *ordinary* Anim-side flip in `update_animation`'s own
+`Action::Turn` arm (unchanged, decomp-literal). The two conditions
+together cover every case: an ordinary, not-yet-flipped Turn
+(`!turn_has_turned`), a smash-entered Turn whose flip lands this exact
+frame (`just_turned`), and -- by neither holding -- a Turn that already
+resolved its own flip on an earlier frame, however fresh or strong a
+later frame's stick is.
+
+**Tests**: `game_dash`'s new
+`a_fresh_reversal_after_turn_already_flipped_does_not_convert_to_dash`
+enters an ordinary Turn, lets it flip naturally on a neutral-stick frame
+(so the flip itself cannot convert), then applies a fresh, full-
+magnitude reversal crossing back through neutral first (so `tilt_x_age`
+is genuinely fresh, not stale) and confirms it still does not convert --
+the `fox-fd-2.slp` P2 scenario. The existing `a_stronger_stick_mid_
+turn_converts_straight_to_dash_without_waiting_for_the_flip` (the
+`fox-bf.slp` P4 scenario) and the smash-entry tests (the `fox-bf.slp` P1
+scenario, whose own smash-entered Turn's ordinary flip already landed
+correctly before this fix and continues to) all still pass unchanged.
+`cargo fmt --check`, `cargo clippy --workspace --all-targets` and
+`cargo test --workspace` (both default and `c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10:
+`fox-fd-2.slp` returns to 118 frames matching (`-123` through `-6`,
+its own pre-existing, already-documented frontier at frame -5, entirely
+unrelated to Turn/Dash); `fox-fd-2-baseline.json` needs no change, since
+this exactly restores its already-recorded baseline. `fox-bf.slp`
+returns to 273 frames matching (`-123` through `149`), the same count
+the regressed fix had reached before its own flaw surfaced; the first
+divergence remains frame 150 (`action_state` on P4, expected `Dash`,
+actual `Turn`) -- another instance of the same conversion class, on a
+fresh recording position, not yet re-diagnosed.
+
 The 2026-09-14 laser muzzle-bone axis-convention fix (the real-replay
 parity loop) corrects a coordinate mismatch in the muzzle-bone spawn
 position landed by the prior laser fix (`585a11c`): `ftfoxspecialn.c:32-
