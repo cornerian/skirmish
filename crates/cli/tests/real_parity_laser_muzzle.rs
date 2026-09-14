@@ -126,19 +126,28 @@ fn laser_muzzle_uses_pre_physics_position_on_fox_fd_3() -> Result<()> {
     // of where the decomp's own proc order actually evaluates the muzzle).
     //
     // A smaller residual remains and is asserted exactly below, not hidden
-    // behind a loose tolerance: `frames[5]`'s own exported bone-67
-    // `loop_phase.air` animation sample is not itself bit-exact against
-    // this recording (`docs/validation.md`'s own conclusion, "the pack's
-    // own bone-67 ... animation-sample data, not chased further" --
-    // established independently of this fix, by a C-oracle cross-check of
-    // the same bone/pose evaluator). Every one of these four frames comes
-    // out `(+0.19955, +0.35594)` ahead of its own recorded position (to 5
-    // decimal places; the fourth/fifth digit wobbles by ~4e-7 across
-    // frames, ordinary `f32` accumulation noise, not a per-frame drift):
-    // both the recording's and the simulator's own laser move at the
-    // identical constant `(7.0, 0.0)` per frame after spawn, so a residual
-    // fixed at spawn time stays constant rather than growing.
-    const RESIDUAL: [f32; 2] = [0.19955, 0.35594];
+    // behind a loose tolerance. Since `docs/validation.md`'s 2026-09-16
+    // model-scale entry, Fox's pose is evaluated with `model_scaling`
+    // (`0.96`) applied to the root bone's scale -- Skirmish evaluated every
+    // Fox bone 4% too large before that loop, the pack having carried no
+    // model scale at all. The residual below is that entry's own
+    // oracle-faithful "air frame 5" row, cross-checked bit-for-bit against
+    // the real `HSD_JObjMakeMatrix` oracle (`tests/bones_differential.rs`'s
+    // `real_pose` module) under both classical-scale configurations the
+    // investigation considered, which turned out numerically identical for
+    // this bone chain: this pose is genuinely oracle-faithful, not merely
+    // unchased. It does *not* reproduce this recording's own Slippi target
+    // (the entry's own table, and its "does not reproduce the Slippi-
+    // replay-derived targets, reported honestly rather than fudged" -- a
+    // hybrid of unscaled rotation with scaled translation would match
+    // Slippi to `1e-4`, but no permutation of `HSD_JObjMakeMatrix`'s own
+    // scale-removal bookkeeping produces that hybrid for a uniformly-scaled
+    // root). Every one of these four frames comes out `(-0.1847, -0.0419)`
+    // from its own recorded position (both the recording's and the
+    // simulator's own laser move at the identical constant `(7.0, 0.0)`
+    // per frame after spawn, so a residual fixed at spawn time stays
+    // constant rather than growing).
+    const RESIDUAL: [f32; 2] = [-0.1847, -0.0419];
     const TOLERANCE: f32 = 2e-4;
 
     assert_eq!(observed_laser.len(), 4, "expected exactly frames -14..=-11");
