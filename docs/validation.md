@@ -1,5 +1,50 @@
 # Local validation provenance
 
+The 2026-09-14 bones C-oracle batch's own follow-up closes the "does not
+match this document's own root-facing entry" thread that batch's own
+entry (below) left open, with a live-path probe rather than further
+matrix algebra: temporarily instrumenting `simulation::pose` (not
+committed) and driving `fox-fd-3.slp`'s own recorded inputs through the
+real native `game::Match` (`make-initialization` + `game::Match::step`,
+no comparison against Slippi's own post-state, so there is nothing to
+"drive past") shows that at the exact recorded frame this document's
+probes use (`cur_pos (-28.223993, 8.3501)`, `SpecialAirNLoop`, `fire =
+true`), the live fighter's own `action_frame` is **5**, not 6 -- one
+frame earlier than every probe in this document (including this batch's
+own C-oracle entry below) assumed. `simulation::pose`'s generic-attack
+branch indexes `loop_phase.air.frames` by raw `action_frame` for this
+action (`aerial::attack_index` does not cover the neutral-special
+actions, so no aerial sample-index correction applies), so the live shot
+uses bone 67's own `frames[5]` sample, confirmed bit-for-bit identical to
+the pack's own `frames[5]` entry.
+
+A full sweep of `bones::Pose::evaluate_with_root`'s own muzzle position
+(joint 67, offset `(0, 1.2325000762939453, 4.263599872589111)`, root
+rotated `+FRAC_PI_2`/translated to this same `cur_pos`, z forced to 0)
+over every sampled frame of `specials.neutral`'s `start`/`loop_phase`
+(air and ground) confirms `frames[5]` of `loop_phase.air` is exactly
+`(-18.618954, 18.295034)` -- the number this document's own root-facing
+entry (below) predicted by hand-rotating a separately recorded pre-fix
+matrix, and the number the live sim actually fires with. This batch's
+own prior C-oracle entry (below) evaluated `frames[6]` instead (matching
+this document's own then-current text, "action_frame = 6"), which is why
+its oracle-confirmed `(-20.912, 20.391638)` did not match: both indices
+are legitimate outputs of the identical, oracle-verified evaluator --
+the entries disagreed on which sampled frame the live simulation
+actually reaches at this recorded moment, not on the evaluator itself.
+
+No entry in the full sweep (29 sampled frames across all four
+phase/side combinations) lands within `1e-3` of the recording's own
+target, `(-20.0461, 18.1391)`; the closest is `loop_phase.ground`
+`frames[1]`, `(-20.03498, 18.899414)`, distance `~0.76`, still short of
+exact. So `frames[5]`'s exact match to this document's own earlier
+hand-derived prediction was a real, load-bearing find (it identifies
+*which* frame the live sim uses, resolving the apparent evaluator
+disagreement), but it does not itself close the residual against the
+recording -- consistent with, not contradicting, this document's own
+established "pack's own bone-67 `loop_phase.air` animation-sample
+data, not chased further" conclusion below.
+
 The 2026-09-14 bones C-oracle batch adds `tests/oracle/bones_pose.c`, a
 driver that compiles the pinned `has_scl`/`HSD_JObjMakeMatrix`
 (`sysdolphin/baselib/jobj.c:127-196`, `tests/oracle/original/jobj.c`,
