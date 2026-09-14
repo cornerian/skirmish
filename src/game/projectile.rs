@@ -80,6 +80,32 @@ pub struct Projectile {
     /// spawning move's own resource omits `laser.scale`: hitbox offsets are
     /// then used unscaled, this port's pre-existing behavior.
     pub scale: Option<RayScale>,
+    /// `item->scl`, initialised from the spawning move's own item common
+    /// attribute (`xCC_item_attr->x60_scale`, `it/item.c:672`) and never
+    /// changed afterward for a laser. Multiplies every one of this
+    /// instance's own hitbox radii in the hurtbox, shield and reflect
+    /// tests below (`lbColl_80007B78(mtx, hurt, ip->scl, fp->x34_scale.y)`,
+    /// `ft/ft_07C6.c:110` -> `lb/lbcollision.c:1570-1575`'s own `a_val =
+    /// a->scale * x` term); the victim's own hurtbox radius is scaled by
+    /// the *other* factor there (`fp->x34_scale.y`, `1.0` in a VS match,
+    /// not `model_scaling`) and so is deliberately left alone by this
+    /// field -- see the hurtbox capsule construction in `step` below.
+    /// Defaults to `1.0` (`characters::fox::neutral::Laser::item_scale`'s
+    /// own doc) when the spawning move's own resource omits
+    /// `laser.item_scale`.
+    pub item_scale: f32,
+    /// `true` only for this instance's own first hit-test frame. Mirrors
+    /// `it_8027129C`'s `HitCapsule_Enabled` state (`it/itcoll.c:866-891`):
+    /// on the frame a hit capsule is (re-)enabled, the source sets both
+    /// `x4C` (current world offset) and `x58` (swept-start) to the *same*
+    /// freshly computed value -- a point capsule, not a sweep -- and only
+    /// from the next frame on (`HitCapsule_Unk3`) does `x58` carry the
+    /// *previous* frame's `x4C` into the swept test's start. A laser is
+    /// spawned with every hit capsule already `Enabled`, so this flag
+    /// models that first frame for the whole instance (all of a laser's
+    /// hitboxes enable simultaneously, `it_802725D4`'s own per-index
+    /// loop), and is cleared for every frame after.
+    pub first_hit_frame: bool,
 }
 
 /// `item->xDD4_itemVar.ray.scale`'s own current value, growth rate and cap.
@@ -97,11 +123,12 @@ impl Projectile {
     /// The single collision radius used for the shield-bounce and
     /// Reflector swept-capsule tests (which do not need per-hitbox
     /// precision, unlike the hurtbox damage test below): the largest of
-    /// this instance's own hitbox radii, or a minimal fallback.
+    /// this instance's own hitbox radii after `item_scale` (`Projectile::
+    /// item_scale`'s own doc), or a minimal fallback.
     fn collision_radius(&self) -> f32 {
         self.hitboxes
             .iter()
-            .map(|h| h.radius)
+            .map(|h| h.radius * self.item_scale)
             .fold(0.0_f32, f32::max)
             .max(0.01)
     }
@@ -122,6 +149,7 @@ pub(crate) fn spawn(
     hitboxes: Vec<Hitbox>,
     move_id: u16,
     scale_cap: Option<f32>,
+    item_scale: Option<f32>,
     attack_instances: &mut crate::fighter::stale::InstanceCounter,
 ) -> Projectile {
     let [vx, _] = velocity(angle, speed);
@@ -142,6 +170,8 @@ pub(crate) fn spawn(
             per_frame: speed.abs() / 11.25,
             cap,
         }),
+        item_scale: item_scale.unwrap_or(1.0),
+        first_hit_frame: true,
     }
 }
 
@@ -237,6 +267,14 @@ fn step(
         .scale
         .map_or(1.0, |scale| scale.current);
 
+    // `Projectile::first_hit_frame`'s own doc: this frame's hit-capsule
+    // state transition (`it_8027129C`) runs unconditionally, independent
+    // of whether a hit is actually found below, so the flag is captured
+    // and cleared here rather than only on the path that reaches the
+    // hurtbox loop.
+    let first_hit_frame = state.projectiles[index].first_hit_frame;
+    state.projectiles[index].first_hit_frame = false;
+
     // Terrain despawn: a real swept ray-vs-stage-line cast (`it_8026E9A4` ->
     // `mpCheckAllRemap` -> `mpCheckMultiple`, checking floor|ceiling|
     // left-wall|right-wall, `checks & 0xF`), reusing the exact pinned line-
@@ -317,11 +355,19 @@ fn step(
             radius: down.reflect.size,
         };
         let mut contact = crate::collision::shield::Contact::default();
+        // Broadphase fast-reject radius `hurt.radius * broadphase_scale +
+        // hit.radius`: the item-vs-fighter test passes `3.0 *
+        // fp->x34_scale.y` (`= 3.0` in a VS match) here, the same constant
+        // `simulation.rs:1019`/`grab.rs:1182` already use for the
+        // fighter-vs-fighter and grab paths (`lbColl_8000805C`/
+        // `lbColl_80008248`'s own last argument, `lb/lbcollision.c:
+        // 1690-1740`) -- not `1.0`, which was this port's own unfixed
+        // guess.
         let overlaps = crate::collision::shield::capsule_matrix(
             &swept,
             &reflect_capsule,
             bone_matrix,
-            1.0,
+            3.0,
             &mut contact,
         )
         .map_err(|e| super::Error::Physics(e.to_string()))?;
@@ -435,11 +481,13 @@ fn step(
             radius: 1.0,
         };
         let mut contact = crate::collision::shield::Contact::default();
+        // `3.0` broadphase scale, not `1.0` -- see the Reflector test's own
+        // citation above.
         let overlaps = crate::collision::shield::capsule_matrix(
             &swept,
             &shield_capsule,
             &matrix,
-            1.0,
+            3.0,
             &mut contact,
         )
         .map_err(|e| super::Error::Physics(e.to_string()))?;
@@ -483,15 +531,36 @@ fn step(
                 position[1] + hit.center[1] * scale_factor,
                 position[2] + hit.center[2] * scale_factor,
             ];
-            let previous_offset = [
-                previous_position[0] + hit.center[0] * facing * previous_scale_factor,
-                previous_position[1] + hit.center[1] * previous_scale_factor,
-                previous_position[2] + hit.center[2] * previous_scale_factor,
-            ];
+            // `Projectile::first_hit_frame`'s own doc, `it_8027129C`
+            // (`it/itcoll.c:866-891`): on this instance's own first
+            // hit-test frame the source's `HitCapsule_Enabled` branch sets
+            // `x58 = x4C`, i.e. the swept test's start is literally this
+            // same frame's `offset`, not a separately-scaled previous
+            // position -- reusing `offset` here (rather than recomputing
+            // from `previous_position`/`previous_scale_factor`) is the
+            // point, since those two can already disagree with
+            // `scale_factor` on a freshly spawned, still-growing shot.
+            // From the second frame on (`HitCapsule_Unk3`), `x58` carries
+            // the previous frame's own `x4C` forward, modeled by
+            // `previous_position`/`previous_scale_factor` as before.
+            let previous_offset = if first_hit_frame {
+                offset
+            } else {
+                [
+                    previous_position[0] + hit.center[0] * facing * previous_scale_factor,
+                    previous_position[1] + hit.center[1] * previous_scale_factor,
+                    previous_position[2] + hit.center[2] * previous_scale_factor,
+                ]
+            };
             let swept = Capsule {
                 start: previous_offset,
                 end: offset,
-                radius: hit.radius,
+                // `Projectile::item_scale`'s own doc:
+                // `lbColl_80007B78(mtx, hurt, ip->scl, fp->x34_scale.y)`
+                // (`ft/ft_07C6.c:110` -> `lb/lbcollision.c:1570-1575`)
+                // scales the item's own hit-capsule radius by `ip->scl`,
+                // not the hurtbox below.
+                radius: hit.radius * state.projectiles[index].item_scale,
             };
             for (hurt_index, hurtbox) in data.fighters[victim].hurtboxes.iter().enumerate() {
                 if !super::simulation::hurtbox_state(
@@ -507,6 +576,10 @@ fn step(
                     .physics()
                     .transform(&poses[victim], 1.0)
                     .map_err(|e| super::Error::Physics(e.to_string()))?;
+                // Deliberately unscaled: `lbColl_80007B78`'s own hurtbox
+                // factor is `fp->x34_scale.y` (`1.0` in a VS match), not
+                // `ip->scl`/`item_scale` and not `model_scaling` -- see
+                // `Projectile::item_scale`'s own doc.
                 let capsule = Capsule {
                     start: hurt.start,
                     end: hurt.end,
@@ -516,11 +589,13 @@ fn step(
                     .world_matrix(hurtbox.bone)
                     .map_err(|e| super::Error::Physics(e.to_string()))?;
                 let mut contact = crate::collision::shield::Contact::default();
+                // `3.0` broadphase scale, not `1.0` -- see the Reflector
+                // test's own citation above.
                 let overlaps = crate::collision::shield::capsule_matrix(
                     &swept,
                     &capsule,
                     world_matrix,
-                    1.0,
+                    3.0,
                     &mut contact,
                 )
                 .map_err(|e| super::Error::Physics(e.to_string()))?;
@@ -588,4 +663,125 @@ fn step(
         return Ok(Outcome::Despawn);
     }
     Ok(Outcome::Keep)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::data::HitElement;
+
+    fn hitbox(radius: f32) -> Hitbox {
+        Hitbox {
+            clank: false,
+            rebound: false,
+            element: HitElement::default(),
+            group: 0,
+            bone: 0,
+            center: [0.0; 3],
+            radius,
+            damage: 3,
+            shield_damage: 0,
+            angle_degrees: 361.0,
+            growth: 0,
+            fixed: 0,
+            base: 0,
+        }
+    }
+
+    fn spawn_with(hitboxes: Vec<Hitbox>, item_scale: Option<f32>) -> Projectile {
+        let mut counter = crate::fighter::stale::InstanceCounter::default();
+        spawn(
+            ProjectileKind::FoxLaser,
+            0,
+            [0.0, 0.0, 0.0],
+            0.0,
+            7.0,
+            35.0,
+            hitboxes,
+            18,
+            None,
+            item_scale,
+            &mut counter,
+        )
+    }
+
+    #[test]
+    fn omitted_item_scale_defaults_to_1_and_leaves_radii_unscaled() {
+        let projectile = spawn_with(vec![hitbox(1.1718), hitbox(1.5624)], None);
+        assert_eq!(projectile.item_scale, 1.0);
+        assert!((projectile.collision_radius() - 1.5624).abs() < 1e-6);
+    }
+
+    /// A synthetic value, not the real Fox/Falco `x60_scale` -- confirmed
+    /// separately to be `1.0` for both (`characters::fox::neutral::
+    /// Laser::item_scale`'s own doc), so `item_scale` is a data-driven
+    /// no-op for either character today and this only pins the
+    /// multiplication mechanism itself (`Projectile::collision_radius`,
+    /// shared by the shield and reflect tests) against every one of this
+    /// instance's own hitbox radii, largest included, for whatever future
+    /// item does need a non-`1.0` value.
+    #[test]
+    fn item_scale_multiplies_every_laser_hitbox_radius() {
+        let synthetic = 1.25;
+        let projectile = spawn_with(vec![hitbox(1.1718), hitbox(1.5624)], Some(synthetic));
+        assert_eq!(projectile.item_scale, synthetic);
+        assert!((projectile.collision_radius() - 1.5624 * synthetic).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_freshly_spawned_projectile_starts_on_its_first_hit_frame() {
+        let projectile = spawn_with(vec![hitbox(1.0)], None);
+        assert!(projectile.first_hit_frame);
+    }
+
+    /// `crate::collision::shield::capsule_matrix`'s own broadphase margin
+    /// (`hurt.radius * broadphase_scale + hit.radius`, `lbColl_8000805C`/
+    /// `lbColl_80008248`'s own last argument, `lb/lbcollision.c:
+    /// 1690-1740`) is not redundant with the narrowphase test below it: a
+    /// non-uniform or larger-than-1 hurtbox bone matrix inflates the real
+    /// (transformed) acceptance radius well past `hit.radius + hurt.radius`
+    /// (the narrowphase branch's own `hurt_radius = hurt.radius * distance
+    /// / local_distance` term, `src/collision/shield.rs`), so a broadphase
+    /// scale of `1.0` -- this port's own previous, unfixed guess at every
+    /// one of `game::projectile::step`'s three `capsule_matrix` call sites
+    /// -- can reject a pair the narrowphase test would otherwise confirm.
+    /// This reproduces exactly that: a hurtbox bone matrix scaled `10x`
+    /// (a stand-in for a larger fighter model, not a specific real value)
+    /// makes a `0.05`-radius hurtbox reach a real `0.5` world-space radius;
+    /// a hit `0.2` world units away clears the real (narrowphase) contact
+    /// test but sits outside the old `1.0` broadphase's `0.15` fast-reject
+    /// radius and inside the fixed `3.0` broadphase's `0.25` one.
+    #[test]
+    fn broadphase_scale_3_finds_a_contact_the_old_1_would_have_missed() {
+        let hit = Capsule {
+            start: [0.0, 0.0, 0.0],
+            end: [0.0, 0.0, 0.0],
+            radius: 0.1,
+        };
+        let hurt = Capsule {
+            start: [0.2, 0.0, 0.0],
+            end: [0.2, 0.0, 0.0],
+            radius: 0.05,
+        };
+        let matrix = [
+            [10.0, 0.0, 0.0, 0.0],
+            [0.0, 10.0, 0.0, 0.0],
+            [0.0, 0.0, 10.0, 0.0],
+        ];
+
+        let mut rejected = crate::collision::shield::Contact::default();
+        assert_eq!(
+            crate::collision::shield::capsule_matrix(&hit, &hurt, &matrix, 1.0, &mut rejected),
+            Ok(false),
+            "the old broadphase_scale=1.0 should still reject this pair before narrowphase runs"
+        );
+
+        let mut accepted = crate::collision::shield::Contact::default();
+        assert_eq!(
+            crate::collision::shield::capsule_matrix(&hit, &hurt, &matrix, 3.0, &mut accepted),
+            Ok(true),
+            "broadphase_scale=3.0 (the fixed constant) must pass this pair through to a \
+             narrowphase test that confirms real contact"
+        );
+    }
 }

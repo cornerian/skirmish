@@ -159,6 +159,23 @@ pub struct Laser {
     /// approximation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub muzzle_bone: Option<u32>,
+    /// `item->scl` (`Item_80267AA8`'s own spawn init, `it/item.c:672`:
+    /// `item_data->scl = item_data->xCC_item_attr->x60_scale`), the item
+    /// common attribute's own uniform scale. The item-vs-fighter capsule
+    /// test (`ft/ft_07C6.c:110`: `lbColl_80007B78(mtx, hurt, ip->scl,
+    /// fp->x34_scale.y)` -> `lb/lbcollision.c:1570-1575`'s `a_val =
+    /// a->scale * x`) multiplies the item's own hit-capsule radius by this
+    /// value; the victim's own hurtbox radius is instead scaled by the
+    /// *other* factor there (`fp->x34_scale.y`, `1.0` in a VS match) --
+    /// not this field, and not `FighterData::model_scaling` -- so this
+    /// only ever touches the laser's own `hitboxes[_].radius`, in the
+    /// hurtbox, shield and reflect tests alike
+    /// (`game::projectile::Projectile::item_scale`'s own doc has the full
+    /// citation and the per-test breakdown). `None` when the pack does not
+    /// supply `specials.neutral.laser.item_scale` yet: every hitbox radius
+    /// is then used unscaled (`1.0`), this port's pre-existing behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_scale: Option<f32>,
     /// The laser's own fixed hitboxes: exporter-confirmed **four**
     /// capsules (`it_803F67D0` state 0's own command stream, staggered
     /// along the item's local `-X` axis to cover the growing beam), all
@@ -237,6 +254,11 @@ pub(crate) fn validate(
         {
             return Err(Error::Data("invalid laser hitbox".into()));
         }
+    }
+    if let Some(item_scale) = l.item_scale
+        && (!finite(item_scale) || item_scale < 0.0)
+    {
+        return Err(Error::Data("invalid laser item_scale".into()));
     }
     for attack in [
         &parameters.start.ground,
@@ -755,6 +777,7 @@ pub(crate) fn drain_pending_shot(
         parameters.laser.hitboxes.clone(),
         parameters.laser.move_id,
         parameters.laser.scale,
+        parameters.laser.item_scale,
         attack_instances,
     ))
 }
