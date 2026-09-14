@@ -566,23 +566,30 @@ pub(crate) fn advance(
 
     let mut clank_owns = [false; 2];
     let mut shield_owns = [false; 2];
-    // `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`) call the same
-    // `Fighter_ChangeMotionState` as any other transition, which
+    // Every ordinary (`Ft_MF_None`) `Fighter_ChangeMotionState` call
     // unconditionally clears `fp->x221A_b7` (`fighter.c:1048`) -- the flag
     // `Fighter_ProcessHit_8006D1EC` (priority 0xE, `fighter.c:908,2821`)
     // gates shield regeneration on, only ever set by GuardOn/Guard/
-    // GuardReflect's own entries (`ftCo_Guard.c:267,523,708,803,984`). Yet
-    // `fox-bf.slp`'s own P4 (`docs/parity.md`) shows no regeneration lands
-    // on the very frame `GuardOn` converts into `Pass`, despite that clear
-    // taking effect earlier the same frame. This flag preserves, for
-    // `shield::finish_frame` alone, whether a fighter was still actively
-    // shielding immediately before this exact conversion -- narrowly, since
-    // the same generic clear also fires leaving Guard through the ordinary
-    // GuardOff release and through `ftCo_8009917C`/`ftCo_8009980C`'s rolls
-    // and spot dodges, both already covered by their own tests expecting
-    // ordinary immediate regeneration and not reachable through
-    // `pass_request_after_actions`.
-    let mut shield_active_into_pass = [false; 2];
+    // GuardReflect's own entries (`ftCo_Guard.c:267,523,708,803,984`) --
+    // including every transition out of an active shield: `begin_pass`
+    // (`ftCo_8009A184`/`ftCo_8009A228`), the ordinary release into
+    // `GuardOff` (`ftCo_80092F2C`), and the roll/spot-dodge escape
+    // (`ftCo_8009917C`/`ftCo_8009980C`) alike. `fox-bf.slp` confirms no
+    // regeneration lands on the frame `GuardOn`/`Guard` converts into
+    // `Pass` or into `GuardOff` (`docs/parity.md`/`docs/validation.md`),
+    // despite that clear already having taken effect earlier the same
+    // frame; the existing `game_escape` roll test independently confirms
+    // the same for the escape conversion. Snapshotting `shield::active`
+    // here, before this frame's own `update_actions` runs any of those
+    // transitions, models `x221A_b7`'s own value generically at the
+    // source -- for `shield::finish_frame` alone -- rather than adding a
+    // narrow flag at each individual transition's own call site: a
+    // fighter who does not transition out of an active shield this frame
+    // reads the identical value at both points, so the steady-state case
+    // is unaffected. Captured for every player up front (not just active
+    // ones), matching the unconditional check this replaces.
+    let shield_active_at_frame_start: [bool; 2] =
+        std::array::from_fn(|player| shield::active(&state.fighters[player]));
     // ftCo_Wait_Anim's HSD_Randi draw runs within the same animation-phase
     // callback order Melee dispatches in (player order); the seed is handed
     // off to the blast-zone death draw further below exactly as today.
@@ -634,7 +641,6 @@ pub(crate) fn advance(
             clank_owns[player],
             shield_owns[player],
         )?;
-        let shielding_before_pass = shield::active(fighter);
         if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
             &data.fighters[player],
@@ -643,7 +649,6 @@ pub(crate) fn advance(
             shield_owns[player],
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
-            shield_active_into_pass[player] = shielding_before_pass;
         } else {
             crate::characters::fox::down::platform_drop(
                 fighter,
@@ -1155,13 +1160,11 @@ pub(crate) fn advance(
             state.fighters[player].action,
             Action::Respawn | Action::Eliminated
         ) {
-            let was_active =
-                shield::active(&state.fighters[player]) || shield_active_into_pass[player];
             shield::finish_frame(
                 &mut state.fighters[player],
                 data.rules.shield.as_ref(),
                 shield_contact[player],
-                was_active,
+                shield_active_at_frame_start[player],
             );
             if let Some(kind) = blast_deaths[player] {
                 death::begin(

@@ -1362,7 +1362,47 @@ existing hitbox/autocancel/cstick-repeat tests' own hardcoded
 172 frames now match (`-123` through `48`), up from 160;
 `fox-bf-baseline.json` moves to reflect this, measured against the same
 published gameplay-export pack v10. The new first divergence is frame
-49, field `shield` on P4, not yet diagnosed in this entry.
+49, field `shield` on P4 (expected `57.46872329711914`, actual
+`57.53872299194336`, exactly one regeneration tick too high) -- on the
+frame `Guard` converts into `GuardOff` (Slippi action state `180`), the
+ordinary voluntary shield release.
+
+**Fixed: shield regeneration's own frame-start snapshot generalized
+past `Pass`.** Every ordinary (`Ft_MF_None`) `Fighter_ChangeMotionState`
+call unconditionally clears `fp->x221A_b7` (the flag `Fighter_
+ProcessHit_8006D1EC` gates regeneration on), including every transition
+out of an active shield: `begin_pass` into `Pass`, the ordinary release
+into `GuardOff` (`ftCo_80092F2C`), and the roll/spot-dodge escape alike.
+The existing fix only modeled this for the `Pass` destination (a narrow
+flag recorded at `begin_pass`'s own call site); `simulation::advance`
+now snapshots `shield::active(f)` for every player up front, before
+that frame's own `update_actions` runs any transition, and threads that
+single `shield_active_at_frame_start` value to `shield::finish_frame`
+directly -- covering `GuardOff`, `Pass`, and the roll uniformly, and any
+future such transition, without a new flag per call site. A fighter who
+does not transition out of an active shield this frame reads the same
+value either way, so the steady-state case is unaffected.
+
+Generalizing surfaced the same "0.07-short" discrepancy an earlier
+attempt at this exact broadening had already hit and left alone
+(`docs/validation.md`'s own prior entry) -- root-caused this time: the
+roll's own conversion frame had been regenerating under the old,
+narrower gate (checked *after* the transition, when the fighter was
+already `EscapeF`) even though real Melee's own mechanism says it
+should not, exactly like `Pass`/`GuardOff`. The fix correctly withholds
+that tick too, so `game_escape`'s own pre-existing regeneration test
+needed one more intermediate step before its final assertion (reaching
+the `50.0` cap one frame later than its old, narrower-gate-shaped step
+count assumed); its own `rolling.health < guarding.health` and per-frame
+`health > previous` checks needed no changes. `docs/validation.md` has
+the full breakdown.
+
+273 frames now match (`-123` through `149`), up from 172;
+`fox-bf-baseline.json` moves to reflect this, measured against the same
+published gameplay-export pack v10. The new first divergence is frame
+150, field `action_state` on P4 (expected `Dash`, actual `Turn`) -- the
+same class of Turn-to-Dash conversion divergence already fixed once on
+this recording (frame 33), not yet re-diagnosed for this instance.
 
 ## The tournament-stage batch: `fox-ys.slp`, `fox-fod.slp`, `fox-dl.slp`, `fox-ps.slp`
 

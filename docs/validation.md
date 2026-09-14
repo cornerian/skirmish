@@ -117,6 +117,71 @@ Dash) -- an unrelated regression already present immediately after
 rebasing onto origin/main, upstream of where this fix's own effect would
 be observed. Reported rather than chased, out of this fix's own scope.
 
+The 2026-09-14 generic shield-regeneration-gate fix (the real-replay
+parity loop, `fox-bf.slp`, `docs/parity.md`) replaces the narrow
+`shield_active_into_pass` flag (which only covered `begin_pass`'s own
+call site) with a single, generic snapshot: `simulation::advance` now
+records `shield::active(f)` for every player up front, before that
+frame's own `update_actions` runs any transition, and threads that
+`shield_active_at_frame_start` value straight through to `shield::
+finish_frame`'s `was_active` parameter, replacing the post-transition
+`shield::active(&state.fighters[player])` check entirely.
+
+Every ordinary (`Ft_MF_None`) `Fighter_ChangeMotionState` call
+unconditionally clears `fp->x221A_b7` (`fighter.c:1048`, the flag
+`Fighter_ProcessHit_8006D1EC` gates regeneration on), including every
+transition out of an active shield: `begin_pass` into `Pass`
+(`ftCo_8009A184`/`ftCo_8009A228`), the ordinary release into `GuardOff`
+(`ftCo_80092F2C`, `ftCo_Guard.c`), and the roll/spot-dodge escape
+(`ftCo_8009917C`/`ftCo_8009980C`) alike -- so a fighter who was still
+actively shielding immediately before any one of these conversions does
+not regenerate on that same frame, regardless of destination. Snapshotting
+`active(f)` before this frame's own transitions run models that shared
+mechanism directly, for every present and future such transition, instead
+of needing a new narrow flag threaded to each individual call site. A
+fighter who does not transition out of an active shield this frame reads
+the identical value at both the old and new snapshot points, so the
+steady-state (no transition) case is unaffected.
+
+Confirmed directly against `fox-bf.slp`: P4's own `Guard` converts into
+`GuardOff` at frame 49 with shield health `57.46872329711914` -- exactly
+the passive-drain-only value, no regeneration credit -- where the prior,
+narrower fix (which only covered the `Pass` destination) computed
+`57.53872299194336`, `0.07` (one regeneration tick) too high.
+
+**Regression found and fixed while generalizing**: `game_escape`'s
+existing `escape_clears_the_shield_and_lets_health_regenerate` initially
+failed under the generic gate (`49.999992` where `50.0` was expected) --
+the same discrepancy an earlier, narrower attempt at this exact
+generalization hit and backed away from (`docs/parity.md`'s own prior
+entry). Root-caused this time rather than left alone: the roll's own
+conversion frame previously regenerated under the old, narrower gate
+(`shield::active` read *after* the transition, when the fighter was
+already `EscapeF`, not `Guard`) even though real Melee's own `x221A_b7`
+mechanism says it should not, exactly like `Pass`/`GuardOff`. The fixed,
+generic gate correctly withholds that one regeneration tick, so reaching
+the `50.0` cap now takes one more frame than the test's own hardcoded
+step count assumed. The test gains one extra intermediate step (still
+below the cap) before its own final assertion, with an updated comment
+explaining the one-frame shift; the loop's own per-frame `health >
+previous` checks and the `rolling.health < guarding.health` check are
+unaffected by the shift and needed no changes.
+
+**Tests**: `game_escape`'s updated `escape_clears_the_shield_and_lets_
+health_regenerate` (above) and the existing `game_shield`/`game_aerial_
+shield`/`game_platform_drop` suites (covering the `Pass` and ordinary
+in-place cases) all pass unchanged, confirming the generic gate reproduces
+every previously-covered case exactly. `cargo fmt --check`, `cargo clippy
+--workspace --all-targets` and `cargo test --workspace` (both default and
+`c-oracle` features) all pass.
+
+Measured against the published gameplay-export pack v10: 273 frames now
+match (`-123` through `149`), up from 172; `fox-bf-baseline.json` moves to
+reflect this. The new first divergence is frame 150, field `action_state`
+on P4 (expected `Dash`, actual `Turn`) -- the same class of Turn-to-Dash
+conversion divergence already fixed once on this recording (frame 33),
+not yet re-diagnosed for this instance.
+
 The 2026-09-14 AttackAir entry-advance fix (the real-replay parity loop,
 `fox-bf.slp`, `docs/parity.md`) covers another sibling instance of the
 entry-advance bug: `ftCo_AttackAir_EnterFromMsid`/`_EnterFromCStick`

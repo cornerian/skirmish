@@ -494,14 +494,18 @@ fn start_powershield(f: &mut Fighter, r: &Rules, initialize: bool, input: Contro
 
 /// ProcessHit regenerates outside guard, and subtracts its base cost even with
 /// zero shield-damage accumulation. Hit damage is applied by `apply_contact`.
-/// `was_active` is ordinarily just `active(f)` as of this call; its caller
-/// additionally folds in whether this exact frame converted a still-active
-/// `GuardOn`/`Guard` straight into `Pass` (`simulation::advance`'s own
-/// `shield_active_into_pass`), since `fox-bf.slp` shows no regeneration
-/// lands on that conversion frame even though `begin_pass`'s own
-/// `Fighter_ChangeMotionState` call already cleared `x221A_b7` (the flag
-/// `Fighter_ProcessHit_8006D1EC` gates regeneration on) earlier the same
-/// frame.
+/// `was_active` is `active(f)` as of the *start* of this frame's own action
+/// processing (`simulation::advance`'s own `shield_active_at_frame_start`),
+/// not the fighter's current action as of this call: every ordinary
+/// (`Ft_MF_None`) `Fighter_ChangeMotionState` call unconditionally clears
+/// `fp->x221A_b7` (the flag `Fighter_ProcessHit_8006D1EC` gates regeneration
+/// on), including every transition out of an active shield -- `begin_pass`
+/// into `Pass`, the ordinary release into `GuardOff`, and the roll/spot-
+/// dodge escape alike -- so a fighter who was still actively shielding
+/// immediately before this exact frame's own conversion does not regenerate
+/// on that same frame regardless of destination. `fox-bf.slp` confirms this
+/// for the `Pass` and `GuardOff` conversions directly; the `game_escape`
+/// roll test confirms it for the escape conversion.
 pub(crate) fn finish_frame(
     f: &mut Fighter,
     rules: Option<&Rules>,

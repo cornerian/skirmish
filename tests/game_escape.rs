@@ -323,8 +323,12 @@ fn escape_clears_the_shield_and_lets_health_regenerate() {
     let guarding = step(&mut game, attacker(0), held());
     let rolling = step(&mut game, attacker(0), guard([-1.0, 0.0], [0.0; 2]));
     assert_eq!(rolling.fighters[1].action, Action::EscapeF);
-    // The entry frame still ran the Guard drain before the transition; every
-    // later escape frame regenerates instead of draining.
+    // The entry frame still ran the Guard drain before the transition, and
+    // -- like every other ordinary (`Ft_MF_None`) transition out of an
+    // active shield -- does not regenerate on that same conversion frame
+    // either (`simulation::advance`'s own `shield_active_at_frame_start`,
+    // modeling `x221A_b7` generically): every later escape frame
+    // regenerates instead.
     assert!(rolling.fighters[1].shield.health < guarding.fighters[1].shield.health);
     let mut previous = rolling.fighters[1].shield.health;
     for _ in 0..3 {
@@ -333,6 +337,12 @@ fn escape_clears_the_shield_and_lets_health_regenerate() {
         assert!(state.fighters[1].shield.health > previous);
         previous = state.fighters[1].shield.health;
     }
+    // One more regenerating frame than before this fix, since the roll's
+    // own conversion frame no longer contributes one: the cap is reached
+    // one frame later than the old, narrower gate had it.
+    let almost_full = step(&mut game, attacker(0), held());
+    assert!(almost_full.fighters[1].shield.health > previous);
+    assert!(almost_full.fighters[1].shield.health < 50.0);
     let full = step(&mut game, attacker(0), held());
     assert_eq!(full.fighters[1].shield.health, 50.0);
 }
