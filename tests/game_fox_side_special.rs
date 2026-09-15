@@ -15,19 +15,15 @@ mod conformance;
 #[path = "support/fox_side_special.rs"]
 mod side_special_resources;
 
-use skirmish::characters::Specials;
+use skirmish::game::script::LocalValue;
 use skirmish::game::{Action, BUTTON_B, Controller, Match, data::MatchData};
 
-/// Mutable access to a fighter's side-special resource in test setup, since
-/// `Specials` is tagged by character and only Fox's variant carries one.
-fn side_special_mut(
-    fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::characters::fox::side::SideSpecial {
-    let Some(Specials::Fox { side, .. }) = fighter.specials.as_mut() else {
-        panic!("test fixture is missing its side-special resource");
-    };
-    side.as_mut()
-        .expect("test fixture is missing its side-special resource")
+fn action_number(state: &skirmish::game::State, key: &str) -> f32 {
+    match state.fighters[0].action_state.get(key) {
+        Some(LocalValue::Number(value)) => *value as f32,
+        Some(LocalValue::Integer(value)) => *value as f32,
+        other => panic!("missing numeric action-state key {key}: {other:?}"),
+    }
 }
 
 const IDLE: [Controller; 2] = [Controller {
@@ -90,7 +86,7 @@ fn ground_entry_from_wait_enters_start_with_gravity_delay_and_jumps_untouched() 
     // increment advances it once more.
     assert_eq!(state.fighters[0].action_frame, 2);
     // x24 == 2.0, ticked once by this same step's own grounded Phys.
-    assert_eq!(state.fighters[0].side_special.gravity_delay, 1.0);
+    assert_eq!(action_number(state, "gravity_delay"), 1.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -250,7 +246,7 @@ fn b_press_shortens_the_ground_dash_into_end() {
     // x34 == 1.5, then this same step's own End Phys friction (x38 == 0.05).
     assert_eq!(state.fighters[0].ground_velocity, 1.45);
     // x44 == 1.0, ticked once by the same step's End Phys.
-    assert_eq!(state.fighters[0].side_special.gravity_delay, 0.0);
+    assert_eq!(action_number(state, "gravity_delay"), 0.0);
 }
 
 #[test]
@@ -289,7 +285,7 @@ fn air_to_ground_conversion_preserves_frame_and_gravity_delay() {
             break;
         }
         let frame_before = state.fighters[0].action_frame;
-        let delay_before = state.fighters[0].side_special.gravity_delay;
+        let delay_before = action_number(&state, "gravity_delay");
         state = game.step(IDLE).unwrap().clone();
         if state.fighters[0].grounded {
             converted = true;
@@ -303,7 +299,7 @@ fn air_to_ground_conversion_preserves_frame_and_gravity_delay() {
             // entry; the generic per-frame increment then advances it once
             // more, like every other transition observed in this suite.
             assert_eq!(state.fighters[0].action_frame, frame_before + 1);
-            assert_eq!(state.fighters[0].side_special.gravity_delay, delay_before);
+            assert_eq!(action_number(&state, "gravity_delay"), delay_before);
         }
     }
     assert!(converted, "must land within 10 frames");
@@ -314,10 +310,10 @@ fn air_start_gravity_delay_holds_vertical_velocity_before_falling() {
     let mut game = Match::new(airborne_data(), 0).unwrap();
     let state = game.step(input(0, side(0.6))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialAirSStart);
-    assert_eq!(state.fighters[0].side_special.gravity_delay, 1.0);
+    assert_eq!(action_number(state, "gravity_delay"), 1.0);
     let state = game.step(IDLE).unwrap();
     assert_eq!(state.fighters[0].velocity[1], 0.0);
-    assert_eq!(state.fighters[0].side_special.gravity_delay, 0.0);
+    assert_eq!(action_number(state, "gravity_delay"), 0.0);
     // The delay has lapsed: ftCommon_Fall(x30) now applies every frame.
     let state = game.step(IDLE).unwrap();
     assert!(state.fighters[0].velocity[1] < 0.0);
@@ -378,20 +374,39 @@ fn every_phase_survives_a_checkpoint_round_trip() {
 #[test]
 fn invalid_side_special_resources_are_rejected() {
     let mut resource = data();
-    side_special_mut(&mut resource.fighters[0]).ground_speed_retention = 1.5;
+    resource.fighters[0]
+        .specials
+        .as_mut()
+        .unwrap()
+        .resources
+        .values
+        .get_mut("side")
+        .unwrap()["ground_speed_retention"] = serde_json::json!(1.5);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    side_special_mut(&mut resource.fighters[0])
-        .dash
-        .ground_trans_n
+    resource.fighters[0]
+        .specials
+        .as_mut()
+        .unwrap()
+        .resources
+        .values
+        .get_mut("side")
+        .unwrap()["dash"]["ground_trans_n"]
+        .as_array_mut()
+        .unwrap()
         .pop();
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    side_special_mut(&mut resource.fighters[0])
-        .attributes
-        .entry_speed_div = 0.0;
+    resource.fighters[0]
+        .specials
+        .as_mut()
+        .unwrap()
+        .resources
+        .values
+        .get_mut("side")
+        .unwrap()["attributes"]["entry_speed_div"] = serde_json::json!(0.0);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();

@@ -138,7 +138,7 @@ chased):** P2 enters `Dash` at -33 (`ground_velocity` set to the pack's
 0]` that frame -- decomp's own `getAccelAndTarget`/`ftCommon_8007C98C`
 chain is not projected into `self_vel` until the following frame, exactly
 like the already-cited "Dash Enter writes gr_accel2... not projected...
-this first frame" note). At -32, `game::locomotion::ground_motion`'s Dash
+this first frame" note). At -32, `fighter::locomotion::ground_motion`'s Dash
 branch computes `accel = stick(1.0) * dash_acceleration_mul(0.1) +
 dash_acceleration_base(0.02)`, `target = stick(1.0) * dash_max_velocity
 (2.2)`; since `ground_velocity(1.9) + accel(0.12)` (`2.02`) does not yet
@@ -273,7 +273,7 @@ replay. Checked both ends for `fox-fd-3.slp` (P2, frame -32) and
   parsed `Pre` row -- no clamping, quantization, deadzone reapplication or
   `as`-cast rounding of any kind before it reaches `game::Controller`.
 - Confirmed live, not just read from source: a temporary `eprintln!` in
-  `game::locomotion::ground_motion` (removed before this commit), rebuilt and
+  `fighter::locomotion::ground_motion` (removed before this commit), rebuilt and
   run through `make-initialization`/`validate-replay` against both
   recordings, printed `stick.x_bits=0x3f800000` at Fox's frame -32 and
   `stick.x_bits=0x3f700000` at Falco's frame -25 -- bit-for-bit identical to
@@ -359,7 +359,7 @@ the first divergent frame is still 5, field `position.x` (expected
 previous measurement's own values below. `fighter::escape_air::
 launch_velocity` and every other fighter/common trigonometry call site now
 use ported copies of the game's own `sinf`/`cosf`/`tanf`/`atan2f`/`atanf`/
-`acosf`/`asinf` (`src/math.rs`) instead of the portable `libm` crate the
+`acosf`/`asinf` (`src/compat/math/trig.rs`) instead of the portable `libm` crate the
 previous measurement's own diagnosis suspected -- but the divergence
 persists at the exact same frame with the exact same bits, so that
 diagnosis is not confirmed by this measurement. `docs/math.md`'s
@@ -430,7 +430,7 @@ runs before this same frame's own controller read updates `fp->input` --
 unlike this crate's other input reads, which are IASA-dispatched
 (`ftCo_Wait_IASA`'s jump-request chain, `ftCo_JumpAerial_CheckInput`'s own
 identical-looking direction test) and so already see the current frame's
-fresh controller. `game::locomotion::ground_jump` now reads `f.
+fresh controller. `fighter::locomotion::ground_jump` now reads `f.
 previous_input.stick[0]` for both the direction test and the launch
 velocity, confirmed directly against `fox-fd.slp`: `fighter::locomotion::
 jump_backward` fed the frame *before* each of the recording's 64 KneeBend->
@@ -450,9 +450,9 @@ FallSpecial animation-frame count (`fighter.c:836`) and `landing_lag` is
 `ftCommonData`'s `x344` (`escape_air::Rules::landing_lag`), so Melee's
 `cur_anim_frame` advances at that computed rate, not one frame per game
 frame. The ordinary aerial landings (`LandingAirN`/`F`/`B`/`Hi`/`Lw`) scale
-the same way through the L-cancel divisor (`game::aerial::land`). Skirmish
+the same way through the L-cancel divisor (`fighter::aerial::land`). Skirmish
 already tracks this rate at the source (`fighter.aerial.landing_elapsed`/
-`landing_rate`, `game::aerial.rs`, `game::escape_air.rs`) but
+`landing_rate`, `fighter::aerial.rs`, `fighter::escape_air.rs`) but
 `observation::observe`'s `action_age` fell through to the generic
 `action_frame`-based rule (the same one Walk/Run needed their own tracked-
 float branch for) instead of reading it. Fixed: `observation::observe` now
@@ -480,7 +480,7 @@ starting exactly at the KneeBend/JumpSquat entry (`-8`->`-7` and `-7`->`-6`
 alike) -- `0.16` is exactly `0.08 * 2.0`, where `0.08` is Fox's own
 `movement.ground_friction` in this pack. `game::simulation::move_fighter`'s
 generic grounded fallback (used by JumpSquat, Turn, Wait, Squat and every
-other action `game::locomotion::ground_motion` doesn't own) already ports
+other action `fighter::locomotion::ground_motion` doesn't own) already ports
 `ft_80084F3C` exactly: `friction = ground_friction; if |gr_vel| >
 walk_max_velocity { friction *= rules.friction_above_walk }`. Fox's
 `ground_velocity` here (~1.9-2.0) is well above `walk_max_velocity` (`1.6`
@@ -512,8 +512,8 @@ missing (`docs/ecb-load-flags.md`'s "Known gap" no longer blocks stepping
 this match through its own recorded inputs past frame ~71); it is otherwise
 identical to v4 for this fox-fd data through the range measured here. The
 previous divergence (-13, `action_state`
-on a Dash->Run transition, described below) is fixed: `game::dash::
-update_dash_or_run`'s and `game::locomotion`'s Dash-to-Run check compared
+on a Dash->Run transition, described below) is fixed: `fighter::dash::
+update_dash_or_run`'s and `fighter::locomotion`'s Dash-to-Run check compared
 `action_frame >= dash_run_frame`, one frame later than `fn_800CA5F0`'s own
 `cur_anim_frame >= dash_run_frame` (the animation's scripted run flag,
 `ftaction.c:462`) -- the generic per-frame animation advance
@@ -634,7 +634,7 @@ game_movement_poses.rs`'s synthetic (non-root-sampling) fixture confirms
 works as designed. The recording's own state-age reset at -51 (Fall's
 9-sample pose looping over an 8-frame period, not a discrete
 `Fighter_ChangeMotionState` re-entry) is diagnosed and reproduced
-(`game::movement::loop_period`, `crates/skirmish-replay/src/
+(`fighter::movement::loop_period`, `crates/skirmish-replay/src/
 observation.rs`'s matching `action_age` branch) but does not itself affect
 ground-contact timing. The v2 pack carries Fox's locomotion, idle,
 escapes, air dodge, grab, dash attack, tilts, smashes, jab combo, aerials,
@@ -681,7 +681,8 @@ match (-123 through -39) and the first divergent frame is -38, field
 loop's own stop condition):** the recording shows P2 pressing B out of
 `Landing` once its interrupt window opens and entering Fox's neutral
 special (Blaster, `Action::SpecialN`, already mapped to Slippi state 341 by
-`game::characters::fox`). Skirmish instead keeps P2 in `Landing`. Traced
+the current Python callback contract). Skirmish instead keeps P2 in `Landing`.
+Traced
 directly (the second real-replay parity loop, working the same finding
 independently on `fox-fd-2.slp`'s equivalent divergence): every eligibility
 check the dispatch actually runs is satisfied on this frame --
@@ -775,8 +776,8 @@ Fox (FD).slp`, same CC0-1.0 `erickfm/slippi-public-dataset-v3.7` corpus,
 `real_parity.rs`, until the shared recordings list lands). It uses the
 `falco-fox-fd` pairing's own export (`/mnt/archive/datasets/melee/
 skirmish-gameplay/v2`), the first to carry a `fighters/falco.json` pack, and
-exercises Falco's own registration (`game::characters::Specials::Falco`,
-`docs/falco.md`) end to end: `make-initialization` accepting that pack, and
+exercises Falco's own registration (`docs/falco.md`) end to end:
+`make-initialization` accepting that pack, and
 Falco's external Slippi id (20) resolving through the shared Fox move table.
 
 **Current measurement (2026-09-12, gameplay export v2, the real-replay
@@ -836,10 +837,10 @@ compute it regardless of which branch is taken. No baseline change
 Previously (2026-09-12, gameplay export v2, the Falco registration batch):
 93 frames matched (-123 through -31, the pre-game Entry warp-in) and the
 first divergent frame was -30, field `action_age` (expected `1.0`, actual
-`0.0`, for P4/Fox). Fixed: `game::locomotion::enter_walk` (`ftCo_
+`0.0`, for P4/Fox). Fixed: `fighter::locomotion::enter_walk` (`ftCo_
 Walk_Enter`/`ftWalkCommon_800DFCA4`, `ftwalkcommon.c:71-92`) makes the same
 extra, explicit `ftAnim_8006EBA4` call `ftCo_Dash_Enter`/`ftCo_Turn_Enter`
-already modeled (`game::locomotion::start_dash`/`start_turn`, the Dash/Turn
+already modeled (`fighter::locomotion::start_dash`/`start_turn`, the Dash/Turn
 entry-time consolidation above), so Walk's own tracked animation frame is
 `start_frame + 1.0`, not `start_frame`, on every entry -- both a fresh
 Wait/tilt -> Walk transition and a mid-walk kind retype, since
@@ -869,7 +870,7 @@ never did.
 **Initial measurement (2026-09-12, gameplay export v2, measured directly
 against the live pack -- this pairing has no `SKIRMISH_GAMEPLAY_DATA`
 snapshot yet):** already benefiting from origin/main's own Walk entry-time
-fix (`game::locomotion::enter_walk`'s `start_frame + 1.0`, the same batch
+fix (`fighter::locomotion::enter_walk`'s `start_frame + 1.0`, the same batch
 this loop independently rediscovered on this exact recording -- P4's own
 Landing->Walk transition at frame -31 -- before finding it already fixed
 upstream), 95 frames matched (-123 through -29) and the first divergent
@@ -919,7 +920,7 @@ given a name in the pinned decomp and is not present anywhere in
 is exported; no sibling window field is). `fp->x671_timer_lstick_tilt_y`
 (`fighter.c:1976-2019`, already modeled at the source as
 `fighter.locomotion.tilt_y_age`, reset to the same `0xFE`/`254` sentinel by
-`game::locomotion::pass_request_after_actions` on every platform pass,
+`fighter::locomotion::pass_request_after_actions` on every platform pass,
 `wall_jump::enter` and elsewhere) counts consecutive frames the stick has
 held past the vertical smash deadzone in one direction, restarting at `0`
 on a fresh press; `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`'s own
@@ -927,7 +928,7 @@ source) reset it to `0xFE` specifically so the same down-hold that
 triggered a platform pass cannot also immediately re-trigger fast-fall.
 Traced directly against `fox-bf.slp`: P4's stick crosses the down deadzone
 at frame -28 (neutral the frame before) and is still down at -27, when
-`Pass` begins and `game::locomotion::pass_request_after_actions` already
+`Pass` begins and `fighter::locomotion::pass_request_after_actions` already
 resets `tilt_y_age` to `254`; `game::simulation::move_fighter`'s existing
 fast-fall trigger, though, does not consult `tilt_y_age` at all --
 it approximates decomp's timer-window check with `f.previous_input.
@@ -1011,7 +1012,7 @@ Spaghetti_8006AD10` (priority 3, `fighter.c:1790-1839`), which runs
 dispatched the destination action's own `Anim` callback this same frame:
 the passive drain always operates on the previous frame's own processed
 trigger, one frame stale, unlike the priority-3 IASA/transition checks
-that see the fresh value. `game::shield::update_animation`'s own
+that see the fresh value. `fighter::shield::update_animation`'s own
 `GuardOn`/`Guard`/`GuardReflect` arm now reads `f.previous_input.
 shield_pressure()` instead of `input.shield_pressure()`. Confirmed
 bit-exact against `fox-bf.slp`: P4's trigger rises `0.8928571343421936`
@@ -1034,7 +1035,7 @@ shows no regeneration lands on that conversion frame despite this: the
 recording's own P4 shield health is explained in full by the passive
 drain alone (`59.76071548461914`, matching the first fix above exactly),
 not by that drain plus a frame of `regeneration` (`0.1`-per-frame-scale
-in test fixtures; the real pack's own rate is `0.07`). `game::shield::
+in test fixtures; the real pack's own rate is `0.07`). `fighter::shield::
 finish_frame` gains an explicit `was_active: bool` parameter instead of
 recomputing `active(f)` internally; its caller, `simulation::advance`,
 still passes plain `active(f)` ordinarily, but folds in a new
@@ -1125,7 +1126,7 @@ after `Fighter_ChangeMotionState`/`ftFox_SpecialN_InitializeState`;
 `ftFx_SpecialAirN_Enter` (the aerial entry, `:274-284`) does not touch
 velocity at all -- only the motion-state change, the shared
 `InitializeState` (extra animation advance, `cmd_vars` reset) and the
-blaster-gun spawn. `game::characters::fox::neutral::update_actions`
+blaster-gun spawn. The Fox neutral-special policy
 applied the ground entry's own unconditional `self_vel = 0` to both
 branches, so P4's mid-jump press hard-stopped its existing drift instead
 of carrying it through untouched. Confirmed directly against
@@ -1162,7 +1163,7 @@ cosmetic hit-effects instead. Fox/Falco's own Blaster laser has zero
 growth, zero base and zero weight-independent knockback -- already
 documented as "zero knockback is real: a laser flinches its target
 without pushing it" (`docs/fox-neutral-special.md`) -- so it always
-computes exactly this. `game::damage::apply_hit` now gates its entire
+computes exactly this. `fighter::damage::apply_hit` now gates its entire
 victim-side reaction (motion-state transition, velocity, hitstun,
 hitlag, `last_hit_by`) on the computed knockback being nonzero, while
 still applying percent and the attacker's own separate last-move-
@@ -1194,7 +1195,7 @@ Anim_Inner`'s separate `frames_to_turn` countdown has completed: it
 resolves the facing flip itself the moment the check first passes,
 rather than waiting on that other mechanism, since `ftCo_Dash_Enter`
 (`ftCo_Dash.c:49-70`) reads `fp->facing_dir` directly and never flips it
-itself. `game::locomotion::update_actions`'s own `Action::Turn` arm
+itself. `fighter::locomotion::update_actions`'s own `Action::Turn` arm
 previously gated this conversion on `just_turned` (the flip having
 *already* happened via the separate countdown) in addition to the smash
 check, so it would not have fired until several more frames later once

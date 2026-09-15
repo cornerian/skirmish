@@ -1,7 +1,7 @@
 # Walk speed variants (WalkSlow/WalkMiddle/WalkFast)
 
-`skirmish::game::locomotion` (wiring: entry, the per-frame animation advance
-and the mid-walk retype, `src/game/locomotion.rs`) and
+`skirmish::fighter::locomotion` (wiring: entry, the per-frame animation advance
+and the mid-walk retype, `src/game/simulation.rs`) and
 `skirmish::fighter::locomotion` (pure arithmetic: kind selection, the
 animation-rate formula and the retype start-frame remap,
 `src/fighter/locomotion.rs`) port the walk-type layer this codebase's earlier,
@@ -40,13 +40,13 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   or the remapped frame from `ftWalkCommon_800DFEC8`'s own re-entry (below).
   `ftWalkCommon_800DFCA4` then makes an extra, explicit `ftAnim_8006EBA4`
   call immediately afterwards, the same second advance `ftCo_Dash_Enter`/
-  `ftCo_Turn_Enter` make (`game::locomotion::start_dash`/`start_turn`'s own
+  `ftCo_Turn_Enter` make (`fighter::locomotion::start_dash`/`start_turn`'s own
   doc comments) -- `cur_anim_frame` is `anim_start + 1.0` from this frame on,
   not `anim_start`, confirmed directly against `falco-fox-fd.slp` and
   `fox-fd.slp` (27 real Walk entries between them, every one already
   reporting `state_age = 1.0` on its own entry frame, `docs/parity.md`).
   `fighter::locomotion::walk_kind` is the pure arithmetic;
-  `game::locomotion::enter_walk` is the wiring, called both for a fresh entry
+  `fighter::locomotion::enter_walk` is the wiring, called both for a fresh entry
   (`start_frame = 0.0`) and from `retype_walk`, storing `start_frame + 1.0`
   in either case since both route through this same extra advance.
 - **Animation phase** (`ftCo_Walk_Anim` -> `ftWalkCommon_800DFDDC`, every
@@ -56,7 +56,7 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   oracle parity), the rate is 0 when `v * facing <= 0`, else `|v| /
   slow_walk_max` (Slow), `|v| / mid_walk_point` (Middle) or `|v| /
   fast_walk_min` (Fast). `ftAnim_SetAnimRate` takes effect on the *next*
-  animation update, not this one, so `game::locomotion::WalkState` keeps
+  animation update, not this one, so `fighter::locomotion::WalkState` keeps
   `last_rate`: each frame the tracked float `frame` advances by the
   *previous* frame's `last_rate` (wrapping down by the current kind's
   figatree length while `frame >= length` -- the walk figatrees loop; this
@@ -68,11 +68,11 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   this is this port's own explicit modeling choice for how that initial rate
   interacts with the one-frame `SetAnimRate` delay, not something read back
   out of the pinned source. `fighter::locomotion::walk_animation_rate` is the
-  pure formula; `game::locomotion::advance_walk_animation` is the wiring.
+  pure formula; `fighter::locomotion::advance_walk_animation` is the wiring.
 - **IASA** (`ftCo_Walk_IASA`): the existing chain order (catch, specials,
   smashes, tilts, jab, shield, taunt, jump, dash, squat, `ft_8008A244` ->
   Wait when `stick_x * facing < 0 || |stick_x| < walk_stick_threshold`,
-  `ft_08A1.c:29-41`) is unchanged by this batch -- it is `game::locomotion::
+  `ft_08A1.c:29-41`) is unchanged by this batch -- it is `fighter::locomotion::
   update_actions`'s shared Wait/Walk arm, audited by earlier batches. This
   batch adds only `ftWalkCommon_800DFEC8`, which that arm now runs whenever
   the walk-threshold branch is satisfied *and* the fighter was already
@@ -81,7 +81,7 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   a Walk-family motion is already current, so the two paths do not overlap
   within a frame): recompute the kind from `|gr_vel|`; if it differs from
   the stored kind, re-enter Walk (`retype_walk` -> `enter_walk`, a genuine
-  `game::locomotion::enter`/`ChangeMotionState`, so a new motion begins,
+  `fighter::locomotion::enter`/`ChangeMotionState`, so a new motion begins,
   clearing the smash charge and every other ordinary transition reset) with
   `start_frame = new_length * ((cur_frame mod cur_length) / cur_length)`,
   truncated to `s32` (matching `init_animFrame / len` truncated to an
@@ -89,7 +89,7 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   (adjusted / len)`, truncated again before being passed as the start
   frame). `fighter::locomotion::walk_retype_frame` reproduces this exact
   float/int arithmetic as a pure helper (`src/fighter/locomotion.rs`, unit
-  tested); `game::locomotion::retype_walk` is the wiring. Since Walk and
+  tested); `fighter::locomotion::retype_walk` is the wiring. Since Walk and
   Dash share motion identity 102 (`fighter::action_instance::
   motion_identity`), `ft_800895E0`'s allocation rule (`fighter::
   action_instance::change`) keeps the same `action_instance.id` across a
@@ -123,9 +123,9 @@ table (WalkSlow 15 / WalkMiddle 16 / WalkFast 17; sub-motions 7 / 8 / 9).
   without a fighter's `walk_animation`, or the reverse, is rejected before a
   match exists. With both absent, Walk keeps the pre-batch behavior: a
   single state (Slippi 15, animation 7) with an integer `action_frame`
-  published as `state_age`, and `game::locomotion::State.walk` never leaves
+  published as `state_age`, and `fighter::locomotion::State.walk` never leaves
   its default (`WalkKind::Slow`, `frame = 0.0`).
-- `game::locomotion::State.walk: WalkState { kind: fighter::locomotion::
+- `fighter::locomotion::State.walk: WalkState { kind: fighter::locomotion::
   WalkKind, frame: f32, last_rate: f32 }` (`Serialize`/`Deserialize`,
   checkpoint-safe; `fighter::locomotion::WalkKind` is `Slow`/`Middle`/`Fast`
   in `FtWalkType`'s own discriminant order, shared by the pure helpers and

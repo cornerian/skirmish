@@ -1,6 +1,6 @@
+use skirmish::fighter::tilt::{ForwardTilts, GroundAttack, GroundFrameFlags, Parameters, Rules};
 use skirmish::game::{
     data::{Attack, AttackFrame, Hitbox, MatchData},
-    tilt::{ForwardTilts, GroundAttack, GroundFrameFlags, Parameters, Rules},
 };
 
 /// Invented tilt rules; thresholds are radians for the folded stick angle.

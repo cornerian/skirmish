@@ -1,43 +1,40 @@
 //! A native experimental match slice, not a complete or verified Melee simulator.
 //! Physics bones, contacts and translated arithmetic run without presentation.
+//! This module owns match state, inter-fighter interactions, and deeper game
+//! logic such as clank, grab, nudge, hit resolution, death, entry, and rebirth;
+//! fighter-local mechanics and state live in [`crate::fighter`].
 //! See `docs/match.md` for the explicit scheduler and unsupported gameplay rules.
 #![forbid(unsafe_code)]
 
-pub mod aerial;
 pub mod clank;
 pub mod collision;
-mod combat_history;
-pub mod damage;
-pub mod dash;
+pub(crate) mod combat_history;
 pub mod data;
 pub mod death;
-pub mod edge;
+pub mod effects;
 pub mod entry;
-pub mod escape;
-pub mod escape_air;
 pub mod grab;
+pub(crate) mod hit_resolution;
 pub mod hitboxes;
-pub mod idle;
-pub mod jab;
 pub mod landing;
-pub mod ledge;
-pub mod locomotion;
-pub mod movement;
 pub mod nudge;
 pub mod projectile;
 pub mod rebirth;
 pub mod script;
-pub mod shield;
 pub mod simulation;
-pub mod smash;
 pub mod stage_motion;
 pub mod staling;
-pub mod taunt;
-pub mod tilt;
 pub mod validation;
 pub mod wall_jump;
 
+#[cfg(all(test, feature = "experimental-continuations"))]
+mod move_exhaustion_tests;
+
 use crate::collision::ecb;
+use crate::fighter::{
+    aerial, damage, dash, edge, escape, escape_air, idle, jab, ledge, locomotion, movement, shield,
+    smash, taunt, tilt,
+};
 use data::MatchData;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -90,7 +87,7 @@ impl Controller {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Wait,
@@ -316,6 +313,12 @@ pub struct Fighter {
     /// exactly along with the native physics state.
     #[serde(skip_serializing_if = "script::LocalState::is_empty")]
     pub script_state: script::LocalState,
+    /// Generic fighter action variables owned by the active script. These
+    /// replace the former per-character native special state slots; native
+    /// mechanisms may retain transient compatibility state while migration
+    /// of the bundled definitions is in progress.
+    #[serde(skip_serializing_if = "script::LocalState::is_empty")]
+    pub action_state: script::LocalState,
     pub position: [f32; 2],
     /// Persistent gameplay depth. Bone, hitbox and hurtbox transforms include it.
     pub depth: f32,
@@ -348,10 +351,6 @@ pub struct Fighter {
     pub locomotion: locomotion::State,
     pub shield: shield::ShieldState,
     pub aerial: aerial::State,
-    pub side_special: crate::characters::fox::side::State,
-    pub up_special: crate::characters::fox::up::State,
-    pub down_special: crate::characters::fox::down::State,
-    pub neutral_special: crate::characters::fox::neutral::State,
     pub tilt: tilt::State,
     pub smash: smash::State,
     pub dash: dash::State,
@@ -419,6 +418,16 @@ pub struct Fighter {
     pub hitboxes: [hitboxes::Track; 4],
     pub staling: staling::State,
     pub previous_input: Controller,
+    /// Small rollback-tracked native event state. The event dispatcher owns
+    /// action generations and availability gates; it never contains VM data.
+    #[serde(default)]
+    pub script_events: script::events::NativeEventState,
+    /// Fully validated native projectile commands staged by callbacks.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) pending_projectiles: Vec<projectile::PendingProjectile>,
+    /// Effects parented to this fighter, included in checkpoints and cleared
+    /// together according to the native fighter ownership boundary.
+    pub effects: crate::game::effects::EffectState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -584,20 +593,46 @@ impl Match {
     /// ignores it. Callers that know a replay's real ports (`make-
     /// initialization`) should supply them; every other caller keeps using
     /// `new`, which defaults to `[0, 1]` (today's two-player convention).
-    pub fn new_with_slots(data: MatchData, seed: u32, slots: [u32; 2]) -> Result<Self, Error> {
+    pub fn new_with_slots(mut data: MatchData, seed: u32, slots: [u32; 2]) -> Result<Self, Error> {
+        // Project class-defined native attributes once before validation,
+        // resource caching, and resource identity calculation.
+        script::attributes::apply(&mut data)?;
+        for fighter in &mut data.fighters {
+            // The cache is a derived, match-owned artifact. Clear a cache
+            // carried by a cloned FighterData before validating and rebuilding
+            // it, so edits to serialized script/resources cannot reuse a
+            // linked program from an earlier match registration.
+            fighter.script_resources = Default::default();
+            if let Some(specials) = &mut fighter.specials {
+                specials
+                    .resources
+                    .index_attacks()
+                    .map_err(|error| Error::Data(format!("invalid specials resource: {error}")))?;
+            }
+        }
+        let rules = &data.rules;
+        for fighter in &mut data.fighters {
+            let resources = script::lifecycle::resource_cache(fighter, rules)
+                .map_err(|error| Error::Data(error.to_string()))?;
+            fighter.script_resources.replace(resources);
+            #[cfg(feature = "experimental-continuations")]
+            if let Some(program) = fighter
+                .script_resources
+                .get()
+                .and_then(|resources| resources.program())
+            {
+                program
+                    .prepare_for_current_thread()
+                    .map_err(|error| Error::Data(error.to_string()))?;
+            }
+        }
         validation::validate(&data)?;
         let mut resource_bytes =
             serde_json::to_vec(&data).map_err(|e| Error::Data(e.to_string()))?;
-        // The reflector policy is a bundled gameplay resource whenever a
-        // fighter exposes the down-special reflector shape. Include both a
-        // stable ABI marker and the exact source so checkpoints/replays cannot
-        // silently mix policy revisions with the same native match data.
-        for fighter in &data.fighters {
-            if let Some(source) = script::bundled_source(fighter.specials.as_ref()) {
-                resource_bytes.extend_from_slice(b"\0skirmish-luau-fighter-v1\0");
-                resource_bytes.extend_from_slice(source.as_bytes());
-            }
-        }
+        // Script source and all registered import dependencies are part of
+        // the native resource identity, including when FighterData.script is
+        // absent and a bundled source is selected from the resource profile.
+        script::identity::append(&mut resource_bytes, &data.fighters);
         let resource_id = Sha256::digest(resource_bytes).into();
         let state = simulation::initial_state(&data, seed, slots)?;
         validation::state(&state)?;
@@ -633,6 +668,27 @@ impl Match {
         self.state = self.initial.clone();
         self.state.rng_seed = seed;
         &self.state
+    }
+
+    /// Prepare all linked Pon programs for the calling gameplay thread.
+    ///
+    /// Match construction prepares its resource programs on the loading
+    /// thread. A match moved to another thread must cross this explicit
+    /// session boundary before [`Self::step`]; stepping never compiles or
+    /// discovers script source.
+    pub fn prepare_for_current_thread(&self) -> Result<(), Error> {
+        for fighter in &self.data.fighters {
+            let Some(resources) = fighter.script_resources.get() else {
+                continue;
+            };
+            let Some(program) = resources.program() else {
+                continue;
+            };
+            program
+                .prepare_for_current_thread()
+                .map_err(|error| Error::Data(format!("prepare fighter script: {error}")))?;
+        }
+        Ok(())
     }
 
     /// Errors leave the match untouched. Clones share only immutable resources.

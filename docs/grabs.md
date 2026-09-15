@@ -88,7 +88,7 @@ simultaneous-catch order, airborne rejection, weight-dependent and independent
 throw timing, fast event crossing, hurtbox pair cleanup on KO, and
 malformed resources. `game_hurtbox_eligibility` adds the per-capsule
 state/grabbable filters and directional bone scale. Three grab/throw conformance
-scenarios now run normally. `fighter::grab` unit tests cover the exact fresh-A
+scenarios now run normally. `game::grab` unit tests cover the exact fresh-A
 predicate, mash mutation, throw-rate branch and operand order, and the strict
 capture-alignment height branch.
 `grab_differential` compares the three retained

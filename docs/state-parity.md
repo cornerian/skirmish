@@ -1,6 +1,6 @@
 # Slippi state parity: jumps and falls
 
-`skirmish::game::locomotion` and `crates/skirmish-replay/src/observation.rs`
+`skirmish::fighter::locomotion` and `crates/skirmish-replay/src/observation.rs`
 port the Slippi-visible identity of the ground/aerial jump direction and the
 aerial-jump fall (pinned decomp rev 0bac93a5), and correct a mapping bug in
 FallSpecial's own numbers left over from the air-dodge batch. Motion-state ids

@@ -36,7 +36,11 @@ See the [integration coverage and missing-behavior tests](docs/testing.md).
 Ignored conformance scenarios describe unimplemented behavior and are expected
 to fail when explicitly run; their absence from the passing suite is reported.
 
-## Current translation
+## Current native translation
+
+The table below lists partial native Rust slices and compatibility work. It is
+not a claim that the roster is playable or that fighter authoring is fully
+integrated into gameplay.
 
 The pinned source contains 2,441 C/C++/header/assembly files and 611,321 lines,
 including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
@@ -45,7 +49,7 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | Library | Translated behavior |
 | --- | --- |
 | `compat::{bytecode, math, mbstring}`, `random`, `ctype`, `spline`, `id`, `quaternion` | Focused HSD and Metrowerks compatibility algorithms without a generic runtime wrapper |
-| `fighter` | Movement, locomotion, neutral-special input, blast-death selection, fixed/contact-relative knockback, DI, hitlag, prone damage, damage reflection and floor/wall-tech selection |
+| `fighter` | Partial native slices for movement, locomotion, neutral-special input, blast-death selection, fixed/contact-relative knockback, DI, hitlag, prone damage, damage reflection and floor/wall-tech selection; the roster and a complete playable fighter set remain unfinished |
 | `collision` | Skeletal poses, environmental collision boxes and substeps, directed stage queries, exact moving-line remapping, opposing-surface squeeze, swept capsules and matrix-aware [hurtbox contact](docs/hurtbox-contact.md) with frame-sampled eligibility |
 | `controller` | Original controller clamping plus optional SDL3 hot-plug input for standard gamepads and GameCube adapters |
 | `menus` | Native digital input/repeat handling and ten main-menu branches with navigation, unlock rules, cooldowns and explicit scene/panel requests |
@@ -55,6 +59,15 @@ including the Dolphin SDK. `upstream.lock.json` records the revision and counts;
 | `skirmish-equivalence` | Semantic traces, process comparison, native match trace adapter, and differential probes |
 | `game` | Experimental native two-player match: static or resource-animated stage/ECB collision, bone-attached ledge and neutral-special actions, jab combos (second/third jab and the rapid jab) with tilts, charged smashes and the dash attack, standing/dash/pivot/shield catches, stick-directed air dodges with special landings, paired capture/pummel/mash-escape/four-direction throws, damage, DI, prone reactions, floor/wall/ceiling techs, wall/ceiling reflection, directional/star/screen KOs, stocks, airborne rebirth platforms, the match-start warp-in, timeout and checkpoints |
 | `renderer` | SDL3 window/events/controllers, wgpu scene and menu presentation, build-time WESL shaders, offscreen PNG output and CPAL procedural audio cues |
+
+Fighter behavior remains in the native Rust event, action, collision, physics,
+projectile, and motion paths while Pon integration is in progress. The real
+embedded Pon runtime imports the class based fighter API and exercises the
+native ABI in focused tests. Full Fox loading, gameplay parity, and async
+rollback behavior are not yet verified. The installable [pure-Python fighter
+SDK](scripts/api/README.md) supports editor and authoring workflows;
+the [Pon integration status](docs/pon.md) describes its host boundary and
+current evidence.
 
 Start the native graphics preview with
 `cargo run --locked -p renderer --bin skirmish-renderer`. It includes a procedural

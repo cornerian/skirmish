@@ -13,11 +13,11 @@ mod idle_support;
 use skirmish::{
     compat::math::random::HsdRng,
     fighter::idle::pick,
+    fighter::idle::{IdleAnimations, IdleEntry},
     game::{
         Action, Controller, Match, State,
         data::MatchData,
         death::Kind,
-        idle::{IdleAnimations, IdleEntry},
     },
 };
 
@@ -253,7 +253,7 @@ fn death_hit_data(_seed: u32) -> MatchData {
 
 /// Player 1 presses A (jab) from frame 0; player 0 is the target. Neither
 /// the idle resource nor its RNG draws affect this physics/hit timing (no
-/// system besides `fighter::death`/`game::idle` consumes the match RNG at
+/// system besides `fighter::death`/`fighter::idle` consumes the match RNG at
 /// all), so `DeathStarted` reliably fires on the same frame regardless.
 fn drive_to_death(data: MatchData, seed: u32) -> State {
     let mut game = Match::new(data, seed).unwrap();

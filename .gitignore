@@ -1,4 +1,5 @@
 /target/
+vendor/**/target/
 *.dol
 *.iso
 *.gcm
@@ -10,3 +11,6 @@
 *.raw
 *.log
 *.proptest-regressions
+__pycache__/
+*.py[cod]
+*.egg-info/

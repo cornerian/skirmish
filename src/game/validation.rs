@@ -3,6 +3,11 @@ use crate::collision::{
     bones::{BoneCapsule, Pose},
     stage,
 };
+use crate::fighter::{
+    damage, dash, edge, escape, escape_air, idle, jab, ledge, locomotion, shield, smash, taunt,
+    tilt,
+};
+use crate::game::grab;
 
 fn require(condition: bool, message: &str) -> Result<(), Error> {
     if condition {
@@ -77,13 +82,16 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     }
     let rules = &data.rules;
     damage::validate_rules(&rules.damage)?;
+    if let Some(special_rules) = &rules.specials {
+        crate::fighter::specials::validate_rules(special_rules)?;
+    }
     if let Some(staling) = &rules.staling {
         super::staling::validate(staling)?;
     }
     if let Some(grab) = &rules.grab {
         for fighter in &data.fighters {
             let denominator = fighter.weight * grab.throw_weight_scale;
-            let rate = crate::fighter::grab::throw_animation_rate(
+            let rate = crate::game::grab::throw_animation_rate(
                 false,
                 fighter.weight,
                 grab.throw_weight_scale,
@@ -192,9 +200,17 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        script::lifecycle_resources::validate(fighter, rules)
+            .map_err(|error| Error::Data(format!("invalid specials resource: {error}")))?;
         if let Some(program) = &fighter.script {
             script::validate_program(program)
                 .map_err(|error| Error::Data(format!("invalid fighter script: {error}")))?;
+            script::move_validation::validate(fighter)
+                .map_err(|error| Error::Data(format!("invalid move destinations: {error}")))?;
+        }
+        if fighter.script.is_some() || fighter.specials.is_some() {
+            script::lifecycle::validate_resources(fighter, rules)
+                .map_err(|error| Error::Data(format!("invalid scripted resources: {error}")))?;
         }
         if let Some(rules) = &rules.clank {
             super::clank::validate(rules, fighter)?;
@@ -365,73 +381,9 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
             }
             (None, None) => {}
         }
-        match (
-            &rules.specials,
-            fighter.specials.as_ref().and_then(|s| s.fox_side()),
-        ) {
-            (Some(rules), Some(parameters)) => {
-                crate::characters::fox::side::validate(rules, parameters, fighter)?;
-                if fighter.escape_air.is_none() {
-                    return Err(Error::Data(
-                        "side-special landing shares the common air-dodge landing resources".into(),
-                    ));
-                }
-            }
-            // `rules.specials` is shared common data (`x218`/`x220`/`x21C`)
-            // also read by the down special's own aerial entry
-            // (`vertical_threshold`), so a fighter with only a down-special
-            // resource and no side-special one is not an error here.
-            (Some(_), None)
-                if fighter
-                    .specials
-                    .as_ref()
-                    .and_then(|s| s.fox_down())
-                    .is_some() => {}
-            (Some(_), None) => {
-                return Err(Error::Data(
-                    "side-special rules require a motion for every fighter".into(),
-                ));
-            }
-            (None, Some(_)) => {
-                return Err(Error::Data(
-                    "side-special motions require common rules".into(),
-                ));
-            }
-            (None, None) => {}
-        }
-        match (
-            &rules.specials,
-            fighter.specials.as_ref().and_then(|s| s.fox_up()),
-        ) {
-            (Some(specials_rules), Some(parameters)) => {
-                crate::characters::fox::up::validate(specials_rules, parameters, fighter, rules)?;
-            }
-            (None, Some(_)) => {
-                return Err(Error::Data(
-                    "up-special motions require common rules".into(),
-                ));
-            }
-            // Unlike the side special above, the common rules alone do not
-            // require an up-special motion: a match may enable only the
-            // side special's own stick thresholds.
-            (Some(_), None) | (None, None) => {}
-        }
-        if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_down()) {
-            let Some(specials_rules) = &rules.specials else {
-                return Err(Error::Data(
-                    "down-special motions require common specials rules".into(),
-                ));
-            };
-            crate::characters::fox::down::validate(specials_rules, parameters, fighter, rules)?;
-            if fighter.locomotion.is_none() {
-                return Err(Error::Data(
-                    "down-special mid-move turn/jump-cancel/platform-drop share the common locomotion resources".into(),
-                ));
-            }
-        }
-        if let Some(parameters) = fighter.specials.as_ref().and_then(|s| s.fox_neutral()) {
-            crate::characters::fox::neutral::validate(parameters, fighter)?;
-        }
+        // Special resources are validated by the generic fighter script
+        // definition and lifecycle resource binder. No character-specific
+        // attribute or move validator belongs in the native engine.
         match (&rules.escape, &fighter.escape) {
             (Some(rules), Some(parameters)) => escape::validate(rules, parameters, fighter)?,
             (Some(_), None) => {
@@ -872,8 +824,7 @@ fn validate_bones(bones: &[Bone]) -> Result<Pose, Error> {
         .map_err(|e| Error::Data(e.to_string()))
 }
 
-/// Shared with `crate::characters::fox::{up,down}::validate`'s own per-hitbox
-/// geometry check (the same reason as it needing `validate_animation_pose`).
+/// Shared with script resource validation's per-hitbox geometry check.
 pub(crate) fn validate_shape(shape: BoneCapsule, pose: &Pose) -> Result<(), Error> {
     let shape = shape
         .transform(pose, 1.0)
@@ -924,6 +875,9 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
     for (player, f) in state.fighters.iter().enumerate() {
         script::validate_state(&f.script_state).map_err(|error| {
             Error::Data(format!("invalid fighter {player} script state: {error}"))
+        })?;
+        script::validate_state(&f.action_state).map_err(|error| {
+            Error::Data(format!("invalid fighter {player} action state: {error}"))
         })?;
         require(
             grab::valid_relationship(&state.fighters, player),

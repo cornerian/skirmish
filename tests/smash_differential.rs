@@ -6,12 +6,12 @@
 
 use proptest::prelude::*;
 use skirmish::fighter::aerial::stick_angle;
-use skirmish::fighter::grab::{fresh_down, fresh_up};
 use skirmish::fighter::smash::{
     ChargeState, charge_damage, charge_input, charge_tick, down_smash_input, forward_smash_input,
     fresh_cstick_smash_x, stick_sign, up_smash_input,
 };
 use skirmish::fighter::tilt::{ForwardVariant, forward_variant};
+use skirmish::game::grab::{fresh_down, fresh_up};
 
 const HSD_PAD_A: u32 = 0x100;
 

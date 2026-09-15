@@ -1,15 +1,9 @@
 //! Native damage-floor scheduling with explicit synthetic state durations.
 use skirmish::{
     collision::ecb,
-    fighter::damage::HurtHeight,
+    fighter::damage::{DamageMotionRules, DamagePoseAttributes, DownDamageRules, FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules, GroundLaunchRules, HurtHeight, KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules, ProneRecoveryAttributes, RecoveryInvincibilityRules},
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
-        damage::{
-            DamageMotionRules, DamagePoseAttributes, DownDamageRules, FloorTechAttributes,
-            FloorTechFrame, FloorTechMotion, FloorTechRules, GroundLaunchRules,
-            KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules,
-            ProneRecoveryAttributes, RecoveryInvincibilityRules,
-        },
         data::{Attack, AttackFrame, Bone, CollisionBox},
     },
 };
@@ -21,8 +15,8 @@ const IDLE: [Controller; 2] = [Controller {
     trigger: 0.0,
 }; 2];
 
-fn profile() -> skirmish::game::damage::FloorResponseRules {
-    skirmish::game::damage::FloorResponseRules {
+fn profile() -> skirmish::fighter::damage::FloorResponseRules {
+    skirmish::fighter::damage::FloorResponseRules {
         tumble_knockback_threshold: 20.0,
         tech_window: 20.0,
         tech_repeat_lockout: 40,
@@ -390,6 +384,24 @@ fn down_wait(data: skirmish::game::data::MatchData) -> Match {
         state.fighters[1].action == Action::DownWait
     });
     game
+}
+
+pub fn pon_down_wait_with_script(source: &str) -> Match {
+    let mut data = knockdown_data();
+    data.rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_wait_frames = 1;
+    for fighter in &mut data.fighters {
+        if let Some(knockdown) = &mut fighter.knockdown {
+            knockdown.face_up.wait_poses.truncate(1);
+            knockdown.face_down.wait_poses.truncate(1);
+        }
+    }
+    data.fighters[1].script = Some(skirmish::game::script::Program::new(source).unwrap());
+    down_wait(data)
 }
 
 fn down_bound(data: skirmish::game::data::MatchData) -> Match {

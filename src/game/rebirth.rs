@@ -1,8 +1,23 @@
 //! Headless rebirth-platform travel, wait and release lifecycle.
 
 use super::{Action, Controller, Error, Fighter, simulation};
-use crate::fighter::rebirth::approach_velocity;
 use serde::{Deserialize, Serialize};
+
+pub fn approach_velocity(current: [f32; 2], target: [f32; 2], remaining: u32) -> [f32; 2] {
+    let inverse = 1.0 / remaining as f32;
+    [
+        (target[0] - current[0]) * inverse,
+        (target[1] - current[1]) * inverse,
+    ]
+}
+
+pub fn wait_approach_velocity(current: [f32; 2], target: [f32; 2], remaining: u32) -> [f32; 2] {
+    let inverse = 1.0 / remaining as f32;
+    [
+        inverse * (target[0] - current[0]),
+        inverse * (target[1] - current[1]),
+    ]
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

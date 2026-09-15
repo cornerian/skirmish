@@ -1,5 +1,6 @@
 #![allow(dead_code)] // Each integration target uses a different subset.
-use skirmish::game::{data::MatchData, taunt::Taunt};
+use skirmish::fighter::taunt::Taunt;
+use skirmish::game::data::MatchData;
 
 /// Install the invented `tests/fixtures/game/taunt.json` right/left motions
 /// on both fighters. Its bones match the synthetic integration skeleton.

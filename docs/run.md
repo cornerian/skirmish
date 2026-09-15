@@ -1,7 +1,7 @@
 # Run animation rate and run-corrections batches
 
-`skirmish::game::locomotion` (wiring: entry, the per-frame animation advance,
-`src/game/locomotion.rs`) and `skirmish::fighter::locomotion` (pure
+`skirmish::fighter::locomotion` (wiring: entry, the per-frame animation advance,
+`src/game/simulation.rs`) and `skirmish::fighter::locomotion` (pure
 arithmetic: the animation-rate formula, `src/fighter/locomotion.rs`) extend
 the walk batch's float animation-frame model (`docs/walk.md`) to Run. Pinned
 decomp rev `0bac93a5`. Sources: `src/melee/ft/kinds/ftCommon/ftCo_Run.c`
@@ -43,12 +43,12 @@ it.
   finished). `fn_800CA698` (`ftCo_RunDirect.c`, a distinct motion state not
   modeled in this codebase) is the only caller of `Enter_Full` with a
   different `anim_start`/`anim_speed` (`fp->cur_anim_frame`/
-  `fp->frame_speed_mul`) and is not reachable here. `game::locomotion::
+  `fp->frame_speed_mul`) and is not reachable here. `fighter::locomotion::
   enter_run` is the wiring: it always enters with the tracked frame at 0.0
   and `last_rate` at 1.0 (`Fighter_ChangeMotionState`'s own `rate = 1`
   argument, applied on the first animation update exactly as the walk batch
-  modeled Walk's own entry rate), called from both `game::dash`'s and
-  `game::locomotion`'s own Dash-to-Run transitions and from `game::
+  modeled Walk's own entry rate), called from both `fighter::dash`'s and
+  `fighter::locomotion`'s own Dash-to-Run transitions and from `game::
   locomotion`'s RunTurn-to-Run transition.
 - **Animation phase** (`ftCo_Run_Anim`, every Run frame): `vel = gr_vel` (or
   `run.x4` when the stage friction multiplier is below 1 -- this codebase's
@@ -56,7 +56,7 @@ it.
   parameter for oracle parity, the same modeling choice `walk_animation_rate`
   already makes for Walk's `x0`). `rate = 0` when `vel * facing <= 0.0`, else
   `ABS(vel) / run_animation_scaling`; `ftAnim_SetAnimRate(rate)` applies from
-  the *next* animation update, not this one, so `game::locomotion::RunState`
+  the *next* animation update, not this one, so `fighter::locomotion::RunState`
   keeps `last_rate` exactly as `WalkState` does: each frame the tracked
   `frame` advances by the *previous* frame's `last_rate` (wrapping down by
   the Run figatree's length while `frame >= length` -- the Run figatree
@@ -65,7 +65,7 @@ it.
   caveat the walk batch recorded), and only then is a fresh rate computed
   from the current `gr_vel`/`facing` and stored as the new `last_rate` for
   the following frame. `fighter::locomotion::run_animation_rate` is the pure
-  formula; `game::locomotion::advance_run_animation` is the wiring. Then
+  formula; `fighter::locomotion::advance_run_animation` is the wiring. Then
   `run.x0` counts down to 0 by 1.0 per frame (never otherwise clamped) --
   unmodeled here, see "Known gap" below. Unlike Walk (three kind-indexed
   figatree lengths cached at `Fighter_Create_Inline2`, `fighter.c:838-840`),
@@ -114,7 +114,7 @@ found while doing so.
 
 ### Fix: RunTurn's flip check now reads the per-entry facing
 
-`game::locomotion`'s RunTurn model gated the flip on `f.action_frame >=
+`fighter::locomotion`'s RunTurn model gated the flip on `f.action_frame >=
 p.run_turn_flip_frame` (standing in for the unmodeled script event that sets
 `cmd_vars[1]`) and then checked `p.run_turn_velocity_scale *
 f.ground_velocity <= 0.01` -- a *fixed per-match resource constant*.
@@ -128,7 +128,7 @@ for a run turn started while facing -1 (the check would use the wrong sign
 and flip either too early or never, depending on velocity). `game::
 locomotion::start_run_turn` already captured that same per-entry value as
 `f.locomotion.run_turn_facing` (used correctly by `fighter::locomotion::
-turn_run`'s own physics branch); the flip check in `game::locomotion::
+turn_run`'s own physics branch); the flip check in `fighter::locomotion::
 update_animation`'s `Action::RunTurn` arm now reads `f.locomotion.
 run_turn_facing` instead of `Parameters::run_turn_velocity_scale`, which is
 removed from `Parameters` entirely (every fixture must drop it,
@@ -142,7 +142,7 @@ the entry facing's sign, with the frozen frames holding `action_frame`.
 
 ### Fix: RunBrake's velocity-gated marker freeze is now modeled
 
-`game::locomotion::update_animation`'s `Action::RunBrake` arm modeled only
+`fighter::locomotion::update_animation`'s `Action::RunBrake` arm modeled only
 `mv.co.runbrake.frames`'s plain countdown; no field or check corresponded to
 `cmd_vars[1]`/`x42C`/`runbrake.x0`, so RunBrake's own reported
 `action_frame`/Slippi age never froze, unlike RunTurn's. `Parameters` gains
@@ -159,7 +159,7 @@ run_brake_frozen`. The `frames` countdown (`run_brake_frames`) keeps
 counting down every frame regardless of the freeze, exactly as before, and
 can still end the brake into `Wait` while the animation stays frozen the
 entire time. Because RunBrake's own friction (`ftCo_RunBrake_Phys`/
-`game::locomotion::ground_motion`) only ever reduces `|ground_velocity|`
+`fighter::locomotion::ground_motion`) only ever reduces `|ground_velocity|`
 (never re-accelerates), a single "currently frozen" bit -- reset at
 RunBrake entry, matching `runbrake.x0`'s own `false` at
 `ftCo_RunBrake_Enter` -- cannot be re-armed by a later RunBrake frame in
@@ -173,7 +173,7 @@ animation frame) was already modeled correctly by the existing
 `run_brake_turn_frame`/`start_run_turn(f, f.action_frame)` pair and needed
 no change; `ftCo_RunBrake_Phys`'s friction multiplier
 (`run_dash_turn_friction_multiplier`) was already applied correctly by
-`game::locomotion::ground_motion`'s `run_friction_multiplier` and likewise
+`fighter::locomotion::ground_motion`'s `run_friction_multiplier` and likewise
 needed no change. `tests/game_run_corrections.rs` covers the freeze holding
 frames while fast and resuming when slow (with the `frames` countdown
 ticking throughout), the countdown ending the brake early while still
@@ -192,15 +192,15 @@ gains `run_turn_lockout_frames: Option<f32>` (`x430`; `None` keeps no
 lockout, matching the pre-batch behavior); `locomotion::State` gains
 `run_lockout: f32` (`run.x0`), set by `enter_run`'s new `lockout` parameter
 -- `0.0` from both of this codebase's Dash-to-Run call sites (`game::
-locomotion::update_actions`'s `Action::Dash` arm and `game::dash::
+locomotion::update_actions`'s `Action::Dash` arm and `fighter::dash::
 update_dash_or_run`'s Dash arm, matching `fn_800CA5F0`'s literal `arg0 =
 0.0`) and `p.run_turn_lockout_frames.unwrap_or(0.0)` from the RunTurn-to-Run
-re-entry (`game::locomotion::update_animation`'s `Action::RunTurn` arm,
+re-entry (`fighter::locomotion::update_animation`'s `Action::RunTurn` arm,
 matching `fn_800CA644`'s `arg0 = x430`) -- and counted down by 1.0 per Run
 animation frame while positive in `update_animation`'s `Action::Run` arm
 (`ftCo_Run.c:96-98`, independent of whether `MovementData.run_animation` is
 supplied, matching the source's own unconditional countdown). Both
-`game::locomotion::update_actions`'s `Action::Run` arm and `game::dash::
+`fighter::locomotion::update_actions`'s `Action::Run` arm and `fighter::dash::
 update_dash_or_run`'s Run arm now gate their RunTurn/RunBrake entry checks
 behind `f.locomotion.run_lockout <= 0.0`, mirroring `ftCo_Run_IASA`'s own
 gate order (RunTurn checked first, then RunBrake, both skipped together
@@ -218,9 +218,9 @@ it.
   `0.0 < scaling <= 1_000_000.0`. Unlike Walk, not paired with any `Rules`
   entry -- Run has no kind-selection thresholds. Absent keeps Run's
   pre-batch behavior: a single integer `action_frame` published as
-  `state_age`, rate 1 always, and `game::locomotion::State.run` never leaves
+  `state_age`, rate 1 always, and `fighter::locomotion::State.run` never leaves
   its default.
-- `game::locomotion::State.run: locomotion::RunState { frame: f32, last_rate:
+- `fighter::locomotion::State.run: locomotion::RunState { frame: f32, last_rate:
   f32 }` (`Serialize`/`Deserialize`, checkpoint-safe).
 - `Parameters.run_turn_lockout_frames: Option<f32>` (`x430`): `None` keeps
   no lockout. Validated finite and `0.0..=1_000_000.0` when `Some`.
@@ -229,7 +229,7 @@ it.
   both `None` or both `Some` (validated paired); `run_brake_marker_frame`
   must be `< run_brake_animation_frames`; `run_brake_freeze_speed` must be
   finite and `0.0..=1_000_000.0`. `None` keeps no freeze.
-- `game::locomotion::State.run_lockout: f32` (`run.x0`) and
+- `fighter::locomotion::State.run_lockout: f32` (`run.x0`) and
   `run_brake_frozen: bool` (`runbrake.x0`), both `Serialize`/`Deserialize`,
   checkpoint-safe.
 
@@ -342,7 +342,7 @@ negative). It also checks `oracle_run_anim`'s `run_x0_after` against the
 source's own literal decrement (`ftCo_Run.c:96-98`, now modeled by
 `locomotion::State.run_lockout`) and `oracle_run_enter`'s literal
 `anim_start = 0.0`/`anim_speed = 1.0`/`run.x0 = arg0`/`run.x4 = gr_vel`
-field assignments, which `game::locomotion::enter_run` assumes.
+field assignments, which `fighter::locomotion::enter_run` assumes.
 
 ### run-corrections batch
 

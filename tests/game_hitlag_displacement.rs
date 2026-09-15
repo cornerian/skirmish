@@ -1,10 +1,8 @@
 //! Synthetic native scheduler cases; arithmetic parity uses separate upstream C
 //! oracles in the root damage_differential test. No authentic resources implied.
-use skirmish::game::{
-    BUTTON_A, Controller, Event, Match, State,
-    damage::{Armor, HitlagDisplacementRules},
-    data::MatchData,
-};
+
+use skirmish::fighter::damage::{Armor, HitlagDisplacementRules};
+use skirmish::game::{BUTTON_A, Controller, Event, Match, State, data::MatchData};
 
 fn data() -> MatchData {
     let mut data: MatchData =
@@ -292,7 +290,7 @@ fn armor_uses_maximum_channel_then_minimum_without_reducing_percent() {
 fn crouch_scales_only_the_victims_hitlag_and_damage_consumes_the_ground_jump() {
     let mut resource = data();
     resource.rules.hitlag.crouch_multiplier = 0.5;
-    let parameters: skirmish::game::locomotion::Parameters =
+    let parameters: skirmish::fighter::locomotion::Parameters =
         serde_json::from_str(include_str!("fixtures/game/locomotion.json")).unwrap();
     let crouch_frames = parameters.crouch_animation_frames;
     resource

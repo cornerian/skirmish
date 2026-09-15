@@ -2,7 +2,7 @@
 //! against the pinned `mpColl_80044164`/`mpColl_800443C4` (`mp/mpcoll.c`), via
 //! `tests/oracle/ledge_snap.c`. See that adapter's header comment for why the
 //! floor-database box search and the `mpCheckMultiple` obstruction checks are
-//! stubbed rather than ported: `game::ledge::scan` already knows it is
+//! stubbed rather than ported: `fighter::ledge::scan` already knows it is
 //! testing one single, isolated, disconnected ledge endpoint, so the box
 //! search this differential forces (a floor found exactly at the tested
 //! endpoint, with no obstruction) is the only scenario this codebase's ledge
@@ -139,7 +139,7 @@ proptest! {
 
     /// The post-box predicate (edge/ECB-bottom threshold checks), under the
     /// forced "floor found exactly at the tested endpoint, no obstruction"
-    /// scenario `game::ledge::scan`'s model always produces. `contact` is
+    /// scenario `fighter::ledge::scan`'s model always produces. `contact` is
     /// pinned equal to `edge`, so the source's own `contact.x - edge.x <
     /// 5.0F` tolerance term is exercised at its always-true zero-distance
     /// case; a bounded, finite domain (matching this profile's own resource

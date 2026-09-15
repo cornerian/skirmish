@@ -212,7 +212,7 @@ proptest! {
     /// frame 0 (freeze), then a generated velocity sequence drives the
     /// resume/flip decision frame by frame, feeding each call's
     /// `cmd_vars1_after`/`x14_after`/`facing_after` into the next -- the
-    /// same threading `game::locomotion::update_animation`'s `Action::
+    /// same threading `fighter::locomotion::update_animation`'s `Action::
     /// RunTurn` arm performs across real frames.
     #[test]
     fn generated_velocity_sequences_and_both_facings_match_c(

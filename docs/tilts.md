@@ -1,6 +1,6 @@
 # Tilt attack profile
 
-`game::tilt` ports `ftCo_AttackS3.c`, `ftCo_AttackHi3.c` and
+`fighter::tilt` ports `ftCo_AttackS3.c`, `ftCo_AttackHi3.c` and
 `ftCo_AttackLw3.c`: the forward tilt with its High, HighSlight, Straight,
 LowSlight and Low angle variants, the up tilt and the down tilt with its
 buffered repeat. Enable it with `rules.tilt` plus each fighter's `tilts`

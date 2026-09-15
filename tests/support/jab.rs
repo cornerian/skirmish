@@ -1,6 +1,6 @@
+use skirmish::fighter::jab::{Attributes, FrameFlags, JabAttack, Parameters, RapidJab, Script};
 use skirmish::game::{
     data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
-    jab::{Attributes, FrameFlags, JabAttack, Parameters, RapidJab, Script},
 };
 
 fn hitbox() -> Hitbox {

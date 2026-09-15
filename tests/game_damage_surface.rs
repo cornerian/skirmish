@@ -7,13 +7,9 @@ mod special_resources;
 
 use skirmish::{
     collision::{ecb, stage},
-    fighter::damage::HurtHeight,
+    fighter::damage::{DamageMotionRules, DamagePoseAttributes, FloorResponseRules, HurtHeight, SurfaceResponseAttributes, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules},
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
-        damage::{
-            DamageMotionRules, DamagePoseAttributes, FloorResponseRules, SurfaceResponseAttributes,
-            SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
-        },
         data::{Bone, CollisionBox, MatchData, StageGeometry},
         stage_motion::{Rules as MotionRules, Track, Transform},
         wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules},

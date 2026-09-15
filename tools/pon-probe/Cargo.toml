@@ -1,0 +1,13 @@
+[package]
+name = "skirmish-pon-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# This is intentionally outside the skirmish workspace. It is a pinned,
+# opt-in integration probe and must not alter the game's dependency graph.
+[workspace]
+
+[dependencies]
+pon-jit = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }
+pon-runtime = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }

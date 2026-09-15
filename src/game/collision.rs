@@ -53,12 +53,33 @@ pub(crate) fn begin_pass_as(
     destination: Action,
     keep_frame: bool,
 ) -> bool {
+    begin_pass_as_with_attributes(
+        f,
+        data.movement.physics(),
+        geometry,
+        velocity_y,
+        destination,
+        keep_frame,
+    )
+}
+
+/// Geometry/state transition for script callbacks.  The lifecycle bridge
+/// captures only the compact movement attributes, avoiding a clone of the
+/// fighter's full resource pack merely to start a pass.
+pub(crate) fn begin_pass_as_with_attributes(
+    f: &mut Fighter,
+    attributes: crate::fighter::Attributes,
+    geometry: &StageGeometry,
+    velocity_y: f32,
+    destination: Action,
+    keep_frame: bool,
+) -> bool {
     if !on_platform(f, geometry) {
         return false;
     }
     let support = f.ground_line;
     let mut movement = Movement {
-        attributes: data.movement.physics(),
+        attributes,
         self_velocity: [f.velocity[0], f.velocity[1], 0.0],
         ..Default::default()
     };
@@ -199,7 +220,7 @@ pub(crate) fn initialize(
         f.ground_line = Some(contact.line_id);
         f.floor_normal = contact.normal;
         f.action = Action::Wait;
-        super::locomotion::landed(f);
+        crate::fighter::locomotion::landed(f);
     } else {
         f.grounded = false;
         f.ground_line = None;
@@ -220,6 +241,17 @@ pub(crate) fn resolve(
 ) -> Result<(), Error> {
     let (stage, geometry, previous_geometry) = environment;
     let (data, rules, input) = resources;
+    // Ground-contact lifecycle delivery belongs to the native collision
+    // boundary.  Capture the state before any substep changes it so a
+    // stationary grounded fighter does not poll the callback every frame,
+    // while a newly landed fighter or a moving floor/line normal still emits
+    // exactly one event after this resolve completes.  `last_ground_line` is
+    // the rollback-tracked supporting-line identity retained across airborne
+    // frames; do not overwrite it here (the simulation commits that
+    // observation at its normal frame boundary).
+    let was_grounded = f.grounded;
+    let previous_floor_normal = f.floor_normal;
+    let previous_ground_line = f.last_ground_line;
     let position_delta_x = f.position[0] - previous_position[0];
     let plan = ecb::SubstepPlan::new(
         [previous_position[0], previous_position[1], 0.0],
@@ -310,9 +342,9 @@ pub(crate) fn resolve(
                     ceiling_position = Some(f.position[1]);
                 }
                 let response_eligible = !responded
-                    && (super::damage::can_surface_tech(f, surface, &rules.damage)
-                        || super::damage::can_reflect(f, surface, &rules.damage)
-                        || crate::characters::common::wants_redirect(f.action));
+                    && (crate::fighter::damage::can_surface_tech(f, surface, &rules.damage)
+                        || crate::fighter::damage::can_reflect(f, surface, &rules.damage)
+                        || crate::fighter::specials::wants_redirect(f.action, data));
                 if response_eligible {
                     let candidate = &mut surface_contacts[usize::from(surface == Surface::Ceiling)];
                     candidate.get_or_insert((surface, normal, line_id));
@@ -357,7 +389,7 @@ pub(crate) fn resolve(
             }
             if let Some(line) = f.ground_line
                 && let Some(geom_line) = geometry.lines.get(line)
-                && floor_end_clamp(f, rules, line, geom_line, stage, input)?
+                && floor_end_clamp(f, data, rules, line, geom_line, stage, input)?
             {
                 if let Some(after_ceiling) = ceiling_position {
                     let after_floor = f.position[1];
@@ -374,8 +406,8 @@ pub(crate) fn resolve(
             // Ground-to-air conversion consumes the grounded jump slot, even
             // when walking off an edge instead of pressing jump.
             f.locomotion.jumps_used = f.locomotion.jumps_used.max(1);
-            if !super::grab::transfer_capture_family(f, true)
-                && !crate::characters::common::transfer_ground_air(f, false)
+            if !crate::game::grab::transfer_capture_family(f, true)
+                && !crate::fighter::specials::transfer_ground_air(f, data, rules)?
                 && !matches!(
                     f.action,
                     Action::Damage
@@ -429,7 +461,8 @@ pub(crate) fn resolve(
         };
         // ftCo_80096CC8: a FallSpecial fighter holding the stick down passes
         // through one-way platforms; every other state lands on them.
-        let platforms_land = super::escape_air::platforms_land(f, rules.escape_air.as_ref(), input);
+        let platforms_land =
+            crate::fighter::escape_air::platforms_land(f, rules.escape_air.as_ref(), input);
         let contact = stage
             .sweep_filtered(Surface::Floor, floor_query, |id| {
                 platforms_land
@@ -502,7 +535,7 @@ pub(crate) fn resolve(
             f.ecb
                 .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
         }
-        if !f.grounded && !responded && crate::characters::common::wants_redirect(f.action) {
+        if !f.grounded && !responded && crate::fighter::specials::wants_redirect(f.action, data) {
             let [wall, ceiling] = surface_contacts;
             // `ftFx_SpecialAirHi_Coll`'s own non-ground branch: a single
             // hook decides both candidates together (ceiling checked
@@ -513,12 +546,13 @@ pub(crate) fn resolve(
             // contacts available at once.
             let strip_surface =
                 |c: Option<(Surface, [f32; 3], usize)>| c.map(|(_, normal, line)| (normal, line));
-            if crate::characters::common::air_contact(
+            if crate::fighter::specials::air_contact(
                 f,
                 data,
+                rules,
                 strip_surface(ceiling),
                 strip_surface(wall),
-            ) {
+            )? {
                 responded = true;
             }
         }
@@ -545,16 +579,17 @@ pub(crate) fn resolve(
                 let Some((surface, normal, line)) = candidate else {
                     continue;
                 };
-                if tech && super::damage::can_surface_tech(f, surface, &rules.damage) {
-                    let jump = super::damage::surface_tech(f, surface, &rules.damage, input);
+                if tech && crate::fighter::damage::can_surface_tech(f, surface, &rules.damage) {
+                    let jump =
+                        crate::fighter::damage::surface_tech(f, surface, &rules.damage, input);
                     events.push(Event::SurfaceTeched {
                         player,
                         surface,
                         line,
                         jump,
                     });
-                } else if !tech && super::damage::can_reflect(f, surface, &rules.damage) {
-                    super::damage::reflect(f, surface, normal, &rules.damage);
+                } else if !tech && crate::fighter::damage::can_reflect(f, surface, &rules.damage) {
+                    crate::fighter::damage::reflect(f, surface, normal, &rules.damage);
                     events.push(Event::SurfaceReflected {
                         player,
                         surface,
@@ -569,7 +604,7 @@ pub(crate) fn resolve(
         }
     }
     if f.grounded
-        && super::edge::owns_action(f.action)
+        && crate::fighter::edge::owns_action(f.action)
         && let Some(edge_rules) = rules.edge.as_ref()
         && let Some(line) = f.ground_line
         && let Some(geom_line) = geometry.lines.get(line)
@@ -577,13 +612,13 @@ pub(crate) fn resolve(
         // ftCo_Ottotto_Coll / ftCo_OttottoWait_Coll: `mpFloorGetRight` for
         // facing +1, `mpFloorGetLeft` for facing -1. The ground-lost branch
         // is already the ordinary Fall entry above (mode 2 clamp failing).
-        let (left_pt, right_pt) = super::edge::line_ends(geom_line);
+        let (left_pt, right_pt) = crate::fighter::edge::line_ends(geom_line);
         let floor_end_x = if f.facing > 0.0 {
             right_pt[0]
         } else {
             left_pt[0]
         };
-        super::edge::check_exit(f, edge_rules, floor_end_x);
+        crate::fighter::edge::check_exit(f, edge_rules, floor_end_x);
     }
     if !f.grounded && !responded && f.wall_jump.startup_timer == 0 {
         let contact = wall_jump_contact(f, geometry, previous_geometry, position_delta_x);
@@ -602,6 +637,18 @@ pub(crate) fn resolve(
             super::wall_jump::enter(f, jump_rules, trigger);
             events.push(Event::WallJumped { player, line });
         }
+    }
+    // `OnGroundContact` is a discrete physical event, rather than a
+    // per-grounded-frame callback.  A landing is a boundary even when it
+    // reuses the same line id and normal as the previous support; an already
+    // grounded fighter only reaches the hook when either the supporting line
+    // or its floor normal changes during collision resolution.
+    let ground_contact_changed = f.grounded
+        && (!was_grounded
+            || f.ground_line != previous_ground_line
+            || f.floor_normal != previous_floor_normal);
+    if ground_contact_changed {
+        crate::fighter::specials::update_ground_contact(f, data, rules)?;
     }
     Ok(())
 }
@@ -634,6 +681,7 @@ fn wall_jump_contact(
 /// Returns whether a clamp (mode 2) or teeter clamp (mode 1) held this frame.
 fn floor_end_clamp(
     f: &mut Fighter,
+    data: &FighterData,
     rules: &Rules,
     line: usize,
     geom_line: &stage::Line,
@@ -641,11 +689,11 @@ fn floor_end_clamp(
     input: super::Controller,
 ) -> Result<bool, Error> {
     use crate::fighter::edge as math;
-    let mode = super::edge::mode_for_action(f.action, rules.edge.is_some());
+    let mode = crate::fighter::edge::mode_for_action(f.action, data, rules.edge.is_some());
     if mode == math::Mode::Plain {
         return Ok(false);
     }
-    let (left_pt, right_pt) = super::edge::line_ends(geom_line);
+    let (left_pt, right_pt) = crate::fighter::edge::line_ends(geom_line);
     let bottom_x = f.position[0] + f.ecb.current.bottom[0];
     let Some(side) = math::passed_side(bottom_x, left_pt[0], right_pt[0]) else {
         return Ok(false);
@@ -673,7 +721,7 @@ fn floor_end_clamp(
     f.contacts[0] = Some(line);
     f.edge_contact = Some(resolution.side);
     if resolution.enter_teeter {
-        super::edge::enter(f);
+        crate::fighter::edge::enter(f);
     }
     Ok(true)
 }
@@ -746,12 +794,12 @@ fn land(
     f.ground_velocity = f.velocity[0];
     f.grounded = true;
     f.fast_fall = false;
-    super::locomotion::landed(f);
+    crate::fighter::locomotion::landed(f);
     super::wall_jump::landed(f);
     f.ecb_lock = 0;
     f.ecb.bottom_locked = false;
     f.skip_floor = None;
-    if !super::grab::transfer_capture_family(f, false) {
+    if !crate::game::grab::transfer_capture_family(f, false) {
         if matches!(f.action, Action::ShieldBreakFly | Action::ShieldBreakFall) {
             simulation::enter(f, Action::ShieldBreakDown);
         } else if matches!(
@@ -763,11 +811,17 @@ fn land(
                 | Action::FlyReflectCeiling
         ) {
             let pose = simulation::pose(f, data)?;
-            super::damage::land(f, data, &pose, &rules.damage, input)?;
-        } else if !crate::characters::common::transfer_ground_air(f, true)
-            && !crate::characters::common::land(f, data, on_platform(f, geometry), &pre_landing)?
-            && !super::escape_air::land(f, data, rules.escape_air.as_ref())?
-            && !super::aerial::land(f, data)?
+            crate::fighter::damage::land(f, data, &pose, &rules.damage, input)?;
+        } else if !crate::fighter::specials::transfer_ground_air(f, data, rules)?
+            && !crate::fighter::specials::land(
+                f,
+                data,
+                rules,
+                on_platform(f, geometry),
+                &pre_landing,
+            )?
+            && !crate::fighter::escape_air::land(f, data, rules.escape_air.as_ref())?
+            && !crate::fighter::aerial::land(f, data)?
         {
             simulation::enter(f, Action::Landing);
             // ftCo_Landing_Enter_Basic passes allow_interrupt = true.

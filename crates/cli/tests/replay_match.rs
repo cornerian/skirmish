@@ -73,8 +73,8 @@ struct Recording {
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
-    rules: skirmish::game::shield::Rules,
-    attributes: skirmish::game::shield::Attributes,
+    rules: skirmish::fighter::shield::Rules,
+    attributes: skirmish::fighter::shield::Attributes,
 }
 
 fn powershield_data() -> skirmish::game::data::MatchData {
@@ -113,7 +113,7 @@ fn shield_drop_data() -> MatchData {
     .unwrap();
     let profile: ShieldProfile =
         serde_json::from_str(include_str!("../../../tests/fixtures/game/shield.json")).unwrap();
-    let locomotion: skirmish::game::locomotion::Parameters =
+    let locomotion: skirmish::fighter::locomotion::Parameters =
         serde_json::from_str(include_str!("../../../tests/fixtures/game/locomotion.json")).unwrap();
     data.rules.countdown_frames = 0;
     data.rules.time_limit_frames = 9_999;
@@ -238,7 +238,7 @@ impl Recording {
                     // advance`'s shared end-of-frame `action_frame += 1`
                     // always runs one frame ahead of Melee's own
                     // `cur_anim_frame`), which now already covers Dash and
-                    // Turn too (`game::locomotion::start_dash`/`start_turn`
+                    // Turn too (`fighter::locomotion::start_dash`/`start_turn`
                     // model their extra `ftAnim_8006EBA4` entry call at the
                     // source instead); this harness-local duplicate must
                     // track that formula.
@@ -572,8 +572,8 @@ fn physical_z_drives_file_backed_grab_capture_and_detects_its_removal() {
 fn physical_l_drives_file_backed_shield_state_and_detects_its_removal() {
     #[derive(serde::Deserialize)]
     struct ShieldProfile {
-        rules: skirmish::game::shield::Rules,
-        attributes: skirmish::game::shield::Attributes,
+        rules: skirmish::fighter::shield::Rules,
+        attributes: skirmish::fighter::shield::Attributes,
     }
     let mut data: skirmish::game::data::MatchData = serde_json::from_str(include_str!(
         "../../../tests/fixtures/game/integration-match.json"
@@ -652,7 +652,7 @@ fn file_backed_cstick_shield_jump_matches_and_detects_the_first_changed_frame() 
     assert_eq!(recording.states[1].fighters[0].action, Action::JumpSquat);
     assert_eq!(
         recording.states[1].fighters[0].locomotion.jump_input,
-        skirmish::game::locomotion::JumpInput::CStick
+        skirmish::fighter::locomotion::JumpInput::CStick
     );
     assert!(recording.states[2].fighters[0].short_hop);
 
@@ -930,7 +930,7 @@ fn file_backed_jump_variants_match_and_detect_their_first_changed_direction_fram
     // is 0.3, an invented fixture value: `ftCo_Jump_Enter`'s own direction test
     // (`fp->input.lstick[0].x`) is dispatched from the Anim callback, which
     // runs before this same frame's own controller read updates `fp->input`
-    // (`game::locomotion::ground_jump`'s own doc comment), so the ground
+    // (`fighter::locomotion::ground_jump`'s own doc comment), so the ground
     // jump's launch (row 2, where JumpSquat's `jump_startup_frames` of 2
     // expires) consults row 1's stick, not its own; the aerial jump's own
     // launch (IASA-dispatched, unaffected) still consults that frame's own
@@ -1768,7 +1768,7 @@ fn file_backed_ledge_intangibility_uses_hurtbox_state_two() {
     assert!(caught.events.contains(&Event::LedgeCaught {
         player: 0,
         line: 0,
-        side: skirmish::game::ledge::Side::Left,
+        side: skirmish::fighter::ledge::Side::Left,
     }));
     assert!(caught.fighters[0].intangibility > 0);
     assert_eq!(caught.fighters[0].invincibility, 0);
@@ -2228,7 +2228,7 @@ fn unsupported_inputs_fail_at_their_frame_after_the_matching_prefix() {
 fn file_backed_cstick_asdi_reaches_simulation_and_changed_input_diverges() {
     let mut recording = Recording::new();
     recording.initialization.data.rules.damage.displacement =
-        Some(skirmish::game::damage::HitlagDisplacementRules {
+        Some(skirmish::fighter::damage::HitlagDisplacementRules {
             axis_thresholds: [0.5; 2],
             minimum_stick_magnitude: 0.5,
             sdi_window: 3,
@@ -2714,7 +2714,7 @@ fn file_backed_dash_into_a_run_reports_state_21_with_float_ages_and_a_reduced_st
 
     // Unlike Walk's mid-walk retype (which recomputes the reported kind/
     // frame from the *current* frame's velocity within the same frame,
-    // `game::locomotion::retype_walk`), Run's reported age
+    // `fighter::locomotion::retype_walk`), Run's reported age
     // (`locomotion.run.frame`) is always the *previous* frame's stored
     // rate, applied before this frame's own `ground_velocity` is read
     // (`advance_run_animation`); Anim precedes the ground-movement physics
@@ -2848,7 +2848,7 @@ fn file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_stic
     assert_eq!(recording.states[0].fighters[0].action, Action::Walk);
 
     let mut kind_changes = vec![];
-    let mut previous = skirmish::game::locomotion::WalkKind::Slow;
+    let mut previous = skirmish::fighter::locomotion::WalkKind::Slow;
     for (row, state) in recording.states.iter().enumerate() {
         let fighter = &state.fighters[0];
         assert_eq!(fighter.action, Action::Walk, "row {row}");
@@ -2859,9 +2859,9 @@ fn file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_stic
         }
         let expected_state = 15
             + match kind {
-                skirmish::game::locomotion::WalkKind::Slow => 0,
-                skirmish::game::locomotion::WalkKind::Middle => 1,
-                skirmish::game::locomotion::WalkKind::Fast => 2,
+                skirmish::fighter::locomotion::WalkKind::Slow => 0,
+                skirmish::fighter::locomotion::WalkKind::Middle => 1,
+                skirmish::fighter::locomotion::WalkKind::Fast => 2,
             };
         assert_eq!(
             observation::action_state(fighter, Some(2)),
@@ -2878,8 +2878,8 @@ fn file_backed_walk_ramp_reports_15_16_and_17_with_float_ages_and_a_reduced_stic
             .map(|(_, kind)| *kind)
             .collect::<Vec<_>>(),
         [
-            skirmish::game::locomotion::WalkKind::Middle,
-            skirmish::game::locomotion::WalkKind::Fast,
+            skirmish::fighter::locomotion::WalkKind::Middle,
+            skirmish::fighter::locomotion::WalkKind::Fast,
         ],
         "expected the ramp to reach Middle then Fast: {kind_changes:?}"
     );
@@ -3384,13 +3384,13 @@ fn firefox_hold_charge_hitbox_self_recorded_replay_matches() {
     data.rules.knockback_speed = 0.0;
     let bones = data.fighters[0].bones.clone();
     let hold = up_special_support::hold_attack_with_pack_hitboxes(&bones);
-    match data.fighters[0].specials.as_mut() {
-        Some(skirmish::characters::Specials::Fox { up: Some(up), .. }) => {
-            up.hold.ground = hold.clone();
-            up.hold.air = hold;
-        }
-        _ => panic!("fixture is missing its up-special resource"),
-    }
+    let up = data.fighters[0]
+        .specials
+        .as_mut()
+        .and_then(|specials| specials.resources.values.get_mut("up"))
+        .expect("fixture is missing its up-special resource");
+    up["hold"]["ground"] = serde_json::to_value(&hold).unwrap();
+    up["hold"]["air"] = serde_json::to_value(&hold).unwrap();
     let mut inputs = vec![IDLE; 25];
     inputs[0][0].buttons = BUTTON_B;
     inputs[0][0].stick[1] = 0.9;
@@ -3605,7 +3605,7 @@ fn physical_z_drives_file_backed_grab_capture_at_differing_stocks_with_the_real_
     // Fighter 1's score (2 stocks) is strictly less than fighter 0's (3),
     // so fighter 1's standing is 1 (one opponent scores strictly higher),
     // not the tied 0 both fighters would hold at equal stocks.
-    let expected = skirmish::fighter::grab::escape_timer(
+    let expected = skirmish::game::grab::escape_timer(
         formula.base,
         formula.handicap_scale,
         formula.handicap_max,
@@ -3619,7 +3619,7 @@ fn physical_z_drives_file_backed_grab_capture_at_differing_stocks_with_the_real_
     assert_eq!(victim.grab.escape_timer, expected);
     // The tied-standing value both fighters would have held at equal
     // stocks is different, confirming the timer really tracks standing.
-    let equal_standing = skirmish::fighter::grab::escape_timer(
+    let equal_standing = skirmish::game::grab::escape_timer(
         formula.base,
         formula.handicap_scale,
         formula.handicap_max,

@@ -81,7 +81,7 @@ pub const INPUT_POLICY: &str = "processed main-stick, C-stick and analog trigger
 // Slippi's physical and processed button words as native `HSD_Pad`
 // (`sysdolphin/baselib/controller.h:13-16`), so accepting them here covers
 // both `pre.buttons_physical` and `pre.buttons` below. Only D-pad up has an
-// observable effect (`game::taunt`); left/right/down are accepted as inert
+// observable effect (`fighter::taunt`); left/right/down are accepted as inert
 // input so replays containing them still import.
 const BUTTONS: u16 = game::BUTTON_A
     | game::BUTTON_B
@@ -316,7 +316,7 @@ pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, 
 
 /// The sample count of whichever `movement_poses` field backs this frame's
 /// bones for a persistent (looping) sub-motion, if any -- exactly the same
-/// selection `game::movement::pose` makes for its own field lookup, kept in
+/// selection `fighter::movement::pose` makes for its own field lookup, kept in
 /// sync here only for the length, not the bones themselves.
 fn looping_movement_pose_frames(
     fighter: &game::Fighter,
@@ -365,9 +365,9 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // fp->x2EC) / landing_lag` (`ftCo_Landing.c:111`), and the
         // ordinary aerial landings (`LandingAirN`/`F`/`B`/`Hi`/`Lw`)
         // scale the same way through the L-cancel divisor
-        // (`game::aerial::land`). `cur_anim_frame` is therefore the
+        // (`fighter::aerial::land`). `cur_anim_frame` is therefore the
         // tracked float `fighter.aerial.landing_elapsed`
-        // (`game::aerial::update_animation`/`land`), not the integer
+        // (`fighter::aerial::update_animation`/`land`), not the integer
         // `action_frame` the general rule below assumes -- the same
         // kind of exception Walk/Run's tracked animation frame is
         // above. Confirmed directly against `fox-fd.slp`: P1's
@@ -379,8 +379,8 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
     } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
         // These sub-motions persist indefinitely (Fall/FallAerial,
         // FallSpecial, SquatWait, OttottoWait), so their own figatree
-        // loops: `game::movement::loop_period` is the same wrap
-        // length `game::movement::pose` uses to pick bones, replay-
+        // loops: `fighter::movement::loop_period` is the same wrap
+        // length `fighter::movement::pose` uses to pick bones, replay-
         // confirmed against `fox-fd.slp` for Fall (state age cycles
         // 0..=7, then restarts at 0, on the recording's own P1 Fall
         // beginning at frame -59: age reaches 7 at -52 and reports 0
@@ -388,7 +388,7 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // `movement_poses` (or an absent field) keeps the general
         // rule below, unbounded, matching pre-batch behavior.
         let age = fighter.action_frame.saturating_sub(1);
-        (age % game::movement::loop_period(frames) as u32) as f32
+        (age % skirmish::fighter::movement::loop_period(frames) as u32) as f32
     } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
         // Both are animation-less (`ftCo_SM_None`); Melee's own
         // state_age stays -1 for the whole state, unlike EntryStart,
@@ -471,7 +471,7 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // Enter`/`ftCo_Run_Enter_Full`/`ftCo_KneeBend_Enter`, and
         // from `ftCo_TurnRun_Enter`, `ftCo_TurnRun.c:44-51`, which
         // changes motion state but does not make it) don't make.
-        // `game::locomotion::start_dash`/`start_turn` model that
+        // `fighter::locomotion::start_dash`/`start_turn` model that
         // extra call at the source (`action_frame = 1`, not `0`, at
         // entry) rather than as an observation-layer exception, so
         // this general rule already produces the replay-verified
@@ -799,7 +799,7 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         AppealSR => 264,
         AppealSL => 265,
         // Every special's state id comes from its character's own registry
-        // entry (`game::characters`), keyed by the recording's external
+        // entry (`game::script::definition`), keyed by the recording's external
         // character id; `None` there (an unregistered character, or a
         // special this build has no id table for) falls through to the
         // same "unresolved" result `Eliminated` reports below.
@@ -809,7 +809,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
         | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn => {
-            let (state, _animation) = skirmish::characters::slippi_ids(character, fighter.action)?;
+            let (state, _animation) =
+                skirmish::game::script::definition::builtin_slippi_ids(character, fighter.action)?;
             state as u16
         }
         Eliminated => return None,
@@ -873,7 +874,8 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         // side-special indices there are flagged as an unverified
         // extrapolation, not a confirmed figatree table.
         341..=369 => {
-            let (_state, animation) = skirmish::characters::slippi_ids(character, fighter.action)?;
+            let (_state, animation) =
+                skirmish::game::script::definition::builtin_slippi_ids(character, fighter.action)?;
             animation
         }
         _ => return None,
@@ -882,7 +884,7 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
 
 fn prone_state(fighter: &game::Fighter, face_up: u16, face_down: u16) -> u16 {
     match fighter.prone {
-        Some(game::damage::ProneOrientation::FaceDown) => face_down,
+        Some(skirmish::fighter::damage::ProneOrientation::FaceDown) => face_down,
         _ => face_up,
     }
 }
@@ -1470,7 +1472,7 @@ mod tests {
         // `Fighter_ChangeMotionState` is `(0.1F + fp->x2EC) / landing_lag`
         // (`ftCo_Landing.c:111`), not `1.0`; the ordinary aerial landings
         // scale the same way through the L-cancel divisor
-        // (`game::aerial::land`). `fox-fd.slp`'s own air-dodge landing
+        // (`fighter::aerial::land`). `fox-fd.slp`'s own air-dodge landing
         // (`docs/parity.md`'s current measurement) enters
         // `LandingFallSpecial` at frame -4 reporting `state_age = 0.0`, then
         // `3.01`, `6.02`, `9.03` on the next three frames -- a tracked float
@@ -1599,13 +1601,13 @@ mod tests {
         }
 
         fighter.action = game::Action::Walk;
-        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Middle;
+        fighter.locomotion.walk.kind = skirmish::fighter::locomotion::WalkKind::Middle;
         assert_eq!(action_state(&fighter, Some(2)), Some(16));
         assert_eq!(animation_index(&fighter, Some(2)), Some(8));
-        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Fast;
+        fighter.locomotion.walk.kind = skirmish::fighter::locomotion::WalkKind::Fast;
         assert_eq!(action_state(&fighter, Some(2)), Some(17));
         assert_eq!(animation_index(&fighter, Some(2)), Some(9));
-        fighter.locomotion.walk.kind = skirmish::game::locomotion::WalkKind::Slow;
+        fighter.locomotion.walk.kind = skirmish::fighter::locomotion::WalkKind::Slow;
 
         fighter.action = game::Action::Jump;
         fighter.locomotion.jump_backward = false;
@@ -1642,7 +1644,7 @@ mod tests {
         assert_eq!(animation_index(&fighter, Some(2)), Some(177));
 
         fighter.action = game::Action::DownWait;
-        fighter.prone = Some(game::damage::ProneOrientation::FaceDown);
+        fighter.prone = Some(skirmish::fighter::damage::ProneOrientation::FaceDown);
         assert_eq!(action_state(&fighter, Some(2)), Some(192));
         assert_eq!(animation_index(&fighter, Some(2)), Some(192));
         fighter.action = game::Action::CliffAttack;
@@ -1666,7 +1668,7 @@ mod tests {
             assert_eq!(animation_index(&fighter, Some(2)), Some(animation));
             // Falco (external CSS id 20, not to be confused with his internal
             // fighter kind 22) resolves through the same table as Fox
-            // (`game::characters::fox::CHARACTER_IDS`'s own doc).
+            // (`game::script::definition::builtin_slippi_ids`'s own docs).
             assert_eq!(action_state(&fighter, Some(20)), Some(state));
             assert_eq!(animation_index(&fighter, Some(20)), Some(animation));
         }
@@ -1767,7 +1769,7 @@ mod tests {
             looping_movement_pose_frames(&fighter, &fighter_data),
             Some(9)
         );
-        assert_eq!(game::movement::loop_period(9), 8);
+        assert_eq!(skirmish::fighter::movement::loop_period(9), 8);
 
         // `fall_aerial` selects the separate field of the same name.
         fighter.locomotion.fall_aerial = true;

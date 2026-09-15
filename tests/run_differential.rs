@@ -155,7 +155,7 @@ fn exact_boundaries() {
 /// wrapper's own fixed call into `Enter_Full`), `run.x0 = arg0`,
 /// `run.x4 = gr_vel`. Not a comparison against a Rust pure function (entry
 /// is wiring, not arithmetic) -- this confirms the source's own literal
-/// pass-through that `game::locomotion::enter_run` assumes (frame 0,
+/// pass-through that `fighter::locomotion::enter_run` assumes (frame 0,
 /// last_rate 1.0), complementing `tests/game_run.rs`'s own
 /// dash-to-run/run-turn-to-run coverage.
 #[test]
@@ -197,8 +197,8 @@ fn adapter_retains_the_complete_pinned_functions() {
 /// `RETURN_IF(!(run.x0 <= 0.0F))` then returns immediately whenever
 /// `run.x0 > 0.0F`, so `ftCo_RunBrake_CheckInput` is unreached too --
 /// exactly the "both RunTurn and RunBrake are locked out" behavior
-/// `game::locomotion::update_actions`'s `Action::Run` arm and
-/// `game::dash::update_dash_or_run`'s Run arm both now gate on
+/// `fighter::locomotion::update_actions`'s `Action::Run` arm and
+/// `fighter::dash::update_dash_or_run`'s Run arm both now gate on
 /// `run_lockout <= 0.0`.
 fn compare_iasa(run_x0: f32, jump: bool, turn: bool, brake: bool) {
     // Every earlier scripted check answers false so the chain reaches the

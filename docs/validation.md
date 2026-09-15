@@ -1,8 +1,15 @@
 # Local validation provenance
 
+The dated migration records below preserve the module names that existed when
+each measurement was made. They are history, not a legacy compatibility
+contract. For the current layout and native event and motion ownership, see
+[`docs/architecture.md`](architecture.md). The Pon compiler evaluation is
+standalone and is documented in [`docs/pon.md`](pon.md); it is not a gameplay
+backend or authoring contract.
+
 The 2026-09-13 Falco Laser batch wires `Specials::Falco.neutral` (gameplay
 export v10's `fighters/falco.json` carries it for the first time, same
-schema as Fox's own `characters::fox::neutral::NeutralSpecial`). The task
+schema as Fox's own `specials.neutral` resource). The task
 brief for this batch expected a distinct `itfalcolaser.c`, by analogy with
 the side special's own Fox/Falco ghost item; reading the pinned decomp
 disproves this: `melee/it/it_3F2F.c`'s own per-item-kind logic table gives
@@ -19,7 +26,7 @@ pinned whole-file snapshot (`tests/oracle/original/it_3F2F.c`,
 known-values check that the already-pinned generic laser-spawn function
 reproduces Falco's own exported attributes exactly. `game::projectile::
 ProjectileKind` gains a `FalcoLaser` variant purely as an observation
-label (`characters::fox::neutral::drain_pending_shot` now checks the
+label (the Fox/Falco script emission callback now checks the
 firing fighter's own `Specials` variant); every function in `game::
 projectile` was already generic over `kind` and needed no change.
 
@@ -52,7 +59,7 @@ Full citations, the difference table, and every test: `docs/falco.md`'s
 own "Falco's neutral special (Laser): now wired" section.
 
 The 2026-09-13 Turn-to-Dash conversion fix (the real-replay parity loop,
-`fox-bf.slp`, `docs/parity.md`) stops `game::locomotion::update_actions`'s
+`fox-bf.slp`, `docs/parity.md`) stops `fighter::locomotion::update_actions`'s
 `Action::Turn` arm from waiting for Turn's own `has_turned` flip
 (`turn_frames` reaching zero) before converting into `Dash`.
 `ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion (`ftCo_Turn.c:97-148,
@@ -105,7 +112,7 @@ advance" bug already fixed for Dash/Turn/Squat/EscapeAir, now found in a
 new action, not pursued further in this entry.
 
 The 2026-09-13 zero-knockback-hit fix (the real-replay parity loop,
-`fox-bf.slp`, `docs/parity.md`) stops `game::damage::apply_hit` from
+`fox-bf.slp`, `docs/parity.md`) stops `fighter::damage::apply_hit` from
 forcing a Damage motion-state reaction on a hit whose computed knockback
 is exactly zero. `Fighter_ProcessHit_8006D1EC`'s ordinary ground/air
 dispatch (priority `0xE`, `fighter.c:2810`, `switch (fp->x1828)` case
@@ -128,7 +135,7 @@ Confirmed directly against `fox-bf.slp`: P1 takes a Blaster hit (damage
 `3`) while mid-`JumpSquat` (Slippi action state `24`, `KneeBend`) at
 frame 26 and stays in `JumpSquat`, uninterrupted, continuing normally
 into its own jump two frames later -- only its damage percent ticks up.
-Before this fix, `game::damage::apply_hit` unconditionally called
+Before this fix, `fighter::damage::apply_hit` unconditionally called
 `simulation::enter(target, Action::Damage)` regardless of knockback,
 forcing P1 into `DamageN1` instead.
 
@@ -172,8 +179,8 @@ skirmish-f64 batch's dash-entry-velocity lead"), so not pursued further
 here to avoid duplicating or racing that work.
 
 The 2026-09-13 aerial-Blaster-entry velocity fix (the real-replay parity
-loop, `fox-bf.slp`, `docs/parity.md`) stops `game::characters::fox::
-neutral::update_actions` from zeroing velocity on an airborne Blaster
+loop, `fox-bf.slp`, `docs/parity.md`) stops the Fox neutral-special policy
+from zeroing velocity on an airborne Blaster
 press. `ftFx_SpecialN_Enter` (the grounded entry, `ftfoxspecialn.c:255-
 269`) zeros `gr_vel` and `self_vel.{x,y,z}` right after `Fighter_
 ChangeMotionState`/`ftFox_SpecialN_InitializeState`; `ftFx_SpecialAirN_
@@ -270,7 +277,7 @@ below, this time in the common (not Fox-specific) `ftCo_Squat_Enter`
 (`!ftAnim_IsFramesRemaining(gobj)`, reached from `ftCo_Wait_IASA`/`ftCo_
 Walk_IASA`/`ftCo_RunBrake_IASA`'s shared `ftCo_800D5FB0` call) reads `cur_
 anim_frame` directly, so without this advance Squat's own `action_frame >=
-crouch_animation_frames` gate (`game::locomotion`) read one frame behind,
+crouch_animation_frames` gate (`fighter::locomotion`) read one frame behind,
 holding Squat one frame too long before converting to SquatWait. Fixed at
 the source the same way as `start_dash`/`start_turn`: a new `start_squat`
 helper sets `action_frame = 1` (not `0`) at entry, used at both call sites
@@ -282,7 +289,7 @@ explicit `1` plus the shared end-of-frame `+= 1`) and the exact held-frame
 count before SquatWait converts (five, one fewer than before this fix).
 This fix alone does not move either `fox-fd-2.slp`'s or `fox-fd-4.slp`'s
 own baseline (confirmed by re-measuring): the divergence this loop was
-chasing on `fox-fd-4.slp` turned out to be `game::locomotion::update_
+chasing on `fox-fd-4.slp` turned out to be `fighter::locomotion::update_
 actions`'s Landing-specific squat-entry branch calling the wrong destination
 entirely, not this timing bug -- see this file's own next entry.
 
@@ -293,7 +300,7 @@ next-diagnosed cause: `ftCo_Landing_IASA`'s own squat check
 steps straight into SquatWait (`fn_800D62C4`'s own `Fighter_
 ChangeMotionState`, no extra `ftAnim_8006EBA4` advance), skipping the
 ordinary crouch-down animation entirely, unlike Wait/Walk/RunBrake's own
-down-stick check (`ftCo_800D5FB0`, above). `game::locomotion::update_
+down-stick check (`ftCo_800D5FB0`, above). `fighter::locomotion::update_
 actions` previously routed every down-stick entry through the same
 `start_squat`/`Action::Squat`, Landing included; it now branches on
 `f.action == Action::Landing` and enters `Action::SquatWait` directly for
@@ -371,7 +378,7 @@ already covers this exact bug (`ftCo_80099A9C`'s own extra advance).
 
 The 2026-09-12 shield-regeneration-on-conversion-frame fix (the real-replay
 parity loop, `fox-bf.slp`, `docs/parity.md`) stops `Fighter_ProcessHit_
-8006D1EC`-equivalent regeneration (`game::shield::finish_frame`) from
+8006D1EC`-equivalent regeneration (`fighter::shield::finish_frame`) from
 landing on the exact frame a still-active `GuardOn`/`Guard` converts
 straight into `Pass` via `begin_pass`. `Fighter_ProcessHit_8006D1EC`
 (priority 0xE, `fighter.c:908,2821`) gates regeneration on `fp->x221A_b7`,
@@ -383,7 +390,7 @@ one `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`'s own entry) makes.
 frame regardless: its shield health is explained in full by the passive
 drain alone.
 
-`game::shield::finish_frame` gains an explicit `was_active: bool`
+`fighter::shield::finish_frame` gains an explicit `was_active: bool`
 parameter in place of recomputing `active(f)` internally (the fighter's
 action by the time this runs downstream, after any of this frame's own
 transitions). Its caller, `game::simulation::advance`, still passes plain
@@ -436,7 +443,7 @@ against the newly published gameplay-export pack v9, which moves
 `fox-bf-baseline.json` from `96`/`-27` to `100`/`-23`.
 
 The 2026-09-12 passive shield-drain input-timing fix (the real-replay
-parity loop, `fox-bf.slp`, `docs/parity.md`) replaces `game::shield::
+parity loop, `fox-bf.slp`, `docs/parity.md`) replaces `fighter::shield::
 update_animation`'s `GuardOn`/`Guard`/`GuardReflect` arm's `input.
 shield_pressure()` read with `f.previous_input.shield_pressure()`.
 `Fighter_8006A360` (priority 1, `HSD_GObj_SetupProc(gobj, &Fighter_
@@ -662,7 +669,7 @@ fast-fall trigger approximates decomp's own `ftCommon_CheckFallFast`
 not-yet-named window constant adjacent to the already-exported
 `fast_fall_threshold` at `+0x88`) with a `previous_input`-based heuristic
 that does not consult `fighter.locomotion.tilt_y_age` (already modeled at
-the source and already reset to the `254` sentinel by `game::locomotion::
+the source and already reset to the `254` sentinel by `fighter::locomotion::
 pass_request_after_actions`, matching decomp's own `x671_timer_lstick_
 tilt_y = 0xFE` reset in `begin_pass`) at all, so it wrongly re-triggers
 fast-fall on the same continuously-held down-stick that just triggered the
@@ -789,11 +796,11 @@ below) plus every float-touching function the c-oracle harness pins (409 of
 Mirrored with `f32::mul_add` (or a negated form) at the exact expression
 the disassembly shows: `ftColl_80079AB0` (`fighter::combat::knockback`,
 three sites), `ftCommon_CalcHitlag` (`fighter::combat::hitlag`, one),
-`ftCo_800DA824` (`fighter::grab::escape_timer`, two) and
+`ftCo_800DA824` (`game::grab::escape_timer`, two) and
 `ftCo_Damage_CalcAngle` (`fighter::damage::launch_angle`, one).
 `lbVector_AngleXY` needed more than a `mul_add`: its length calls go
 through `sqrtf_accurate`'s four fused Newton-Raphson iterations (not
-`f32::sqrt`), ported as `game::characters::fox::up::sqrt_accurate`, seeded
+`f32::sqrt`), ported in `compat::math::kinematics::angle_xy`, seeded
 from a correctly-rounded `1.0 / f64::sqrt` rather than a bit-exact
 `__frsqrte` emulation (Newton's method for `1/sqrt(x)` has one stable,
 quadratically-convergent fixed point, so both reach it well before the
@@ -865,7 +872,7 @@ oracle's own limitations for the two reverted functions.
 `tests/escape_formula_differential.rs`, `tests/damage_differential.rs` and
 `tests/fox_up_special_differential.rs`, plus four native unit tests pinning
 hand-verified fused bit patterns (`fighter::combat`,
-`fighter::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`,
+`game::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`,
 `fighter::damage::tests::launch_angle_matches_the_hardware_fused_rounding_not_naive_two_rounding`).
 `cargo fmt --all --check` is clean; `cargo clippy --locked --workspace
 --all-targets --all-features -- -D warnings`, `cargo test --locked
@@ -876,7 +883,7 @@ subset alone; the full workspace run adds every other crate's own suite on
 top, unaffected by this batch's changes). Rebased onto `origin/main` twice
 during this batch (once past `34f4fff`'s falco-fox-fd correction this batch
 was itself waiting on, once more past `5394478`'s trigonometry batch,
-which touches the same `game::characters::fox::up::angle_xy` function this
+which touches the same `compat::math::kinematics::angle_xy` function this
 batch also changed — merged cleanly, both changes compose: the trig
 batch's `crate::math::acosf` call and this batch's fused dot-product/
 `sqrt_accurate` length calls are independent parts of the same function
@@ -1031,7 +1038,7 @@ The 2026-09-12 Fox neutral special (Blaster) batch (`docs/fox-neutral-
 special.md`) replaces the shared single-phase neutral-B shell
 (`game::specials::neutral`, retired outright -- no character variant could
 reach it once Fox has his own dedicated Start/Loop/End state machine) with
-`game::characters::fox::neutral` and adds the minimal generic
+the historical fighter-script neutral policy and adds the minimal generic
 fired-projectile system it needs (`game::projectile`, `State.projectiles`).
 Six new `Action` variants (`SpecialNStart/Loop/End`, `SpecialAirNStart/
 Loop/End`) replace the shell's single `SpecialN`/`SpecialAirN` pair
@@ -1201,8 +1208,8 @@ passed/19 ignored), `c-oracle` (1288 passed/19 ignored), `release` (1288
 passed/19 ignored), `diff` (0 passed). The archived run is stored outside
 Git at `/mnt/archive/runs/skirmish-hit-refresh-20260912-verified`.
 
-The 2026-09-12 Falco registration batch adds `game::characters::
-Specials::Falco` on top of Fox's existing side/up/down special code
+The 2026-09-12 Falco registration batch adds the historical Falco script
+registration on top of Fox's existing side/up/down special code
 (`fox::side`/`fox::up`/`fox::down`, unchanged): every one of Falco's own
 motion-state entries points at the identical Fox callbacks
 (`ftFc_Init_MotionStateTable`, `ftfalco.c:23-370`), and `ftFc_Init_
@@ -1210,7 +1217,7 @@ LoadSpecialAttrs`/`ftFx_Init_OnLoadForFalco` (`ftfox.c:481-484,503-506`)
 load Falco's own `PlFc.dat` attributes through the same `ftFox_DatAttrs`
 shape Fox's own load uses, so `Specials::Falco` reuses `fox::side::
 SideSpecial`/`fox::up::UpSpecial`/`fox::down::DownSpecial` verbatim rather
-than duplicating them. `game::characters::fox::CHARACTER_IDS` gains
+than duplicating them. The definition registry gains
 Falco's external Slippi id (20, alongside Fox's 2), correcting a stale
 comment that had conflated it with Falco's unrelated *internal* fighter
 kind (`FTKIND_FALCO`, 22); an identical mix-up in an `observation.rs` test
@@ -1424,7 +1431,7 @@ of scope, like `sqrtf` generally), converging to the same result real
 hardware's estimate-then-three-Newton-steps would -- confirmed by sweeping
 `-0.999..=0.999` against `std`'s `acos`/`asin` (worst disagreement around
 `5e-7`) -- and are now wired to their real call sites
-(`fighter::damage::vector_angle`, `game::characters::fox::up::angle_xy`,
+(`fighter::damage::vector_angle`, `compat::math::kinematics::angle_xy`,
 `quaternion::interpolate`).
 
 Measured against `fox-fd.slp`: porting every fused operation exactly as the
@@ -1498,7 +1505,7 @@ guess got wrong), and the real-replay measurement (unchanged at frame
 
 The 2026-09-11 ground-jump-direction fix (the real-replay parity loop,
 `docs/parity.md`, `docs/state-parity.md`'s "Backward jumps") corrects
-`game::locomotion::ground_jump`'s direction test and launch velocity, both of
+`fighter::locomotion::ground_jump`'s direction test and launch velocity, both of
 which read `input.stick[0]` (the launch frame's own, already-updated
 controller) where decomp's `ftCo_Jump_Enter`/`ftCo_800CB110` actually read
 `fp->input.lstick[0].x` one frame stale. Both are dispatched from `ftCo_
@@ -1555,7 +1562,7 @@ behavior, needed so a unit test can exercise it without a full `Match`) and
 adds one more exception to it: `Action::LandingFallSpecial` and the five
 `Action::LandingAirN`/`F`/`B`/`Hi`/`Lw` actions now report
 `fighter.aerial.landing_elapsed`, the tracked float the game already advances
-at `fighter.aerial.landing_rate` (`game::aerial.rs`, `game::escape_air.rs`),
+at `fighter.aerial.landing_rate` (`fighter::aerial.rs`, `fighter::escape_air.rs`),
 instead of falling through to the generic `action_frame`-based rule the
 Walk/Run/movement-pose/Entry exceptions already precede. `ftCo_
 LandingFallSpecial_Enter`'s own anim-speed argument to `Fighter_
@@ -1565,7 +1572,7 @@ animation-frame count (`fighter.c:836`) and `landing_lag` is `ftCommonData`'s
 `x344` (`escape_air::Rules::landing_lag`), so decomp's `cur_anim_frame`
 advances at that computed rate every frame, not one integer per game frame;
 the ordinary aerial landings scale the same way through the L-cancel divisor
-(`game::aerial::land`). Confirmed directly against `fox-fd.slp`: P1's
+(`fighter::aerial::land`). Confirmed directly against `fox-fd.slp`: P1's
 air-dodge landing enters `LandingFallSpecial` at frame -4 already reporting
 `state_age = 0.0` on its own transition frame, then `3.01`, `6.02`, `9.03` on
 -3, -2 and -1 -- a constant rate of `3.01`, not `1.0`.
@@ -1618,7 +1625,7 @@ this batch, was `0` at E dispatch, `1` at E end, `1` at E+1 dispatch, `2`
 at E+2 dispatch -- ends agreed with decomp exactly (why the observation
 exception below reads `action_frame` unadjusted), but dispatch was one
 *behind* decomp for the whole action (why `dash_run_frame` needed its own
-`+1`). Setting `action_frame = 1` at Dash/Turn's entry (`game::locomotion::
+`+1`). Setting `action_frame = 1` at Dash/Turn's entry (`fighter::locomotion::
 start_dash`/`start_turn`), and leaving `simulation::advance`'s ordinary,
 unconditional end-of-frame `action_frame += 1` untouched -- unlike the
 already-rejected idea of suppressing or relocating that shared tail itself,
@@ -1626,13 +1633,13 @@ which would silently shift every other duration gate that reads
 `action_frame` -- makes Dash/Turn's own `action_frame` exactly `1` at E
 dispatch, `2` at E end, `2` at E+1 dispatch, `3` at E+2 dispatch: dispatch
 now agrees with decomp on every frame like every other action (removing
-the `dash_run_frame`/`+1` patch below and `game::movement::pose`'s own
+the `dash_run_frame`/`+1` patch below and `fighter::movement::pose`'s own
 existing `action_frame.saturating_add(1)` Dash special case, both reverted
 to the unadjusted comparison), and end is now uniformly one ahead of
 decomp like every other action (removing `observation::observe`'s Dash/
 Turn exception, restoring its single general `-1` rule for every action).
 
-`game::movement::pose`'s Turn arm had no such special case before this
+`fighter::movement::pose`'s Turn arm had no such special case before this
 batch (it already read `action_frame` unadjusted), so it was quietly one
 frame behind decomp's own bone sampling for Turn specifically; this batch
 fixes that latent gap as a side effect of the source-level change, with no
@@ -1670,7 +1677,7 @@ reaches, confirmed rather than assumed.
 
 The 2026-09-11 Dash->Run `action_frame` timing fix (the real-replay parity
 loop, `docs/parity.md`) fixes a genuine one-frame-late boundary in
-`game::dash::update_dash_or_run` and `game::locomotion::update_actions`'s
+`fighter::dash::update_dash_or_run` and `fighter::locomotion::update_actions`'s
 identical fallback copy: both compared `f.action_frame >= p.dash_run_frame`
 to decide when a held Dash automatically becomes Run, modeling `fn_
 800CA5F0`'s gate on the animation's own scripted run flag (`cmd_vars[0]`,
@@ -2108,8 +2115,8 @@ It validates formatting, strict all-target/all-feature Clippy, the complete
 native workspace (both without and with the `c-oracle` feature, debug and
 release): 849 passed/0 failed without `c-oracle`, 1166 passed/0 failed with
 it, both green with no failures (counts as of the follow-up round below;
-see that section for what changed). `game::characters::fox::up` (resource,
-dispatch, `src/game/characters/fox/up.rs`) covers `Action::SpecialHiHold/
+see that section for what changed). The historical Fox fighter script covered
+resource and dispatch for `Action::SpecialHiHold/
 SpecialHiHoldAir/SpecialHi/SpecialAirHi/SpecialHiLanding/SpecialHiFall/
 SpecialHiBound` (`docs/fox-up-special.md`), Fox's up special (Fire Fox;
 Falco's Fire Bird shares the code with its own attributes). The core
@@ -2135,7 +2142,7 @@ animation-index table for character-specific motion states.
 Four real bugs were caught by this batch's own C-oracle differential
 suite while building it (`tests/fox_up_special_differential.rs`), none of
 them present in the prior session's design note, and all fixed in
-`src/game/characters/fox/up.rs`:
+the historical Fox fighter script:
 - **The frame-13 gap itself.** `up.rs` had no `land()` arm for
   `Action::SpecialHiFall` at all, so Fall's own ordinary ground touch fell
   through to the generic `Action::Landing` instead of `SpecialHiLanding`
@@ -2195,7 +2202,7 @@ disagrees with this host's system C compiler's `atan2f`/`cosf`/`sinf`/
 `acosf` by a handful of ULPs on some inputs (deliberately, for
 cross-platform replay determinism, not a defect) -- confirmed directly
 against both this host's C compiler and Rust's own `f32` methods.
-`src/game/characters/fox/up.rs` gains 5 unit tests for `angle_xy`/
+`src/compat/math/kinematics.rs` gains tests for `angle_xy`/
 `face_stick` (zero vectors, the NaN-product case, general NaN-safety, the
 sign/zero convention). `tests/game_fox_up_special.rs` originally added 19
 integration tests covering grounded and aerial entry, the launch angle's
@@ -2472,14 +2479,14 @@ native workspace (both without and with the `c-oracle` feature) and a
 without `c-oracle`, 1153 passed/0 failed with it (previously 809/1108,
 i.e. this batch adds 28 native tests -- 15 in `tests/game_fox_down_special.
 rs`, 2 self-recorded replay regressions in `crates/cli/tests/replay_match.
-rs`, 1 pure-math unit test in `src/fighter/characters/fox.rs` -- plus 17
+rs`, 1 pure-math unit test in `src/compat/math/kinematics.rs` -- plus 17
 C-oracle differential tests in `tests/fox_down_special_differential.rs`
 (six of them `proptest` cases run 256 times each, covering `ftCommon_
 8007CF58`'s over-drift-maximum branch both through the air Phys wrapper
 and through its own standalone extraction, `air_drift_recovery`).
 
-Fox/Falco's down special (Reflector, `docs/fox-down-special.md`) is
-implemented as `src/game/characters/fox/down.rs`: the five-phase Start/
+Fox/Falco's down special (Reflector, `docs/fox-down-special.md`) was
+implemented in the historical fighter script: the five-phase Start/
 Loop/Turn/Hit/End state machine (Slippi 360..369), the ground-fourth/air-
 directional fresh entry, the mid-move turn (reusing `locomotion::
 Parameters::turn_threshold`, distinct from the side special's own entry-
@@ -2568,16 +2575,16 @@ preserving ground/air conversion, the `FallSpecial`/landing-fall-special
 exits, restoring every jump, the ordinary Wait/Fall exit) so a future move
 does not re-derive them. `src/game/specials/neutral.rs` re-expresses the
 former `special.rs` shell as a `SpecialMove` impl with no behaviour change.
-`src/game/characters/mod.rs` is the registry: `Specials` (the per-character,
+`src/game/script/definition.rs` is the definition registry:
 per-move resource enum replacing the old flat `FighterData.special`/
 `side_special` fields -- see below), `moves()` (a fighter's own enabled
 moves in dispatch order) and `slippi_ids()` (the observation layer's single
 entry point for a character's state/animation ids).
-`src/game/characters/fox/{mod.rs,side.rs}` hold Fox's registry entry
+The historical Fox fighter script held Fox's registry entry
 (`MOVES = [side, neutral]`, matching the source's own before-neutral
 ordering) and the former `fox_side_special.rs` content re-expressed as a
 `SpecialMove` impl, with its dispatch/physics logic now calling the shared
-helpers above instead of a local copy. `src/fighter/characters/fox.rs`
+helpers above instead of a local copy. `src/compat/math/kinematics.rs`
 (moved from `src/fighter/fox_side_special.rs`, unit tests included) holds
 the unchanged pure arithmetic (`has_input`, `should_turn`,
 `entry_ground_velocity`). `simulation.rs`, `collision.rs`, `edge.rs` and
@@ -2808,7 +2815,7 @@ The 2026-09-11 taunt coverage batch is recorded at:
 
 It validates formatting, strict all-target/all-feature Clippy, the complete
 native workspace (both without and with the `c-oracle` feature), and the
-new/extended original-C functions in debug and release modes. `game::taunt`
+new/extended original-C functions in debug and release modes. `fighter::taunt`
 (wiring: the resource, the entry dispatch across every chain that lists
 it, the animation/physics/collision callbacks, `src/game/taunt.rs`) and
 `fighter::taunt` (the pure D-pad-up press check and facing/availability
@@ -2835,7 +2842,7 @@ smashes, tilts, jab, the Wait-chain spot dodge and shield -- never jump,
 dash, squat, turn or walk. Physics apply root motion when a pose supplies
 it, else ordinary ground friction; collision uses the existing mode-2
 clamp (`edge::mode_for_action`). The same batch corrects the Wait (and
-interruptible AppealS) input chain: `game::escape::try_wait_chain_spot_
+interruptible AppealS) input chain: `fighter::escape::try_wait_chain_spot_
 dodge` (`ftCo_80099794`, held logical shoulder AND a fresh downward main
 stick only -- no C-stick alternative, unlike the existing guard-IASA spot
 dodge) now runs before the ordinary shield check, so a shoulder pressed
@@ -2883,7 +2890,7 @@ The 2026-09-11 idle-animation coverage batch is recorded at:
 
 It validates formatting, strict all-target/all-feature Clippy, the complete
 native workspace, and all selected original-C functions in debug and
-release modes. `game::idle` (wiring: the resource, the state, the per-frame
+release modes. `fighter::idle` (wiring: the resource, the state, the per-frame
 animation-phase draw, `src/game/idle.rs`) and `fighter::idle` (the pure
 weighted pick and its re-draw gate, `src/fighter/idle.rs`) cover
 `Action::Wait`'s idle-animation cycling (`docs/idle.md`). Two new resources:
@@ -2985,7 +2992,7 @@ out of that batch's stated scope; no further contradiction against the
 pinned source was found while fixing them (`docs/run.md`'s "Corrections"
 section has the full detail with source line citations).
 
-RunTurn's flip check (`game::locomotion::update_animation`'s `Action::
+RunTurn's flip check (`fighter::locomotion::update_animation`'s `Action::
 RunTurn` arm) now reads `f.locomotion.run_turn_facing` -- the per-entry
 facing `start_run_turn` already captured for the physics branch -- instead
 of the removed `Parameters::run_turn_velocity_scale` fixed resource
@@ -3007,8 +3014,8 @@ entry (`ftCo_Run.c:125-126`), is now modeled: `Parameters` gains
 `run_lockout: f32`, set by `enter_run`'s new `lockout` parameter (`0.0`
 from both Dash-to-Run call sites, `run_turn_lockout_frames.unwrap_or(0.0)`
 from a RunTurn-to-Run re-entry) and counted down every Run animation frame
-independent of `MovementData.run_animation`. Both `game::locomotion::
-update_actions`'s `Action::Run` arm and `game::dash::update_dash_or_run`'s
+independent of `MovementData.run_animation`. Both `fighter::locomotion::
+update_actions`'s `Action::Run` arm and `fighter::dash::update_dash_or_run`'s
 Run arm now gate their RunTurn/RunBrake entry checks behind `run_lockout <=
 0.0`, matching `ftCo_Run_IASA`'s own gate order.
 
@@ -3048,16 +3055,16 @@ The 2026-09-11 run-animation-rate coverage batch is recorded at:
 
 It validates formatting, strict all-target/all-feature Clippy, the complete
 native workspace, and all selected original-C functions in debug and release
-modes. `game::locomotion`/`fighter::locomotion` extend the walk batch's float
+modes. `fighter::locomotion`/`fighter::locomotion` extend the walk batch's float
 animation-frame model (`docs/walk.md`) to `Action::Run` (`docs/run.md`) with
 one new resource, `MovementData.run_animation: Option<RunAnimation { length,
 scaling }>` (the Run figatree's frame count and `run_animation_scaling`,
 `types.h:698`) -- unlike Walk, not paired with any `Rules` entry, since Run
-has no kind-selection thresholds. `game::locomotion::State.run: RunState
+has no kind-selection thresholds. `fighter::locomotion::State.run: RunState
 { frame, last_rate }` tracks a float animation frame that advances one frame
 behind `ftAnim_SetAnimRate`'s own delay and wraps at the Run figatree's
 length; both of this codebase's reachable Run entries (Dash-to-Run and
-RunTurn-to-Run, via the new `game::locomotion::enter_run`) always start it at
+RunTurn-to-Run, via the new `fighter::locomotion::enter_run`) always start it at
 frame 0.0 with `last_rate` 1.0, matching the pinned source's fixed
 `ChangeMotionState` rate argument. Slippi's `action_state`/`animation_index`
 for Run were already correct (21/13, unchanged); `action_age` now publishes
@@ -3072,12 +3079,12 @@ frame/rate layer only; documented in full in `docs/run.md`): RunBrake's own
 velocity-gated marker freeze (`cmd_vars[1]`/`x42C`, `ftCo_RunBrake.c:49-77`)
 is not modeled anywhere in this codebase, contrary to an earlier design
 draft's assumption that it was -- only the unrelated `mv.co.runbrake.frames`
-countdown exists; and `game::locomotion`'s existing RunTurn flip check
+countdown exists; and `fighter::locomotion`'s existing RunTurn flip check
 (`update_animation`'s `Action::RunTurn` arm) multiplies by a fixed
 `Parameters::run_turn_velocity_scale` resource constant instead of the
 per-entry facing the pinned source actually uses (`ftCo_TurnRun.c:67`,
 `facing_at_entry * gr_vel <= 0.01F`, sourced from `ftCo_TurnRun_Enter`'s own
-`turnrun.accel_mul = facing_dir`) -- `game::locomotion::start_run_turn`
+`turnrun.accel_mul = facing_dir`) -- `fighter::locomotion::start_run_turn`
 already captures that exact per-entry value as `run_turn_facing` for the
 physics branch, but the flip check does not use it. [Corrected by the
 2026-09-11 run-corrections batch above: the flip check now reads
@@ -3139,12 +3146,12 @@ The 2026-09-11 walk-speed variants coverage batch is recorded at:
 
 It validates formatting, strict all-target/all-feature Clippy, the complete
 native workspace, and all selected original-C functions in debug and release
-modes. `game::locomotion`/`fighter::locomotion` subdivide `Action::Walk` into
+modes. `fighter::locomotion`/`fighter::locomotion` subdivide `Action::Walk` into
 WalkSlow/WalkMiddle/WalkFast (`docs/walk.md`) by `|ground_velocity|` against
 two new resources: `MovementData.walk_animation` (the three figatree lengths
 and animation-rate divisors) and `Rules.walk` (the middle/fast selection
 thresholds), paired the same way as the edge/teeter and escape/escape-air
-resources. `game::locomotion::State.walk: WalkState { kind, frame, last_rate
+resources. `fighter::locomotion::State.walk: WalkState { kind, frame, last_rate
 }` tracks the current kind and a float animation frame that advances one
 frame behind `ftAnim_SetAnimRate`'s own delay and wraps at the current kind's
 figatree length; a velocity crossing re-enters Walk (a genuine

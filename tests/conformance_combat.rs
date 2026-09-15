@@ -19,7 +19,7 @@ fn close_data() -> MatchData {
     let mut data = support::data();
     data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
     data.rules.knockback_speed = 0.0;
-    data.rules.damage.displacement = Some(skirmish::game::damage::HitlagDisplacementRules {
+    data.rules.damage.displacement = Some(skirmish::fighter::damage::HitlagDisplacementRules {
         axis_thresholds: [0.3; 2],
         minimum_stick_magnitude: 0.5,
         sdi_window: 3,
@@ -100,7 +100,7 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     // Explicit invented common coefficients and sampled recovery resources.
     data.rules.clank = Some(skirmish::game::clank::Rules {
         profile: skirmish::game::clank::Profile::OrdinaryGroundedNonSlash,
-        response: skirmish::fighter::clank::Rules {
+        response: skirmish::game::clank::Rules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,
@@ -265,7 +265,7 @@ fn held_stick_adds_exit_displacement_without_a_new_tilt() {
 
 fn downward_hit() -> Match {
     let mut data = close_data();
-    data.rules.damage.floor_response = Some(skirmish::game::damage::FloorResponseRules {
+    data.rules.damage.floor_response = Some(skirmish::fighter::damage::FloorResponseRules {
         tumble_knockback_threshold: 20.0,
         tech_window: 20.0,
         tech_repeat_lockout: 40,

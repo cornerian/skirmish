@@ -431,7 +431,7 @@ fn frsqrte_newton3(x: f32) -> f32 {
 /// `acosf` (`lbtrigf.c`). `1.0 - x*x` is a single fused `fnmsubs` in the
 /// compiled binary, not a separate multiply and subtract; see
 /// `docs/math.md`. Wired to real call sites (`fighter::damage::
-/// vector_angle`, `game::characters::fox::up::angle_xy`,
+/// vector_angle` and the fighter special angle helper,
 /// `quaternion::interpolate`): unlike a bit-exact port of the pinned C
 /// oracle's placeholder-seeded Newton iteration, this real-hardware-seeded
 /// version (`frsqrte_newton3`'s doc comment) behaves like an ordinary

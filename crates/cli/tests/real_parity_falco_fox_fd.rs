@@ -1,7 +1,8 @@
 //! Real-replay comparison ratchet against the published gameplay export, for
 //! the first Falco recording: a real Falco-vs-Fox Final Destination match.
 //! `docs/falco.md` covers Falco's registration
-//! (`game::characters::Specials::Falco`) this ratchet exercises end to end
+//! (`game::script::resources::Specials` with the Falco character key) this
+//! ratchet exercises end to end
 //! (`make-initialization` accepting a `fighters/falco.json`-shaped pack,
 //! Falco's own external Slippi id resolving through the shared Fox table).
 //!

@@ -1,6 +1,6 @@
 # Floor-end collision modes and the edge teeter
 
-`skirmish::game::edge` (wiring, `src/game/edge.rs`) and `skirmish::fighter::edge`
+`skirmish::fighter::edge` (wiring, `src/game/collision.rs`) and `skirmish::fighter::edge`
 (pure arithmetic, `src/fighter/edge.rs`) port `inline2(coll, mode)`'s three
 floor-end rules from `mpcoll.c` and the Ottotto/OttottoWait edge-teeter state
 from `ftCo_Ottotto.c`/`ftCo_Walk.c`. Pinned decomp rev `0bac93a5`.
@@ -44,7 +44,7 @@ floor_end_clamp`, at the exact point the existing grounded-floor projection
 
 With `rules.edge` absent, Clamp still applies (it is a collision rule with
 no data of its own); Teeter has no teeter states to enter and degrades to
-Plain (`game::edge::mode_for_action`'s `edge_rules_present` parameter).
+Plain (`fighter::edge::mode_for_action`'s `edge_rules_present` parameter).
 
 Skip the clamp entirely when a wall line intersects the segment from the
 edge point to the far ECB side. This reuses `Stage::sweep` (already this
@@ -101,12 +101,12 @@ regardless of any concurrent nudge.
 identity (`fighter::action_instance::motion_identity` has no explicit arm
 for either, matching Wait's own fallthrough to `_ => 0`).
 
-- **Entry** (`ftCo_8009A410`, `game::edge::enter`): `ChangeMotionState
+- **Entry** (`ftCo_8009A410`, `fighter::edge::enter`): `ChangeMotionState
   (Ottotto, Ft_MF_None)`, self velocity and ground velocity zeroed. The
   fighter stays grounded at the position the Teeter clamp already set;
   `game::collision::floor_end_clamp` calls this in the same step that
   clamps the position.
-- **Animation end** (`ftCo_Ottotto_Anim`, `game::edge::update_animation`):
+- **Animation end** (`ftCo_Ottotto_Anim`, `fighter::edge::update_animation`):
   once `action_frame` reaches the end of the supplied `fighter.teeter.start`
   poses, enters OttottoWait (`ftCo_8009A6B8`; the sound cue is not
   modeled). OttottoWait has no `Anim` callback -- it holds `fighter.teeter.
@@ -137,7 +137,7 @@ for either, matching Wait's own fallthrough to `_ => 0`).
   is in the Clamp/Teeter table's admission list for a *new* clamp -- their
   own mode 2 either re-clamps or, on genuine loss, is indistinguishable from
   Plain). Otherwise, once per frame after collision settles
-  (`game::edge::check_exit`), compares the current position against the
+  (`fighter::edge::check_exit`), compares the current position against the
   current floor's end on the *facing* side (`mpFloorGetRight` for
   `facing_dir > 0`, `mpFloorGetLeft` otherwise): `|position.x - end.x| >
   teeter_exit_distance + teeter_exit_tolerance` enters Wait (`ft_8008A2BC`).

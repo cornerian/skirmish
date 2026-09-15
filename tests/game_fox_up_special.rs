@@ -15,23 +15,32 @@ mod conformance;
 #[path = "support/fox_up_special.rs"]
 mod up_special_resources;
 
-use skirmish::characters::Specials;
 use skirmish::collision::stage;
 use skirmish::game::{
     Action, BUTTON_B, Controller, Event, Match,
     data::{MatchData, StageGeometry},
 };
 
-/// Mutable access to a fighter's up-special resource in test setup, since
-/// `Specials` is tagged by character and only Fox's variant carries one.
-fn up_special_mut(
-    fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::characters::fox::up::UpSpecial {
-    let Some(Specials::Fox { up, .. }) = fighter.specials.as_mut() else {
-        panic!("test fixture is missing its up-special resource");
-    };
-    up.as_mut()
+use skirmish::game::script::LocalValue;
+
+fn up_special_mut(fighter: &mut skirmish::game::data::FighterData) -> &mut serde_json::Value {
+    fighter
+        .specials
+        .as_mut()
+        .and_then(|s| s.resources.values.get_mut("up"))
         .expect("test fixture is missing its up-special resource")
+}
+
+fn state_number(state: &skirmish::game::Fighter, key: &str) -> f32 {
+    match state
+        .action_state
+        .get(key)
+        .expect("missing action-state key")
+    {
+        LocalValue::Number(value) => *value as f32,
+        LocalValue::Integer(value) => *value as f32,
+        value => panic!("action-state key {key} is not numeric: {value:?}"),
+    }
 }
 
 const IDLE: [Controller; 2] = [Controller {
@@ -88,10 +97,10 @@ fn wall_ceiling_data(wall_x: f32, ceiling_y: f32) -> MatchData {
     resource.stage.spawns[0] = [0.0, 5.0];
     for fighter in &mut resource.fighters {
         let p = up_special_mut(fighter);
-        p.attributes.speed = 5.0;
-        p.attributes.duration = 100.0;
-        p.attributes.duration_end = 1000.0;
-        p.attributes.bound_angle_degrees = 30.0;
+        p["attributes"]["speed"] = serde_json::json!(5.0);
+        p["attributes"]["duration"] = serde_json::json!(100.0);
+        p["attributes"]["duration_end"] = serde_json::json!(1000.0);
+        p["attributes"]["bound_angle_degrees"] = serde_json::json!(30.0);
     }
     resource.stage.geometry = Some(StageGeometry {
         lines: vec![
@@ -195,7 +204,7 @@ fn ground_entry_enters_hold_with_gravity_delay_and_jumps_untouched() {
     // x54 == 2.0; ftFx_SpecialHiHold_Phys never reads or ticks it while
     // grounded (confirmed against the pinned source: unlike the side
     // special's own Start/End, Hold's ground Phys is only ft_80084F3C).
-    assert_eq!(state.fighters[0].up_special.gravity_delay, 2.0);
+    assert_eq!(state_number(&state.fighters[0], "gravity_delay"), 2.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -237,7 +246,7 @@ fn air_entry_divides_velocity_and_does_not_yet_restore_jumps() {
     // x54 == 2.0, ticked once by this same step's own Hold air Phys (the
     // gravity delay counts down even on the entry frame, unlike the
     // ground side's own Phys which never reads it at all).
-    assert_eq!(state.fighters[0].up_special.gravity_delay, 1.0);
+    assert_eq!(state_number(&state.fighters[0], "gravity_delay"), 1.0);
     assert_eq!(state.fighters[0].locomotion.jumps_used, jumps_before);
 }
 
@@ -267,11 +276,11 @@ fn hold_air_gravity_delay_holds_vertical_velocity_before_falling() {
     let state = game.step(input(0, up_stick(0.9))).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialHiHoldAir);
     // x54 == 2.0, already ticked once by this same step's own Phys.
-    assert_eq!(state.fighters[0].up_special.gravity_delay, 1.0);
+    assert_eq!(state_number(&state.fighters[0], "gravity_delay"), 1.0);
     assert_eq!(state.fighters[0].velocity[1], 0.0);
     let state = game.step(IDLE).unwrap();
     assert_eq!(state.fighters[0].velocity[1], 0.0);
-    assert_eq!(state.fighters[0].up_special.gravity_delay, 0.0);
+    assert_eq!(state_number(&state.fighters[0], "gravity_delay"), 0.0);
     // The delay has now lapsed: ftCommon_Fall(x60) applies from here on.
     let state = game.step(IDLE).unwrap();
     assert!(state.fighters[0].velocity[1] < 0.0);
@@ -330,7 +339,7 @@ fn hold_ground_anim_end_declines_on_a_platform() {
     let floor_normal = state.fighters[0].floor_normal;
     let expected_floor_angle = libm::atan2f(-floor_normal[0] * facing, floor_normal[1]);
     approx(
-        state.fighters[0].up_special.rotate_model,
+        state_number(&state.fighters[0], "travel_angle"),
         expected_floor_angle,
     );
 }
@@ -380,8 +389,9 @@ fn travel_duration_counts_down_independent_of_the_looping_animation_and_lands() 
     assert_eq!(state.fighters[0].action, Action::SpecialHi);
     let state = game.step(IDLE).unwrap(); // 2 -> 1
     assert_eq!(state.fighters[0].action, Action::SpecialHi);
-    // Duration expires (1 -> 0): this profile's own bound gate (unk2
-    // starts at 0, x6C == 2) is not yet satisfied, so it's an ordinary
+    // Duration expires (1 -> 0): this profile's own bound gate
+    // `ground_travel_frames` starts at 0, x6C == 2 and is not yet satisfied,
+    // so it's an ordinary
     // ground landing.
     let state = game.step(IDLE).unwrap();
     assert_eq!(state.fighters[0].action, Action::SpecialHiLanding);
@@ -405,12 +415,12 @@ fn travel_reverse_acceleration_engages_after_duration_end_in_the_air() {
 }
 
 #[test]
-fn travel_bound_decision_fires_once_unk2_passes_bounce_frames() {
+fn travel_bound_decision_fires_once_ground_frames_pass_bounce_threshold() {
     // x6C == 2: land after at least 2 grounded Travel frames and Bound
     // must fire even while still on solid ground (the other bound-gate
     // operand, `!on_platform`, would also be true off this flat floor, so
-    // this specifically exercises the `unk2 >= x6C` branch by running the
-    // ground phase long enough first).
+    // this specifically exercises the `ground_travel_frames >= x6C` branch by
+    // running the ground phase long enough first).
     let mut game = Match::new(data(), 0).unwrap();
     game.step(input(0, up_stick(0.9))).unwrap();
     let state = step_until_action_change(&mut game, directional([0.9, -0.5]), 20);
@@ -445,7 +455,7 @@ fn fall_lands_at_frame_13_via_ordinary_ground_touch() {
     // does not touch down before the launch even fires.
     let mut resource = airborne_data();
     resource.stage.spawns[0][1] = 2.0;
-    up_special_mut(&mut resource.fighters[0]).attributes.speed = 0.05;
+    up_special_mut(&mut resource.fighters[0])["attributes"]["speed"] = serde_json::json!(0.05);
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, up_stick(0.9))).unwrap();
     let state = step_until_action_change(&mut game, directional([0.1, 0.1]), 20);
@@ -569,21 +579,18 @@ fn every_phase_survives_a_checkpoint_round_trip() {
 #[test]
 fn invalid_up_special_resources_are_rejected() {
     let mut resource = data();
-    up_special_mut(&mut resource.fighters[0])
-        .attributes
-        .entry_speed_div = 0.0;
+    up_special_mut(&mut resource.fighters[0])["attributes"]["entry_speed_div"] =
+        serde_json::json!(0.0);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    up_special_mut(&mut resource.fighters[0])
-        .attributes
-        .duration = 0.0;
+    up_special_mut(&mut resource.fighters[0])["attributes"]["duration"] = serde_json::json!(0.0);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    up_special_mut(&mut resource.fighters[0])
-        .bound
-        .transn_y
+    up_special_mut(&mut resource.fighters[0])["bound"]["transn_y"]
+        .as_array_mut()
+        .unwrap()
         .pop();
     assert!(Match::new(resource, 0).is_err());
 
@@ -597,7 +604,8 @@ fn invalid_up_special_resources_are_rejected() {
     let mut resource = data();
     let mut hitbox = up_special_resources::hold_charge_hitbox();
     hitbox.group = 99;
-    up_special_mut(&mut resource.fighters[0]).hold.ground.frames[0].hitboxes = vec![hitbox];
+    up_special_mut(&mut resource.fighters[0])["hold"]["ground"]["frames"][0]["hitboxes"] =
+        serde_json::to_value(vec![hitbox]).unwrap();
     assert!(Match::new(resource, 0).is_err());
 
     // Travel's own `clank`/`rebound` bits are both `true` (the pack's own
@@ -606,11 +614,8 @@ fn invalid_up_special_resources_are_rejected() {
     // hitboxes already are (`validation.rs`'s "clank/rebound flags require
     // an explicit ordinary profile").
     let mut resource = data();
-    up_special_mut(&mut resource.fighters[0])
-        .travel
-        .ground
-        .frames[0]
-        .hitboxes = vec![travel_hitbox()];
+    up_special_mut(&mut resource.fighters[0])["travel"]["ground"]["frames"][0]["hitboxes"] =
+        serde_json::to_value(vec![travel_hitbox()]).unwrap();
     assert!(Match::new(resource, 0).is_err());
 
     // Staling requires a nonzero `move_id` on a phase that actually has a
@@ -629,14 +634,13 @@ fn invalid_up_special_resources_are_rejected() {
     }
     {
         let p = up_special_mut(&mut resource.fighters[0]);
-        p.travel.ground.frames[0].hitboxes = vec![travel_hitbox()];
-        p.travel.ground.move_id = None;
+        p["travel"]["ground"]["frames"][0]["hitboxes"] =
+            serde_json::to_value(vec![travel_hitbox()]).unwrap();
+        p["travel"]["ground"]["move_id"] = serde_json::Value::Null;
     }
     assert!(Match::new(resource.clone(), 0).is_err());
-    up_special_mut(&mut resource.fighters[0])
-        .travel
-        .ground
-        .move_id = Some(20);
+    up_special_mut(&mut resource.fighters[0])["travel"]["ground"]["move_id"] =
+        serde_json::json!(20);
     assert!(Match::new(resource, 0).is_ok());
 
     // `fighter.specials = None` while `rules.specials` stays set is itself
@@ -735,9 +739,7 @@ fn travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_
     // edge before Travel's own duration expires (landing normally instead
     // of ever leaving the ground here). Extended so the edge-drop is what
     // actually ends grounded Travel in this test.
-    up_special_mut(&mut resource.fighters[0])
-        .attributes
-        .duration = 20.0;
+    up_special_mut(&mut resource.fighters[0])["attributes"]["duration"] = serde_json::json!(20.0);
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, up_stick(0.9))).unwrap();
     let launch = directional([0.9, -0.5]);
@@ -747,7 +749,7 @@ fn travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_
     let facing = state.fighters[0].facing;
     let floor_normal = state.fighters[0].floor_normal;
     let expected = libm::atan2f(-floor_normal[0] * facing, floor_normal[1]);
-    approx(state.fighters[0].up_special.rotate_model, expected);
+    approx(state_number(&state.fighters[0], "travel_angle"), expected);
     // Keep sliding until it runs off the shortened floor's own edge.
     let mut state = state;
     for _ in 0..20 {
@@ -761,12 +763,12 @@ fn travel_ground_rotation_reflects_the_last_grounded_floor_normal_after_leaving_
         "must leave the shortened floor within 20 frames"
     );
     assert_eq!(state.fighters[0].action, Action::SpecialAirHi);
-    // The rotate_model carried into the air phase is still the last
+    // The travel_angle carried into the air phase is still the last
     // grounded floor-normal angle (unchanged since this fixture's own
     // floor is flat, so every grounded frame recomputed the same value;
     // the point is that it is *this* value, freshly re-derived every
     // frame, not a stale one frozen at launch).
-    approx(state.fighters[0].up_special.rotate_model, expected);
+    approx(state_number(&state.fighters[0], "travel_angle"), expected);
 }
 
 #[test]
@@ -782,10 +784,10 @@ fn fall_special_landing_uses_this_move_s_own_landing_lag_not_the_common_one() {
     // 0.61 if the common one leaked through instead.
     let mut resource = airborne_data();
     resource.stage.spawns[0][1] = 3.0;
-    up_special_mut(&mut resource.fighters[0]).attributes.speed = 0.05;
-    up_special_mut(&mut resource.fighters[0])
-        .fall
-        .frames
+    up_special_mut(&mut resource.fighters[0])["attributes"]["speed"] = serde_json::json!(0.05);
+    up_special_mut(&mut resource.fighters[0])["fall"]["frames"]
+        .as_array_mut()
+        .unwrap()
         .truncate(2);
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, up_stick(0.9))).unwrap();
@@ -823,8 +825,8 @@ fn hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames() {
     let hold = hold_attack_with_pack_hitboxes(&bones);
     {
         let p = up_special_mut(&mut resource.fighters[0]);
-        p.hold.ground = hold.clone();
-        p.hold.air = hold;
+        p["hold"]["ground"] = serde_json::to_value(&hold).unwrap();
+        p["hold"]["air"] = serde_json::to_value(&hold).unwrap();
     }
     let mut game = Match::new(resource, 0).unwrap();
     let entry = game.step(input(0, up_stick(0.9))).unwrap();
@@ -862,7 +864,7 @@ fn hold_charge_hits_a_nearby_opponent_at_the_pack_documented_pulse_frames() {
 #[test]
 fn travel_hits_a_nearby_opponent_every_frame_matching_the_pack_s_continuous_hitbox() {
     // The base fixture's own 2-pose Travel loop (independent of the
-    // `travel_frames` countdown that actually governs the move's real
+    // `travel_remaining` countdown that actually governs the move's real
     // duration, see `docs/fox-up-special.md`) stays untouched apart from
     // installing the pack's own hitbox on both existing poses -- since the
     // pack itself reports the identical hitbox on every one of its own 31
@@ -877,18 +879,18 @@ fn travel_hits_a_nearby_opponent_every_frame_matching_the_pack_s_continuous_hitb
     resource.rules.knockback_speed = 0.0;
     {
         let p = up_special_mut(&mut resource.fighters[0]);
-        for attack in [&mut p.travel.ground, &mut p.travel.air] {
-            attack.move_id = Some(20);
-            for frame in &mut attack.frames {
-                frame.hitboxes = vec![travel_hitbox()];
+        for phase in ["ground", "air"] {
+            p["travel"][phase]["move_id"] = serde_json::json!(20);
+            for frame in p["travel"][phase]["frames"].as_array_mut().unwrap() {
+                frame["hitboxes"] = serde_json::to_value(vec![travel_hitbox()]).unwrap();
             }
         }
         // A long, slow, constant-velocity travel keeps the fighter's own
         // hitbox in reach for several real frames instead of overshooting
         // the stationary opponent in one step.
-        p.attributes.speed = 1.0;
-        p.attributes.duration = 20.0;
-        p.attributes.duration_end = 1000.0;
+        p["attributes"]["speed"] = serde_json::json!(1.0);
+        p["attributes"]["duration"] = serde_json::json!(20.0);
+        p["attributes"]["duration_end"] = serde_json::json!(1000.0);
     }
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, up_stick(0.9))).unwrap();

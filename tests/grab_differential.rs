@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::grab::{fresh_down, fresh_horizontal, fresh_up};
+use skirmish::game::grab::{fresh_down, fresh_horizontal, fresh_up};
 
 unsafe extern "C" {
     fn oracle_throw_horizontal(current: f32, previous: f32, threshold: f32) -> i32;

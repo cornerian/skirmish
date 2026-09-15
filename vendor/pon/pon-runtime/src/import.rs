@@ -1,0 +1,4163 @@
+//! Import runtime support for WS-IMPORT.
+//!
+//! This module owns import state and module-object behavior. Exported helpers
+//! follow the same NULL-sentinel contract as the rest of the runtime: failures
+//! set the thread-state diagnostic and return NULL, never unwind into generated
+//! code.
+
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    ffi::c_int,
+    fs,
+    io::Read,
+    mem,
+    path::{Path, PathBuf},
+    ptr,
+    sync::{
+        LazyLock, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+};
+
+use crate::{
+    abi::{
+        exc::{pon_raise_type_error, raise_attribute_error_text},
+        pon_const_int, pon_const_str, pon_none, pon_store_global, raise_import_error_text,
+        return_minus_one_with_error, return_null_with_error,
+    },
+    intern::{intern, resolve},
+    object::{PyObject, PyObjectHeader, PyType, PyUnicode, as_object_ptr, is_exact_type},
+    thread_state::{pon_err_clear, pon_err_occurred},
+};
+
+/// Host callback used by the CLI/JIT integration pass to execute a source
+/// module through the normal ruff -> IR -> JIT pipeline and return its module
+/// object.
+pub type SourceModuleLoader = for<'a> fn(SourceModuleRequest<'a>) -> Result<*mut PyObject, String>;
+
+/// Optional embedding policy consulted before accepting a `sys.modules`
+/// binding or searching import paths.
+pub type ImportPolicyHook = fn(&str, Option<*mut PyObject>) -> Result<(), String>;
+
+/// Embedding callback invoked immediately after a curated native module is
+/// created, before import returns control to user code.
+pub type NativeModuleProvenanceHook = fn(&str, *mut PyObject);
+
+/// Pure-Python source module found by the import resolver.
+pub struct SourceModuleRequest<'a> {
+    /// Module object allocated by the trusted importer before executing source.
+    pub module: *mut PyObject,
+    /// Fully-qualified import name.
+    pub name: &'a str,
+    /// Resolved source path (filesystem path, or the import-style pseudo-path
+    /// for a source member inside a zip archive).
+    pub path: &'a Path,
+    /// Source text to compile and execute.
+    pub source: &'a str,
+    /// Whether `path` is a package `__init__.py`.
+    pub is_package: bool,
+}
+
+#[repr(C)]
+pub struct PyModuleObject {
+    /// Common object header; this field must remain first.
+    pub ob_base: PyObjectHeader,
+    /// Interned module name.
+    pub name: u32,
+    /// Interned registry identity keying the dynexec globals registry
+    /// (`module.__dict__` / `dir` / attr-store mirroring) and attr-snapshot
+    /// lookups.  Equal to `name` for imported/installed modules; unique per
+    /// instance for synthetic `types.ModuleType(...)` modules so a synthetic
+    /// module named like a real one never aliases the real module's
+    /// namespace dict.
+    pub registry_key: u32,
+    /// Attribute table keyed by runtime interned name ids.
+    pub attrs: HashMap<u32, *mut PyObject>,
+}
+
+struct ImportState {
+    modules: HashMap<u32, *mut PyObject>,
+    source_loader: Option<SourceModuleLoader>,
+    import_policy_hook: Option<ImportPolicyHook>,
+    native_provenance_hook: Option<NativeModuleProvenanceHook>,
+    module_type: *mut PyType,
+    current_modules: Vec<u32>,
+    /// Original module object for each active module-execution frame.
+    current_module_objects: Vec<*mut PyObject>,
+    /// Per-`current_modules` entry: the compiled-call stack depth captured at
+    /// `begin_module_execution`.  Call-stack entries at or above this floor
+    /// were pushed while the module body ran, so global loads/stores made by
+    /// them scope to their own defining module, while a bare depth==floor
+    /// context means the module toplevel itself is executing.
+    current_module_floors: Vec<usize>,
+    /// Live `sys.modules` dict mirroring `modules`; NULL until first use.
+    modules_dict: *mut PyObject,
+}
+
+unsafe impl Send for ImportState {}
+
+static IMPORT_STATE: LazyLock<Mutex<ImportState>> =
+    LazyLock::new(|| Mutex::new(ImportState::new()));
+
+impl ImportState {
+    fn new() -> Self {
+        let mut ty = Box::new(PyType::new(
+            ptr::null(),
+            "module",
+            mem::size_of::<PyModuleObject>(),
+        ));
+        ty.tp_getattro = Some(module_getattro);
+        ty.tp_setattro = Some(module_setattro);
+        // Direct calls on the module type (`types.ModuleType(name, doc)`)
+        // MUST NOT fall back to the generic `type_new` heap-instance
+        // allocator: the attr hooks above reinterpret the instance as
+        // `PyModuleObject`, and a `PyHeapInstance`'s bytes read as a garbage
+        // attrs `HashMap` (UB on first insert).
+        ty.tp_new = Some(module_tp_new);
+        Self {
+            modules: HashMap::new(),
+            source_loader: None,
+            import_policy_hook: None,
+            native_provenance_hook: None,
+            module_type: Box::into_raw(ty),
+            current_modules: Vec::new(),
+            current_module_objects: Vec::new(),
+            current_module_floors: Vec::new(),
+            modules_dict: ptr::null_mut(),
+        }
+    }
+}
+
+/// Installs the host loader that compiles pure-Python imports with the normal
+/// frontend/codegen/JIT pipeline.  The callback is optional so native imports
+/// and unsupported diagnostics stay usable before CLI integration is wired.
+pub fn set_source_module_loader(loader: SourceModuleLoader) {
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.source_loader = Some(loader);
+}
+
+pub fn set_import_policy_hook(hook: ImportPolicyHook) {
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.import_policy_hook = Some(hook);
+}
+
+pub fn set_native_module_provenance_hook(hook: NativeModuleProvenanceHook) {
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.native_provenance_hook = Some(hook);
+}
+
+pub(crate) fn native_module_created(name: &str, module: *mut PyObject) {
+    let hook = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .native_provenance_hook;
+    if let Some(hook) = hook {
+        hook(name, module);
+    }
+}
+
+/// Resets import state to its post-`pon_runtime_init` baseline. Intended for
+/// focused tests.
+///
+/// Clears the module cache, source loader, and importer stack. When the runtime
+/// is already initialized this re-registers the curated native modules, because
+/// `pon_runtime_init` is idempotent and will not restore them on a later call;
+/// dropping them here would leave the process without `sys` for every
+/// subsequently scheduled test (e.g. `pon_sys_set_argv` callers).
+pub fn reset_import_state_for_tests() {
+    {
+        let mut state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules.clear();
+        state.source_loader = None;
+        state.import_policy_hook = None;
+        state.native_provenance_hook = None;
+        state.current_modules.clear();
+        state.current_module_objects.clear();
+        state.current_module_floors.clear();
+        state.modules_dict = ptr::null_mut();
+    }
+    if crate::abi::runtime_is_initialized() {
+        register_native_modules().expect("re-registering native modules after import-state reset");
+    }
+}
+
+/// Installs the curated native modules into the import cache after core runtime
+/// allocation is available.
+pub fn register_native_modules() -> Result<(), String> {
+    // Late-bind the module type's base: `object` exists only once core
+    // runtime globals are installed, while the module type is created with
+    // the import state (possibly earlier).  The base wires the generic
+    // keyword-call path (`types.ModuleType(name, doc=...)`): with a custom
+    // `tp_new`, `call_type_with_keywords` must resolve `__init__` to the
+    // inherited `object.__init__` carrier (the `_contextvars` pattern).
+    // Safe to bind late: the module type never owns a `tp_mro` carrier, so
+    // every MRO walk reads the live `tp_base` chain.
+    let module_type = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.module_type
+    };
+    // SAFETY: The module type is an immortal leaked box created by
+    // `ImportState::new`; no Python executes concurrently with runtime init.
+    unsafe {
+        if (*module_type).tp_base.is_null() {
+            (*module_type).tp_base = crate::abi::runtime_global(intern("object"))
+                .map_or(ptr::null_mut(), |object| object.cast::<PyType>());
+        }
+    }
+    crate::native::register_modules()
+}
+
+/// Compiled top-level body of one AoT-embedded module.
+///
+/// Matches the zero-argument wrapper the AoT backend exports per embedded
+/// reachability unit: runs the module body and returns a non-NULL object, or
+/// NULL with the thread-state diagnostic set.
+pub type EmbeddedModuleBody = unsafe extern "C" fn() -> *mut PyObject;
+
+struct EmbeddedModule {
+    is_package: bool,
+    body: EmbeddedModuleBody,
+}
+
+/// AoT-embedded module registry keyed by fully-qualified dotted import name.
+///
+/// Populated by the generated `pon_aot_init_modules` hook before runtime
+/// initialization; consulted by `import_module_by_name` after native curated
+/// modules and the C-accelerated refusal list so an embedded file never
+/// shadows either, mirroring JIT source-import resolution order.
+static EMBEDDED_MODULES: LazyLock<Mutex<HashMap<String, EmbeddedModule>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Registers one AoT-embedded module body under its dotted import name.
+///
+/// Called from the generated `pon_aot_init_modules` hook with build-time
+/// constant data, before `pon_runtime_init`. Invalid input records a
+/// thread-state diagnostic and skips the entry, matching
+/// `pon_aot_intern_name`'s error posture.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pon_aot_register_module(
+    name: *const u8,
+    name_len: usize,
+    is_package: c_int,
+    body: Option<EmbeddedModuleBody>,
+) {
+    // TAG-OK: build-time constant byte pointer and function pointer, never tagged
+    // values.
+    let Some(body) = body else {
+        crate::thread_state::pon_err_set("AoT module registrar received a null body pointer");
+        return;
+    };
+    if name.is_null() {
+        crate::thread_state::pon_err_set("AoT module registrar received a null name pointer");
+        return;
+    }
+    // SAFETY: The generated registrar passes `name_len` contiguous constant bytes.
+    let bytes = unsafe { core::slice::from_raw_parts(name, name_len) };
+    let Ok(name) = std::str::from_utf8(bytes) else {
+        crate::thread_state::pon_err_set("AoT module registrar received invalid UTF-8");
+        return;
+    };
+    let mut modules = EMBEDDED_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    modules.insert(
+        name.to_owned(),
+        EmbeddedModule {
+            is_package: is_package != 0,
+            body,
+        },
+    );
+}
+
+fn embedded_module(name: &str) -> Option<(bool, EmbeddedModuleBody)> {
+    let modules = EMBEDDED_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    modules
+        .get(name)
+        .map(|module| (module.is_package, module.body))
+}
+
+/// Imports a module by interned dotted name.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pon_import_name(
+    name_interned: u32,
+    fromlist: *const u32,
+    fromlist_len: usize,
+    level: u32,
+) -> *mut PyObject {
+    if fromlist.is_null() && fromlist_len != 0 {
+        return return_null_with_error("import fromlist pointer is NULL");
+    }
+
+    let Some(raw_name) = resolve(name_interned) else {
+        return return_null_with_error(format!("import name id {name_interned} is not interned"));
+    };
+
+    let requested_fromlist = if fromlist_len == 0 {
+        &[][..]
+    } else {
+        // SAFETY: The caller supplies `fromlist_len` contiguous interned ids.
+        unsafe { core::slice::from_raw_parts(fromlist, fromlist_len) }
+    };
+
+    let importer_package = (level != 0).then(current_importer_package).flatten();
+    let name = match resolve_import_name(&raw_name, level, importer_package.as_deref()) {
+        Ok(name) => name,
+        Err(message) => return raise_import_error_text(&message),
+    };
+
+    let imported = import_module_by_name(&name);
+    let module = match imported {
+        Ok(module) => module,
+        Err(message) => return raise_import_error_text(&message),
+    };
+
+    if requested_fromlist.is_empty() {
+        if let Some(root_name) = name.split('.').next() {
+            let root_id = intern(root_name);
+            let state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if let Some(root) = state.modules.get(&root_id).copied() {
+                return root;
+            }
+        }
+    }
+
+    module
+}
+
+/// Loads one named attribute from an imported module.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pon_import_from(
+    module: *mut PyObject,
+    name_interned: u32,
+) -> *mut PyObject {
+    crate::untag_prelude!(module);
+    if module.is_null() {
+        return return_null_with_error("cannot import from NULL module");
+    }
+    let Some(module_ptr) = as_module(module) else {
+        return return_null_with_error("import-from receiver is not a module");
+    };
+    // SAFETY: `as_module` proved the layout.
+    let module_name = resolve(unsafe { (*module_ptr).name })
+        .unwrap_or_else(|| format!("<module:{}>", unsafe { (*module_ptr).name }));
+    let attr = resolve(name_interned).unwrap_or_else(|| format!("<interned:{name_interned}>"));
+    if let Some(value) = module_direct_attr(module_ptr, name_interned, &attr) {
+        return value;
+    }
+    if let Some(value) = call_module_getattr_hook(module_ptr, &attr) {
+        if !value.is_null() {
+            return value;
+        }
+        if crate::abi::exc::pending_exception_is("AttributeError") {
+            pon_err_clear();
+        } else {
+            return value;
+        }
+    }
+
+    // SAFETY: `as_module` proved the layout.
+    let module_ref = unsafe { &*module_ptr };
+    if module_is_package(module_ref) {
+        let child_name = format!("{module_name}.{attr}");
+        match import_module_by_name(&child_name) {
+            Ok(child) => return child,
+            // A missing submodule falls through to the historical
+            // cannot-import-name diagnostic; every other failure propagates
+            // (CPython `_handle_fromlist` swallows only a ModuleNotFoundError
+            // naming the child itself, so a deeper missing module raised
+            // while executing the child's body must surface verbatim).
+            Err(message) if message != format!("No module named '{child_name}'") => {
+                return raise_import_error_text(&message);
+            }
+            Err(_) => {}
+        }
+    }
+    raise_import_error_text(&format!("cannot import name '{attr}' from '{module_name}'"))
+}
+
+/// Imports module attributes into the active globals dictionary, honoring
+/// `__all__` exactly like CPython's `import_all_from`: when the module
+/// defines `__all__`, precisely those names are copied — underscored names
+/// included, non-str items raise TypeError, and names the module lacks
+/// raise AttributeError (after a package-submodule import attempt, per
+/// `_handle_fromlist`'s `*` expansion).  Only a module without `__all__`
+/// falls back to the public (non-underscore) attribute snapshot.
+///
+/// Honoring `__all__` is load-bearing for packages whose `__init__` reads
+/// sibling-submodule bindings after star-imports: `asyncio/__init__` runs
+/// `from .subprocess import *` and later `subprocess.__all__` — the
+/// submodule's own `import subprocess` global must not leak through the
+/// star-copy and clobber the package's `subprocess` -> `asyncio.subprocess`
+/// child binding.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pon_import_star(module: *mut PyObject) -> *mut PyObject {
+    crate::untag_prelude!(module);
+    if module.is_null() {
+        return return_null_with_error("cannot import * from NULL module");
+    }
+    let Some(module) = as_module(module) else {
+        return return_null_with_error("import-star receiver is not a module");
+    };
+    // Aliasing discipline: the stores and the package-submodule import below
+    // re-enter machinery that may mutate this very module's attr map
+    // (`pon_store_global` when a package star-imports in its own body,
+    // `bind_child_to_parent` inside `import_module_by_name`), so no borrow
+    // of the module may live across them — attrs are snapshotted or
+    // re-borrowed per access through the raw pointer.
+    // SAFETY: `as_module` proved the layout; the borrow ends at `.copied()`.
+    let all = unsafe { (*module).attrs.get(&intern("__all__")).copied() };
+    let Some(all) = all else {
+        // No `__all__`: copy the public attribute snapshot.
+        // SAFETY: The borrow ends when the snapshot Vec is collected.
+        let entries: Vec<(u32, *mut PyObject)> = unsafe {
+            (*module)
+                .attrs
+                .iter()
+                .filter(|&(&name, _)| is_public_name(name))
+                .map(|(&name, &value)| (name, value))
+                .collect()
+        };
+        for (name, value) in entries {
+            // SAFETY: Store helper enforces the NULL-sentinel error contract.
+            let stored = unsafe { pon_store_global(name, value) };
+            if stored.is_null() {
+                return ptr::null_mut();
+            }
+        }
+        // SAFETY: `pon_none` returns the initialized singleton or NULL with an error.
+        return unsafe { pon_none() };
+    };
+    // SAFETY: Reading the interned name id copies a u32 out of the borrow.
+    let module_name = {
+        let name = unsafe { (*module).name };
+        resolve(name).unwrap_or_else(|| format!("<module:{name}>"))
+    };
+    // SAFETY: The borrow ends when `module_is_package` returns.
+    let is_package = unsafe { module_is_package(&*module) };
+    let Some(items) = sequence_items(all) else {
+        return return_null_with_error(format!("{module_name}.__all__ is not a tuple or list"));
+    };
+    for item in items {
+        let Some(text) = (unsafe { exact_str_text(item) }) else {
+            // SAFETY: Type-name probe tolerates any live object.
+            let kind = unsafe { crate::types::dict::type_name(item) }.unwrap_or("<unknown>");
+            return crate::abi::exc::raise_kind_error_text(
+                crate::types::exc::ExceptionKind::TypeError,
+                &format!("Item in {module_name}.__all__ must be str, not {kind}"),
+            );
+        };
+        let name = intern(&text);
+        // SAFETY: The borrow ends at `.copied()`, before any re-entrant call.
+        let value = match unsafe { (*module).attrs.get(&name).copied() } {
+            Some(value) => value,
+            None => {
+                // A package `__all__` may name submodules that only importing
+                // makes visible: CPython's `_handle_fromlist` imports them for
+                // `from pkg import *` and swallows only the child's own
+                // ModuleNotFoundError (deeper failures surface verbatim).
+                let child_name = format!("{module_name}.{text}");
+                match (is_package, import_module_by_name(&child_name)) {
+                    (true, Ok(child)) => child,
+                    (true, Err(message))
+                        if message != format!("No module named '{child_name}'") =>
+                    {
+                        return raise_import_error_text(&message);
+                    }
+                    _ => {
+                        return raise_attribute_error_text(&format!(
+                            "module '{module_name}' has no attribute '{text}'"
+                        ));
+                    }
+                }
+            }
+        };
+        // SAFETY: Store helper enforces the NULL-sentinel error contract.
+        let stored = unsafe { pon_store_global(name, value) };
+        if stored.is_null() {
+            return ptr::null_mut();
+        }
+    }
+    // SAFETY: `pon_none` returns the initialized singleton or NULL with an error.
+    unsafe { pon_none() }
+}
+
+/// Snapshot of the element slots of an exact tuple or list receiver; `None`
+/// for any other layout (subclasses included — stdlib `__all__` is always
+/// exact).  A copy, not a borrow: the star-import caller re-enters runtime
+/// code between elements, which may reallocate a list's storage.
+fn sequence_items(object: *mut PyObject) -> Option<Vec<*mut PyObject>> {
+    // SAFETY: `exact_*_slice` guards the concrete storage layout before the
+    // slices are copied; the star-import caller re-enters runtime code between
+    // elements, which may reallocate a list's storage.
+    unsafe {
+        if let Some(items) = crate::abi::seq::exact_tuple_slice(object) {
+            return Some(items.to_vec());
+        }
+        if let Some(items) = crate::abi::seq::exact_list_slice(object) {
+            return Some(items.to_vec());
+        }
+    }
+    None
+}
+
+/// Exact-`str` payload (no `__str__` dispatch); `None` for other layouts.
+unsafe fn exact_str_text(object: *mut PyObject) -> Option<String> {
+    let unicode_type = crate::abi::runtime_unicode_type();
+    if unicode_type.is_null() || unsafe { !is_exact_type(object, unicode_type) } {
+        return None;
+    }
+    unsafe {
+        let unicode = &*object.cast::<PyUnicode>();
+        if unicode.data.is_null() && unicode.len != 0 {
+            return None;
+        }
+        let bytes = core::slice::from_raw_parts(unicode.data, unicode.len);
+        core::str::from_utf8(bytes).ok().map(ToOwned::to_owned)
+    }
+}
+
+/// Returns a cached module by interned name for tests and hub integration.
+pub fn cached_module(name: u32) -> Option<*mut PyObject> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.get(&name).copied()
+}
+
+/// Resolves the module object used as the source of truth for a global store.
+pub fn module_for_global(name: u32) -> Option<*mut PyObject> {
+    cached_module(name).or_else(|| synthetic_module_object(name))
+}
+
+/// Returns the live `sys.modules` dict, allocating it on first use.
+///
+/// The dict mirrors the interned-name import cache: the runtime publishes
+/// every module it registers, and `import` consults the dict as the
+/// user-visible authority so `sys.modules[name] = module` (e.g. `collections`
+/// publishing `collections.abc`) and `del sys.modules[name]` behave like
+/// CPython.
+pub fn sys_modules_dict() -> Result<*mut PyObject, String> {
+    {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if !state.modules_dict.is_null() {
+            return Ok(state.modules_dict);
+        }
+    }
+    // Allocate outside the state lock: dict construction takes its own locks.
+    // SAFETY: A NULL item array with a zero pair count builds an empty dict.
+    let dict = unsafe { crate::abi::map::pon_build_map(ptr::null_mut(), 0) };
+    if dict.is_null() {
+        return Err("failed to allocate the sys.modules dict".to_owned());
+    }
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if state.modules_dict.is_null() {
+        state.modules_dict = dict;
+    }
+    Ok(state.modules_dict)
+}
+
+/// Publishes a registered module into the live `sys.modules` dict.
+///
+/// Called with the import-state lock released: dict insertion takes the
+/// dict's own critical section and must never nest inside `IMPORT_STATE`.
+fn mirror_module_registration(name: &str, module: *mut PyObject) -> Result<(), String> {
+    let dict = sys_modules_dict()?;
+    let key = runtime_string(name)?;
+    let _guard = crate::sync::begin_critical_section(dict);
+    // SAFETY: `dict` is an exact runtime dict; `key` and `module` are valid.
+    unsafe { crate::types::dict::dict_insert(dict, key, module) }
+}
+
+/// Registers an extension module under its full import name BEFORE its
+/// `Py_mod_exec` slots run (CPython installs into `sys.modules` pre-exec so
+/// the module's own exec-time re-imports adopt it instead of re-loading —
+/// numpy's `_multiarray_umath` guards double-exec with a hard error).
+pub(crate) fn register_extension_module_for_exec(
+    name: &str,
+    module: *mut PyObject,
+) -> Result<(), String> {
+    let name_id = intern(name);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.insert(name_id, module);
+    drop(state);
+    mirror_module_registration(name, module)?;
+    crate::abi::bump_namespace_version();
+    Ok(())
+}
+
+/// Rolls back [`register_extension_module_for_exec`] after a failed exec.
+pub(crate) fn unregister_extension_module_after_failed_exec(name: &str, module: *mut PyObject) {
+    evict_failed_module(name, module);
+}
+
+/// Reads the `sys.modules` binding for `name`, when the dict already exists.
+fn sys_modules_entry(name: &str) -> Result<Option<*mut PyObject>, String> {
+    let dict = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules_dict
+    };
+    if dict.is_null() {
+        return Ok(None);
+    }
+    let key = runtime_string(name)?;
+    let _guard = crate::sync::begin_critical_section(dict);
+    // SAFETY: `dict` is an exact runtime dict and `key` is a valid string.
+    unsafe { crate::types::dict::dict_get(dict, key) }
+}
+
+/// Creates or replaces a module object in `sys.modules` with the supplied
+/// attrs.
+pub fn install_module(
+    name: &str,
+    attrs: impl IntoIterator<Item = (u32, *mut PyObject)>,
+) -> Result<*mut PyObject, String> {
+    create_module(name, false, attrs)
+}
+
+fn import_module_by_name(name: &str) -> Result<*mut PyObject, String> {
+    let module = resolve_module_by_name(name)?;
+    if name == "os" {
+        ensure_os_path_alias();
+    }
+    if name == "importlib._bootstrap" {
+        ensure_source_importlib_alias("_frozen_importlib", module)?;
+        seed_meta_path_finders();
+    }
+    if name == "importlib._bootstrap_external" {
+        ensure_source_importlib_alias("_frozen_importlib_external", module)?;
+    }
+    if let Some(alias) = numpy_core_alias_name(name) {
+        ensure_source_module_alias(alias, module)?;
+    }
+    Ok(module)
+}
+
+/// After pon's source fallback imports `importlib._bootstrap`, later stdlib
+/// modules still absolute-import `_frozen_importlib` for the bootstrap classes
+/// it exposes (`importlib.abc` registers them with its ABCs).  Mirror the live
+/// source bootstrap module under that legacy top-level key once it exists, but
+/// only while the alias slot is still empty: user-inserted `sys.modules`
+/// bindings keep winning.
+fn ensure_source_importlib_alias(alias: &str, module: *mut PyObject) -> Result<(), String> {
+    if sys_modules_entry(alias)?.is_some() {
+        return Ok(());
+    }
+    let alias_id = intern(alias);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.insert(alias_id, module);
+    drop(state);
+    mirror_module_registration(alias, module)
+}
+
+fn numpy_core_alias_name(name: &str) -> Option<String> {
+    if name == "numpy._core" {
+        return Some("numpy.core".to_owned());
+    }
+    name.strip_prefix("numpy._core.")
+        .map(|suffix| format!("numpy.core.{suffix}"))
+}
+
+fn ensure_source_module_alias(alias: String, module: *mut PyObject) -> Result<(), String> {
+    if sys_modules_entry(&alias)?.is_some() {
+        return Ok(());
+    }
+    let alias_id = intern(&alias);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.insert(alias_id, module);
+    drop(state);
+    mirror_module_registration(&alias, module)?;
+    bind_child_to_parent(&alias, module);
+    Ok(())
+}
+
+static IMPORTLIB_FROZEN_ALIAS_BOOTSTRAP: AtomicBool = AtomicBool::new(false);
+
+fn importlib_frozen_alias_target(alias: &str) -> Option<&'static str> {
+    match alias {
+        "_frozen_importlib" => Some("importlib._bootstrap"),
+        "_frozen_importlib_external" => Some("importlib._bootstrap_external"),
+        _ => None,
+    }
+}
+
+fn resolve_source_importlib_alias_request(name: &str) -> Result<Option<*mut PyObject>, String> {
+    let Some(target) = importlib_frozen_alias_target(name) else {
+        return Ok(None);
+    };
+
+    if let Some(module) = cached_module(intern(target)) {
+        ensure_source_importlib_alias(name, module)?;
+        return Ok(Some(module));
+    }
+
+    if IMPORTLIB_FROZEN_ALIAS_BOOTSTRAP.load(Ordering::Acquire)
+        || active_module_name_id()
+            .and_then(resolve)
+            .is_some_and(|active| active == "importlib")
+    {
+        return Err(format!("No module named '{name}'"));
+    }
+
+    if IMPORTLIB_FROZEN_ALIAS_BOOTSTRAP.swap(true, Ordering::AcqRel) {
+        return Err(format!("No module named '{name}'"));
+    }
+    let import_result = import_module_by_name("importlib");
+    IMPORTLIB_FROZEN_ALIAS_BOOTSTRAP.store(false, Ordering::Release);
+    import_result?;
+
+    if let Some(module) = cached_module(intern(target)) {
+        ensure_source_importlib_alias(name, module)?;
+        return Ok(Some(module));
+    }
+
+    Err(format!("No module named '{name}'"))
+}
+
+/// Mirrors `importlib._bootstrap._install`: seeds `sys.meta_path` with
+/// `BuiltinImporter` and `FrozenImporter` right after the bootstrap module
+/// first loads.
+///
+/// CPython's interpreter init execs the frozen bootstrap and immediately
+/// runs `_install(sys, _imp)`, which appends the two finders.  Under pon the
+/// vendored `importlib/__init__.py` takes its source-fallback branch
+/// (`import _frozen_importlib` fails), which calls only `_setup` — no code
+/// path ever runs `_install` — so `_bootstrap._find_spec` would find the
+/// list empty and take `_py_warnings.warn`, and every
+/// `importlib.import_module` of a name pon cannot serve would derail there
+/// instead of raising the CPython `ModuleNotFoundError`.  Appending here,
+/// the moment the class objects exist as module attrs, lands the same end
+/// state at the equivalent init moment.  `_setup` itself never reads
+/// `meta_path`, so running before it (pon) vs after it (CPython) is not
+/// observable.
+///
+/// The third slot — CPython's `PathFinder`, appended by the separate
+/// `_install_external_importers` init step from `_bootstrap_external` — is
+/// filled by pon's own `_pon_source_importer` module
+/// (`crate::native::imp::make_source_importer_module`) instead: `PathFinder`
+/// itself would route `importlib.import_module` through vendored
+/// file-system loaders pon does not run, while the stand-in claims exactly
+/// the names pon's embedded/source machinery serves and delegates loading to
+/// it.  Documented divergence: `sys.meta_path[2]` is that module object, not
+/// the `PathFinder` class, and the bootstrap classes' `__module__` is
+/// `'importlib._bootstrap'`, not `'_frozen_importlib'`.
+///
+/// The append only fires while the list is still empty: CPython never
+/// re-runs `_install` either, so a re-import after a user cleared
+/// `sys.modules['importlib._bootstrap']` must not grow or reorder a list
+/// the user may have replaced.
+///
+/// Failure policy: mirrors `ensure_os_path_alias` — a missing `sys` module,
+/// `meta_path` binding, bootstrap class, or non-list value leaves the list
+/// untouched and clears any pending diagnostic rather than failing the
+/// `importlib` import; the loud surface is then `_find_spec`'s own
+/// empty-meta_path warning.
+fn seed_meta_path_finders() {
+    let Some(meta_path) = module_attr(intern("sys"), intern("meta_path")) else {
+        return;
+    };
+    if crate::abi::seq::list_len(meta_path) != Some(0) {
+        return;
+    }
+    let bootstrap = intern("importlib._bootstrap");
+    let Some(builtin_importer) = module_attr(bootstrap, intern("BuiltinImporter")) else {
+        return;
+    };
+    let Some(frozen_importer) = module_attr(bootstrap, intern("FrozenImporter")) else {
+        return;
+    };
+    let finders = match crate::native::imp::make_source_importer_module() {
+        Ok(source_importer) => [builtin_importer, frozen_importer, source_importer],
+        // Allocation failure: seed the two bootstrap classes and stay quiet
+        // (failure policy above); statement imports are unaffected.
+        Err(_) => [builtin_importer, frozen_importer, ptr::null_mut()],
+    };
+    for finder in finders {
+        if finder.is_null() {
+            continue;
+        }
+        if crate::abi::seq::list_append_raw(meta_path, finder).is_err() {
+            break;
+        }
+    }
+    if pon_err_occurred() {
+        pon_err_clear();
+    }
+}
+
+/// CPython's `os.py` executes `import posixpath as path` and publishes
+/// `sys.modules['os.path']`, so a plain `import os` already makes `os.path`
+/// usable (`glob` reads `os.path.lexists` in a class body).  pon's `os` is a
+/// native seed registered during runtime init, when the source importer that
+/// serves `posixpath` cannot run yet — and resolving it inside the factory
+/// would recurse, because `posixpath`'s own body does `import os`.
+///
+/// The alias is therefore installed right after any successful `os`
+/// resolution: at that point `os` is cached, so posixpath's `import os` is a
+/// cache hit and cannot recurse.  The in-progress flag breaks the remaining
+/// cycle (`os.path` -> parent `os` -> this hook -> `os.path`), and the
+/// native `os.path` row registers the module under both names and binds the
+/// parent's `path` attribute (`bind_child_to_parent`).
+///
+/// Failure policy: embeddings without the vendored stdlib (runtime unit
+/// tests) cannot resolve `posixpath`; the hook clears the pending diagnostic
+/// and leaves `os.path` unbound — exactly the pre-alias behavior — instead
+/// of failing `import os`.  A direct `import os.path` still surfaces the
+/// real error loudly.
+fn ensure_os_path_alias() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+    let alias_id = intern("os.path");
+    let alias_cached = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules.contains_key(&alias_id)
+    };
+    if alias_cached || IN_PROGRESS.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let result = import_module_by_name("os.path");
+    IN_PROGRESS.store(false, Ordering::Release);
+    if result.is_err() && pon_err_occurred() {
+        pon_err_clear();
+    }
+}
+
+/// True when a `sys.modules` binding is the `None` singleton — the deliberate
+/// import block `test.support.import_helper.import_fresh_module` plants for
+/// each blocked name (tag-tolerant, like any generated-code dict value).
+fn is_none_binding(binding: *mut PyObject) -> bool {
+    // SAFETY: Singleton accessor; a NULL from pre-init failure never equals
+    // a live dict binding.
+    crate::tag::untag_arg(binding) == unsafe { pon_none() }
+}
+
+fn resolve_module_by_name(name: &str) -> Result<*mut PyObject, String> {
+    if name.is_empty() {
+        return Err("No module named ''".to_owned());
+    }
+
+    let name_id = intern(name);
+    let cached = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules.get(&name_id).copied()
+    };
+    let entry = sys_modules_entry(name)?;
+    let policy_hook = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.import_policy_hook
+    };
+    if let Some(hook) = policy_hook {
+        hook(name, entry)?;
+    }
+    // CPython `_find_and_load`: a `None` binding in `sys.modules` is a
+    // deliberate import block — halt with the bootstrap's exact diagnostic
+    // (typed `ModuleNotFoundError` by `raise_import_error_text`) before any
+    // parent import or resolution side effect, so the `except ImportError:`
+    // accelerator fallbacks (bisect/queue/stat/collections/decimal) take
+    // their pure-Python arm instead of receiving `None` as a module.
+    if entry.is_some_and(is_none_binding) {
+        return Err(format!("import of {name} halted; None in sys.modules"));
+    }
+    match (cached, entry) {
+        // Steady state: the cache and `sys.modules` agree.
+        (Some(module), Some(entry)) if module == entry => return Ok(module),
+        // A binding the user inserted or replaced through `sys.modules` wins.
+        (_, Some(entry)) => {
+            let mut state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            state.modules.insert(name_id, entry);
+            drop(state);
+            // J0.3 GlobalIC site: the module behind this name changed.
+            crate::abi::bump_namespace_version();
+            return Ok(entry);
+        }
+        // The user deleted the binding: forget the cache entry and re-import.
+        (Some(_), None) => {
+            let mut state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            state.modules.remove(&name_id);
+            drop(state);
+            // J0.3 GlobalIC site: the module behind this name was dropped.
+            crate::abi::bump_namespace_version();
+        }
+        (None, None) => {}
+    }
+
+    if let Some(module) = resolve_source_importlib_alias_request(name)? {
+        return Ok(module);
+    }
+
+    if let Some(parent) = parent_module_name(name) {
+        import_module_by_name(parent)?;
+        // CPython bootstrap's "crazy side-effects" re-check: executing the
+        // parent may have published this very name into `sys.modules`
+        // (e.g. `collections/__init__.py` registers `collections.abc` as an
+        // alias of `_collections_abc`). Adopt that binding instead of
+        // resolving the child from disk.
+        // A `None` block planted mid-flight by the parent's own body is
+        // "keep loading" in the bootstrap's crazy-side-effects recheck
+        // (`sys.modules.get(name) is not None`) — never an adoptable
+        // binding, and not a halt either.
+        if let Some(entry) = sys_modules_entry(name)?.filter(|&entry| !is_none_binding(entry)) {
+            let mut state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            state.modules.insert(name_id, entry);
+            drop(state);
+            // J0.3 GlobalIC site: a new name -> module binding appeared.
+            crate::abi::bump_namespace_version();
+            return Ok(entry);
+        }
+    }
+
+    if let Some(module) = native_module(name)? {
+        let mut state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules.insert(name_id, module);
+        drop(state);
+        mirror_module_registration(name, module)?;
+        bind_child_to_parent(name, module);
+        return Ok(module);
+    }
+
+    if let Some(path) = find_extension_module(name) {
+        let module = crate::capi::load_extension_module(name, &path)?;
+        // Cache like the native branch: extension exec slots are strictly
+        // once-per-process (numpy guards this loudly), so re-imports must
+        // adopt the registered module instead of re-running dlopen/init.
+        let mut state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.modules.insert(name_id, module);
+        drop(state);
+        mirror_module_registration(name, module)?;
+        bind_child_to_parent(name, module);
+        return Ok(module);
+    }
+
+    if is_unsupported_c_accelerated(name) {
+        return Err(format!("module '{name}' is C-accelerated and unsupported"));
+    }
+
+    if let Some((is_package, body)) = embedded_module(name) {
+        let module = create_module(name, is_package, [])?;
+        bind_child_to_parent(name, module);
+        begin_module_execution(name)?;
+        // Module top-level `try/except` parks the handled exception like any
+        // frame; bracket the body so the park never outlives the import.
+        let handled_guard = crate::abi::HandledExcGuard::enter();
+        // SAFETY: The body is compiled top-level code registered by this
+        // process's AoT image; it follows the NULL-sentinel error contract.
+        let loaded = unsafe { body() };
+        drop(handled_guard);
+        end_module_execution(name);
+        if loaded.is_null() {
+            evict_failed_module(name, module);
+            if pon_err_occurred() {
+                return Err(format!("embedded module '{name}' returned NULL"));
+            }
+            return Err(format!(
+                "embedded module '{name}' returned NULL without setting an exception"
+            ));
+        }
+        return adopt_post_body_sys_modules_replacement(name, module);
+    }
+
+    if let Some(spec) = find_source_module(name) {
+        let module_attrs = source_module_attrs(&spec)?;
+        let Some(source_location) = spec.location.as_ref() else {
+            let module = create_module(name, true, module_attrs)?;
+            bind_child_to_parent(name, module);
+            return Ok(module);
+        };
+        let source_path = source_location.display_path();
+        let source = source_location.read_source()?;
+        let loader = {
+            let state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            state.source_loader
+        };
+        if let Some(loader) = loader {
+            let module = create_module(name, spec.is_package, module_attrs)?;
+            bind_child_to_parent(name, module);
+            begin_module_execution(name)?;
+            // Bracket the module body like any call boundary (see the
+            // embedded-module leg above).
+            let handled_guard = crate::abi::HandledExcGuard::enter();
+            let loaded = loader(SourceModuleRequest {
+                module,
+                name,
+                path: &source_path,
+                source: &source,
+                is_package: spec.is_package,
+            });
+            drop(handled_guard);
+            end_module_execution(name);
+            let loaded = match loaded {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    evict_failed_module(name, module);
+                    return Err(error);
+                }
+            };
+            if loaded.is_null() {
+                evict_failed_module(name, module);
+                if pon_err_occurred() {
+                    return Err(format!("source module '{name}' returned NULL"));
+                }
+                return Err(format!(
+                    "source module '{name}' returned NULL without setting an exception"
+                ));
+            }
+            if let Err(error) = finalize_source_module_identity_attrs(name, loaded, &spec) {
+                evict_failed_module(name, module);
+                return Err(error);
+            }
+            return adopt_post_body_sys_modules_replacement(name, module);
+        }
+
+        let module = load_curated_assignment_module(name, &source, spec.is_package, module_attrs)?;
+        if let Err(error) = finalize_source_module_identity_attrs(name, module, &spec) {
+            evict_failed_module(name, module);
+            return Err(error);
+        }
+        bind_child_to_parent(name, module);
+        return Ok(module);
+    }
+
+    Err(format!("No module named '{name}'"))
+}
+
+fn native_module(name: &str) -> Result<Option<*mut PyObject>, String> {
+    crate::native::make_module(name)
+}
+
+/// Names refused with a precise diagnostic instead of a confusing source-import
+/// failure. Consulted AFTER the native registry, so landing a native module
+/// (one `NATIVE_MODULES` row) shadows its entry here; delete the stale entry in
+/// the same change.
+fn is_unsupported_c_accelerated(name: &str) -> bool {
+    matches!(name, "_json")
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SearchMode {
+    FullName,
+    TailOnly,
+}
+
+struct ModuleRelative {
+    path: PathBuf,
+    zip: String,
+}
+
+fn module_relative(name: &str, mode: SearchMode) -> Option<ModuleRelative> {
+    if name.is_empty() {
+        return None;
+    }
+    let parts = match mode {
+        SearchMode::FullName => name.split('.').collect::<Vec<_>>(),
+        SearchMode::TailOnly => vec![name.rsplit('.').next()?],
+    };
+    if parts.iter().any(|part| part.is_empty()) {
+        return None;
+    }
+    let mut path = PathBuf::new();
+    for part in &parts {
+        path.push(part);
+    }
+    Some(ModuleRelative {
+        path,
+        zip: parts.join("/"),
+    })
+}
+
+#[derive(Clone, Debug)]
+enum SourceLocation {
+    File(PathBuf),
+    Zip { archive: PathBuf, member: String },
+}
+
+impl SourceLocation {
+    fn display_path(&self) -> PathBuf {
+        match self {
+            Self::File(path) => path.clone(),
+            Self::Zip { archive, member } => archive.join(member),
+        }
+    }
+
+    fn filesystem_path(&self) -> Option<PathBuf> {
+        match self {
+            Self::File(path) => Some(path.clone()),
+            Self::Zip { .. } => None,
+        }
+    }
+
+    fn package_search_location(&self) -> PathBuf {
+        match self {
+            Self::File(path) => path
+                .parent()
+                .expect("package __init__.py always has a parent directory")
+                .to_path_buf(),
+            Self::Zip { archive, member } => {
+                let parent = Path::new(member)
+                    .parent()
+                    .filter(|path| !path.as_os_str().is_empty());
+                parent.map_or_else(|| archive.clone(), |path| archive.join(path))
+            }
+        }
+    }
+
+    fn read_source(&self) -> Result<String, String> {
+        let display_path = self.display_path();
+        let filename = display_path.to_string_lossy();
+        let bytes = match self {
+            Self::File(path) => fs::read(path).map_err(|error| {
+                format!("failed to read source module '{}': {error}", path.display())
+            })?,
+            Self::Zip { archive, member } => read_zip_member(archive, member)?,
+        };
+        crate::dynexec::decode_python_source(&bytes, &filename)
+            .map_err(|error| format!("failed to decode source module '{}': {error}", filename))
+    }
+}
+
+struct SourceSpec {
+    location: Option<SourceLocation>,
+    is_package: bool,
+    search_locations: Option<Vec<PathBuf>>,
+}
+
+impl SourceSpec {
+    fn module(location: SourceLocation, is_package: bool) -> Self {
+        let search_locations = is_package.then(|| vec![location.package_search_location()]);
+        Self {
+            location: Some(location),
+            is_package,
+            search_locations,
+        }
+    }
+
+    fn namespace(search_locations: Vec<PathBuf>) -> Self {
+        Self {
+            location: None,
+            is_package: true,
+            search_locations: Some(search_locations),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum PathEntryKind {
+    Directory(PathBuf),
+    Zip { archive: PathBuf, prefix: String },
+}
+
+impl PathEntryKind {
+    fn display_path(&self) -> PathBuf {
+        match self {
+            Self::Directory(path) => path.clone(),
+            Self::Zip { archive, prefix } if prefix.is_empty() => archive.clone(),
+            Self::Zip { archive, prefix } => archive.join(prefix.trim_end_matches('/')),
+        }
+    }
+
+    fn find_source(&self, name: &str, mode: SearchMode) -> Option<SourceSpec> {
+        let relative = module_relative(name, mode)?;
+        match self {
+            Self::Directory(root) => find_directory_source(root, &relative.path),
+            Self::Zip { archive, prefix } => find_zip_source(archive, prefix, &relative.zip),
+        }
+    }
+}
+
+#[repr(C)]
+struct PyPathEntryFinder {
+    ob_base: PyObjectHeader,
+    kind: PathEntryKind,
+}
+
+static PATH_ENTRY_FINDER_TYPE: LazyLock<usize> = LazyLock::new(|| {
+    let mut ty = PyType::new(
+        crate::abi::runtime_type_type().cast_const(),
+        "_pon_source_importer.PathEntryFinder",
+        mem::size_of::<PyPathEntryFinder>(),
+    );
+    ty.tp_base = crate::abi::runtime_global(intern("object"))
+        .map_or(ptr::null_mut(), |object| object.cast::<PyType>());
+    ty.tp_getattro = Some(path_entry_finder_getattro);
+    ty.tp_repr = Some(path_entry_finder_repr);
+    Box::into_raw(Box::new(ty)) as usize
+});
+
+fn path_entry_finder_type() -> *mut PyType {
+    *PATH_ENTRY_FINDER_TYPE as *mut PyType
+}
+
+fn alloc_path_entry_finder(kind: PathEntryKind) -> *mut PyObject {
+    Box::into_raw(Box::new(PyPathEntryFinder {
+        ob_base: PyObjectHeader::new(path_entry_finder_type()),
+        kind,
+    }))
+    .cast::<PyObject>()
+}
+
+unsafe fn as_path_entry_finder<'a>(object: *mut PyObject) -> Option<&'a PyPathEntryFinder> {
+    let object = crate::tag::untag_arg(object);
+    if object.is_null() || unsafe { (*object).ob_type } != path_entry_finder_type() {
+        return None;
+    }
+    Some(unsafe { &*object.cast::<PyPathEntryFinder>() })
+}
+
+type BuiltinFn = unsafe extern "C" fn(*mut *mut PyObject, usize) -> *mut PyObject;
+
+fn bound_method(receiver: *mut PyObject, name: &str, entry: BuiltinFn) -> *mut PyObject {
+    let function = unsafe {
+        crate::abi::pon_make_function(
+            entry as *const u8,
+            crate::native::builtins_mod::VARIADIC_ARITY,
+            intern(name),
+        )
+    };
+    if function.is_null() {
+        return ptr::null_mut();
+    }
+    match crate::types::method::new_bound_method(function, receiver) {
+        Ok(method) => method.cast::<PyObject>(),
+        Err(message) => return_null_with_error(message),
+    }
+}
+
+unsafe extern "C" fn path_entry_finder_getattro(
+    object: *mut PyObject,
+    name: *mut PyObject,
+) -> *mut PyObject {
+    let Some(name_text) =
+        (unsafe { crate::types::type_::unicode_text(crate::tag::untag_arg(name)) })
+    else {
+        return return_null_with_error("attribute name must be str");
+    };
+    let Some(finder) = (unsafe { as_path_entry_finder(object) }) else {
+        return return_null_with_error("path-entry finder receiver is invalid");
+    };
+    match name_text {
+        "path" => match runtime_string(&finder.kind.display_path().to_string_lossy()) {
+            Ok(value) => value,
+            Err(message) => return_null_with_error(message),
+        },
+        "archive" => match &finder.kind {
+            PathEntryKind::Zip { archive, .. } => {
+                match runtime_string(&archive.to_string_lossy()) {
+                    Ok(value) => value,
+                    Err(message) => return_null_with_error(message),
+                }
+            }
+            PathEntryKind::Directory(_) => unsafe { pon_none() },
+        },
+        "prefix" => match &finder.kind {
+            PathEntryKind::Zip { prefix, .. } => match runtime_string(prefix) {
+                Ok(value) => value,
+                Err(message) => return_null_with_error(message),
+            },
+            PathEntryKind::Directory(_) => unsafe { pon_none() },
+        },
+        "find_spec" => bound_method(object, name_text, path_entry_finder_find_spec_method),
+        "iter_modules" => bound_method(object, name_text, path_entry_finder_iter_modules_method),
+        "invalidate_caches" => bound_method(object, name_text, path_entry_finder_invalidate_method),
+        _ => unsafe { crate::abi::exc::pon_raise_attribute_error(object, intern(name_text)) },
+    }
+}
+
+unsafe extern "C" fn path_entry_finder_repr(object: *mut PyObject) -> *mut PyObject {
+    let Some(finder) = (unsafe { as_path_entry_finder(object) }) else {
+        return return_null_with_error("path-entry finder receiver is invalid");
+    };
+    let text = match &finder.kind {
+        PathEntryKind::Directory(path) => format!("<pon FileFinder path='{}'>", path.display()),
+        PathEntryKind::Zip { archive, prefix } => {
+            if prefix.is_empty() {
+                format!("<pon zipimporter archive='{}'>", archive.display())
+            } else {
+                format!(
+                    "<pon zipimporter archive='{}' prefix='{}'>",
+                    archive.display(),
+                    prefix
+                )
+            }
+        }
+    };
+    match runtime_string(&text) {
+        Ok(value) => value,
+        Err(message) => return_null_with_error(message),
+    }
+}
+
+unsafe fn finder_receiver_and_args<'a>(
+    argv: *mut *mut PyObject,
+    argc: usize,
+    method: &str,
+) -> Result<(&'a PyPathEntryFinder, &'a [*mut PyObject]), *mut PyObject> {
+    if argv.is_null() {
+        return Err(return_null_with_error(format!(
+            "PathEntryFinder.{method} received a NULL argv pointer"
+        )));
+    }
+    let args = unsafe { core::slice::from_raw_parts(argv, argc) };
+    let Some((&receiver, rest)) = args.split_first() else {
+        return Err(return_null_with_error(format!(
+            "PathEntryFinder.{method} requires a receiver"
+        )));
+    };
+    let Some(finder) = (unsafe { as_path_entry_finder(receiver) }) else {
+        return Err(return_null_with_error(format!(
+            "PathEntryFinder.{method} receiver is invalid"
+        )));
+    };
+    Ok((finder, rest))
+}
+
+unsafe extern "C" fn path_entry_finder_find_spec_method(
+    argv: *mut *mut PyObject,
+    argc: usize,
+) -> *mut PyObject {
+    let (finder, args) = match unsafe { finder_receiver_and_args(argv, argc, "find_spec") } {
+        Ok(pair) => pair,
+        Err(raised) => return raised,
+    };
+    if args.is_empty() || args.len() > 2 {
+        return return_null_with_error(format!(
+            "find_spec() takes 1 or 2 arguments ({} given)",
+            args.len()
+        ));
+    }
+    let name_object = crate::tag::untag_arg(args[0]);
+    let Some(name) = (unsafe { exact_str_text(name_object) }) else {
+        return return_null_with_error("find_spec() argument 'fullname' must be str");
+    };
+    let Some(spec) = finder.kind.find_source(&name, SearchMode::TailOnly) else {
+        return unsafe { pon_none() };
+    };
+    importlib_spec_from_source_spec(&name, name_object, &spec)
+}
+
+unsafe extern "C" fn path_entry_finder_iter_modules_method(
+    argv: *mut *mut PyObject,
+    argc: usize,
+) -> *mut PyObject {
+    let (finder, args) = match unsafe { finder_receiver_and_args(argv, argc, "iter_modules") } {
+        Ok(pair) => pair,
+        Err(raised) => return raised,
+    };
+    if args.len() > 1 {
+        return return_null_with_error(format!(
+            "iter_modules() takes at most 1 argument ({} given)",
+            args.len()
+        ));
+    }
+    let prefix = if let Some(&prefix) = args.first() {
+        match unsafe { exact_str_text(crate::tag::untag_arg(prefix)) } {
+            Some(text) => text,
+            None => return return_null_with_error("iter_modules() prefix must be str"),
+        }
+    } else {
+        String::new()
+    };
+    let entries = match iter_modules_for_path_entry(&finder.kind, &prefix) {
+        Ok(entries) => entries,
+        Err(message) => return return_null_with_error(message),
+    };
+    list_from_module_iter_entries(&entries)
+}
+
+unsafe extern "C" fn path_entry_finder_invalidate_method(
+    argv: *mut *mut PyObject,
+    argc: usize,
+) -> *mut PyObject {
+    let (_finder, args) = match unsafe { finder_receiver_and_args(argv, argc, "invalidate_caches") }
+    {
+        Ok(pair) => pair,
+        Err(raised) => return raised,
+    };
+    if !args.is_empty() {
+        return return_null_with_error(format!(
+            "invalidate_caches() takes no arguments ({} given)",
+            args.len()
+        ));
+    }
+    unsafe { pon_none() }
+}
+
+pub(crate) unsafe extern "C" fn source_path_hook_entry(
+    argv: *mut *mut PyObject,
+    argc: usize,
+) -> *mut PyObject {
+    if argc != 1 || argv.is_null() {
+        return return_null_with_error(format!(
+            "path_hook() takes exactly one argument ({argc} given)"
+        ));
+    }
+    let path_object = crate::tag::untag_arg(unsafe { *argv });
+    let Some(path_text) = (unsafe { exact_str_text(path_object) }) else {
+        return raise_import_error_text("path hook argument must be str");
+    };
+    match path_entry_kind_for_path(Path::new(&path_text)) {
+        Some(kind) => alloc_path_entry_finder(kind),
+        None => raise_import_error_text(&format!("no pon path-entry finder for {path_text:?}")),
+    }
+}
+
+fn find_source_module(name: &str) -> Option<SourceSpec> {
+    find_source_module_with_mode(name, SearchMode::FullName)
+}
+
+fn find_source_module_with_mode(name: &str, mode: SearchMode) -> Option<SourceSpec> {
+    if name.is_empty() {
+        return None;
+    }
+    let mut namespace_portions = Vec::new();
+    for root in search_roots() {
+        let Some(kind) = path_entry_kind_cached(&root) else {
+            continue;
+        };
+        let Some(spec) = kind.find_source(name, mode) else {
+            continue;
+        };
+        if spec.location.is_some() {
+            return Some(spec);
+        }
+        if let Some(locations) = spec.search_locations {
+            append_unique_roots(&mut namespace_portions, locations);
+        }
+    }
+    (!namespace_portions.is_empty()).then(|| SourceSpec::namespace(namespace_portions))
+}
+
+fn find_source_module_on_path(name: &str, path_entries: &[*mut PyObject]) -> Option<SourceSpec> {
+    let mut namespace_portions = Vec::new();
+    for &entry in path_entries {
+        let Some(text) = (unsafe { exact_str_text(crate::tag::untag_arg(entry)) }) else {
+            continue;
+        };
+        let Some(kind) = path_entry_kind_cached(Path::new(&text)) else {
+            continue;
+        };
+        let Some(spec) = kind.find_source(name, SearchMode::TailOnly) else {
+            continue;
+        };
+        if spec.location.is_some() {
+            return Some(spec);
+        }
+        if let Some(locations) = spec.search_locations {
+            append_unique_roots(&mut namespace_portions, locations);
+        }
+    }
+    (!namespace_portions.is_empty()).then(|| SourceSpec::namespace(namespace_portions))
+}
+
+fn find_directory_source(root: &Path, relative: &Path) -> Option<SourceSpec> {
+    let package_dir = root.join(relative);
+    let package_init = package_dir.join("__init__.py");
+    if package_init.is_file() {
+        return Some(SourceSpec::module(SourceLocation::File(package_init), true));
+    }
+    let mut module_path = root.join(relative);
+    module_path.set_extension("py");
+    if module_path.is_file() {
+        return Some(SourceSpec::module(SourceLocation::File(module_path), false));
+    }
+    if package_dir.is_dir() {
+        return Some(SourceSpec::namespace(vec![package_dir]));
+    }
+    None
+}
+
+fn find_zip_source(archive: &Path, prefix: &str, relative: &str) -> Option<SourceSpec> {
+    let base = zip_member_base(prefix, relative);
+    let mut zip = open_zip_archive(archive).ok()?;
+    let package_init = format!("{base}/__init__.py");
+    if zip.by_name(&package_init).is_ok() {
+        return Some(SourceSpec::module(
+            SourceLocation::Zip {
+                archive: archive.to_path_buf(),
+                member: package_init,
+            },
+            true,
+        ));
+    }
+    let module_member = format!("{base}.py");
+    if zip.by_name(&module_member).is_ok() {
+        return Some(SourceSpec::module(
+            SourceLocation::Zip {
+                archive: archive.to_path_buf(),
+                member: module_member,
+            },
+            false,
+        ));
+    }
+    let namespace_prefix = format!("{}/", base.trim_end_matches('/'));
+    if zip
+        .file_names()
+        .any(|name| name.starts_with(&namespace_prefix))
+    {
+        return Some(SourceSpec::namespace(vec![archive.join(base)]));
+    }
+    None
+}
+
+fn zip_member_base(prefix: &str, relative: &str) -> String {
+    if prefix.is_empty() {
+        relative.to_owned()
+    } else {
+        format!("{prefix}{relative}")
+    }
+}
+
+fn open_zip_archive(path: &Path) -> Result<zip::ZipArchive<fs::File>, String> {
+    let file = fs::File::open(path)
+        .map_err(|error| format!("failed to open zip archive '{}': {error}", path.display()))?;
+    zip::ZipArchive::new(file)
+        .map_err(|error| format!("failed to read zip archive '{}': {error}", path.display()))
+}
+
+fn read_zip_member(archive: &Path, member: &str) -> Result<Vec<u8>, String> {
+    let mut zip = open_zip_archive(archive)?;
+    let mut file = zip.by_name(member).map_err(|error| {
+        format!(
+            "failed to read zip member '{}:{}': {error}",
+            archive.display(),
+            member
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(file.size().try_into().unwrap_or(0));
+    file.read_to_end(&mut bytes).map_err(|error| {
+        format!(
+            "failed to read zip member '{}:{}': {error}",
+            archive.display(),
+            member
+        )
+    })?;
+    Ok(bytes)
+}
+
+fn path_entry_kind_for_path(path: &Path) -> Option<PathEntryKind> {
+    if path.is_dir() {
+        return Some(PathEntryKind::Directory(path.to_path_buf()));
+    }
+    let (archive, prefix) = split_zip_path(path)?;
+    Some(PathEntryKind::Zip { archive, prefix })
+}
+
+fn split_zip_path(path: &Path) -> Option<(PathBuf, String)> {
+    let mut current = path.to_path_buf();
+    let mut prefix_parts = Vec::new();
+    loop {
+        if current.is_file() && open_zip_archive(&current).is_ok() {
+            prefix_parts.reverse();
+            let mut prefix = prefix_parts.join("/");
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            return Some((current, prefix));
+        }
+        let name = current.file_name()?.to_string_lossy().into_owned();
+        prefix_parts.push(name);
+        let parent = current.parent()?;
+        if parent == current {
+            return None;
+        }
+        current = parent.to_path_buf();
+    }
+}
+
+enum ImporterCacheLookup {
+    Hit(Option<PathEntryKind>),
+    Miss,
+}
+
+fn path_entry_kind_cached(path: &Path) -> Option<PathEntryKind> {
+    let path_text = path.to_string_lossy();
+    match path_importer_cache_lookup(&path_text) {
+        ImporterCacheLookup::Hit(kind) => return kind,
+        ImporterCacheLookup::Miss => {}
+    }
+    let kind = path_entry_kind_for_path(path);
+    let value = kind
+        .clone()
+        .map_or_else(|| unsafe { pon_none() }, alloc_path_entry_finder);
+    path_importer_cache_insert(&path_text, value);
+    kind
+}
+
+fn path_importer_cache_dict() -> Option<*mut PyObject> {
+    module_attr(intern("sys"), intern("path_importer_cache"))
+}
+
+fn path_importer_cache_lookup(path: &str) -> ImporterCacheLookup {
+    let Some(dict) = path_importer_cache_dict() else {
+        return ImporterCacheLookup::Miss;
+    };
+    let Ok(key) = runtime_string(path) else {
+        return ImporterCacheLookup::Miss;
+    };
+    let _guard = crate::sync::begin_critical_section(dict);
+    let value = match unsafe { crate::types::dict::dict_get(dict, key) } {
+        Ok(Some(value)) => value,
+        Ok(None) => return ImporterCacheLookup::Miss,
+        Err(_) => return ImporterCacheLookup::Miss,
+    };
+    if is_none_binding(value) {
+        return ImporterCacheLookup::Hit(None);
+    }
+    if let Some(finder) = unsafe { as_path_entry_finder(value) } {
+        return ImporterCacheLookup::Hit(Some(finder.kind.clone()));
+    }
+    ImporterCacheLookup::Hit(None)
+}
+
+fn path_importer_cache_insert(path: &str, value: *mut PyObject) {
+    let Some(dict) = path_importer_cache_dict() else {
+        return;
+    };
+    let Ok(key) = runtime_string(path) else {
+        return;
+    };
+    let _guard = crate::sync::begin_critical_section(dict);
+    let _ = unsafe { crate::types::dict::dict_insert(dict, key, value) };
+}
+
+fn importlib_spec_from_source_spec(
+    name: &str,
+    name_object: *mut PyObject,
+    spec: &SourceSpec,
+) -> *mut PyObject {
+    let loader = match crate::native::imp::make_source_importer_module() {
+        Ok(loader) => loader,
+        Err(message) => return return_null_with_error(message),
+    };
+    let Some(spec_from_loader) =
+        module_attr(intern("importlib._bootstrap"), intern("spec_from_loader"))
+    else {
+        return unsafe { pon_none() };
+    };
+    let mut call_args = [name_object, loader];
+    let spec_object = crate::tag::untag_arg(unsafe {
+        crate::abi::pon_call(spec_from_loader, call_args.as_mut_ptr(), call_args.len())
+    });
+    if spec_object.is_null() {
+        return ptr::null_mut();
+    }
+    if let Some(search_locations) = spec.search_locations.as_deref() {
+        let locations = unsafe {
+            crate::abi::pon_get_attr(
+                spec_object,
+                intern("submodule_search_locations"),
+                ptr::null_mut(),
+            )
+        };
+        if locations.is_null() {
+            return ptr::null_mut();
+        }
+        let locations = crate::tag::untag_arg(locations);
+        for path in search_locations {
+            let path_object = match runtime_string(&path.to_string_lossy()) {
+                Ok(path_object) => path_object,
+                Err(message) => return return_null_with_error(message),
+            };
+            if let Err(message) = crate::abi::seq::list_append_raw(locations, path_object) {
+                return return_null_with_error(message);
+            }
+        }
+    }
+    let _ = name;
+    spec_object
+}
+
+pub(crate) fn source_importer_find_spec(
+    name: &str,
+    name_object: *mut PyObject,
+    path: Option<*mut PyObject>,
+) -> *mut PyObject {
+    let spec = match path
+        .map(crate::tag::untag_arg)
+        .filter(|&path| !is_none_binding(path))
+        .and_then(sequence_items)
+    {
+        Some(path_entries) => find_source_module_on_path(name, &path_entries),
+        None => find_source_module(name),
+    };
+    match spec {
+        Some(spec) => importlib_spec_from_source_spec(name, name_object, &spec),
+        None => unsafe { pon_none() },
+    }
+}
+
+struct ModuleIterEntry {
+    name: String,
+    is_package: bool,
+}
+
+fn iter_modules_for_path_entry(
+    kind: &PathEntryKind,
+    prefix: &str,
+) -> Result<Vec<ModuleIterEntry>, String> {
+    match kind {
+        PathEntryKind::Directory(root) => iter_directory_modules(root, prefix),
+        PathEntryKind::Zip {
+            archive,
+            prefix: archive_prefix,
+        } => iter_zip_modules(archive, archive_prefix, prefix),
+    }
+}
+
+fn iter_directory_modules(root: &Path, prefix: &str) -> Result<Vec<ModuleIterEntry>, String> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(format!(
+                "failed to list import path '{}': {error}",
+                root.display()
+            ));
+        }
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("failed to list import path '{}': {error}", root.display()))?;
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    names.sort();
+    let mut yielded = HashSet::new();
+    let mut out = Vec::new();
+    for filename in names {
+        let path = root.join(&filename);
+        if path.is_dir() && !filename.contains('.') && path.join("__init__.py").is_file() {
+            if yielded.insert(filename.clone()) {
+                out.push(ModuleIterEntry {
+                    name: format!("{prefix}{filename}"),
+                    is_package: true,
+                });
+            }
+            continue;
+        }
+        let Some(stem) = filename.strip_suffix(".py") else {
+            continue;
+        };
+        if stem == "__init__" || stem.contains('.') {
+            continue;
+        }
+        if yielded.insert(stem.to_owned()) {
+            out.push(ModuleIterEntry {
+                name: format!("{prefix}{stem}"),
+                is_package: false,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn iter_zip_modules(
+    archive: &Path,
+    archive_prefix: &str,
+    prefix: &str,
+) -> Result<Vec<ModuleIterEntry>, String> {
+    let zip = open_zip_archive(archive)?;
+    let mut names = zip.file_names().map(str::to_owned).collect::<Vec<_>>();
+    names.sort();
+    let mut yielded = HashSet::new();
+    let mut out = Vec::new();
+    for name in names {
+        let Some(rest) = name.strip_prefix(archive_prefix) else {
+            continue;
+        };
+        if rest.is_empty() {
+            continue;
+        }
+        let parts = rest.split('/').collect::<Vec<_>>();
+        if parts.len() == 2 && parts[1] == "__init__.py" && !parts[0].contains('.') {
+            if yielded.insert(parts[0].to_owned()) {
+                out.push(ModuleIterEntry {
+                    name: format!("{prefix}{}", parts[0]),
+                    is_package: true,
+                });
+            }
+            continue;
+        }
+        if parts.len() != 1 {
+            continue;
+        }
+        let Some(stem) = parts[0].strip_suffix(".py") else {
+            continue;
+        };
+        if stem == "__init__" || stem.contains('.') {
+            continue;
+        }
+        if yielded.insert(stem.to_owned()) {
+            out.push(ModuleIterEntry {
+                name: format!("{prefix}{stem}"),
+                is_package: false,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn list_from_module_iter_entries(entries: &[ModuleIterEntry]) -> *mut PyObject {
+    let mut objects = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let name = match runtime_string(&entry.name) {
+            Ok(name) => name,
+            Err(message) => return return_null_with_error(message),
+        };
+        let is_package =
+            unsafe { crate::abi::number::pon_const_bool(c_int::from(entry.is_package)) };
+        let mut tuple_items = [name, is_package];
+        let tuple = unsafe {
+            crate::abi::seq::pon_build_tuple(tuple_items.as_mut_ptr(), tuple_items.len())
+        };
+        if tuple.is_null() {
+            return ptr::null_mut();
+        }
+        objects.push(tuple);
+    }
+    unsafe {
+        crate::abi::seq::pon_build_list(
+            if objects.is_empty() {
+                ptr::null_mut()
+            } else {
+                objects.as_mut_ptr()
+            },
+            objects.len(),
+        )
+    }
+}
+
+fn find_extension_module(name: &str) -> Option<PathBuf> {
+    if name.is_empty() {
+        return None;
+    }
+    let mut relative = PathBuf::new();
+    for part in name.split('.') {
+        relative.push(part);
+    }
+    for root in search_roots() {
+        for suffix in crate::capi::extension_suffixes() {
+            let mut path = root.join(&relative).into_os_string();
+            path.push(suffix);
+            let path = PathBuf::from(path);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// Environment override for the vendored-stdlib search root (HANDOFF J0.4).
+/// When set it is authoritative: the value is used as the stdlib root if that
+/// directory exists, and the built-in locations are not consulted.
+pub const STDLIB_PATH_ENV_VAR: &str = "PON_STDLIB_PATH";
+
+/// Workspace-relative location of the vendored CPython `Lib/` tree (L0 lands
+/// the real vendoring; the directory currently holds a stub).
+const VENDORED_STDLIB_SUFFIX: &str = "pon-conformance/vendor/cpython-3.14/Lib";
+
+fn search_roots() -> Vec<PathBuf> {
+    let roots = compute_search_roots();
+    if ensure_pth_import_lines_processed(&roots) {
+        compute_search_roots()
+    } else {
+        roots
+    }
+}
+
+fn compute_search_roots() -> Vec<PathBuf> {
+    let defaults = default_search_roots();
+    let mut roots = Vec::with_capacity(defaults.len());
+    append_unique_roots(&mut roots, live_sys_path_extra_roots(&defaults));
+    append_unique_roots(&mut roots, defaults);
+    roots
+}
+
+fn default_search_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    // PYTHONPATH last of the env trio: pon-specific variables win, but
+    // build drivers that only know CPython's contract (meson/ninja export
+    // PYTHONPATH for generator scripts) still resolve their packages.
+    for var in ["PONPATH", "PON_IMPORT_PATH", "PYTHONPATH"] {
+        if let Ok(extra) = env::var(var) {
+            for root in env::split_paths(&extra) {
+                append_import_root(&mut roots, root);
+            }
+        }
+    }
+    if let Ok(cwd) = env::current_dir() {
+        append_import_root(&mut roots, cwd.clone());
+        append_import_root(
+            &mut roots,
+            cwd.join(".pon").join("packages").join("site-packages"),
+        );
+        append_import_root(&mut roots, cwd.join("pon-conformance").join("corpus"));
+    }
+    if let Some(stdlib) = vendored_stdlib_root() {
+        append_import_root(&mut roots, stdlib);
+    }
+    roots
+}
+
+fn live_sys_path_extra_roots(default_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let Some(path) = module_attr(intern("sys"), intern("path")) else {
+        return Vec::new();
+    };
+    let Some(items) = sequence_items(path) else {
+        return Vec::new();
+    };
+    let blocked_vendor_roots = env::var_os(STDLIB_PATH_ENV_VAR)
+        .is_some()
+        .then(vendored_stdlib_candidates);
+
+    let mut roots = Vec::new();
+    for item in items {
+        // SAFETY: The snapshot contains live list/tuple elements; non-exact
+        // strings are ignored rather than dispatched through Python code while
+        // resolving imports.
+        let Some(text) = (unsafe { exact_str_text(item) }) else {
+            continue;
+        };
+        if text.is_empty() {
+            continue;
+        }
+        let root = PathBuf::from(text);
+        if default_roots.contains(&root) {
+            continue;
+        }
+        if blocked_vendor_roots
+            .as_ref()
+            .is_some_and(|vendor_roots| vendor_roots.contains(&root))
+        {
+            continue;
+        }
+        append_import_root(&mut roots, root);
+    }
+    roots
+}
+
+fn append_unique_roots(roots: &mut Vec<PathBuf>, candidates: impl IntoIterator<Item = PathBuf>) {
+    for root in candidates {
+        append_unique_root(roots, root);
+    }
+}
+
+fn append_unique_root(roots: &mut Vec<PathBuf>, root: PathBuf) {
+    if !roots.contains(&root) {
+        roots.push(root);
+    }
+}
+
+fn append_import_root(roots: &mut Vec<PathBuf>, root: PathBuf) {
+    append_unique_root(roots, root.clone());
+    if is_site_packages_root(&root) {
+        append_pth_plain_paths(roots, &root);
+    }
+}
+
+fn is_site_packages_root(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "site-packages")
+}
+
+fn pth_files(site_dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(site_dir) else {
+        return Vec::new();
+    };
+    let mut files = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "pth"))
+        .collect::<Vec<_>>();
+    files.sort();
+    files
+}
+
+fn append_pth_plain_paths(roots: &mut Vec<PathBuf>, site_dir: &Path) {
+    for file in pth_files(site_dir) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for raw_line in text.lines() {
+            let line = raw_line.trim_end_matches('\r');
+            if line.is_empty()
+                || line.starts_with('#')
+                || line.starts_with("import ")
+                || line.starts_with("import\t")
+            {
+                continue;
+            }
+            let candidate = site_dir.join(line);
+            if candidate.exists() {
+                append_unique_root(roots, candidate);
+            }
+        }
+    }
+}
+
+static PTH_IMPORT_LINES_DONE: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+static PTH_IMPORT_LINES_RUNNING: AtomicBool = AtomicBool::new(false);
+
+fn ensure_pth_import_lines_processed(roots: &[PathBuf]) -> bool {
+    if PTH_IMPORT_LINES_RUNNING.swap(true, Ordering::AcqRel) {
+        return false;
+    }
+    struct RunningGuard;
+    impl Drop for RunningGuard {
+        fn drop(&mut self) {
+            PTH_IMPORT_LINES_RUNNING.store(false, Ordering::Release);
+        }
+    }
+    let _guard = RunningGuard;
+    if module_attr(intern("sys"), intern("path")).is_none() {
+        return false;
+    }
+    let mut executed_any = false;
+    for root in roots {
+        if !is_site_packages_root(root) {
+            continue;
+        }
+        let key = fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+        {
+            let mut done = PTH_IMPORT_LINES_DONE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if !done.insert(key) {
+                continue;
+            }
+        }
+        executed_any |= execute_pth_import_lines(root);
+    }
+    executed_any
+}
+
+fn execute_pth_import_lines(site_dir: &Path) -> bool {
+    let mut executed_any = false;
+    for file in pth_files(site_dir) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for raw_line in text.lines() {
+            let line = raw_line.trim_end_matches('\r');
+            if !(line.starts_with("import ") || line.starts_with("import\t")) {
+                continue;
+            }
+            executed_any = true;
+            let source = format!("{line}\n");
+            let source_object = match runtime_string(&source) {
+                Ok(object) => object,
+                Err(_) => continue,
+            };
+            let globals = unsafe { crate::abi::map::pon_build_map(ptr::null_mut(), 0) };
+            if globals.is_null() {
+                continue;
+            }
+            let mut argv = [source_object, globals, globals];
+            let result = unsafe { crate::dynexec::builtin_exec(argv.as_mut_ptr(), argv.len()) };
+            if result.is_null() && pon_err_occurred() {
+                pon_err_clear();
+            }
+        }
+    }
+    executed_any
+}
+
+/// Processes executable `.pth` lines for already-discovered site-packages
+/// roots. The CLI calls this once after runtime init so `import ...` lines have
+/// CPython's startup-time side effects before user code begins; the import
+/// resolver also calls the same guarded path lazily for embeddings that do not
+/// use the CLI boot helper.
+pub fn process_site_pth_files() {
+    let roots = compute_search_roots();
+    let _ = ensure_pth_import_lines_processed(&roots);
+}
+
+/// Resolves the vendored-stdlib root, always LAST in import resolution order
+/// (native curated -> installed packages -> source roots -> vendored stdlib).
+///
+/// `PON_STDLIB_PATH` is authoritative when set: a missing directory there
+/// disables the root rather than falling back. Otherwise the workspace vendor
+/// tree is located from this crate's compile-time manifest path, then relative
+/// to the current directory. An absent directory is silently skipped so
+/// deployments without the vendor tree keep working.
+fn vendored_stdlib_root() -> Option<PathBuf> {
+    if let Ok(value) = env::var(STDLIB_PATH_ENV_VAR) {
+        if value.is_empty() {
+            return None;
+        }
+        let root = PathBuf::from(value);
+        return root.is_dir().then_some(root);
+    }
+    vendored_stdlib_candidates()
+        .into_iter()
+        .find(|root| root.is_dir())
+}
+
+fn vendored_stdlib_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::with_capacity(2);
+    if let Some(workspace) = Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
+        candidates.push(workspace.join(VENDORED_STDLIB_SUFFIX));
+    }
+    if let Ok(cwd) = env::current_dir() {
+        candidates.push(cwd.join(VENDORED_STDLIB_SUFFIX));
+    }
+    candidates
+}
+
+/// Ordered source-import roots the runtime consults for pure-Python modules:
+/// live `sys.path` insertions, `PONPATH`/`PON_IMPORT_PATH` entries (the CLI
+/// prepends the script directory), current directory, installed packages, the
+/// conformance corpus, then the vendored stdlib last.
+/// Exposed so AoT reachability resolves static imports with exactly the
+/// runtime's search order and embeds what the runtime would otherwise have to
+/// source-load.
+#[must_use]
+pub fn source_search_roots() -> Vec<PathBuf> {
+    search_roots()
+}
+
+/// True when `import name` never reaches source-root resolution at runtime
+/// because the curated native registry or the C-accelerated refusal list
+/// serves it first. AoT reachability consults this so a same-named `.py` on a
+/// source root is never embedded: the runtime would never execute it.
+/// Installed-package fixtures also shadow source files but depend on process
+/// environment, so they are deliberately not reflected here; a unit they
+/// shadow is dead weight in the binary, not a behavior change.
+#[must_use]
+pub fn import_shadowed_from_source(name: &str) -> bool {
+    crate::native::is_native_module(name) || is_unsupported_c_accelerated(name)
+}
+
+/// Package flag for a name pon's post-registry machinery would import:
+/// source-recompiled extensions, embedded AoT bodies, then on-disk source roots
+/// — exactly `resolve_module_by_name`'s order past the curated registry.
+/// `None` means "not servable": curated-native and refused C-accelerated names
+/// without a Pon extension file are excluded (`BuiltinImporter` already claims
+/// the former through `_imp.is_builtin`; the latter must keep raising CPython's
+/// `ModuleNotFoundError` when routed through `importlib`). Claim predicate of
+/// the `_pon_source_importer` meta-path finder (`crate::native::imp`).
+pub(crate) fn source_module_package_flag(name: &str) -> Option<bool> {
+    if crate::native::is_native_module(name) {
+        return None;
+    }
+    if find_extension_module(name).is_some() {
+        return Some(false);
+    }
+    if is_unsupported_c_accelerated(name) {
+        return None;
+    }
+    if let Some((is_package, _)) = embedded_module(name) {
+        return Some(is_package);
+    }
+    find_source_module(name).map(|spec| spec.is_package)
+}
+
+pub(crate) fn source_module_search_locations(name: &str) -> Option<Vec<PathBuf>> {
+    if crate::native::is_native_module(name)
+        || find_extension_module(name).is_some()
+        || is_unsupported_c_accelerated(name)
+    {
+        return None;
+    }
+    find_source_module(name).and_then(|spec| spec.search_locations)
+}
+
+/// Filesystem source file backing `name` (`__init__.py` for packages):
+/// CPython `SourceFileLoader.path`, consumed by
+/// `_pon_source_importer.get_resource_reader` to root an
+/// `importlib.readers.FileReader`.  Zip members are deliberately excluded:
+/// pon's zip importer is source-only and has no filesystem directory to hand
+/// to `FileReader`. `None` also covers native, extension, embedded AoT, and
+/// namespace portions.
+pub(crate) fn source_module_file_path(name: &str) -> Option<PathBuf> {
+    if crate::native::is_native_module(name)
+        || find_extension_module(name).is_some()
+        || is_unsupported_c_accelerated(name)
+        || embedded_module(name).is_some()
+    {
+        return None;
+    }
+    find_source_module(name).and_then(|spec| {
+        spec.location
+            .and_then(|location| location.filesystem_path())
+    })
+}
+
+/// Imports `name` and returns exactly that module — never the root-package
+/// remap `pon_import_name` applies for empty fromlists — raising the same
+/// typed import failure on error. Serves loader entry points
+/// (`_pon_source_importer.create_module`) that must hand
+/// `importlib._bootstrap._load` the named module itself, not its package
+/// root.
+pub(crate) fn import_named_module_raw(name: &str) -> *mut PyObject {
+    match import_module_by_name(name) {
+        Ok(module) => module,
+        Err(message) => raise_import_error_text(&message),
+    }
+}
+
+fn load_curated_assignment_module(
+    name: &str,
+    source: &str,
+    is_package: bool,
+    mut attrs: Vec<(u32, *mut PyObject)>,
+) -> Result<*mut PyObject, String> {
+    for line in source.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((lhs, rhs)) = line.split_once('=') else {
+            return Err(format!(
+                "pure-Python module '{name}' requires the host JIT loader for unsupported statement: \
+				 {line}"
+            ));
+        };
+        let lhs = lhs.trim();
+        if !is_identifier(lhs) {
+            return Err(format!(
+                "unsupported assignment target '{lhs}' in pure-Python module '{name}'"
+            ));
+        }
+        let value = parse_curated_literal(name, is_package, rhs.trim())?;
+        attrs.push((intern(lhs), value));
+    }
+    create_module(name, is_package, attrs)
+}
+
+fn create_module(
+    name: &str,
+    is_package: bool,
+    attrs: impl IntoIterator<Item = (u32, *mut PyObject)>,
+) -> Result<*mut PyObject, String> {
+    let name_id = intern(name);
+    let mut attr_map = HashMap::new();
+    for (key, value) in attrs {
+        if value.is_null() {
+            let attr = resolve(key).unwrap_or_else(|| format!("<interned:{key}>"));
+            return Err(format!("module attribute '{attr}' for '{name}' is NULL"));
+        }
+        // Native module factories may also re-export pure-Python functions
+        // imported from source modules (`_colorize.dataclass` is one example).
+        // Only Rust carriers lack Phase-B function metadata; mark and stamp
+        // those as CPython `builtin_function_or_method` equivalents without
+        // stealing user functions from their defining module.
+        if crate::types::function::is_function_object(value)
+            && crate::types::function::function_record(value).is_none()
+        {
+            crate::types::function::mark_native_function(value);
+        }
+        if crate::types::function::is_native_function(value) {
+            crate::types::function::set_function_module(value, name_id);
+        }
+        attr_map.insert(key, value);
+    }
+
+    let name_object = runtime_string(name)?;
+    let package = module_package_name(name, is_package);
+    let package_object = runtime_string(&package)?;
+    attr_map.insert(intern("__name__"), name_object);
+    attr_map.insert(intern("__package__"), package_object);
+    // CPython binds `__doc__ = None` at module birth; the compiled body
+    // rebinds it when a docstring executes.  pon codegen does not thread
+    // docstrings, so the value stays None (accepted divergence) — but the
+    // BINDING must exist: module-level `if __doc__ is not None:` (pdb.py)
+    // is a NameError without it.  Native modules that pass an explicit
+    // `__doc__` keep theirs.
+    attr_map
+        .entry(intern("__doc__"))
+        .or_insert_with(|| unsafe { pon_none() });
+    // CPython modules ALWAYS expose `__loader__`/`__spec__` (None until the
+    // import machinery fills them); the identity backfill upgrades None to a
+    // real ModuleSpec once `importlib._bootstrap` is live.  meson reads
+    // `mesonbuild.__spec__` from its `--internal` script runner.
+    attr_map
+        .entry(intern("__loader__"))
+        .or_insert_with(|| unsafe { pon_none() });
+    attr_map
+        .entry(intern("__spec__"))
+        .or_insert_with(|| unsafe { pon_none() });
+
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let object = Box::new(PyModuleObject {
+        ob_base: PyObjectHeader::new(state.module_type),
+        name: name_id,
+        registry_key: name_id,
+        attrs: attr_map,
+    });
+    let object = as_object_ptr(Box::into_raw(object));
+    state.modules.insert(name_id, object);
+    drop(state);
+    mirror_module_registration(name, object)?;
+    // J0.3 GlobalIC site: a (re)installed module can replace the module whose
+    // attrs overlay `pon_load_global` currently consults.
+    crate::abi::bump_namespace_version();
+    Ok(object)
+}
+
+/// Sequence source for unique synthetic-module registry identities.
+static SYNTHETIC_MODULE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Synthetic modules created by calling the module type directly
+/// (`types.ModuleType(name, doc=None)`), keyed by their unique
+/// [`PyModuleObject::registry_key`].
+///
+/// These are NOT import-system modules: they never enter the import cache or
+/// `sys.modules`, so `import name` never observes them and two same-named
+/// instances stay distinct.  The unique key keeps the dynexec globals
+/// registry (`module.__dict__` / `dir(module)` / attr-store mirroring) and
+/// the GC root walk per-INSTANCE: a synthetic module named like a real one
+/// (`types.ModuleType('os')`) must never read or pollute the real module's
+/// namespace dict.  Objects are immortal leaked boxes exactly like
+/// [`create_module`] products, stored as raw addresses (`usize`) so the
+/// static is `Sync`, matching the dynexec `GLOBALS_REGISTRY` convention.
+/// The mutex is held only for short non-reentrant sections while no Python
+/// executes, and never while `IMPORT_STATE`'s lock is held
+/// (deadlock-freedom mirrors the [`gc_held_roots`] contract).
+static SYNTHETIC_MODULES: LazyLock<Mutex<HashMap<u32, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static TRUSTED_NATIVE_MODULES: LazyLock<Mutex<HashSet<usize>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Registers an immortal native module whose namespace must be traced while
+/// it is outside the import cache.
+///
+/// # Safety
+/// `module` must be a live `PyModuleObject` allocated by the native module
+/// factory and remain immortal for the process lifetime.
+pub unsafe fn register_trusted_native_module(module: *mut PyObject) {
+    if !module.is_null() {
+        TRUSTED_NATIVE_MODULES
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .insert(module as usize);
+    }
+}
+
+/// Hidden executable module namespace for dynamic `eval`/`exec` globals dicts.
+///
+/// These backing modules are deliberately absent from the import cache and
+/// `sys.modules`; they exist only so compiled dynamic code has a persistent
+/// module object for global resolution and function `__globals__` identity.
+pub(crate) fn create_dynexec_backing_module(name: &str) -> Result<u32, String> {
+    let name_id = intern(name);
+    let module_type = {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.module_type
+    };
+    {
+        let synthetic = SYNTHETIC_MODULES
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if synthetic.contains_key(&name_id) {
+            return Ok(name_id);
+        }
+    }
+    let object = Box::new(PyModuleObject {
+        ob_base: PyObjectHeader::new(module_type),
+        name: name_id,
+        registry_key: name_id,
+        attrs: HashMap::new(),
+    });
+    let object = as_object_ptr(Box::into_raw(object));
+    let mut synthetic = SYNTHETIC_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    synthetic.insert(name_id, object as usize);
+    Ok(name_id)
+}
+
+/// `type(sys)(name, doc=None)`: CPython `module.__new__` + `module.__init__`
+/// fused into one construction pass, per this runtime's builtin-constructor
+/// convention (`type_call` skips the `__init__` leg when `tp_new` is not
+/// `type_new`).
+///
+/// Builds the real `PyModuleObject` layout with a live attrs map seeded like
+/// CPython `module.__init__`: `__name__`, `__doc__`, and
+/// `__package__`/`__loader__`/`__spec__` all `None`.
+///
+/// `cls` is honored in the object header so `type(m)` answers correctly, but
+/// attr dispatch (`as_module`) recognizes only the exact module type:
+/// `ModuleType` subclasses construct safely and raise on attr access instead
+/// of hitting UB (subclass attr support is out of scope).
+unsafe extern "C" fn module_tp_new(
+    cls: *mut PyType,
+    args: *mut PyObject,
+    kwargs: *mut PyObject,
+) -> *mut PyObject {
+    if cls.is_null() {
+        return return_null_with_error("cannot instantiate NULL module type");
+    }
+    let positional = match unsafe { crate::types::type_::positional_args_from_object(args) } {
+        Ok(positional) => positional,
+        Err(message) => return return_null_with_error(message),
+    };
+    if positional.len() > 2 {
+        let message = format!(
+            "module() takes at most 2 arguments ({} given)",
+            positional.len()
+        );
+        return unsafe { pon_raise_type_error(message.as_ptr(), message.len()) };
+    }
+    let mut name_value = positional.first().copied().unwrap_or(ptr::null_mut());
+    let mut doc_value = positional.get(1).copied().unwrap_or(ptr::null_mut());
+    if !kwargs.is_null() {
+        // `call_type_with_keywords` materializes keywords as a real dict.
+        let entries = match unsafe { crate::types::dict::dict_entries_snapshot(kwargs) } {
+            Ok(entries) => entries,
+            Err(message) => return return_null_with_error(message),
+        };
+        for entry in entries {
+            let key = crate::tag::untag_arg(entry.key);
+            // Type-checked read: keyword keys are user-controlled objects, so
+            // the identity-attr fast reader below must not touch them.
+            let (slot, position) = match unsafe { crate::types::type_::unicode_text(key) } {
+                Some("name") => (&mut name_value, 1usize),
+                Some("doc") => (&mut doc_value, 2usize),
+                Some(other) => {
+                    let message = format!("module() got an unexpected keyword argument '{other}'");
+                    return unsafe { pon_raise_type_error(message.as_ptr(), message.len()) };
+                }
+                None => return return_null_with_error("module() keywords must be strings"),
+            };
+            if !slot.is_null() {
+                let keyword = if position == 1 { "name" } else { "doc" };
+                let message = format!(
+                    "argument for module() given by name ('{keyword}') and position ({position})"
+                );
+                return unsafe { pon_raise_type_error(message.as_ptr(), message.len()) };
+            }
+            *slot = entry.value;
+        }
+    }
+    if name_value.is_null() {
+        const MESSAGE: &str = "module() missing required argument 'name' (pos 1)";
+        return unsafe { pon_raise_type_error(MESSAGE.as_ptr(), MESSAGE.len()) };
+    }
+    let name_object = crate::tag::untag_arg(name_value);
+    // Type-checked read (the local `unicode_text` trusts module-identity
+    // layout and would misread a non-str user argument).
+    let Some(name_text) = (unsafe { crate::types::type_::unicode_text(name_object) }) else {
+        let kind = unsafe { crate::types::dict::type_name(name_object) }.unwrap_or("object");
+        let message = format!("module() argument 'name' must be str, not {kind}");
+        return unsafe { pon_raise_type_error(message.as_ptr(), message.len()) };
+    };
+
+    // CPython `module.__init__` namespace seed.
+    let none = unsafe { pon_none() };
+    let doc = if doc_value.is_null() { none } else { doc_value };
+    let mut attrs = HashMap::new();
+    attrs.insert(intern("__name__"), name_object);
+    attrs.insert(intern("__doc__"), doc);
+    attrs.insert(intern("__package__"), none);
+    attrs.insert(intern("__loader__"), none);
+    attrs.insert(intern("__spec__"), none);
+
+    let sequence = SYNTHETIC_MODULE_SEQ.fetch_add(1, Ordering::Relaxed);
+    // NUL prefix: importable module names cannot contain NUL, so the key
+    // never collides with a real module's registry identity.
+    let registry_key = intern(&format!("\0module-instance:{sequence}:{name_text}"));
+    let object = Box::new(PyModuleObject {
+        ob_base: PyObjectHeader::new(cls),
+        name: intern(name_text),
+        registry_key,
+        attrs,
+    });
+    let object = as_object_ptr(Box::into_raw(object));
+    let mut synthetic = SYNTHETIC_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    synthetic.insert(registry_key, object as usize);
+    object
+}
+
+fn runtime_string(value: &str) -> Result<*mut PyObject, String> {
+    // SAFETY: `pon_const_str` returns NULL with a thread-state error on failure.
+    let object = unsafe { pon_const_str(value.as_ptr(), value.len()) };
+    (!object.is_null())
+        .then_some(object)
+        .ok_or_else(|| format!("failed to allocate string literal '{value}'"))
+}
+
+fn runtime_path_list(paths: &[PathBuf]) -> Result<*mut PyObject, String> {
+    let mut items = Vec::with_capacity(paths.len());
+    for path in paths {
+        let text = path.to_string_lossy();
+        items.push(runtime_string(&text)?);
+    }
+    let list = unsafe {
+        crate::abi::seq::pon_build_list(
+            if items.is_empty() {
+                ptr::null_mut()
+            } else {
+                items.as_mut_ptr()
+            },
+            items.len(),
+        )
+    };
+    (!list.is_null())
+        .then_some(list)
+        .ok_or_else(|| "failed to allocate path list".to_owned())
+}
+
+fn source_module_attrs(spec: &SourceSpec) -> Result<Vec<(u32, *mut PyObject)>, String> {
+    let mut attrs = Vec::with_capacity(2);
+    if let Some(location) = spec.location.as_ref() {
+        let path = location.display_path();
+        let file_path = location
+            .filesystem_path()
+            .and_then(|path| std::path::absolute(&path).ok())
+            .unwrap_or(path);
+        attrs.push((
+            intern("__file__"),
+            runtime_string(&file_path.to_string_lossy())?,
+        ));
+    } else {
+        attrs.push((intern("__file__"), unsafe { pon_none() }));
+    }
+    if let Some(search_locations) = spec.search_locations.as_deref() {
+        attrs.push((intern("__path__"), runtime_path_list(search_locations)?));
+    }
+    Ok(attrs)
+}
+/// Backfills `__loader__`/`__spec__` for concrete source modules once
+/// `importlib._bootstrap` is itself live.  pon cannot ask the bootstrap to
+/// seed these attrs before executing `importlib` and `importlib._bootstrap`
+/// because those modules are the bootstrap; doing the `_spec_from_module`
+/// pass immediately after body execution restores the CPython-visible surface
+/// (`importlib.__spec__`, fresh-import helpers) without replaying the
+/// namespace-package lane.
+fn finalize_source_module_identity_attrs(
+    name: &str,
+    module: *mut PyObject,
+    spec: &SourceSpec,
+) -> Result<(), String> {
+    if spec.location.is_none() {
+        return Ok(());
+    }
+    let Some(module_ptr) = as_module(module) else {
+        return Ok(());
+    };
+    let none = unsafe { pon_none() };
+    let existing_loader = unsafe { (&*module_ptr).attrs.get(&intern("__loader__")).copied() }
+        .filter(|&value| value != none);
+    let needs_loader = existing_loader.is_none();
+    // A present-but-None spec still needs the backfill: module creation
+    // seeds None before the bootstrap can build real specs.
+    let needs_spec = unsafe { (&*module_ptr).attrs.get(&intern("__spec__")).copied() }
+        .is_none_or(|value| value == none);
+    if !needs_loader && !needs_spec {
+        return Ok(());
+    }
+    let Some(spec_from_module) =
+        module_attr(intern("importlib._bootstrap"), intern("_spec_from_module"))
+    else {
+        return Ok(());
+    };
+    let loader = match existing_loader {
+        Some(loader) => loader,
+        None => crate::native::imp::make_source_importer_module()?,
+    };
+    let mut argv = [module, loader];
+    let spec_object = crate::tag::untag_arg(unsafe {
+        crate::abi::pon_call(spec_from_module, argv.as_mut_ptr(), argv.len())
+    });
+    if spec_object.is_null() {
+        return Err(format!(
+            "failed to build __spec__ for source module '{name}'"
+        ));
+    }
+    let mut mutated = false;
+    unsafe {
+        let attrs = &mut (*module_ptr).attrs;
+        if needs_loader {
+            attrs.insert(intern("__loader__"), loader);
+            mutated = true;
+        }
+        if needs_spec {
+            attrs.insert(intern("__spec__"), spec_object);
+            mutated = true;
+        }
+    }
+    if mutated {
+        crate::abi::bump_namespace_version();
+    }
+    Ok(())
+}
+
+fn parent_module_name(name: &str) -> Option<&str> {
+    name.rsplit_once('.').map(|(parent, _)| parent)
+}
+
+fn module_package_name(name: &str, is_package: bool) -> String {
+    if name == "__main__" {
+        String::new()
+    } else if is_package {
+        name.to_owned()
+    } else {
+        parent_module_name(name).unwrap_or_default().to_owned()
+    }
+}
+
+fn module_from_object_locked(
+    state: &ImportState,
+    object: *mut PyObject,
+) -> Option<*mut PyModuleObject> {
+    if object.is_null() {
+        return None;
+    }
+    // SAFETY: Non-NULL boxed values begin with `PyObjectHeader`.
+    let is_module = unsafe { (*object).ob_type == state.module_type };
+    is_module.then_some(object.cast::<PyModuleObject>())
+}
+
+fn bind_child_to_parent(name: &str, module: *mut PyObject) {
+    let Some((parent_name, child_name)) = name.rsplit_once('.') else {
+        return;
+    };
+    let parent_id = intern(parent_name);
+    let child_id = intern(child_name);
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let Some(parent) = state.modules.get(&parent_id).copied() else {
+        return;
+    };
+    let Some(parent) = module_from_object_locked(&state, parent) else {
+        return;
+    };
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    unsafe {
+        (&mut *parent).attrs.insert(child_id, module);
+    }
+    // J0.3 GlobalIC site: parent-module attr overlay insert.
+    crate::abi::bump_namespace_version();
+}
+
+fn adopt_post_body_sys_modules_replacement(
+    name: &str,
+    module: *mut PyObject,
+) -> Result<*mut PyObject, String> {
+    let Some(entry) = sys_modules_entry(name)? else {
+        return Ok(module);
+    };
+    if entry == module || is_none_binding(entry) {
+        return Ok(module);
+    }
+    let name_id = intern(name);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.insert(name_id, entry);
+    drop(state);
+    bind_child_to_parent(name, entry);
+    // J0.3 GlobalIC site: the module behind this name changed after body exec.
+    crate::abi::bump_namespace_version();
+    Ok(entry)
+}
+
+/// Unwinds the registration of a module whose body failed to execute.
+///
+/// CPython's `importlib._bootstrap._load` runs `del sys.modules[spec.name]`
+/// when a module body raises, so a later import of the same name retries
+/// from scratch (and re-raises) instead of observing the half-initialized
+/// module. asyncio depends on exactly that: `base_events`' guarded
+/// `import ssl` fails and is caught, and `sslproto`'s follow-up
+/// `import ssl` must fail the same way — a cached corpse would flunk its
+/// `if ssl is not None:` guard and read missing attributes.  The
+/// parent-attr binding pon makes before execution (cycle support) is
+/// unwound with the cache entry; extra names the failing body itself
+/// published into `sys.modules` are kept, matching CPython.
+fn evict_failed_module(name: &str, module: *mut PyObject) {
+    let name_id = intern(name);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.modules.remove(&name_id);
+    let dict = state.modules_dict;
+    // Reverse of `bind_child_to_parent`, under the same lock; only a binding
+    // still pointing at the failed module is removed.
+    if let Some((parent_name, child_name)) = name.rsplit_once('.') {
+        let parent_id = intern(parent_name);
+        let child_id = intern(child_name);
+        if let Some(parent) = state.modules.get(&parent_id).copied()
+            && let Some(parent) = module_from_object_locked(&state, parent)
+        {
+            // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+            let attrs = unsafe { &mut (*parent).attrs };
+            if attrs.get(&child_id).copied() == Some(module) {
+                attrs.remove(&child_id);
+            }
+        }
+    }
+    drop(state);
+    // Dict mutation takes its own critical section and must never nest
+    // inside `IMPORT_STATE` (see `mirror_module_registration`).
+    if !dict.is_null()
+        && let Ok(key) = runtime_string(name)
+    {
+        let _guard = crate::sync::begin_critical_section(dict);
+        // SAFETY: `dict` is an exact runtime dict; `key` is a live string.
+        let _ = unsafe { crate::types::dict::dict_remove(dict, key) };
+    }
+    // J0.3 GlobalIC site: the name -> module binding disappeared.
+    crate::abi::bump_namespace_version();
+}
+
+/// Synthetic `types.ModuleType(...)` instance for `name_id` (its unique
+/// registry key), or `None`.  Locked lookup only — the SYNTHETIC_MODULES
+/// mutex must never be taken while `IMPORT_STATE` is held.
+fn synthetic_module_object(name_id: u32) -> Option<*mut PyObject> {
+    let synthetic = SYNTHETIC_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    synthetic
+        .get(&name_id)
+        .copied()
+        .map(|address| address as *mut PyObject)
+}
+
+pub fn begin_module_execution(name: &str) -> Result<(), String> {
+    let name_id = intern(name);
+    // Captured before taking the import lock: the depth belongs to the
+    // executing thread's compiled-call stack.
+    let floor = crate::abi::current_function_stack_depth();
+    // Synthetic modules execute too: `exec(code, mod.__dict__)` on a
+    // `types.ModuleType(...)` instance (importlib.util's
+    // `spec.loader.exec_module`) switches the active-module context to the
+    // synthetic instance so its global stores land on that object.
+    // Resolved BEFORE the import lock per the lock-order contract.
+    let synthetic = synthetic_module_object(name_id);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let Some(module_object) = state.modules.get(&name_id).copied().or(synthetic) else {
+        return Err(format!("cannot execute uncached module '{name}'"));
+    };
+    state.current_modules.push(name_id);
+    state.current_module_objects.push(module_object);
+    state.current_module_floors.push(floor);
+    // J0.3 GlobalIC site: context switch changes which attr overlay
+    // `pon_load_global` consults.
+    crate::abi::bump_namespace_version();
+    Ok(())
+}
+
+pub fn end_module_execution(name: &str) {
+    let name_id = intern(name);
+    let mut state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if state.current_modules.last().copied() == Some(name_id) {
+        state.current_modules.pop();
+        state.current_module_floors.pop();
+        state.current_module_objects.pop();
+        // J0.3 GlobalIC site: context switch (see begin_module_execution).
+        crate::abi::bump_namespace_version();
+    }
+}
+
+/// Compiled-call stack depth captured when the innermost active module body
+/// began executing; `0` when no module body is active.  Call-stack entries at
+/// or above this floor were pushed by calls made during the module body, so
+/// only they may scope a global load/store to their defining module.
+#[must_use]
+pub fn active_module_call_floor() -> usize {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.current_module_floors.last().copied().unwrap_or(0)
+}
+
+/// Package context for a relative import, mirroring CPython's
+/// calling-frame-globals rule (`_calc___package__`): the innermost executing
+/// compiled function's DEFINING module wins — a function-scope
+/// `from . import x` called long after its module finished importing still
+/// resolves against that module — and a toplevel import statement falls back
+/// to the actively executing module body.  Both locks are taken sequentially,
+/// never nested: `current_defining_module` briefly takes `IMPORT_STATE`
+/// itself (via `active_module_call_floor`).
+fn current_importer_package() -> Option<String> {
+    let module = crate::abi::current_defining_module_object().or_else(active_module_object)?;
+    let package = module_object_attr(module, intern("__package__"))?;
+    unicode_text(package).map(str::to_owned)
+}
+
+pub fn active_module_name_id() -> Option<u32> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.current_modules.last().copied()
+}
+
+/// Original module object for the innermost active module body.
+#[must_use]
+pub fn active_module_object() -> Option<*mut PyObject> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.current_module_objects.last().copied()
+}
+
+/// Interned name plus original module object for the active module body.
+#[must_use]
+pub fn active_module_context() -> Option<(u32, *mut PyObject)> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let name = state.current_modules.last().copied()?;
+    let object = state.current_module_objects.last().copied()?;
+    Some((name, object))
+}
+
+pub fn module_attrs_snapshot(module_name: u32) -> Option<Vec<(u32, *mut PyObject)>> {
+    {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Some(module) = state.modules.get(&module_name).copied() {
+            let module = module_from_object_locked(&state, module)?;
+            // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+            let module = unsafe { &*module };
+            return Some(
+                module
+                    .attrs
+                    .iter()
+                    .map(|(name, value)| (*name, *value))
+                    .collect(),
+            );
+        }
+    }
+    // Synthetic `types.ModuleType(...)` instances live outside the import
+    // cache; resolve them by their unique registry key so namespace-dict
+    // materialization (`__dict__`, `dir`) sees their attrs.
+    let object = {
+        let synthetic = SYNTHETIC_MODULES
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        synthetic.get(&module_name).copied()? as *mut PyObject
+    };
+    // SAFETY: Every synthetic-table entry was built by `module_tp_new` with
+    // the `PyModuleObject` layout; attrs are read outside any lock exactly
+    // like `module_getattro` reads them (Python execution is serialized).
+    let module = unsafe { &*object.cast::<PyModuleObject>() };
+    Some(
+        module
+            .attrs
+            .iter()
+            .map(|(name, value)| (*name, *value))
+            .collect(),
+    )
+}
+
+/// GC roots held by the import registry: every registered module's attribute
+/// values plus the live `sys.modules` dict.  Module objects are immortal
+/// leaked boxes ([`create_module`] never frees them), so marking cannot reach
+/// the GC-heap values their attrs hold; without these roots an explicit
+/// `gc.collect()` frees live module globals (any module-scope binding, every
+/// module).  Non-module `sys.modules` entries (arbitrary objects installed
+/// via `sys.modules[name] = obj`) are rooted directly, like CPython's dict
+/// reference keeps them alive.
+///
+/// Consumed by `crate::abi::collect` while the runtime lock is held: takes
+/// only the import-state mutex and never re-enters the runtime.  `collect`
+/// runs solely from explicit `gc.collect()` calls, and Python code never
+/// executes while `IMPORT_STATE` is locked, so the mutex is always free here.
+pub fn gc_held_roots() -> Vec<*mut PyObject> {
+    let mut roots = Vec::new();
+    {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if !state.modules_dict.is_null() {
+            roots.push(state.modules_dict);
+        }
+        for &object in state.modules.values() {
+            match module_from_object_locked(&state, object) {
+                Some(module) => {
+                    // SAFETY: The layout check proved `PyModuleObject`; attrs are
+                    // enumerated under the import-state lock.
+                    for (_, &value) in unsafe { (*module).attrs.iter() } {
+                        if !value.is_null() && crate::tag::is_heap(value) {
+                            roots.push(value);
+                        }
+                    }
+                }
+                None => {
+                    if !object.is_null() && crate::tag::is_heap(object) {
+                        roots.push(object);
+                    }
+                }
+            }
+        }
+    }
+    let trusted = TRUSTED_NATIVE_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    for &object in trusted.iter() {
+        let module = object as *mut PyObject;
+        for (_, &value) in unsafe { (*module.cast::<PyModuleObject>()).attrs.iter() } {
+            if !value.is_null() && crate::tag::is_heap(value) {
+                roots.push(value);
+            }
+        }
+    }
+    drop(trusted);
+    // Synthetic `types.ModuleType(...)` modules: same immortal-box rationale —
+    // marking cannot reach their attr values either.  Walked under the side
+    // table's own lock AFTER the import-state section ends so the two
+    // mutexes never nest.
+    let synthetic = SYNTHETIC_MODULES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    for &object in synthetic.values() {
+        let object = object as *mut PyObject;
+        // SAFETY: Every synthetic-table entry was built by `module_tp_new`
+        // with the `PyModuleObject` layout.
+        for (_, &value) in unsafe { (*object.cast::<PyModuleObject>()).attrs.iter() } {
+            if !value.is_null() && crate::tag::is_heap(value) {
+                roots.push(value);
+            }
+        }
+    }
+    roots
+}
+
+pub fn active_module_attrs_snapshot() -> Option<Vec<(u32, *mut PyObject)>> {
+    let module_name = active_module_name_id()?;
+    module_attrs_snapshot(module_name)
+}
+
+pub fn active_module_attr(name: u32) -> Option<*mut PyObject> {
+    let module = active_module_object()?;
+    module_object_attr(module, name)
+}
+
+/// Live attribute binding of one cached module, by interned module name.
+/// Synthetic `types.ModuleType(...)` instances resolve by their unique
+/// registry key (dynexec executes into their namespace dicts).
+pub fn module_attr(module_name: u32, name: u32) -> Option<*mut PyObject> {
+    {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Some(module) = state.modules.get(&module_name).copied() {
+            let module = module_from_object_locked(&state, module)?;
+            // SAFETY: The import state proved the `PyModuleObject` layout.
+            return unsafe { (&*module).attrs.get(&name).copied() };
+        }
+    }
+    let object = synthetic_module_object(module_name)?;
+    // SAFETY: Synthetic-table entries use the `PyModuleObject` layout
+    // (`module_tp_new`); reads happen outside any lock like
+    // `module_attrs_snapshot`.
+    unsafe {
+        (&*object.cast::<PyModuleObject>())
+            .attrs
+            .get(&name)
+            .copied()
+    }
+}
+
+/// Registry key backing a module object's live namespace dictionary.
+#[must_use]
+pub fn module_object_registry_key(module_object: *mut PyObject) -> Option<u32> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let module = module_from_object_locked(&state, module_object)?;
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    Some(unsafe { (*module).registry_key })
+}
+
+/// Live attribute binding of one original module object.
+#[must_use]
+pub fn module_object_attr(module_object: *mut PyObject, name: u32) -> Option<*mut PyObject> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let module = module_from_object_locked(&state, module_object)?;
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    unsafe { (&*module).attrs.get(&name).copied() }
+}
+
+/// Snapshot all attribute values held by one original module object.
+#[must_use]
+pub fn module_object_attr_values(module_object: *mut PyObject) -> Option<Vec<*mut PyObject>> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let module = module_from_object_locked(&state, module_object)?;
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    Some(unsafe { (&*module).attrs.values().copied().collect() })
+}
+
+pub fn store_active_module_attr(name: u32, value: *mut PyObject) -> bool {
+    let Some(module) = active_module_object() else {
+        return false;
+    };
+    store_module_object_attr(module, name, value)
+}
+
+/// Store one attribute binding into a cached module, by interned module name.
+pub fn store_module_attr(module_name: u32, name: u32, value: *mut PyObject) -> bool {
+    {
+        let state = IMPORT_STATE
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Some(module) = state.modules.get(&module_name).copied() {
+            let Some(module) = module_from_object_locked(&state, module) else {
+                return false;
+            };
+            if let Err(message) = crate::types::frozen_policy::check_module(module.cast()) {
+                crate::thread_state::pon_err_set(message);
+                return false;
+            }
+            // SAFETY: The import state proved the `PyModuleObject` layout.
+            unsafe {
+                (&mut *module).attrs.insert(name, value);
+            }
+            // J0.3 GlobalIC site: module attr overlay insert/replace.
+            crate::abi::bump_namespace_version();
+            return true;
+        }
+    }
+    let Some(object) = synthetic_module_object(module_name) else {
+        return false;
+    };
+    if let Err(message) = crate::types::frozen_policy::check_module(object) {
+        crate::thread_state::pon_err_set(message);
+        return false;
+    }
+    // SAFETY: Synthetic-table entries use the `PyModuleObject` layout;
+    // writes happen outside any lock like `module_attrs_snapshot` reads.
+    unsafe {
+        (&mut *object.cast::<PyModuleObject>())
+            .attrs
+            .insert(name, value);
+    }
+    // J0.3 GlobalIC site: module attr overlay insert/replace.
+    crate::abi::bump_namespace_version();
+    true
+}
+
+/// Store one attribute binding into an original module object.
+pub fn store_module_object_attr(
+    module_object: *mut PyObject,
+    name: u32,
+    value: *mut PyObject,
+) -> bool {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let Some(module) = module_from_object_locked(&state, module_object) else {
+        return false;
+    };
+    if let Err(message) = crate::types::frozen_policy::check_module(module.cast()) {
+        crate::thread_state::pon_err_set(message);
+        return false;
+    }
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    unsafe {
+        (&mut *module).attrs.insert(name, value);
+    }
+    // J0.3 GlobalIC site: module attr overlay insert/replace.
+    crate::abi::bump_namespace_version();
+    true
+}
+
+pub fn delete_active_module_attr(name: u32) -> bool {
+    let Some(module) = active_module_object() else {
+        return false;
+    };
+    delete_module_object_attr(module, name)
+}
+
+/// Delete one attribute binding from a cached module, by interned module name.
+pub fn delete_module_attr(module_name: u32, name: u32) -> bool {
+    let removed = 'removed: {
+        {
+            let state = IMPORT_STATE
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if let Some(module) = state.modules.get(&module_name).copied() {
+                let Some(module) = module_from_object_locked(&state, module) else {
+                    return false;
+                };
+                if let Err(message) = crate::types::frozen_policy::check_module(module.cast()) {
+                    crate::thread_state::pon_err_set(message);
+                    return false;
+                }
+                // SAFETY: The import state proved the `PyModuleObject` layout.
+                break 'removed unsafe { (&mut *module).attrs.remove(&name).is_some() };
+            }
+        }
+        let Some(object) = synthetic_module_object(module_name) else {
+            return false;
+        };
+        if let Err(message) = crate::types::frozen_policy::check_module(object) {
+            crate::thread_state::pon_err_set(message);
+            return false;
+        }
+        // SAFETY: Synthetic-table entries use the `PyModuleObject` layout.
+        unsafe {
+            (&mut *object.cast::<PyModuleObject>())
+                .attrs
+                .remove(&name)
+                .is_some()
+        }
+    };
+    if removed {
+        // J0.3 GlobalIC site: module attr overlay removal.
+        crate::abi::bump_namespace_version();
+    }
+    removed
+}
+
+/// Delete one attribute binding from an original module object.
+pub fn delete_module_object_attr(module_object: *mut PyObject, name: u32) -> bool {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let Some(module) = module_from_object_locked(&state, module_object) else {
+        return false;
+    };
+    if let Err(message) = crate::types::frozen_policy::check_module(module.cast()) {
+        crate::thread_state::pon_err_set(message);
+        return false;
+    }
+    // SAFETY: The import state proved the object uses `PyModuleObject` layout.
+    let removed = unsafe { (&mut *module).attrs.remove(&name).is_some() };
+    if removed {
+        // J0.3 GlobalIC site: module attr overlay removal.
+        crate::abi::bump_namespace_version();
+    }
+    removed
+}
+
+fn unicode_text(object: *mut PyObject) -> Option<&'static str> {
+    if object.is_null() {
+        return None;
+    }
+    // SAFETY: Module identity attrs are allocated as `PyUnicode` and live for the
+    // process.
+    unsafe { (&*object.cast::<PyUnicode>()).as_str() }
+}
+
+fn module_is_package(module: &PyModuleObject) -> bool {
+    let name = resolve(module.name);
+    let package = module
+        .attrs
+        .get(&intern("__package__"))
+        .copied()
+        .and_then(unicode_text);
+    matches!((name.as_deref(), package), (Some(name), Some(package)) if name == package)
+}
+
+fn resolve_import_name(
+    name: &str,
+    level: u32,
+    importer_package: Option<&str>,
+) -> Result<String, String> {
+    if level == 0 {
+        return Ok(name.to_owned());
+    }
+    let Some(package) = importer_package.filter(|package| !package.is_empty()) else {
+        return Err("attempted relative import with no known parent package".to_owned());
+    };
+    let mut parts = package.split('.').collect::<Vec<_>>();
+    let strip = level.saturating_sub(1) as usize;
+    if strip >= parts.len() {
+        return Err("attempted relative import beyond top-level package".to_owned());
+    }
+    parts.truncate(parts.len() - strip);
+    if !name.is_empty() {
+        parts.extend(name.split('.'));
+    }
+    Ok(parts.join("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        process, ptr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    use super::{
+        STDLIB_PATH_ENV_VAR, install_module, pon_import_from, pon_import_name,
+        reset_import_state_for_tests, resolve_import_name, runtime_string, sys_modules_dict,
+    };
+    use crate::{
+        abi::{format_object_for_print, pon_none, pon_runtime_init},
+        intern::intern,
+        object::PyObject,
+        thread_state::{pon_err_clear, pon_err_message, test_state_lock},
+    };
+
+    static NEXT_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempImportRoot {
+        path: PathBuf,
+    }
+
+    impl TempImportRoot {
+        fn new() -> Self {
+            let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+            let path =
+                env::temp_dir().join(format!("pon-import-source-root-{}-{id}", process::id()));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempImportRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    struct EnvVarGuard {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = env::var_os(name);
+            unsafe {
+                env::set_var(name, value);
+            }
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                if let Some(previous) = &self.previous {
+                    env::set_var(self.name, previous);
+                } else {
+                    env::remove_var(self.name);
+                }
+            }
+        }
+    }
+
+    struct ResetImportStateOnDrop;
+
+    impl Drop for ResetImportStateOnDrop {
+        fn drop(&mut self) {
+            reset_import_state_for_tests();
+        }
+    }
+
+    unsafe extern "C" fn pep562_lazy_getattr(
+        argv: *mut *mut PyObject,
+        argc: usize,
+    ) -> *mut PyObject {
+        if argv.is_null() || argc != 1 {
+            return crate::abi::return_null_with_error(
+                "module __getattr__ expected one name argument",
+            );
+        }
+        let name = unsafe { *argv };
+        let value = match format_object_for_print(name).as_deref() {
+            Ok("lazy_attr") => "plain-lazy-value",
+            Ok("lazy_from") => "from-lazy-value",
+            _ => {
+                return unsafe {
+                    crate::abi::exc::pon_raise_attribute_error(ptr::null_mut(), intern("unknown"))
+                };
+            }
+        };
+        match runtime_string(value) {
+            Ok(object) => object,
+            Err(message) => crate::abi::return_null_with_error(message),
+        }
+    }
+
+    unsafe extern "C" fn pep562_missing_getattr(
+        argv: *mut *mut PyObject,
+        argc: usize,
+    ) -> *mut PyObject {
+        if argv.is_null() || argc != 1 {
+            return crate::abi::return_null_with_error(
+                "module __getattr__ expected one name argument",
+            );
+        }
+        let name = unsafe { *argv };
+        let name_id = match format_object_for_print(name) {
+            Ok(text) => intern(&text),
+            Err(_) => intern("missing"),
+        };
+        unsafe { crate::abi::exc::pon_raise_attribute_error(ptr::null_mut(), name_id) }
+    }
+
+    fn module_with_getattr(
+        module_name: &str,
+        entry: unsafe extern "C" fn(*mut *mut PyObject, usize) -> *mut PyObject,
+    ) -> *mut PyObject {
+        let getattr =
+            unsafe { crate::abi::pon_make_function(entry as *const u8, 1, intern("__getattr__")) };
+        assert!(
+            !getattr.is_null(),
+            "creating __getattr__ function failed: {:?}",
+            pon_err_message()
+        );
+        install_module(module_name, [(intern("__getattr__"), getattr)])
+            .unwrap_or_else(|message| panic!("installing {module_name} failed: {message}"))
+    }
+
+    unsafe extern "C" fn import_stamp_return_none(
+        _argv: *mut *mut PyObject,
+        _argc: usize,
+    ) -> *mut PyObject {
+        unsafe { pon_none() }
+    }
+
+    #[test]
+    fn install_module_stamps_only_native_function_carriers() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let source_module = format!(
+            "pon_source_stamp_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let installed_module = format!(
+            "pon_native_stamp_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+
+        install_module(&source_module, [])
+            .unwrap_or_else(|message| panic!("installing source context module failed: {message}"));
+        super::begin_module_execution(&source_module).unwrap();
+        let code = crate::abi::CodeInfo {
+            entry: import_stamp_return_none as *const u8,
+            params: ptr::null(),
+            name_interned: intern("source_like_fn"),
+            n_locals: 0,
+            n_feedback: 0,
+            flags: 0,
+        };
+        let source_function = unsafe {
+            crate::call::pon_make_function_full(
+                &code,
+                ptr::null_mut(),
+                0,
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+            )
+        };
+        super::end_module_execution(&source_module);
+        assert!(
+            !source_function.is_null(),
+            "creating source-like function failed: {:?}",
+            pon_err_message()
+        );
+        assert_eq!(
+            crate::types::function::function_module(source_function),
+            Some(intern(&source_module))
+        );
+
+        let native_function = unsafe {
+            crate::abi::pon_make_function(
+                import_stamp_return_none as *const u8,
+                0,
+                intern("native_carrier"),
+            )
+        };
+        assert!(
+            !native_function.is_null(),
+            "creating native function carrier failed: {:?}",
+            pon_err_message()
+        );
+        assert!(!crate::types::function::is_native_function(native_function));
+        assert_eq!(
+            crate::types::function::function_module(native_function),
+            None
+        );
+
+        install_module(
+            &installed_module,
+            [
+                (intern("dataclass"), source_function),
+                (intern("native_carrier"), native_function),
+            ],
+        )
+        .unwrap_or_else(|message| panic!("installing native module failed: {message}"));
+
+        assert!(!crate::types::function::is_native_function(source_function));
+        assert_eq!(
+            crate::types::function::function_module(source_function),
+            Some(intern(&source_module))
+        );
+        assert!(crate::types::function::is_native_function(native_function));
+        assert_eq!(
+            crate::types::function::function_module(native_function),
+            Some(intern(&installed_module))
+        );
+    }
+
+    #[test]
+    fn pep562_module_attr_miss_calls_module_getattr() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let module_name = format!(
+            "pon_pep562_attr_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let module = module_with_getattr(&module_name, pep562_lazy_getattr);
+
+        let value = unsafe {
+            crate::abi::object::pon_get_attr(module, intern("lazy_attr"), ptr::null_mut())
+        };
+        assert!(
+            !value.is_null(),
+            "module lazy attr lookup failed: {:?}",
+            pon_err_message()
+        );
+        assert_eq!(
+            format_object_for_print(value).as_deref(),
+            Ok("plain-lazy-value")
+        );
+    }
+
+    #[test]
+    fn pep562_import_from_miss_calls_module_getattr() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let module_name = format!(
+            "pon_pep562_from_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let module = module_with_getattr(&module_name, pep562_lazy_getattr);
+
+        let value = unsafe { pon_import_from(module, intern("lazy_from")) };
+        assert!(
+            !value.is_null(),
+            "from-import lazy attr lookup failed: {:?}",
+            pon_err_message()
+        );
+        assert_eq!(
+            format_object_for_print(value).as_deref(),
+            Ok("from-lazy-value")
+        );
+    }
+
+    #[test]
+    fn pep562_import_from_getattr_attribute_error_becomes_import_error() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let module_name = format!(
+            "pon_pep562_import_error_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let module = module_with_getattr(&module_name, pep562_missing_getattr);
+
+        let value = unsafe { pon_import_from(module, intern("missing")) };
+        assert!(
+            value.is_null(),
+            "from-import should fail when module __getattr__ raises AttributeError"
+        );
+        assert!(
+            crate::abi::exc::pending_exception_is("ImportError"),
+            "from-import miss should surface ImportError, got {:?}",
+            pon_err_message()
+        );
+        let message = pon_err_message();
+        assert!(
+            message
+                .as_deref()
+                .is_some_and(|text| text.contains(&format!(
+                    "cannot import name 'missing' from '{module_name}'"
+                ))),
+            "unexpected from-import error message: {message:?}"
+        );
+        assert!(
+            !crate::abi::exc::pending_exception_is("AttributeError"),
+            "from-import must clear the hook's AttributeError"
+        );
+        pon_err_clear();
+    }
+
+    #[test]
+    fn absolute_import_keeps_name() {
+        assert_eq!(resolve_import_name("pkg.sub", 0, None).unwrap(), "pkg.sub");
+    }
+
+    #[test]
+    fn level_one_resolves_from_current_package() {
+        assert_eq!(
+            resolve_import_name("sib", 1, Some("pkg.sub")).unwrap(),
+            "pkg.sub.sib"
+        );
+    }
+
+    #[test]
+    fn level_two_strips_one_component() {
+        assert_eq!(
+            resolve_import_name("sib", 2, Some("pkg.sub")).unwrap(),
+            "pkg.sib"
+        );
+    }
+
+    #[test]
+    fn empty_relative_name_resolves_to_package() {
+        assert_eq!(
+            resolve_import_name("", 1, Some("pkg.sub")).unwrap(),
+            "pkg.sub"
+        );
+    }
+
+    #[test]
+    fn relative_import_without_package_matches_cpython_text() {
+        assert_eq!(
+            resolve_import_name("sib", 1, Some("")).unwrap_err(),
+            "attempted relative import with no known parent package"
+        );
+        assert_eq!(
+            resolve_import_name("sib", 1, None).unwrap_err(),
+            "attempted relative import with no known parent package"
+        );
+    }
+
+    #[test]
+    fn relative_import_beyond_top_level_matches_cpython_text() {
+        assert_eq!(
+            resolve_import_name("sib", 2, Some("pkg")).unwrap_err(),
+            "attempted relative import beyond top-level package"
+        );
+    }
+
+    #[test]
+    fn pon_import_path_root_loads_curated_source_module() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let root = TempImportRoot::new();
+        let module_name = format!("pon_import_path_{}_source", process::id());
+        let module_path = root.path().join(format!("{module_name}.py"));
+        fs::write(
+            &module_path,
+            "marker = 'loaded-via-pon-import-path'\nanswer = 42\n",
+        )
+        .unwrap();
+        let _env = EnvVarGuard::set("PON_IMPORT_PATH", root.path());
+
+        let module = unsafe { pon_import_name(intern(&module_name), ptr::null(), 0, 0) };
+        assert!(
+            !module.is_null(),
+            "importing source module from PON_IMPORT_PATH failed: {:?}",
+            pon_err_message()
+        );
+
+        let marker = unsafe { pon_import_from(module, intern("marker")) };
+        assert_eq!(
+            format_object_for_print(marker).as_deref(),
+            Ok("loaded-via-pon-import-path")
+        );
+        let answer = unsafe { pon_import_from(module, intern("answer")) };
+        assert_eq!(format_object_for_print(answer).as_deref(), Ok("42"));
+    }
+
+    #[test]
+    fn vendored_stdlib_root_loads_module_by_default() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let module_name = "test";
+        let module = super::import_named_module_raw(module_name);
+        assert!(
+            !module.is_null(),
+            "importing {module_name} from the vendored stdlib root failed: {:?}",
+            pon_err_message()
+        );
+        let file = unsafe { pon_import_from(module, intern("__file__")) };
+        let file_text = format_object_for_print(file).expect("test.__file__ must format");
+        assert!(
+            file_text.ends_with("/Lib/test/__init__.py"),
+            "test.__file__ should point at the CPython test tree, got {file_text}"
+        );
+        let path = unsafe { pon_import_from(module, intern("__path__")) };
+        let path_text = format_object_for_print(path).expect("test.__path__ must format");
+        assert!(
+            path_text.contains("/Lib/test"),
+            "test.__path__ should include the CPython test tree, got {path_text}"
+        );
+    }
+
+    #[test]
+    fn stdlib_path_env_var_overrides_vendored_root() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let root = TempImportRoot::new();
+        fs::write(root.path().join("pon_tiny.py"), "name = 'override'\n").unwrap();
+        let _env = EnvVarGuard::set(STDLIB_PATH_ENV_VAR, root.path());
+
+        let module = unsafe { pon_import_name(intern("pon_tiny"), ptr::null(), 0, 0) };
+        assert!(
+            !module.is_null(),
+            "importing pon_tiny via PON_STDLIB_PATH failed: {:?}",
+            pon_err_message()
+        );
+        let name = unsafe { pon_import_from(module, intern("name")) };
+        assert_eq!(format_object_for_print(name).as_deref(), Ok("override"));
+    }
+
+    #[test]
+    fn missing_stdlib_override_skips_vendored_root() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let missing = env::temp_dir().join(format!("pon-stdlib-missing-{}", process::id()));
+        let _env = EnvVarGuard::set(STDLIB_PATH_ENV_VAR, &missing);
+        let dict = sys_modules_dict().unwrap();
+        let key = runtime_string("test").unwrap();
+        {
+            let _guard = crate::sync::begin_critical_section(dict);
+            unsafe { crate::types::dict::dict_remove(dict, key).unwrap() };
+        }
+
+        let module = super::import_named_module_raw("test");
+        assert!(
+            module.is_null(),
+            "test import should fail when PON_STDLIB_PATH points at a missing dir"
+        );
+        pon_err_clear();
+    }
+
+    #[test]
+    fn namespace_package_import_composes_roots() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let root1 = TempImportRoot::new();
+        let root2 = TempImportRoot::new();
+        let pkg_name = format!(
+            "pon_ns_pkg_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let ns1 = root1.path().join(&pkg_name);
+        let ns2 = root2.path().join(&pkg_name);
+        fs::create_dir_all(&ns1).unwrap();
+        fs::create_dir_all(&ns2).unwrap();
+        fs::write(ns1.join("alpha.py"), "VALUE = 'alpha-r1'\n").unwrap();
+        fs::write(ns2.join("beta.py"), "VALUE = 'beta-r2'\n").unwrap();
+        let import_path = env::join_paths([root1.path(), root2.path()]).unwrap();
+        let _env = EnvVarGuard::set("PON_IMPORT_PATH", &import_path);
+
+        let package = unsafe { pon_import_name(intern(&pkg_name), ptr::null(), 0, 0) };
+        assert!(
+            !package.is_null(),
+            "importing namespace package failed: {:?}",
+            pon_err_message()
+        );
+        let file = unsafe { pon_import_from(package, intern("__file__")) };
+        assert_eq!(format_object_for_print(file).as_deref(), Ok("None"));
+        let path = unsafe { pon_import_from(package, intern("__path__")) };
+        let path_text = format_object_for_print(path).expect("namespace __path__ must format");
+        assert!(
+            path_text.contains(ns1.to_string_lossy().as_ref())
+                && path_text.contains(ns2.to_string_lossy().as_ref()),
+            "namespace path should include both roots, got {path_text}"
+        );
+
+        let alpha = unsafe { pon_import_from(package, intern("alpha")) };
+        assert!(
+            !alpha.is_null(),
+            "importing namespace child alpha failed: {:?}",
+            pon_err_message()
+        );
+        let alpha_value = unsafe { pon_import_from(alpha, intern("VALUE")) };
+        assert_eq!(
+            format_object_for_print(alpha_value).as_deref(),
+            Ok("alpha-r1")
+        );
+
+        let beta = unsafe { pon_import_from(package, intern("beta")) };
+        assert!(
+            !beta.is_null(),
+            "importing namespace child beta failed: {:?}",
+            pon_err_message()
+        );
+        let beta_value = unsafe { pon_import_from(beta, intern("VALUE")) };
+        assert_eq!(
+            format_object_for_print(beta_value).as_deref(),
+            Ok("beta-r2")
+        );
+    }
+    #[test]
+    fn source_package_import_sets_file_and_path() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let root = TempImportRoot::new();
+        let pkg_name = format!(
+            "pon_spec_pkg_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let pkg_dir = root.path().join(&pkg_name);
+        fs::create_dir_all(&pkg_dir).unwrap();
+        let init_file = pkg_dir.join("__init__.py");
+        fs::write(&init_file, "marker = 'spec-package'\n").unwrap();
+        let _env = EnvVarGuard::set("PON_IMPORT_PATH", root.path());
+
+        let module = unsafe { pon_import_name(intern(&pkg_name), ptr::null(), 0, 0) };
+        assert!(
+            !module.is_null(),
+            "importing {pkg_name} failed: {:?}",
+            pon_err_message()
+        );
+
+        let marker = unsafe { pon_import_from(module, intern("marker")) };
+        assert_eq!(
+            format_object_for_print(marker).as_deref(),
+            Ok("spec-package")
+        );
+        let file = unsafe { pon_import_from(module, intern("__file__")) };
+        let file_text = format_object_for_print(file).expect("{pkg_name}.__file__ must format");
+        assert_eq!(file_text, init_file.to_string_lossy().as_ref());
+        let path = unsafe { pon_import_from(module, intern("__path__")) };
+        let path_text = format_object_for_print(path).expect("{pkg_name}.__path__ must format");
+        assert!(
+            path_text.contains(pkg_dir.to_string_lossy().as_ref()),
+            "{pkg_name}.__path__ should include the package dir, got {path_text}"
+        );
+        let loader = unsafe { pon_import_from(module, intern("__loader__")) };
+        assert!(
+            !loader.is_null(),
+            "{pkg_name}.__loader__ binding missing: {:?}",
+            pon_err_message()
+        );
+        let spec = unsafe { pon_import_from(module, intern("__spec__")) };
+        assert!(
+            !spec.is_null(),
+            "{pkg_name}.__spec__ binding missing: {:?}",
+            pon_err_message()
+        );
+    }
+
+    #[test]
+    fn vendored_importlib_metadata_points_at_package() {
+        let file = super::source_module_file_path("importlib")
+            .expect("vendored importlib should resolve to a source file");
+        assert!(
+            file.ends_with("Lib/importlib/__init__.py"),
+            "importlib source file should point at the vendored package, got {}",
+            file.display()
+        );
+        let locations = super::source_module_search_locations("importlib")
+            .expect("vendored importlib should expose package search locations");
+        assert!(
+            locations.iter().any(|path| path.ends_with("Lib/importlib")),
+            "importlib search locations should include the vendored package dir: {locations:?}"
+        );
+    }
+
+    #[test]
+    fn none_sys_modules_binding_halts_import() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        pon_err_clear();
+        reset_import_state_for_tests();
+
+        let root = TempImportRoot::new();
+        let module_name = format!(
+            "pon_blocked_import_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        fs::write(
+            root.path().join(format!("{module_name}.py")),
+            "name = 'unblocked'\n",
+        )
+        .unwrap();
+        let _env = EnvVarGuard::set(STDLIB_PATH_ENV_VAR, root.path());
+
+        // Plant the block `import_fresh_module(blocked=[...])` plants.
+        let dict = sys_modules_dict().unwrap();
+        let key = runtime_string(&module_name).unwrap();
+        let none = unsafe { pon_none() };
+        {
+            let _guard = crate::sync::begin_critical_section(dict);
+            unsafe { crate::types::dict::dict_insert(dict, key, none).unwrap() };
+        }
+
+        let blocked = unsafe { pon_import_name(intern(&module_name), ptr::null(), 0, 0) };
+        assert!(
+            blocked.is_null(),
+            "a None sys.modules binding must halt the import"
+        );
+        let message = pon_err_message();
+        assert!(
+            message
+                .as_deref()
+                .is_some_and(|text| text.contains(&format!(
+                    "import of {module_name} halted; None in sys.modules"
+                ))),
+            "unexpected halt diagnostic: {message:?}"
+        );
+        pon_err_clear();
+
+        // Deleting the block restores importability from the temporary stdlib root.
+        {
+            let _guard = crate::sync::begin_critical_section(dict);
+            unsafe { crate::types::dict::dict_remove(dict, key).unwrap() };
+        }
+        let module = unsafe { pon_import_name(intern(&module_name), ptr::null(), 0, 0) };
+        assert!(
+            !module.is_null(),
+            "unblocked import failed: {:?}",
+            pon_err_message()
+        );
+        let name = unsafe { pon_import_from(module, intern("name")) };
+        assert_eq!(format_object_for_print(name).as_deref(), Ok("unblocked"));
+    }
+}
+
+fn parse_curated_literal(
+    module_name: &str,
+    is_package: bool,
+    text: &str,
+) -> Result<*mut PyObject, String> {
+    if let Some(value) = parse_quoted_literal(text) {
+        return runtime_string(value);
+    }
+    if let Ok(value) = text.parse::<i64>() {
+        // SAFETY: `pon_const_int` returns NULL with a thread-state error on failure.
+        let object = unsafe { pon_const_int(value) };
+        return (!object.is_null())
+            .then_some(object)
+            .ok_or_else(|| "failed to allocate integer literal".to_owned());
+    }
+    if text == "None" {
+        // SAFETY: `pon_none` returns NULL with a thread-state error on failure.
+        let object = unsafe { pon_none() };
+        return (!object.is_null())
+            .then_some(object)
+            .ok_or_else(|| "failed to load None".to_owned());
+    }
+    if text == "__name__" {
+        return runtime_string(module_name);
+    }
+    if text == "__package__" {
+        let package = module_package_name(module_name, is_package);
+        return runtime_string(&package);
+    }
+    Err(format!("unsupported curated module literal '{text}'"))
+}
+
+fn parse_quoted_literal(text: &str) -> Option<&str> {
+    let quote = text.as_bytes().first().copied()?;
+    if quote != b'\'' && quote != b'\"' {
+        return None;
+    }
+    (text.as_bytes().last().copied() == Some(quote) && text.len() >= 2)
+        .then_some(&text[1..text.len() - 1])
+}
+
+fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_public_name(name: u32) -> bool {
+    resolve(name).is_some_and(|name| !name.starts_with('_'))
+}
+
+fn as_module(object: *mut PyObject) -> Option<*mut PyModuleObject> {
+    if object.is_null() {
+        return None;
+    }
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    // SAFETY: Non-NULL boxed values begin with `PyObjectHeader`.
+    let is_module = unsafe { (*object).ob_type == state.module_type };
+    is_module.then_some(object.cast::<PyModuleObject>())
+}
+
+fn module_direct_attr(
+    module: *mut PyModuleObject,
+    name_id: u32,
+    name_text: &str,
+) -> Option<*mut PyObject> {
+    if module.is_null() {
+        return None;
+    }
+    // SAFETY: Callers pass a pointer proved by `as_module`; the borrow ends
+    // before any user code can run.
+    if let Some(value) = unsafe { (&*module).attrs.get(&name_id).copied() } {
+        return Some(value);
+    }
+    // SAFETY: Same layout proof; snapshot the registry key only.
+    let registry_key = unsafe { (*module).registry_key };
+    crate::dynexec::peek_module_namespace_value(registry_key, name_text)
+}
+
+fn call_module_getattr_hook(module: *mut PyModuleObject, name_text: &str) -> Option<*mut PyObject> {
+    let getattr = module_direct_attr(module, intern("__getattr__"), "__getattr__")?;
+    let name_object = match runtime_string(name_text) {
+        Ok(object) => object,
+        Err(message) => return Some(return_null_with_error(message)),
+    };
+    let mut argv = [name_object];
+    // SAFETY: Module-level `__getattr__` is a plain callable stored in the
+    // module namespace; modules do not descriptor-bind functions.
+    Some(unsafe { crate::abi::pon_call(getattr, argv.as_mut_ptr(), argv.len()) })
+}
+
+/// Live namespace dict for a module OBJECT, or `None` when `object` is not a
+/// module. This is the same dict `module.__dict__` serves (mutations through
+/// it sync back into module attrs); `dir(module)` enumerates it exactly like
+/// CPython's `module.__dir__`, which returns `list(module.__dict__)`.
+///
+/// # Safety
+///
+/// `object` must be NULL or a live Pon object pointer. The helper only reads
+/// its object header before validating the canonical module descriptor.
+pub unsafe fn module_namespace_for_object(
+    object: *mut PyObject,
+) -> Option<Result<*mut PyObject, String>> {
+    let module = as_module(object)?;
+    // SAFETY: `as_module` proved the `PyModuleObject` layout.
+    Some(crate::dynexec::module_namespace_dict(unsafe {
+        (*module).registry_key
+    }))
+}
+
+unsafe extern "C" fn module_getattro(module: *mut PyObject, name: *mut PyObject) -> *mut PyObject {
+    if module.is_null() || name.is_null() {
+        return return_null_with_error("module attribute lookup received NULL");
+    }
+    let Some(module) = as_module(module) else {
+        return return_null_with_error("attribute receiver is not a module");
+    };
+    // SAFETY: Attribute names are allocated by `abstract_op` as `PyUnicode`.
+    let name_text = unsafe { (&*name.cast::<PyUnicode>()).as_str() };
+    let Some(name_text) = name_text else {
+        return return_null_with_error("module attribute name is not valid UTF-8");
+    };
+    if name_text == "__dict__" {
+        // The live namespace view: mutations through it sync back into the
+        // module attrs via the dynexec globals-registry hooks (CPython's
+        // module `__dict__` IS the module namespace).
+        return match crate::dynexec::module_namespace_dict(unsafe { (*module).registry_key }) {
+            Ok(dict) => dict,
+            Err(message) => return_null_with_error(message),
+        };
+    }
+    let name_id = intern(name_text);
+    if let Some(value) = module_direct_attr(module, name_id, name_text) {
+        return value;
+    }
+    if let Some(value) = call_module_getattr_hook(module, name_text) {
+        return value;
+    }
+    let module_name = resolve(unsafe { (*module).name })
+        .unwrap_or_else(|| format!("<module:{}>", unsafe { (*module).name }));
+    raise_attribute_error_text(&format!(
+        "module '{module_name}' has no attribute '{name_text}'"
+    ))
+}
+
+/// `module.attr = value` / `del module.attr` (CPython module objects are
+/// plain namespaces; `_py_warnings` bumps `_filters_version` on its module
+/// object).  Mirrors [`store_module_attr`]/[`delete_module_attr`], including
+/// the J0.3 GlobalIC bump: module attrs overlay `pon_load_global`.
+unsafe extern "C" fn module_setattro(
+    module: *mut PyObject,
+    name: *mut PyObject,
+    value: *mut PyObject,
+) -> c_int {
+    if module.is_null() || name.is_null() {
+        return_null_with_error("module attribute assignment received NULL");
+        return -1;
+    }
+    let Some(module) = as_module(module) else {
+        return_null_with_error("attribute receiver is not a module");
+        return -1;
+    };
+    // SAFETY: Attribute names are allocated by `abstract_op` as `PyUnicode`.
+    let name_text = unsafe { (&*name.cast::<PyUnicode>()).as_str() };
+    let Some(name_text) = name_text else {
+        return_null_with_error("module attribute name is not valid UTF-8");
+        return -1;
+    };
+    let name_id = intern(name_text);
+    // SAFETY: `as_module` proved the layout.  The registry key routes the
+    // namespace-dict mirror; the interned name serves error messages.
+    let (module_name_id, module_registry_key) =
+        unsafe { ((&*module).name, (&*module).registry_key) };
+    if let Err(message) = crate::types::frozen_policy::check_module(module.cast()) {
+        return_null_with_error(message);
+        return -1;
+    }
+    if value.is_null() {
+        // SAFETY: `as_module` proved the layout.
+        let removed = unsafe { (&mut *module).attrs.remove(&name_id).is_some() };
+        if !removed {
+            let module_name =
+                resolve(module_name_id).unwrap_or_else(|| format!("<module:{module_name_id}>"));
+            raise_attribute_error_text(&format!(
+                "module '{module_name}' has no attribute '{name_text}'"
+            ));
+            return -1;
+        }
+        // Keep the registered namespace dict (`module.__dict__`) coherent:
+        // `dir(module)` and the getattro fallback read it.
+        crate::dynexec::sync_global_delete_for_module(module_registry_key, name_id);
+    } else {
+        // SAFETY: `as_module` proved the layout.
+        unsafe {
+            (&mut *module).attrs.insert(name_id, value);
+        }
+        crate::dynexec::sync_global_store_for_module(module_registry_key, name_id, value);
+    }
+    // J0.3 GlobalIC site: module attr overlay insert/replace/removal.
+    crate::abi::bump_namespace_version();
+    0
+}
+
+/// Status helper for hub integration that reports whether a module object owns
+/// an attribute.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pon_module_has_attr(module: *mut PyObject, name: u32) -> c_int {
+    crate::untag_prelude!(err = -1; module);
+    if module.is_null() {
+        return return_minus_one_with_error("cannot query NULL module");
+    }
+    let Some(module) = as_module(module) else {
+        return return_minus_one_with_error("attribute receiver is not a module");
+    };
+    // SAFETY: `as_module` proved the layout.
+    i32::from(unsafe { (&*module).attrs.contains_key(&name) })
+}

@@ -1,0 +1,35 @@
+[project]
+name = "skirmish-fighter-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Pure Python fighter authoring descriptors for Skirmish"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Skirmish contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["skirmish", "fighter"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+skirmish = ["py.typed"]
+fighter = ["py.typed"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "__pycache__/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv]
+package = true

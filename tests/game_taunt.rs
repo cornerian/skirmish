@@ -20,18 +20,18 @@ mod tilt_support;
 
 use skirmish::{
     fighter::dash::transition_friction,
+    fighter::taunt::{Taunt, TauntAnimation, TauntFrame},
     game::{
         Action, BUTTON_A, BUTTON_DPAD_DOWN, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, BUTTON_DPAD_UP,
         BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Error, Match, State,
         data::MatchData,
-        taunt::{Taunt, TauntAnimation, TauntFrame},
     },
 };
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
-    rules: skirmish::game::shield::Rules,
-    attributes: skirmish::game::shield::Attributes,
+    rules: skirmish::fighter::shield::Rules,
+    attributes: skirmish::fighter::shield::Attributes,
 }
 
 /// Fighter 0 (facing +X at -2) is the primary subject; fighter 1 (facing -X
@@ -417,7 +417,7 @@ fn taunt_root_motion_matches_the_supplied_samples_and_ends_into_wait() {
 
 #[test]
 fn taunt_clamps_at_a_floor_end_instead_of_sliding_through() {
-    use skirmish::game::edge::EdgeSide;
+    use skirmish::fighter::edge::EdgeSide;
     let mut resource = data();
     resource.stage.floor.right = 0.6;
     resource.stage.spawns = [[0.0, 0.0], [-0.5, 0.0]];

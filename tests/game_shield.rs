@@ -1,7 +1,8 @@
 //! End-to-end ordinary shield branches in an explicitly synthetic native world.
 use skirmish::game::data::HitElement;
+use skirmish::fighter::shield;
 use skirmish::game::{
-    Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State, data::MatchData, shield,
+    Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State, data::MatchData,
 };
 
 #[derive(serde::Deserialize)]
@@ -316,7 +317,7 @@ fn held_cstick_up_jumps_from_shield_with_native_priority_and_release_short_hop()
     assert_eq!(jumped.fighters[1].action, Action::JumpSquat);
     assert_eq!(
         jumped.fighters[1].locomotion.jump_input,
-        skirmish::game::locomotion::JumpInput::CStick
+        skirmish::fighter::locomotion::JumpInput::CStick
     );
     assert!(!jumped.fighters[1].short_hop);
     let checkpoint = game.checkpoint();
@@ -352,7 +353,7 @@ fn held_cstick_up_jumps_from_shield_with_native_priority_and_release_short_hop()
                 cstick: [0.0, 1.0],
                 ..Default::default()
             },
-            skirmish::game::locomotion::JumpInput::Stick,
+            skirmish::fighter::locomotion::JumpInput::Stick,
         ),
         (
             Controller {
@@ -360,7 +361,7 @@ fn held_cstick_up_jumps_from_shield_with_native_priority_and_release_short_hop()
                 cstick: [0.0, 1.0],
                 ..Default::default()
             },
-            skirmish::game::locomotion::JumpInput::Buttons,
+            skirmish::fighter::locomotion::JumpInput::Buttons,
         ),
     ] {
         let mut game = Match::new(data(), 42).unwrap();
@@ -643,7 +644,7 @@ fn passive_drain_breaks_only_below_zero_and_zero_damage_has_no_stun_callback() {
 #[test]
 fn shield_hitlag_displacement_is_horizontal_and_uses_shared_input_age() {
     let mut d = data();
-    d.rules.damage.displacement = Some(skirmish::game::damage::HitlagDisplacementRules {
+    d.rules.damage.displacement = Some(skirmish::fighter::damage::HitlagDisplacementRules {
         axis_thresholds: [0.3, 0.3],
         minimum_stick_magnitude: 0.5,
         sdi_window: 4,

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use skirmish::game::{data::MatchData, idle::IdleAnimations, idle::IdleEntry};
+use skirmish::fighter::idle::{IdleAnimations, IdleEntry};
+use skirmish::game::data::MatchData;
 
 /// Invented idle table: Wait1 (sub-motion 2) restarts every `wait1_length`
 /// frame; once entries are present, a draw always fires at length and (since

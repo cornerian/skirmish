@@ -5,9 +5,9 @@ mod grab_support;
 #[path = "support/tilt.rs"]
 mod tilt_support;
 
+use skirmish::fighter::shield;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State, data::MatchData,
-    shield,
 };
 
 #[derive(serde::Deserialize)]

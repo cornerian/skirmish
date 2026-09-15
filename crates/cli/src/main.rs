@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use skirmish::{inventory, menus::Unlocks};
-use skirmish_cli::{initialization, menu_cli, pack};
+use skirmish_cli::{initialization, menu_cli, pack, pon_runtime};
 use skirmish_equivalence::{match_trace, runner, trace};
 use skirmish_replay::{match_validation, slippi};
 use std::{
@@ -18,6 +18,12 @@ use std::{
     about = "Skirmish Rust migration and semantic equivalence tools (game port in progress)"
 )]
 struct Cli {
+    /// Explicit verified Pon standard-library release archive.
+    #[arg(long, global = true, requires = "pon_stdlib_sha256")]
+    pon_stdlib: Option<PathBuf>,
+    /// SHA-256 digest of the explicit Pon standard-library archive.
+    #[arg(long, global = true, requires = "pon_stdlib")]
+    pon_stdlib_sha256: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -129,7 +135,9 @@ enum PackCommands {
 }
 
 fn main() -> Result<()> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    pon_runtime::configure(cli.pon_stdlib, cli.pon_stdlib_sha256)?;
+    match cli.command {
         Commands::Menus {
             all_star,
             sound_test,

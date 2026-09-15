@@ -1,8 +1,8 @@
 # Taunt and the Wait-chain spot dodge
 
-`skirmish::game::taunt` (wiring: the resource, the entry dispatch across
+`skirmish::fighter::taunt` (wiring: the resource, the entry dispatch across
 every chain that lists it, the animation/physics/collision callbacks,
-`src/game/taunt.rs`) and `skirmish::fighter::taunt` (pure arithmetic: the
+`src/game/simulation.rs`) and `skirmish::fighter::taunt` (pure arithmetic: the
 D-pad-up press check and the facing/availability side selection,
 `src/fighter/taunt.rs`) cover `Action::AppealSR`/`AppealSL`. The same batch
 adds the D-pad input bits and corrects the Wait-chain spot dodge
@@ -91,7 +91,7 @@ same four bits.
   modeled here as "a left motion is supplied"), else `msid0` (AppealSR),
   and enters it (`Fighter_ChangeMotionState`, frame 0, rate 1.0). `fighter::
   taunt::select_side`/`pressed` are the pure mirrors of the selection and
-  press check; `game::taunt::try_taunt` calls them directly. Young Link,
+  press check; `fighter::taunt::try_taunt` calls them directly. Young Link,
   Dr. Mario, Ganondorf, the debug-only Peach/Zelda hooks, Kirby's copy-
   ability re-init and the bonus-stat call are not modeled.
 - **Animation** (`ftCo_AppealS_Anim`): end of poses returns to Wait (`ft_
@@ -124,7 +124,7 @@ same four bits.
   otherwise ordinary ground friction applies (scaled by the shared
   above-walk-speed multiplier past `walk_max_vel`, same as Wait's own
   `ft_80084F3C`). `TauntAnimation.root_translations: Option<Vec<f32>>`
-  models the flag: `Some` supplies a per-pose delta (`game::taunt::
+  models the flag: `Some` supplies a per-pose delta (`fighter::taunt::
   ground_target_velocity`, consulted in `move_fighter`'s target-velocity
   chain the same way escape/smash/jab/dash-attack root motion already is);
   `None` falls through to ordinary friction.
@@ -172,7 +172,7 @@ dodge: pressing a shoulder with the stick already down from Wait raised
 GuardOn on that press frame (Wait's own neutral shield-entry check had no
 idea a dodge was also available), and only dodged a frame later, once
 already inside GuardOn, via the pre-existing `ftCo_8009980C`-equivalent
-check. This batch adds `game::escape::try_wait_chain_spot_dodge` (the
+check. This batch adds `fighter::escape::try_wait_chain_spot_dodge` (the
 main-stick-only predicate, reusing `fighter::escape::main_stick_spot_
 dodge` and the same `Rules.spot_dodge_stick_threshold`/`spot_dodge_
 window`) and calls it from `simulation::update_actions`, gated to

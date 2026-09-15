@@ -6,7 +6,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::entry::{amplitude, end_progress, start_progress};
+use skirmish::game::entry::{amplitude, end_progress, start_progress};
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {

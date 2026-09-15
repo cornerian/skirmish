@@ -1,6 +1,6 @@
 //! Explicit synthetic push attributes and common parameters, not character data.
 #![allow(dead_code)]
-use skirmish::fighter::nudge::{Body, Neighbors, Rules};
+use skirmish::game::nudge::{Body, Neighbors, Rules};
 
 pub fn rules() -> Rules {
     Rules {

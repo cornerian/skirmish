@@ -1,6 +1,6 @@
 # Jab combo profile
 
-`skirmish::game::jab` ports the jab combo from `ftCo_Attack1.c` and the rapid
+`skirmish::fighter::jab` ports the jab combo from `ftCo_Attack1.c` and the rapid
 jab from `ftCo_Attack100.c`. The first jab remains the fighter's ordinary `jab`
 attack; the optional `jab_combo` resource adds that attack's decoded script
 (`first`), the second and third jabs (`second`, `third`), the rapid jab's

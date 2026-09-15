@@ -48,7 +48,7 @@ fn step(game: &mut Match, controller: Controller) -> State {
 /// stick on its own second (last) frame -- `ftCo_Jump_Enter`'s own direction
 /// test (`ftCo_Jump.c:157-161`) is dispatched from the Anim callback, which
 /// reads `fp->input` from *before* the launch frame's own controller read
-/// (`game::locomotion::ground_jump`'s own doc comment), so this is the
+/// (`fighter::locomotion::ground_jump`'s own doc comment), so this is the
 /// stick sample that actually decides the launched direction, not the
 /// launch frame's own (left neutral here).
 fn full_hop(game: &mut Match, stick_x: f32) -> State {

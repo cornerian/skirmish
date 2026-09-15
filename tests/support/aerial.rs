@@ -5,12 +5,8 @@
 pub mod conformance;
 
 use skirmish::{
-    fighter::aerial::SelectionRules,
-    game::{
-        Action, Controller, Match,
-        aerial::{FrameFlags, Move, Parameters},
-        data::{Attack, AttackFrame, MatchData},
-    },
+    fighter::aerial::{FrameFlags, Move, Parameters, SelectionRules},
+    game::{Action, Controller, Match, data::{Attack, AttackFrame, MatchData}},
 };
 
 pub const ATTACKS: [Action; 5] = [

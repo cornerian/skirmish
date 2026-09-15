@@ -98,7 +98,7 @@ and `x1FC` (air drift clamp accel, check whether it is already a rule).
 Slippi 353..359 for Fox with the character-table animation indices.
 
 ## Implemented
-`src/game/characters/fox/up.rs` covers the whole phase table above against
+The fighter callback policy covers the whole phase table above against
 `Action::SpecialHiHold/SpecialHiHoldAir/SpecialHi/SpecialAirHi/
 SpecialHiLanding/SpecialHiFall/SpecialHiBound`: the grounded/aerial entry
 dispatch (including the `x21C` age gate on the ground and the fresh-press,
@@ -267,7 +267,7 @@ match-data.json`, `fighters[0].specials.up.{hold,travel}.{ground,air}`.
   pinned file), so the ordinary, already-generic engine rule applies
   unchanged: connecting a hit freezes the attacker's own `action_frame`
   advancement for `combat::hitlag(damage, false, 1.0, ...)` frames, exactly
-  like every other attack in this codebase (`src/game/damage.rs::apply_hit`,
+like every other attack in this codebase (`src/game/hit_resolution.rs::apply_hit`,
   `simulation::advance`'s per-fighter hitlag gate) -- Fire Fox gets no
   special exemption, and none was needed.
 - **Native tests**
@@ -353,9 +353,9 @@ grounded-vs-declined decision (including the platform check); Travel's
 Anim/Phys/Coll on both ground and air, including the reverse acceleration
 after `x70` and the wall/ceiling/bound decision (including the
 NaN-reachable gates above); Landing/Fall's Anim/Phys/Coll, including the
-frame-13 regression; Bound's Enter/Anim/Phys/Coll. `src/game/characters/
-fox/up.rs`'s own `#[cfg(test)] mod tests` covers `angle_xy`/`face_stick`
-directly: zero vectors, the NaN-product-propagates-NaN case, general
+frame-13 regression; Bound's Enter/Anim/Phys/Coll. `src/fighter/
+kinematics.rs` covers `angle_xy`; the Fox script owns `face_stick`
+policy. Tests cover zero vectors, the NaN-product-propagates-NaN case, general
 NaN-safety, and the sign/zero convention. `tests/game_fox_up_special.rs`
 covers the same phases end to end through a real `Match`: grounded and
 aerial entry (gravity delay, jumps left untouched at Hold's own charge
@@ -405,7 +405,7 @@ hitbox`, and `crates/cli/tests/replay_match.rs::
 firefox_hold_charge_hitbox_self_recorded_replay_matches` (a third
 self-recorded regression alongside the grounded/aerial pair above, this one
 driving a real connecting hit through the same file-backed replay
-machinery). `src/game/specials/helpers.rs::validate_hitboxes`'s own field
+machinery). `src/fighter/helpers.rs::validate_hitboxes`'s own field
 bounds are exercised indirectly through `invalid_up_special_resources_are_
 rejected`'s existing pattern (an out-of-range field now rejected the same
 way every other move kind's hitboxes already were).

@@ -180,10 +180,8 @@ fn the_laser_travels_before_hitting_and_despawns_on_contact() {
     resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, press_b())).unwrap();
-    // The Start clip already runs out one idle frame later than a naive
-    // frame count would suggest -- see
-    // `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it`'s own
-    // comment.
+    // The command row 0 is sampled on the Start-to-Loop transition, before
+    // the newly entered Loop action advances to its next frame.
     let spawn_state = game.step(IDLE).unwrap().clone();
     assert!(spawned_this_frame(&spawn_state, 0));
     assert_eq!(spawn_state.projectiles.len(), 1);
@@ -275,7 +273,7 @@ fn leaving_the_ground_mid_move_falls_through_to_ordinary_fall() {
 
 #[test]
 fn slippi_ids_cover_all_six_phases() {
-    use skirmish::characters;
+    use skirmish::game::script::definition::builtin_slippi_ids;
     for (action, state, animation) in [
         (Action::SpecialNStart, 341, 295),
         (Action::SpecialNLoop, 342, 296),
@@ -285,7 +283,7 @@ fn slippi_ids_cover_all_six_phases() {
         (Action::SpecialAirNEnd, 346, 300),
     ] {
         assert_eq!(
-            characters::slippi_ids(Some(2), action),
+            builtin_slippi_ids(Some(2), action),
             Some((state, animation))
         );
     }
@@ -330,10 +328,8 @@ fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
     });
     let mut game = Match::new(resource, 0).unwrap();
     game.step(input(0, press_b())).unwrap();
-    // The Start clip already runs out one idle frame later than a naive
-    // frame count would suggest -- see `docs/validation.md`'s entry-advance
-    // table and `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it`'s
-    // own comment above.
+    // The command row 0 is sampled on the Start-to-Loop transition, before
+    // the newly entered Loop action advances to its next frame.
     let spawn_state = game.step(IDLE).unwrap().clone();
     assert!(spawned_this_frame(&spawn_state, 0));
 
@@ -369,65 +365,58 @@ fn a_terrain_line_despawns_the_laser_before_it_reaches_the_far_fighter() {
 /// these tests). Exercises the full engine end to end, distinct from
 /// `tests/neutral_special_differential.rs`'s own oracle-only trace.
 mod script_resources {
-    use skirmish::characters::{
-        Specials,
-        fox::{
-            neutral::NeutralScript,
-            side::{ScriptFrames, ScriptPhase},
-        },
-    };
-    use skirmish::game::data::{Attack, MatchData};
+    use skirmish::game::data::MatchData;
 
-    fn extend(attack: &mut Attack, len: usize) {
-        let last = attack
-            .frames
-            .last()
-            .expect("fixture always has a pose")
-            .clone();
-        while attack.frames.len() < len {
-            attack.frames.push(last.clone());
+    fn extend(attack: &mut serde_json::Value, len: usize) {
+        let frames = attack.get_mut("frames").unwrap().as_array_mut().unwrap();
+        let last = frames.last().expect("fixture always has a pose").clone();
+        while frames.len() < len {
+            frames.push(last.clone());
         }
     }
 
-    fn cmd_var_table(len: usize, slot: usize, set_frame: usize, value: u32) -> ScriptFrames {
-        let mut cmd_vars = vec![[None; 4]; len];
+    fn cmd_var_table(len: usize, slot: usize, set_frame: usize, value: u32) -> serde_json::Value {
+        let mut cmd_vars = vec![vec![serde_json::Value::Null; 4]; len];
         for row in &mut cmd_vars[set_frame..] {
-            row[slot] = Some(value);
+            row[slot] = serde_json::json!(value);
         }
-        ScriptFrames {
-            cmd_vars,
-            allow_interrupt: vec![false; len],
-        }
+        serde_json::json!({ "cmd_vars": cmd_vars, "allow_interrupt": vec![false; len] })
     }
 
     pub fn profile(mut data: MatchData) -> MatchData {
         data = super::neutral_special_resources::profile(data);
         for fighter in &mut data.fighters {
-            let Some(Specials::Fox {
-                neutral: Some(neutral),
-                ..
-            }) = &mut fighter.specials
-            else {
-                panic!("neutral_special_resources::profile always installs Fox's neutral");
+            let Some(specials) = &mut fighter.specials else {
+                panic!("neutral fixture missing")
             };
-            extend(&mut neutral.start.ground, 7);
-            extend(&mut neutral.start.air, 7);
-            extend(&mut neutral.loop_phase.ground, 10);
-            extend(&mut neutral.loop_phase.air, 10);
-            neutral.script = Some(Box::new(NeutralScript {
-                start: ScriptPhase {
-                    ground: cmd_var_table(7, 0, 4, 1),
-                    air: cmd_var_table(7, 0, 4, 1),
-                },
-                loop_phase: ScriptPhase {
-                    ground: cmd_var_table(10, 2, 5, 1),
-                    air: cmd_var_table(10, 2, 5, 1),
-                },
-                end: ScriptPhase {
-                    ground: cmd_var_table(neutral.end.ground.frames.len(), 1, 1, 2),
-                    air: cmd_var_table(neutral.end.air.frames.len(), 1, 1, 2),
-                },
-            }));
+            let neutral = specials.resources.values.get_mut("neutral").unwrap();
+            for path in ["start.ground", "start.air"] {
+                extend(
+                    neutral
+                        .get_mut(path.split('.').next().unwrap())
+                        .unwrap()
+                        .get_mut(path.split('.').nth(1).unwrap())
+                        .unwrap(),
+                    7,
+                );
+            }
+            for path in ["loop_phase.ground", "loop_phase.air"] {
+                extend(
+                    neutral
+                        .get_mut(path.split('.').next().unwrap())
+                        .unwrap()
+                        .get_mut(path.split('.').nth(1).unwrap())
+                        .unwrap(),
+                    10,
+                );
+            }
+            let end_ground = neutral["end"]["ground"]["frames"].as_array().unwrap().len();
+            let end_air = neutral["end"]["air"]["frames"].as_array().unwrap().len();
+            neutral["script"] = serde_json::json!({
+                "start": {"ground": cmd_var_table(7, 0, 4, 1), "air": cmd_var_table(7, 0, 4, 1)},
+                "loop_phase": {"ground": cmd_var_table(10, 2, 5, 1), "air": cmd_var_table(10, 2, 5, 1)},
+                "end": {"ground": cmd_var_table(end_ground, 1, 1, 2), "air": cmd_var_table(end_air, 1, 1, 2)}
+            });
         }
         data
     }
@@ -522,27 +511,22 @@ fn the_shot_fires_on_the_scripts_own_frame_not_loop_entry() {
 /// test suite.
 #[test]
 fn mismatched_script_frame_counts_are_rejected() {
-    use skirmish::characters::Specials;
     use skirmish::game::Match;
 
     let mut resource = script_resources::profile(data());
     for fighter in &mut resource.fighters {
-        let Some(Specials::Fox {
-            neutral: Some(neutral),
-            ..
-        }) = &mut fighter.specials
-        else {
-            panic!("script_resources::profile always installs Fox's neutral script");
-        };
         // Drop one row from Loop-ground's own `cmd_vars`, breaking parity
         // with `loop_phase.ground.frames.len()`.
-        neutral
-            .script
+        fighter
+            .specials
             .as_mut()
-            .expect("script_resources::profile always installs a script")
-            .loop_phase
-            .ground
-            .cmd_vars
+            .unwrap()
+            .resources
+            .values
+            .get_mut("neutral")
+            .unwrap()["script"]["loop_phase"]["ground"]["cmd_vars"]
+            .as_array_mut()
+            .unwrap()
             .pop();
     }
     assert!(Match::new(resource, 0).is_err());

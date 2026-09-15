@@ -2,6 +2,7 @@
 //! modes") and the edge teeter (Ottotto/OttottoWait) in an explicitly
 //! synthetic native world with invented escape, tilt, smash, dash and jab
 //! profiles.
+
 #[path = "support/dash.rs"]
 mod dash_support;
 #[path = "support/edge.rs"]
@@ -17,15 +18,14 @@ mod smash_support;
 #[path = "support/tilt.rs"]
 mod tilt_support;
 
-use skirmish::game::{
-    Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State, data::MatchData,
-    edge::EdgeSide,
-};
+use skirmish::fighter::edge::EdgeSide;
+use skirmish::game::{Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z};
+use skirmish::game::{Controller, Match, State, data::MatchData};
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
-    rules: skirmish::game::shield::Rules,
-    attributes: skirmish::game::shield::Attributes,
+    rules: skirmish::fighter::shield::Rules,
+    attributes: skirmish::fighter::shield::Attributes,
 }
 
 /// Fighter 0 (facing +X) approaches the right floor end; fighter 1 spawns far
@@ -245,7 +245,7 @@ fn facing_away_from_the_edge_falls_off_it() {
     let mut resource = data();
     resource.stage.floor.left = -1.0;
     resource.stage.spawns = [[0.5, 0.0], [1.3, 0.0]];
-    resource.rules.nudge = Some(skirmish::fighter::nudge::Rules {
+    resource.rules.nudge = Some(skirmish::game::nudge::Rules {
         horizontal_step: 0.3,
         depth_step: 0.0,
         depth_limit: 0.0,

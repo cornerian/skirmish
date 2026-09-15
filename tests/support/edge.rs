@@ -1,7 +1,5 @@
-use skirmish::game::{
-    data::{Bone, MatchData},
-    edge::{Rules, Teeter, TeeterFrame},
-};
+use skirmish::fighter::edge::{Rules, Teeter, TeeterFrame};
+use skirmish::game::data::{Bone, MatchData};
 
 /// Invented edge/teeter rules: `teeter_stick_limit` is mpcoll's own 0.75
 /// literal; the rest are invented (`+474`/`+478`/`+47C`).

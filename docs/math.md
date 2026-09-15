@@ -1,4 +1,4 @@
-# The game's own trigonometry (`src/math.rs`)
+# The game's own trigonometry (`src/compat/math/trig.rs`)
 
 ## Why
 
@@ -63,7 +63,7 @@ agree exactly, function for function and instruction for instruction.
   "lb" math library; this, not the MSL library, is what the fighter/common
   code actually calls for these -- confirmed by tracing `ftCommon_8007D9D4`,
   the stick-angle helper `fighter::escape_air::launch_velocity` and
-  `fighter::aerial`/`game::shield`/`game::characters::fox::up` all port,
+  `fighter::aerial`/`fighter::shield`/`compat::math::kinematics` all port,
   which calls `atan2f`). `atanf` uses the pinned source's `__MWERKS__`-only
   body (a silver-ratio range reduction into a five-way piecewise table, a
   degree-13 odd minimax polynomial, then table-selected offsets) rather
@@ -85,17 +85,17 @@ agree exactly, function for function and instruction for instruction.
 Every ported function's control flow, branch structure and constant tables
 come from the pinned decompiled C; every fused operation comes from the
 disassembly instead, documented function by function below and at each
-`f32::mul_add` call site in `src/math.rs` with its instruction address.
+`f32::mul_add` call site in `src/compat/math/trig.rs` with its instruction address.
 
 ## Call sites replaced
 
 `libm::sinf`/`cosf`/`tanf`/`atan2f`/`atanf`/`acosf`/`asinf` calls that port
-game logic (not rendering) now go through `crate::math`:
+game logic (not rendering) now go through `crate::compat::math`:
 `src/collision/{ecb,bones}.rs`, `src/compat/{bytecode,math}.rs` (the
 `sin`/`cos`/`tan`/`atan`/`asin`/`acos` bytecode opcodes and
 `atan2_degrees`; `log`/`exp`/`sqrt` are unchanged), `src/fighter/{damage,
 aerial,escape_air}.rs`, `src/game/{damage,ledge,shield}.rs`,
-`src/game/characters/fox/up.rs`, and `src/quaternion.rs` (`matrix_to_euler`,
+`src/compat/math/kinematics.rs`, and `src/quaternion.rs` (`matrix_to_euler`,
 `interpolate`'s `atan2f`/`sinf`/`acosf`; `from_euler`'s `glam`-based
 `sin_cos` is unaffected -- see that module's own doc comment).
 `crates/renderer` is untouched throughout, as directed.
@@ -120,7 +120,7 @@ tooling convenience, never real hardware behavior, on this function.
 
 Modeling the exact hardware estimate table (the specific bit-manipulation
 lookup PowerPC's `frsqrte` uses) is still out of scope here, like `sqrtf`
-generally. Instead, `frsqrte_newton3` (`src/math.rs`) seeds the same
+generally. Instead, `frsqrte_newton3` (`src/compat/math/trig.rs`) seeds the same
 disassembly-derived Newton-Raphson refinement from an accurate `1/sqrt(x)`
 (`1.0_f64 / f64::from(x).sqrt()`) rather than the hardware estimate or the
 placeholder's wrong-direction `sqrt(x)`. Three Newton iterations converge
@@ -130,7 +130,7 @@ essentially every input -- confirmed directly, not assumed: swept across
 `-0.999..=0.999` in 2000 steps, the largest disagreement against `std`'s
 `acos`/`asin` was on the order of `5e-7`, near the limit of `f32` precision
 itself. `acosf`/`asinf` are wired to their real call sites
-(`fighter::damage::vector_angle`, `game::characters::fox::up::angle_xy`,
+(`fighter::damage::vector_angle`, `compat::math::kinematics::angle_xy`,
 `quaternion::interpolate`) on the strength of that measurement.
 
 Each Newton-Raphson iteration itself (confirmed by disassembly, at
@@ -139,7 +139,7 @@ addresses in `lb_sqrtf`) computes `g*g` and `0.5*g` as separate plain
 multiplies, but fuses `3.0 - x*(g*g)` into one `fnmsubs`; `acosf`'s and
 `asinf`'s own leading `1.0 - x*x` (`0x80022D30`/`0x80022DD4`) is likewise one
 fused `fnmsubs`, not a separate multiply and subtract -- both ported that way
-in `src/math.rs`.
+in `src/compat/math/trig.rs`.
 
 (A second, unrelated discovery from the same investigation: this crate's C
 oracle is one shared static library across every `*_differential.rs` test,
@@ -169,7 +169,7 @@ how that test accounts for it, including the boundary-flip case below.)
 places, all now ported as such, each confirmed independently by both this
 batch's own disassembly and the sibling `ppc_fma_audit.py` tool:
 
-1. **Range reduction** (`reduce` in `src/math.rs`): after computing `x - n*2`
+1. **Range reduction** (`reduce` in `src/compat/math/trig.rs`): after computing `x - n*2`
    (an unfused `fsubs`, using an exact integer-to-double conversion so the
    subtraction itself is not rounded early), the four `__four_over_pi_m1[i] *
    x` correction terms are folded into the running total via four chained
@@ -220,7 +220,7 @@ result` but the compiled binary computes differently: `result_squared` and
 multiply computed once and reused, the five-term nested polynomial is five
 fused `fmadds` (`0x80022FC8` through `0x80022FE8`), and the *final*
 combination -- `result_cubed * poly + result` -- is itself one more fused
-`fmadds` (`0x80022FEC`), not a separate multiply and add. `crate::math`'s
+`fmadds` (`0x80022FEC`), not a separate multiply and add. `crate::compat::math::trig`'s
 `atanf` ports both exactly this way, matching the pinned, unfused oracle
 within `close_ulps`'s small, fixed bound (the residual gap being unfused
 range-selection/table-index arithmetic elsewhere in the function, identical
@@ -269,7 +269,7 @@ compiler fused *those* additions too, and the first attempt at this batch
 left them unfused). Measurement alone cannot distinguish "the right fusion
 shape" from "a fusion shape that happens to agree with this one recording's
 inputs"; only the disassembly can, which is why every fused operation
-`src/math.rs` ports now cites an instruction address rather than a
+`src/compat/math/trig.rs` ports now cites an instruction address rather than a
 measurement outcome.
 
 ## Tests
@@ -290,7 +290,7 @@ measurement outcome.
   compared against `std`'s accurate `acos`/`asin` (not the oracle, whose
   placeholder-seeded Newton iteration is not real hardware behavior; see
   above), full domain, NaN-safe.
-- `src/math.rs`'s own `#[cfg(test)]` module: ordinary-angle sanity checks
+- `src/compat/math/trig.rs`'s own `#[cfg(test)]` module: ordinary-angle sanity checks
   against `std`, plus a dedicated `acosf`/`asinf` near-domain-edge accuracy
   check (`acos_asin_agree_with_std_near_the_domain_edges`) exercising
   exactly the inputs the placeholder-seeded predecessor failed on.
@@ -310,7 +310,7 @@ measurement outcome.
   host/target, that cast lowers to x86-64 `cvttss2si`, whose result for
   exactly those inputs is the "integer indefinite" value, `i32::MIN` --
   different from Rust's `as i32`, which instead saturates (`i32::MAX` for
-  positive overflow, `0` for NaN). `crate::math`'s private `c_int_cast`
+  positive overflow, `0` for NaN). `crate::compat::math::trig`'s private `c_int_cast`
   reproduces the `i32::MIN` behavior so the full-domain proptests (which do
   exercise this range) match the oracle rather than silently narrowing the
   tested domain, per this project's existing "stays within C's defined
@@ -422,9 +422,9 @@ recording's baseline changed (see `docs/validation.md`).
 | --- | --- | --- | --- |
 | `ftColl_80079AB0` | 3 distinct sites (2 mutually-exclusive branch variants + 2 shared = 6 static occurrences) | `fighter::combat::knockback` | the branch `inner` term (`x118*x110 + x114*(x118*x28)` fixed, or the count-based equivalent), `growth_term` (`x11C*(decay*inner)+x120`), and `scaled` (`0.01*growth*growth_term+x2C`) |
 | `ftCommon_CalcHitlag` | 1 | `fighter::combat::hitlag` | `dmg * x198 + x19C` |
-| `ftCo_800DA824` | 2 | `fighter::grab::escape_timer` | `handicap_scale*temp+base`, and the final `percent*percent_scale+temp` |
+| `ftCo_800DA824` | 2 | `game::grab::escape_timer` | `handicap_scale*temp+base`, and the final `percent*percent_scale+temp` |
 | `ftCo_Damage_CalcAngle` | 1 | `fighter::damage::launch_angle` | `x148 * ratio + 1` (in the grounded branch, before the separate degrees-to-radians multiply) |
-| `lbVector_AngleXY` | 1 `fmadds` (the dot product) + 8 `fnmsub` (double precision, inside the inlined `sqrtf_accurate` Newton-Raphson refinement, 4 iterations × 2 calls) | `game::characters::fox::up::angle_xy` (private) | the dot product `a.y*b.y + a.x*b.x`, and a new `sqrt_accurate` helper's `3.0 - guess*guess*x` per iteration |
+| `lbVector_AngleXY` | 1 `fmadds` (the dot product) + 8 `fnmsub` (double precision, inside the inlined `sqrtf_accurate` Newton-Raphson refinement, 4 iterations × 2 calls) | `compat::math::kinematics::angle_xy` | the dot product `a.y*b.y + a.x*b.x`, and a `sqrt_accurate` helper's `3.0 - guess*guess*x` per iteration |
 
 `lbVector_AngleXY` needed more than a `mul_add` at one call site: its own
 length calls go through `lbVector_Len_xy_accurate` → `sqrtf_accurate`
@@ -601,7 +601,7 @@ guessing:
 
 Both files were reverted to their original, uncontracted form (matching
 every other adapter); `fighter::combat::knockback` and
-`fighter::grab::escape_timer` still use `f32::mul_add` at the exact sites
+`game::grab::escape_timer` still use `f32::mul_add` at the exact sites
 `tools/ppc_fma_audit.py` identified (unaffected by any of this — the
 oracle's limitations don't change what the real PowerPC hardware does).
 Their differential tests (`combat_differential.rs`'s `knockback_matches_c`,
@@ -622,7 +622,7 @@ Rust) fused value, independent of the C oracle's own limitations for these
 two functions specifically:
 `fighter::combat::tests::knockback_matches_a_hardware_fused_value_pinned_from_the_retail_dol`
 and
-`fighter::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`.
+`game::grab::tests::escape_timer_matches_the_hardware_fused_rounding_not_naive_two_rounding`.
 
 **Bottom line for future batches doing this:** `-ffp-contract=fast -mfma`
 reproduces PowerPC single-rounding semantics reliably only when a

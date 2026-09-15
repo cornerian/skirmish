@@ -1,6 +1,6 @@
+use skirmish::fighter::ledge::{Attachment, AttackMotion, Frame, Jump, Motion, Parameters, Rules};
 use skirmish::game::{
     data::{Attack, AttackFrame, Hitbox, MatchData},
-    ledge::{Attachment, AttackMotion, Frame, Jump, Motion, Parameters, Rules},
 };
 
 pub fn profile(mut data: MatchData) -> MatchData {

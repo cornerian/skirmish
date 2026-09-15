@@ -2,6 +2,7 @@
 //! down, C-stick entry, the charge state machine, charged damage, the
 //! charging-victim knockback multiplier and TransN root motion) in an
 //! explicitly synthetic native world.
+
 #[path = "support/grab.rs"]
 mod grab_support;
 #[path = "support/smash.rs"]
@@ -9,12 +10,11 @@ mod smash_support;
 #[path = "support/tilt.rs"]
 mod tilt_support;
 
+use skirmish::fighter::damage::Armor;
+use skirmish::fighter::smash::{ChargeState, Rules};
+use skirmish::fighter::shield;
 use skirmish::game::{
-    Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State,
-    damage::Armor,
-    data::MatchData,
-    shield,
-    smash::{ChargeState, Rules},
+    Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State, data::MatchData,
 };
 
 #[derive(serde::Deserialize)]

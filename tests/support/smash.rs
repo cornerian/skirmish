@@ -1,7 +1,6 @@
+use skirmish::fighter::{smash::{ChargeCommand, ForwardSmashes, Parameters, Rules, SmashAttack}, tilt::GroundFrameFlags};
 use skirmish::game::{
     data::{Attack, AttackFrame, Hitbox, MatchData},
-    smash::{ChargeCommand, ForwardSmashes, Parameters, Rules, SmashAttack},
-    tilt::GroundFrameFlags,
 };
 
 /// Invented smash rules; forward thresholds are radians for the folded stick

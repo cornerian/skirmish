@@ -1,9 +1,76 @@
 //! Headless blast death actions, including delayed star and screen stock loss.
 
 use super::{Action, Error, Fighter, simulation};
+use crate::compat::math::random::HsdRng;
 use serde::{Deserialize, Serialize};
 
-pub use crate::fighter::death::Kind;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Left,
+    Right,
+    Down,
+    Up,
+    UpStar,
+    UpStarIce,
+    UpScreen,
+    UpScreenIce,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Query {
+    pub excluded: [bool; 5],
+    pub position: [f32; 2],
+    pub blast: [f32; 4],
+    pub grounded: bool,
+    pub forced_top_eligible: bool,
+    pub knockback_y: f32,
+    pub top_knockback_threshold: f32,
+    pub force_normal_top: bool,
+    pub camera_disables_screen: bool,
+    pub screen_chance_percent: i32,
+    pub ice: bool,
+}
+
+pub fn select(query: Query, rng: &mut HsdRng) -> Option<Kind> {
+    if query.excluded.into_iter().any(|value| value) {
+        return None;
+    }
+    let [left, right, bottom, top] = query.blast;
+    let [x, y] = query.position;
+    if x > right {
+        return Some(Kind::Right);
+    }
+    if x < left {
+        return Some(Kind::Left);
+    }
+    if y > top
+        && (query.grounded
+            || query.forced_top_eligible
+            || query.knockback_y > query.top_knockback_threshold)
+    {
+        if query.force_normal_top {
+            return Some(Kind::Up);
+        }
+        let roll = rng.randi(100) + 1;
+        if !query.camera_disables_screen && query.screen_chance_percent >= roll {
+            return Some(if query.ice {
+                Kind::UpScreenIce
+            } else {
+                Kind::UpScreen
+            });
+        }
+        return Some(if query.ice {
+            Kind::UpStarIce
+        } else {
+            Kind::UpStar
+        });
+    }
+    if y < bottom {
+        return Some(Kind::Down);
+    }
+    None
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

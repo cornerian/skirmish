@@ -1,6 +1,7 @@
 //! End-to-end Dash-phase dispatch (`ftCo_Dash_IASA`), Run's dash-attack/
 //! shield arms (`ftCo_Run_IASA`) and AttackDash (`ftCo_AttackDash.c`) in an
 //! explicitly synthetic native world.
+
 #[path = "support/dash.rs"]
 mod dash_support;
 #[path = "support/escape.rs"]
@@ -12,11 +13,14 @@ mod smash_support;
 #[path = "support/tilt.rs"]
 mod tilt_support;
 
-use skirmish::fighter::dash::{apply_friction, transition_friction};
+use skirmish::fighter::dash::Rules as DashRules;
+use skirmish::fighter::shield;
+use skirmish::game::{Action, BUTTON_A, BUTTON_L, BUTTON_X};
 use skirmish::game::{
-    Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State,
-    dash::Rules as DashRules, data::MatchData, grab::ShieldGrabRules, shield,
+    Controller, Event, Match, State, data::MatchData, grab::ShieldGrabRules,
 };
+
+use skirmish::fighter::dash::{apply_friction, transition_friction};
 use skirmish_replay::{observation, slippi::Port};
 
 #[derive(serde::Deserialize)]
@@ -227,30 +231,47 @@ fn entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one() {
     assert_eq!(observed.fighters[0].action_age, 1.0);
 }
 
-/// `fox-bf.slp`: P4 enters an ordinary (non-smash) `Turn` from `Landing` at
-/// frame 32 with a moderate reversal (stick_x `0.7375`, `standing_turn_
-/// frames` far from expired), then on Turn's very next frame (33) the stick
-/// strengthens to `0.8375` (`>= dash_threshold`, `tilt_x_age` `1 <
-/// dash_window`) and P4 is already in `Dash` with facing flipped -- one
-/// frame after entering `Turn`, not the several more `standing_turn_frames`
-/// would otherwise need. `ftCo_Turn_IASA`'s own `fn_800C9C2C` conversion
-/// (`ftCo_Turn.c:97-148,160-169`) does not wait for `ftCo_Turn_Anim_Inner`'s
-/// separate `has_turned` flip (`frames_to_turn` reaching zero): it resolves
-/// the facing flip itself the moment a frame's own stick crosses the smash
-/// threshold, since `ftCo_Dash_Enter` reads `fp->facing_dir` directly and
-/// never flips it.
+/// `ftCo_Turn_IASA` arms a smash conversion with `fn_800C9C2C`, but the
+/// pinned source gates the actual Dash entry on `turn.just_turned` as well.
+/// A strong reversal during the standing-turn countdown therefore remains in
+/// Turn until the animation callback flips facing; the next IASA pass can then
+/// enter Dash while preserving the source's input-to-observation ordering.
 #[test]
-fn a_stronger_stick_mid_turn_converts_straight_to_dash_without_waiting_for_the_flip() {
+fn a_stronger_stick_mid_turn_waits_for_turn_completion_before_dash() {
     let mut game = Match::new(data(), 42).unwrap();
     let state = step(&mut game, stick(0, [-0.5, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Turn);
     assert_eq!(state.fighters[0].facing, 1.0, "not yet flipped");
+    let state = step(&mut game, stick(0, [-0.9, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    assert_eq!(state.fighters[0].facing, 1.0, "countdown still owns Turn");
+    let state = step(&mut game, stick(0, [-0.9, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
+    let state = step(&mut game, stick(0, [-0.9, 0.0]));
+    assert_eq!(state.fighters[0].action, Action::Turn);
     let state = step(&mut game, stick(0, [-0.9, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Dash);
     assert_eq!(
         state.fighters[0].facing, -1.0,
         "flipped by the conversion itself, not a separate has_turned tick"
     );
+}
+
+#[test]
+fn armed_turn_does_not_dash_if_the_stick_is_released_before_completion() {
+    let mut game = Match::new(data(), 42).unwrap();
+    assert_eq!(
+        step(&mut game, stick(0, [-0.5, 0.0])).fighters[0].action,
+        Action::Turn
+    );
+    // The strong reversal arms x8, then neutral input is held through the
+    // standing-turn countdown.  The source's conversion branch rechecks the
+    // current directional threshold after just_turned, so this remains Turn.
+    for _ in 0..4 {
+        let state = step(&mut game, Controller::default());
+        assert_eq!(state.fighters[0].action, Action::Turn);
+    }
+    assert_eq!(game.state().fighters[0].facing, -1.0);
 }
 
 #[test]
@@ -276,7 +297,7 @@ fn middle_phase_dash_back_enters_a_smash_turn_on_the_opposite_stick_only() {
 }
 
 /// `fox-fd.slp` reports P1 already in Run at frame -13, whose `action_frame`
-/// (`game::locomotion::start_dash`'s entry-time `1`, kept aligned with
+/// (`fighter::locomotion::start_dash`'s entry-time `1`, kept aligned with
 /// decomp's `cur_anim_frame` from then on) is 11, one below `dash_run_frame`
 /// (12) (`docs/parity.md`'s frame -13 divergence, fixed by the real-replay
 /// parity loop). This fixture pins the same relationship with its own
@@ -334,7 +355,7 @@ fn late_phase_redash_ground_velocity_reflects_the_transition_friction_tail() {
     // an already-ongoing Dash in that path (only Wait/Walk/SquatWait reach
     // it), so the same fresh press just continues ordinary Dash physics --
     // one frame short of `dash_run_frame`'s own boundary (the fixture's 8,
-    // `game::locomotion::update_actions`'s fallback Dash arm) rather than
+    // `fighter::locomotion::update_actions`'s fallback Dash arm) rather than
     // landing exactly on it and entering Run, which this scenario isn't
     // testing.
     let mut without_data = data();

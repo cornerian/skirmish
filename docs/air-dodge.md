@@ -1,6 +1,6 @@
 # Air dodge profile
 
-`game::escape_air` ports `ftCo_EscapeAir.c` with its `ftCo_FallSpecial.c`
+`fighter::escape_air` ports `ftCo_EscapeAir.c` with its `ftCo_FallSpecial.c`
 continuation and the shared `ftCo_Landing.c` special landing. Enable it with
 `rules.escape_air` plus each fighter's `escape_air` resources; the fixture
 `tests/fixtures/game/escape-air.json` shows the schema with **invented test

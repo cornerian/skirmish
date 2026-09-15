@@ -1,0 +1,26 @@
+[package]
+name = "skirmish-pon-runtime"
+version = "0.1.0"
+edition = "2024"
+publish = false
+build = "build.rs"
+
+[features]
+default = []
+experimental-continuations = []
+
+[dependencies]
+flate2 = "1"
+pon-jit = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126", package = "pon-jit" }
+pon-ir = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126", package = "pon-ir" }
+pon-runtime = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126", package = "pon-runtime" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tar = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+sha2 = "0.10"

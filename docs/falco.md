@@ -1,8 +1,7 @@
 # Falco: registering a second character on the shared Fox/Falco move code
 
-Pinned decomp rev `0bac93a5`. This batch makes Falco a playable character
-(`game::characters::Specials::Falco`) on top of the side/up/down special
-code Fox already has (`game::characters::fox::{side,up,down}`), so an
+Pinned decomp rev `0bac93a5`. This batch registers Falco on top of the shared
+Fox policy definition, so an
 exported Falco pack (`fighters/falco.json`) loads and Falco recordings can
 be measured against it. It does not add any new move behavior: every
 Falco-carrying source file cited below already dispatches through Fox's own
@@ -21,11 +20,9 @@ straight to `ftFx_Init_LoadSpecialAttrs`, and `ftFc_Init_OnLoad`'s call to
 ftFox_DatAttrs)` — the same attribute struct shape Fox's own `ftFx_Init_
 OnLoad` uses, loaded from Falco's own `PlFc.dat` instead of Fox's `PlFx.dat`.
 So Falco's side, up and down specials are code-identical to Fox's; only the
-numeric attributes differ, which is exactly why `game::characters::
-Specials::Falco` reuses `fox::side::SideSpecial`/`fox::up::UpSpecial`/
-`fox::down::DownSpecial` verbatim as its own field types rather than
-defining Falco-specific copies (see that enum's own doc comment in
-`src/game/characters/mod.rs`).
+ numeric attributes differ, which is why Falco imports the shared Fox policy
+and overrides only its identity and resource selection rather than defining a
+second source file (see `src/game/script/definition.rs`).
 
 The one exception found by grepping every `FTKIND_FALCO` branch under
 `src/melee/ft/kinds/ftFox/`: `ftFox_SpecialS_CreateGhostItem`
@@ -45,15 +42,15 @@ the 2026-09-13 batch covered in its own section below
 
 ## Registry wiring
 
-- `game::characters::Specials` gains a `Falco { neutral, side, up, down }`
-  variant, structurally identical to `Fox`'s own. Its accessor methods
-  (`neutral`/`fox_side`/`fox_up`/`fox_down`) now match either variant, so
+- The shared Python callback definition overrides Falco's identity and resource
+  selection. The shared `fighter::specials` adapter dispatches
+  both resources through the same lifecycle callbacks, so
   every existing call site in `game::specials`'s move dispatch and
   `game::validation` (already written against those accessors, never
   against `Specials::Fox` directly) needed no change at all.
-- `game::characters::moves` dispatches `Specials::Falco` to the same
-  `fox::MOVES` slice `Specials::Fox` uses.
-- `game::characters::fox::CHARACTER_IDS` (the external Slippi CSS ids that
+- The definition registry's external-id map (in
+  `game::script::definition`) carries Falco's id, 20, alongside Fox's 2.
+  The external Slippi ids that
   resolve through `fox::slippi_ids`) gains Falco's own id, 20
   (`crates/cli/src/initialization.rs`'s `CHARACTER_EXTERNAL_IDS`) alongside
   Fox's 2. Falco's *internal* fighter kind, `FTKIND_FALCO`
@@ -81,7 +78,7 @@ the 2026-09-13 batch covered in its own section below
   fighter loads into a real `Match`; each of the four specials (including
   `neutral`, wired since the 2026-09-13 batch below, previously `None`)
   dispatches from a Falco fighter exactly as it does from a Fox one; and
-  `game::characters::slippi_ids` resolves the same `(state, animation)`
+  `game::script::definition` resolves the same `(state, animation)`
   pair for external ids 2 (Fox) and 20 (Falco) on every special action,
   while an unregistered id (22, Dr. Mario) resolves nothing. This exercises
   the wiring, not Falco's own real numeric attributes — that is the
@@ -120,7 +117,7 @@ reported, not fixed.
 Pinned decomp rev `0bac93a5`, same as every citation above. Gameplay export
 v10 (`/mnt/archive/datasets/melee/skirmish-gameplay/v10-snapshot-20260913/
 fighters/falco.json`) carries `specials.neutral` for Falco for the first
-time, in the exact same schema `characters::fox::neutral::NeutralSpecial`
+time, in the exact same `specials.neutral` resource schema
 already defines for Fox (`docs/fox-neutral-special.md`): this batch wires
 it through `Specials::Falco.neutral`, no schema change needed.
 
@@ -175,7 +172,7 @@ already covered by `docs/fox-neutral-special.md`'s own "gun model, cosmetic"
 section — nothing there is laser-hitbox logic).
 
 `game::projectile::ProjectileKind` gains a `FalcoLaser` variant purely as an
-observation/replay label (`characters::fox::neutral::drain_pending_shot`
+observation/replay label (the Fox/Falco script emission callback
 now checks whether `data.specials` is `Specials::Falco` and spawns that
 kind instead of `FoxLaser`); every function in `game::projectile` was
 already generic over `kind` before this batch and needed no change, matching
@@ -184,7 +181,7 @@ the finding above.
 ### The one genuine gameplay difference: attributes and hitbox data
 
 Falco's laser is data-different from Fox's in exactly the ways
-`characters::fox::neutral::{Attributes,Laser}` already has fields for
+`specials.neutral` already has fields for
 (`fighters/falco.json`, gameplay export v10):
 
 | Field | Fox | Falco |

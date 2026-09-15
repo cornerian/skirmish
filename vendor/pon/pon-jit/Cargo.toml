@@ -1,0 +1,18 @@
+[package]
+name = "pon-jit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.0"
+
+[workspace]
+
+
+[dependencies]
+pon-codegen = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }
+pon-runtime = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }
+pon-gc = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }
+pon-ir = { git = "https://github.com/can1357/pon", rev = "ab9067dbd2899c64c4d67a4bc27b8ad49472b126" }
+cranelift-codegen = "=0.133.1"
+cranelift-frontend = "=0.133.1"
+cranelift-jit = "=0.133.1"
+cranelift-module = "=0.133.1"

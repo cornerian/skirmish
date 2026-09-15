@@ -22,8 +22,39 @@
 //! and are not ported; `EntryRules::scale_y` is kept only so the resource
 //! shape has a place for `x6C4` if a future renderer wants it.
 use super::{Action, Error, Fighter, data::FighterData, simulation};
-use crate::fighter::entry as math;
 use serde::{Deserialize, Serialize};
+
+pub const DELAY_STEP: u32 = 5;
+
+pub fn entry_delay(slot: u32) -> u32 {
+    DELAY_STEP * (slot + 1)
+}
+
+pub fn spawn_facing(spawns: [[f32; 2]; 2], player: usize) -> f32 {
+    let opponent = 1 - player;
+    let dx = spawns[opponent][0] - spawns[player][0];
+    if dx < -5.0 {
+        -1.0
+    } else if dx > 5.0 {
+        1.0
+    } else if player == 1 {
+        -spawn_facing(spawns, 0)
+    } else {
+        1.0
+    }
+}
+
+pub fn amplitude(scale: f32) -> f32 {
+    (1.497345_f64 * scale as f64) as f32
+}
+
+pub fn start_progress(timer: u32, start_frames: u32) -> f32 {
+    (start_frames as f32 - timer as f32) / start_frames as f32
+}
+
+pub fn end_progress(timer: u32, start_frames: u32) -> f32 {
+    timer as f32 / start_frames as f32
+}
 
 /// `Rules.entry`. `ft/types.h:473-476`: `x6BC`/`x6C0`/`x6C4`/`x6C8`, all
 /// declared `int` (`x6C4` is the sole exception: `f32`, the squish-scale
@@ -108,7 +139,7 @@ pub(crate) fn owns_action(action: Action) -> bool {
 /// (P1=0..P4=3, `crate::fighter::entry::entry_delay`).
 pub(crate) fn enter(fighter: &mut Fighter, slot: u32) {
     fighter.entry = State {
-        timer: math::entry_delay(slot),
+        timer: entry_delay(slot),
         y0: fighter.position[1],
         ..State::default()
     };
@@ -128,7 +159,7 @@ pub(crate) fn enter(fighter: &mut Fighter, slot: u32) {
 fn enter_start(fighter: &mut Fighter, rules: &EntryRules, trophy_scale: f32) {
     fighter.entry.timer = rules.start_frames;
     fighter.entry.scale = trophy_scale;
-    let amplitude = math::amplitude(trophy_scale);
+    let amplitude = amplitude(trophy_scale);
     fighter.entry.amplitude = amplitude;
     fighter.entry.offset = amplitude;
     simulation::enter(fighter, Action::EntryStart);
@@ -216,14 +247,14 @@ pub(crate) fn move_fighter(fighter: &mut Fighter, rules: Option<&EntryRules>) {
         // ftCo_Entry_Phys is empty: position does not move during Entry.
         Action::Entry => {}
         Action::EntryStart => {
-            let t = math::start_progress(fighter.entry.timer, rules.start_frames);
+            let t = start_progress(fighter.entry.timer, rules.start_frames);
             fighter.entry.offset = fighter.entry.amplitude * t;
             fighter.position[1] = fighter.entry.y0 + fighter.entry.offset;
         }
         Action::EntryEnd => {
             // ftCo_EntryEnd_Phys:291: the x6BC (start_frames) divisor, not
             // x6C0 -- kept exactly as the source, not "fixed" to end_frames.
-            let t = math::end_progress(fighter.entry.timer, rules.start_frames);
+            let t = end_progress(fighter.entry.timer, rules.start_frames);
             fighter.entry.offset = fighter.entry.amplitude * t;
             fighter.position[1] = fighter.entry.y0 + fighter.entry.offset;
         }

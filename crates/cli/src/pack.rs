@@ -15,7 +15,7 @@
 //! `MatchData`'s tree contains internally tagged enums
 //! (`#[serde(tag = "kind", ...)]`, e.g. `CollisionBox` here, and similar
 //! enums in `fighter::damage` and `game` itself) and a `#[serde(flatten)]`
-//! field (`game::jab`). Both require a `serde::Deserializer` that supports
+//! field (`fighter::jab`). Both require a `serde::Deserializer` that supports
 //! `deserialize_any`, to buffer a value's fields generically and sniff the
 //! tag/flattened keys before picking a concrete variant/shape -- something
 //! JSON provides but `bincode` and `postcard`, by design, explicitly

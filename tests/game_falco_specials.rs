@@ -1,11 +1,13 @@
 //! Falco's registration as a playable character
-//! (`game::characters::Specials::Falco`): a fighter carrying that variant
+//! (`game::script::resources::Specials` with the Falco character key): a fighter
+//! carrying that resource
 //! loads into a real `Match`, dispatches to the exact same side/up/down
 //! special-move code Fox's own variant uses (see that enum's own doc for
 //! why the decomp makes this a data-only difference: `ftFc_Init_
 //! MotionStateTable`, `ftfalco.c:23-370`, points every one of Falco's
 //! `ftFx_MS_Special*` entries at the identical Fox callbacks), and resolves
-//! its own external Slippi character id (20) through `fox::slippi_ids`.
+//! its own external Slippi character id (20) through
+//! `game::script::definition::builtin_slippi_ids`.
 //!
 //! This intentionally reuses the same invented numeric fixtures the Fox
 //! wiring tests already use (`fox-side-special.json`/`fox-up-special.json`/
@@ -18,7 +20,7 @@
 //! (`docs/falco.md`): `fighters/falco.json` (gameplay export v10) carries
 //! his own `specials.neutral`, exporter-confirmed with real, and in one
 //! respect genuinely different, attributes/hitbox data from Fox's own (see
-//! `characters::fox::neutral::{Attributes,Laser}`'s doc comments).
+//! `neutral` resource in `scripts/fighters/fox.luau`).
 //! `tests/game_falco_neutral_special.rs` covers that move end to end; this
 //! file only confirms the wiring reaches it, matching this file's own
 //! existing side/up/down coverage style.
@@ -26,27 +28,27 @@
 #[path = "support/conformance.rs"]
 mod conformance;
 
-use skirmish::characters::{Specials, fox};
+use skirmish::fighter::escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules};
 use skirmish::game::{
     Action, BUTTON_B, Controller, Match,
     data::MatchData,
-    escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
+    script::resources::{Resources, Specials},
 };
 
 #[derive(serde::Deserialize)]
 struct SideFixture {
-    rules: fox::side::Rules,
-    parameters: fox::side::SideSpecial,
+    rules: skirmish::fighter::specials::Rules,
+    parameters: serde_json::Value,
 }
 
 #[derive(serde::Deserialize)]
 struct UpFixture {
-    parameters: fox::up::UpSpecial,
+    parameters: serde_json::Value,
 }
 
 #[derive(serde::Deserialize)]
 struct DownFixture {
-    parameters: fox::down::DownSpecial,
+    parameters: serde_json::Value,
 }
 
 #[derive(serde::Deserialize)]
@@ -57,10 +59,10 @@ struct EscapeAirFixture {
 
 #[derive(serde::Deserialize)]
 struct NeutralFixture {
-    parameters: fox::neutral::NeutralSpecial,
+    parameters: serde_json::Value,
 }
 
-/// Both fighters play `Specials::Falco`, with all four moves now that
+/// Both fighters play `Specials` with the Falco character key, with all four moves now that
 /// Falco's own Laser is wired (`fighters/falco.json`'s own `specials.
 /// neutral`, gameplay export v10; see this file's own doc comment).
 fn data() -> MatchData {
@@ -79,11 +81,14 @@ fn data() -> MatchData {
     data.rules.specials = Some(side.rules);
     for fighter in &mut data.fighters {
         fighter.escape_air = Some(escape_air.parameters.clone());
-        fighter.specials = Some(Specials::Falco {
-            neutral: Some(neutral.parameters.clone()),
-            side: Some(side.parameters.clone()),
-            up: Some(up.parameters.clone()),
-            down: Some(down.parameters.clone()),
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("neutral".into(), neutral.parameters.clone());
+        values.insert("side".into(), side.parameters.clone());
+        values.insert("up".into(), up.parameters.clone());
+        values.insert("down".into(), down.parameters.clone());
+        fighter.specials = Some(Specials {
+            character: "falco".into(),
+            resources: Resources::new(values).unwrap(),
         });
     }
     data
@@ -148,12 +153,13 @@ fn falco_plays_the_shared_down_special() {
 #[test]
 fn falco_plays_his_own_neutral_special() {
     let game = Match::new(data(), 0).unwrap();
-    let Some(Specials::Falco { neutral, .. }) = game.data().fighters[0].specials.as_ref() else {
-        panic!("test fixture is missing its Falco specials resource");
-    };
     assert!(
-        neutral.is_some(),
-        "fighters/falco.json carries specials.neutral as of gameplay export v10"
+        game.data().fighters[0]
+            .specials
+            .as_ref()
+            .unwrap()
+            .lookup("neutral")
+            .is_some()
     );
     let mut game = Match::new(data(), 0).unwrap();
     // A centered-stick B press (`vertical(0.0)`: `BUTTON_B`, stick `[0.0,
@@ -169,7 +175,8 @@ fn falco_plays_his_own_neutral_special() {
 /// `CHARACTER_EXTERNAL_IDS`): Fox is 2, Falco is 20, and both resolve
 /// through the same table since Falco's own `ftFc_Init_MotionStateTable`
 /// gives it the identical `ftFx_MS_Special*` state ids Fox's own table
-/// uses (`fox::CHARACTER_IDS`'s own doc). Falco's *internal* fighter kind,
+/// uses (`game::script::definition::builtin_slippi_ids`'s own docs). Falco's
+/// *internal* fighter kind,
 /// `FTKIND_FALCO` (`ft/forward.h:112`), is a different number (22) from his
 /// external CSS id and must not be confused with it.
 #[test]
@@ -181,15 +188,15 @@ fn falco_and_fox_resolve_the_same_slippi_special_ids() {
         Action::SpecialHiHold,
         Action::SpecialLwStart,
     ] {
-        let fox_ids = skirmish::characters::slippi_ids(Some(2), action);
-        let falco_ids = skirmish::characters::slippi_ids(Some(20), action);
+        let fox_ids = skirmish::game::script::definition::builtin_slippi_ids(Some(2), action);
+        let falco_ids = skirmish::game::script::definition::builtin_slippi_ids(Some(20), action);
         assert!(fox_ids.is_some());
         assert_eq!(fox_ids, falco_ids);
     }
     // An unregistered external id (Dr. Mario, 22 -- not to be confused with
     // Falco's own internal kind, also numbered 22) still resolves nothing.
     assert_eq!(
-        skirmish::characters::slippi_ids(Some(22), Action::SpecialNStart),
+        skirmish::game::script::definition::builtin_slippi_ids(Some(22), Action::SpecialNStart),
         None
     );
 }

@@ -5,7 +5,7 @@
 mod support;
 
 use proptest::prelude::*;
-use skirmish::fighter::nudge::{self, Body, Error, Neighbors, Rules};
+use skirmish::game::nudge::{self, Body, Error, Neighbors, Rules};
 use support::{body, floor, rules};
 
 #[link(name = "skirmish_oracle", kind = "static")]

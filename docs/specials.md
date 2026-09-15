@@ -1,7 +1,6 @@
 # Neutral specials
 
-Fox's neutral special (Blaster) is `game::characters::fox::neutral`
-(`src/game/characters/fox/neutral.rs`), covered in full in
+Fox's neutral special (Blaster) is covered in full in
 `docs/fox-neutral-special.md`: a Start/Loop/End state machine, repeatable
 while B is pressed, that fires a generic fired-projectile
 (`game::projectile`, `src/game/projectile.rs`) laser through the ordinary
@@ -12,7 +11,7 @@ Fox's included.
 The generic single-phase shared shell this codebase previously used as a
 placeholder for any character's neutral special (`game::specials::neutral`)
 is retired: with Fox now on his own dedicated Blaster implementation,
-`characters::Specials` has no remaining variant that could reach it, so it
+the definition registry has no remaining definition that could reach it, so it
 was removed outright rather than kept as untested, unreachable code (see
 `docs/fox-neutral-special.md`'s "What moves, what doesn't" section). A
 future second character that only needs a plain single-phase neutral
@@ -40,11 +39,9 @@ gameplay effect the Reflector's own `down::Reflect` geometry and
 
 # Fox/Falco side special (Illusion/Phantasm)
 
-`game::characters::fox::side` (`src/game/characters/fox/side.rs`) implements
-this move against the same `game::specials` framework the neutral shell
-above uses; the pure arithmetic lives in `fighter::characters::fox`
-(`src/fighter/characters/fox.rs`). `fighters[].specials`' `side` entry (the
-same per-character `Specials::Fox` variant the neutral entry above shares)
+The Fox policy for this move uses the shared `fighter::specials` framework and
+the pure arithmetic in
+`compat::math::kinematics`. The `fighters[].specials` `side` resource
 and `rules.specials` cover Fox's (and, by shared code, Falco's) side
 special: `SpecialSStart/SpecialS/SpecialSEnd` on the
 ground, `SpecialAirSStart/SpecialAirS/SpecialAirSEnd` in the air. It checks
@@ -62,8 +59,7 @@ batch's own design note while implementing it.
 
 # Fox/Falco down special (Reflector)
 
-`game::characters::fox::down` (`src/game/characters/fox/down.rs`)
-implements this move against the same framework, checked after the side
+The Fox policy for this move uses the same framework, checked after the side
 special and the neutral shell above (the source's own grounded chain
 checks SpecialS, SpecialHi (unmodeled), SpecialN, then SpecialLw in that
 fixed order). `fighters[].specials`' `down` entry covers a five-phase

@@ -5,10 +5,10 @@ mod escape_support;
 #[path = "support/grab.rs"]
 mod grab_support;
 
+use skirmish::fighter::shield;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_Z, Controller, Event, Match, State,
     data::{BodyState, MatchData},
-    shield,
 };
 
 #[derive(serde::Deserialize)]
@@ -453,7 +453,7 @@ fn rolling_into_a_floor_edge_clamps_and_stays_grounded() {
     assert_eq!(clamped.fighters[1].position, [3.0, 0.0]);
     assert_eq!(
         clamped.fighters[1].edge_contact,
-        Some(skirmish::game::edge::EdgeSide::Right)
+        Some(skirmish::fighter::edge::EdgeSide::Right)
     );
     assert_eq!(clamped.fighters[1].body_state, BodyState::Intangible);
     // The roll keeps re-clamping at the end every remaining frame -- gr_vel is
@@ -479,7 +479,7 @@ fn rolling_into_a_floor_edge_clamps_and_stays_grounded() {
 fn overlap_nudges_skip_the_escaping_fighter() {
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [0.5, 0.0]];
-    resource.rules.nudge = Some(skirmish::fighter::nudge::Rules {
+    resource.rules.nudge = Some(skirmish::game::nudge::Rules {
         horizontal_step: 0.25,
         depth_step: 0.125,
         depth_limit: 0.5,

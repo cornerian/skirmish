@@ -3,7 +3,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::grab::{MashState, mash};
+use skirmish::game::grab::{MashState, mash};
 
 unsafe extern "C" {
     fn oracle_grab_mash(

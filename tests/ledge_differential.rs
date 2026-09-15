@@ -2,8 +2,8 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
+use skirmish::fighter::ledge::slow_variant;
 use skirmish::fighter::ledge::{StickOption, stick_option};
-use skirmish::game::ledge::slow_variant;
 
 unsafe extern "C" {
     fn oracle_ledge_option(

@@ -2,10 +2,10 @@
 //!
 //! Angles are radians. Formulas retain the reference's operation order, including
 //! its unusual interpolation of opposite quaternions. `matrix_to_euler`'s and
-//! `interpolate`'s `atan2f`/`sinf`/`acosf` calls use `crate::math`'s ports of
+//! `interpolate`'s `atan2f`/`sinf`/`acosf` calls use `crate::compat::math::trig`'s ports of
 //! the game's own trigonometry (`docs/math.md`); `acosf` is seeded from a real
 //! reciprocal-sqrt estimate rather than this decompilation project's own
-//! placeholder-derived (non-convergent) one -- see `crate::math`'s
+//! placeholder-derived (non-convergent) one -- see `crate::compat::math::trig`'s
 //! `frsqrte_newton3` doc comment. `from_euler`'s `sin_cos` still comes from
 //! `glam` (not yet ported: it is `Vec3`-shaped, not a single-scalar
 //! `libm`-style call), and `from_matrix`/`from_axis_angle`'s vector lengths

@@ -69,7 +69,7 @@ pub struct StageGeometry {
 }
 
 /// Environmental collision samples are physics data, independent of hurtboxes.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CollisionBox {
     Fixed {
@@ -86,6 +86,119 @@ pub enum CollisionBox {
         /// field is kept only so existing/exported packs still deserialize.
         flags: u32,
     },
+}
+
+/// Decode through a buffered JSON value before handing the internally tagged
+/// enum to Serde. With the Starlark runtime's `arbitrary_precision` JSON
+/// feature unified into this crate, direct streaming deserialization of this
+/// enum can buffer floating number tokens as private maps and reject valid
+/// `FixedSource` values as `expected f32`.
+impl<'de> Deserialize<'de> for CollisionBox {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        serde_json::from_value::<CollisionBoxWire>(value)
+            .map(CollisionBoxWire::into_collision_box)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum CollisionBoxWire {
+    Fixed {
+        source: ecb::FixedSource,
+    },
+    Bones {
+        indices: [usize; 6],
+        parameters: ecb::JointParameters,
+        flags: u32,
+    },
+}
+
+impl CollisionBoxWire {
+    fn into_collision_box(self) -> CollisionBox {
+        match self {
+            Self::Fixed { source } => CollisionBox::Fixed { source },
+            Self::Bones {
+                indices,
+                parameters,
+                flags,
+            } => CollisionBox::Bones {
+                indices,
+                parameters,
+                flags,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod collision_box_tests {
+    use super::CollisionBox;
+    use crate::collision::ecb::{FixedSource, JointParameters};
+    use serde_json::json;
+
+    fn fixed() -> CollisionBox {
+        CollisionBox::Fixed {
+            source: FixedSource {
+                up: 3.0,
+                down: 0.0,
+                front: 1.5,
+                back: 1.5,
+                angle: 0.0,
+            },
+        }
+    }
+
+    #[test]
+    fn direct_streaming_decode_accepts_tagged_fixed_source() {
+        let encoded = serde_json::to_string(&fixed()).unwrap();
+        assert_eq!(
+            serde_json::from_str::<CollisionBox>(&encoded).unwrap(),
+            fixed()
+        );
+    }
+
+    #[test]
+    fn value_decode_accepts_tagged_fixed_source() {
+        let value = json!({
+            "kind": "fixed",
+            "source": {"up": 3.0, "down": 0.0, "front": 1.5, "back": 1.5, "angle": 0.0}
+        });
+        assert_eq!(
+            serde_json::from_value::<CollisionBox>(value).unwrap(),
+            fixed()
+        );
+    }
+
+    #[test]
+    fn direct_streaming_decode_accepts_tagged_bones_parameters() {
+        let encoded = r#"{"kind":"bones","indices":[0,1,0,1,0,1],"parameters":{"side_y_offset":0.0,"height_threshold":4.0,"width_threshold":4.0},"flags":5}"#;
+        assert_eq!(
+            serde_json::from_str::<CollisionBox>(encoded).unwrap(),
+            CollisionBox::Bones {
+                indices: [0, 1, 0, 1, 0, 1],
+                parameters: JointParameters {
+                    side_y_offset: 0.0,
+                    height_threshold: 4.0,
+                    width_threshold: 4.0,
+                },
+                flags: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_collision_box_fields_are_rejected() {
+        let error = serde_json::from_str::<CollisionBox>(
+            r#"{"kind":"fixed","source":{"up":3.0,"down":0.0,"front":1.5,"back":1.5,"angle":0.0},"unexpected":0}"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unknown field"));
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -135,35 +248,35 @@ pub struct Rules {
     pub death: Option<super::death::Rules>,
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
-    pub damage: super::damage::CombatRules,
+    pub damage: crate::fighter::damage::CombatRules,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shield: Option<super::shield::Rules>,
+    pub shield: Option<crate::fighter::shield::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clank: Option<super::clank::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub nudge: Option<super::nudge::Rules>,
+    pub nudge: Option<crate::game::nudge::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grab: Option<super::grab::Rules>,
+    pub grab: Option<crate::game::grab::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ledge: Option<super::ledge::Rules>,
+    pub ledge: Option<crate::fighter::ledge::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_jump: Option<super::wall_jump::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape: Option<super::escape::Rules>,
+    pub escape: Option<crate::fighter::escape::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape_air: Option<super::escape_air::Rules>,
+    pub escape_air: Option<crate::fighter::escape_air::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specials: Option<crate::characters::fox::side::Rules>,
+    pub specials: Option<crate::fighter::specials::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tilt: Option<super::tilt::Rules>,
+    pub tilt: Option<crate::fighter::tilt::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub smash: Option<super::smash::Rules>,
+    pub smash: Option<crate::fighter::smash::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dash: Option<super::dash::Rules>,
+    pub dash: Option<crate::fighter::dash::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub edge: Option<super::edge::Rules>,
+    pub edge: Option<crate::fighter::edge::Rules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub walk: Option<super::locomotion::WalkRules>,
+    pub walk: Option<crate::fighter::locomotion::WalkRules>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -215,27 +328,32 @@ impl HitlagData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FighterData {
-    /// Optional Luau behavior program for this fighter. Programs are embedded
+    /// Optional Starlark behavior program for this fighter. Programs are embedded
     /// in the native match resource so replay hashes and checkpoints remain
     /// independent of the host filesystem.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<super::script::Program>,
+    /// Derived once after resource validation and retained for every
+    /// lifecycle callback. This cache is excluded from serde/equality because
+    /// it is a deterministic projection of the serialized resources.
+    #[serde(skip, default)]
+    pub(crate) script_resources: super::script::lifecycle_resources::ResourceCacheHandle,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebound: Option<super::clank::Animation>,
     pub name: String,
     pub movement: MovementData,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub locomotion: Option<super::locomotion::Parameters>,
+    pub locomotion: Option<crate::fighter::locomotion::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub armor: Option<super::damage::Armor>,
+    pub armor: Option<crate::fighter::damage::Armor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub floor_tech: Option<super::damage::FloorTechAttributes>,
+    pub floor_tech: Option<crate::fighter::damage::FloorTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub knockdown: Option<super::damage::KnockdownAttributes>,
+    pub knockdown: Option<crate::fighter::damage::KnockdownAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_response: Option<super::damage::SurfaceResponseAttributes>,
+    pub surface_response: Option<crate::fighter::damage::SurfaceResponseAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_tech: Option<super::damage::SurfaceTechAttributes>,
+    pub surface_tech: Option<crate::fighter::damage::SurfaceTechAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_jump: Option<super::wall_jump::Attributes>,
     /// `co_attrs.trophy_scale` (`ft/types.h:748`, `ftCo_DatAttrs` +0x110).
@@ -249,23 +367,23 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<super::entry::EntryAnimation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub damage_poses: Option<super::damage::DamagePoseAttributes>,
+    pub damage_poses: Option<crate::fighter::damage::DamagePoseAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shield: Option<super::shield::Attributes>,
+    pub shield: Option<crate::fighter::shield::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub nudge: Option<super::nudge::Attributes>,
+    pub nudge: Option<crate::game::nudge::Attributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grab: Option<super::grab::Parameters>,
+    pub grab: Option<crate::game::grab::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ledge: Option<super::ledge::Parameters>,
+    pub ledge: Option<crate::fighter::ledge::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specials: Option<crate::characters::Specials>,
+    pub specials: Option<crate::game::script::resources::Specials>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape: Option<super::escape::Parameters>,
+    pub escape: Option<crate::fighter::escape::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape_air: Option<super::escape_air::Parameters>,
+    pub escape_air: Option<crate::fighter::escape_air::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idle: Option<super::idle::IdleAnimations>,
+    pub idle: Option<crate::fighter::idle::IdleAnimations>,
     pub weight: f32,
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
@@ -278,53 +396,124 @@ pub struct FighterData {
     pub hurtboxes: Vec<Hurtbox>,
     pub jab: Attack,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aerials: Option<super::aerial::Parameters>,
+    pub aerials: Option<crate::fighter::aerial::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tilts: Option<super::tilt::Parameters>,
+    pub tilts: Option<crate::fighter::tilt::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub smashes: Option<super::smash::Parameters>,
+    pub smashes: Option<crate::fighter::smash::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jab_combo: Option<super::jab::Parameters>,
+    pub jab_combo: Option<crate::fighter::jab::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dash_attack: Option<super::dash::DashAttack>,
+    pub dash_attack: Option<crate::fighter::dash::DashAttack>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub teeter: Option<super::edge::Teeter>,
+    pub teeter: Option<crate::fighter::edge::Teeter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub taunt: Option<super::taunt::Taunt>,
+    pub taunt: Option<crate::fighter::taunt::Taunt>,
 }
 
 impl FighterData {
-    pub(crate) fn attack(
+    /// Resolve attack geometry for the active move owner. Owner links are
+    /// compiled once when the match resource cache is built; an owner with no
+    /// declared attack uses the native family table without scanning scripts.
+    pub(crate) fn attack_for(&self, fighter: &super::Fighter) -> Option<&Attack> {
+        let selected = fighter
+            .script_events
+            .active_move
+            .filter(|move_| move_.matches(fighter.action, fighter.script_events.action_generation));
+        if let Some(cache) = self.script_resources.get()
+            && let Some(id) =
+                cache.attack_for_owner(selected.map(|move_| move_.behavior_index), fighter.action)
+            && let Some(specials) = self.specials.as_ref()
+        {
+            return specials.resources.attack_by_id(id);
+        }
+        self.attack_native_only(fighter.action, fighter.prone, fighter.ledge.slow)
+    }
+
+    pub(crate) fn attack_for_owner(
+        &self,
+        fighter: &super::Fighter,
+        action: super::Action,
+        owner: Option<usize>,
+    ) -> Option<&Attack> {
+        if let Some(cache) = self.script_resources.get()
+            && let Some(id) = cache.attack_for_owner(owner, action)
+            && let Some(specials) = self.specials.as_ref()
+        {
+            return specials.resources.attack_by_id(id);
+        }
+        self.attack_native_only(action, fighter.prone, fighter.ledge.slow)
+    }
+
+    fn attack_native_only(
         &self,
         action: super::Action,
-        prone: Option<super::damage::ProneOrientation>,
+        prone: Option<crate::fighter::damage::ProneOrientation>,
         slow_ledge: bool,
     ) -> Option<&Attack> {
         if action == super::Action::Jab {
             return Some(&self.jab);
         }
-        if super::tilt::owns_action(action) {
-            return super::tilt::attack(self.tilts.as_ref()?, action);
+        if crate::fighter::tilt::owns_action(action) {
+            return crate::fighter::tilt::attack(self.tilts.as_ref()?, action);
         }
-        if super::smash::owns_action(action) {
-            return super::smash::attack(self.smashes.as_ref()?, action);
+        if crate::fighter::smash::owns_action(action) {
+            return crate::fighter::smash::attack(self.smashes.as_ref()?, action);
         }
-        if super::jab::owns_action(action) {
-            return super::jab::attack(self.jab_combo.as_ref()?, action);
+        if crate::fighter::jab::owns_action(action) {
+            return crate::fighter::jab::attack(self.jab_combo.as_ref()?, action);
         }
-        if super::dash::owns_action(action) {
-            return Some(super::dash::attack(self.dash_attack.as_ref()?));
+        if crate::fighter::dash::owns_action(action) {
+            return Some(crate::fighter::dash::attack(self.dash_attack.as_ref()?));
         }
         if action == super::Action::CliffAttack {
-            return Some(super::ledge::attack(self.ledge.as_ref()?, slow_ledge));
+            return Some(crate::fighter::ledge::attack(
+                self.ledge.as_ref()?,
+                slow_ledge,
+            ));
         }
         if action == super::Action::DownAttack {
             return Some(&self.knockdown.as_ref()?.variant(prone)?.attack);
         }
-        if let Some(attack) = crate::characters::common::attack(action, self) {
+        let index = crate::fighter::aerial::attack_index(action)?;
+        Some(&self.aerials.as_ref()?.moves[index].attack)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn attack(
+        &self,
+        action: super::Action,
+        prone: Option<crate::fighter::damage::ProneOrientation>,
+        slow_ledge: bool,
+    ) -> Option<&Attack> {
+        if action == super::Action::Jab {
+            return Some(&self.jab);
+        }
+        if crate::fighter::tilt::owns_action(action) {
+            return crate::fighter::tilt::attack(self.tilts.as_ref()?, action);
+        }
+        if crate::fighter::smash::owns_action(action) {
+            return crate::fighter::smash::attack(self.smashes.as_ref()?, action);
+        }
+        if crate::fighter::jab::owns_action(action) {
+            return crate::fighter::jab::attack(self.jab_combo.as_ref()?, action);
+        }
+        if crate::fighter::dash::owns_action(action) {
+            return Some(crate::fighter::dash::attack(self.dash_attack.as_ref()?));
+        }
+        if action == super::Action::CliffAttack {
+            return Some(crate::fighter::ledge::attack(
+                self.ledge.as_ref()?,
+                slow_ledge,
+            ));
+        }
+        if action == super::Action::DownAttack {
+            return Some(&self.knockdown.as_ref()?.variant(prone)?.attack);
+        }
+        if let Some(attack) = crate::fighter::specials::attack(action, self) {
             return Some(attack);
         }
-        let index = super::aerial::attack_index(action)?;
+        let index = crate::fighter::aerial::attack_index(action)?;
         Some(&self.aerials.as_ref()?.moves[index].attack)
     }
 }
@@ -436,7 +625,7 @@ pub struct MovementPoses {
 
 impl MovementPoses {
     /// Every field paired with its own name, for validation and for
-    /// `game::movement::pose`'s selection (kept in one place so a new field
+    /// `fighter::movement::pose`'s selection (kept in one place so a new field
     /// only needs to be added here once).
     pub(crate) fn fields(&self) -> [(&'static str, Option<&Vec<Vec<Bone>>>); 32] {
         [
@@ -507,13 +696,13 @@ pub struct MovementData {
     /// Paired with `Rules.walk`. Absent keeps a single Walk state (Slippi
     /// 15) with an integer `action_frame`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub walk_animation: Option<super::locomotion::WalkAnimation>,
+    pub walk_animation: Option<crate::fighter::locomotion::WalkAnimation>,
     /// Unlike `walk_animation`, not paired with any `Rules` entry: Run has
     /// no kind-selection thresholds, just a figatree length and animation
     /// scaling. Absent keeps Run's pre-batch integer `action_frame` and
     /// rate 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub run_animation: Option<super::locomotion::RunAnimation>,
+    pub run_animation: Option<crate::fighter::locomotion::RunAnimation>,
 }
 
 impl MovementData {

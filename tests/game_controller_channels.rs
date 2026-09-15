@@ -1,8 +1,6 @@
 //! Processed controller channels reach the real match and checkpoint state.
-use skirmish::game::{
-    BUTTON_A, BUTTON_L, BUTTON_R, Controller, Match, damage::HitlagDisplacementRules,
-    data::MatchData,
-};
+use skirmish::fighter::damage::HitlagDisplacementRules;
+use skirmish::game::{BUTTON_A, BUTTON_L, BUTTON_R, Controller, Match, data::MatchData};
 
 fn data() -> MatchData {
     let mut data: MatchData =

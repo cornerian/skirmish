@@ -17,13 +17,15 @@ work; it does not own that project's directory layout. The
 from vector artwork and procedural presentation effects.
 
 The main crate groups native code by responsibility. Focused top-level modules
-hold translated HSD and Metrowerks algorithms. `fighter` contains scalar
-movement, walking/jump launch, and damage arithmetic; `collision` contains bone
-hierarchy transforms, environmental collision boxes, sampled stage queries,
-moving-line remapping and swept contacts. Bone poses and bone-attached hitboxes/hurtboxes remain available
-headless. `game` composes the experimental match slice and owns gameplay state
-and frame scheduling. Separate workspace crates remain only where a real
-dependency boundary exists, such as replay parsing or presentation.
+hold translated HSD and Metrowerks algorithms. `fighter` owns mechanics and
+state for one fighter, such as aerial and shield state; `collision` contains
+bone-hierarchy transforms, environmental collision boxes, sampled stage queries,
+moving-line remapping and swept contacts. Bone poses and bone-attached
+hitboxes/hurtboxes remain available headless. `game` owns the match, inter-fighter
+interactions and deeper game logic, including clank, grab, nudge, hit resolution,
+death, entry and rebirth, and composes the experimental match slice and frame
+scheduling. Separate workspace crates remain only where a real dependency
+boundary exists, such as replay parsing or presentation.
 
 `crates/peppi-adapter` uses Peppi for parsing and columnar replay storage,
 reusing its port, version, pre/post-frame and vector types. This keeps replay
@@ -53,38 +55,23 @@ engine until its exact behavior is shown to agree. Rendering and audio consume
 read-only state/events. They may be disabled without changing simulation state
 or RNG consumption. The CLI and C oracles are tooling, outside these libraries.
 
-Special ("B") moves currently have a per-character-move file count that grows
-with the roster (25 characters, several specials each), so the native code has
-its own sub-layout: `game::specials` (`mod.rs`'s shared dispatch -- the
-grounded/aerial entry-eligibility chains and the `SpecialMove` trait every move
-implements once for its own phase hooks -- plus `helpers.rs`'s reusable phase
-behaviours and `neutral.rs`'s shared neutral-B shell) and
-`game::characters` (a registry keyed by external character id, exposing each
-character's own moves to the shared dispatcher and to the observation layer's
-Slippi id table; `fighter::characters` holds the matching pure per-character
-arithmetic). This is the remaining native migration structure, not a claim
-that the roster is fully migrated. New character policy should move toward one
-maintainable Luau file per fighter; see [Luau fighter behavior](luau.md).
+Special ("B") moves use the shared shell in `fighter::specials`: it owns
+grounded/aerial eligibility, lifecycle calls, and reusable native adapters.
+`game::script::definition` maps each fighter's definition, action metadata,
+attack paths, collision modes and Slippi ids without dispatching on a character
+name. Pure shared fighter arithmetic lives in `compat::math::kinematics`.
 
-The native move path remains the right owner for mechanisms and ordering.
-Collision, hit detection, actions, physics, controller input, and animation
-stay in Rust. Luau hooks select reusable character policy at explicit
-boundaries, such as damage preparation or a Reflector disposition. Design
-hooks for composability and semantic reuse rather than completeness: a rough
-long-term target is 20–40 primitives and 10–20 lifecycle hooks, not a quota or
-current API claim. Add a hook only after checking whether existing contexts
-compose; if a boundary is missing, define its participants, order, mutable and
-derived fields, cancellation scope, one-shot effects, errors, and rollback
-contract before wiring it. Generic names do not make bespoke operations such as
-`set_armor` or `enable_counter` reusable.
+The native move path owns mechanisms and ordering. Collision and motion remain
+in the Rust native engine; Python-defined native-compiled callbacks supply
+character policy. Design event and motion boundaries around observable native
+behavior, with explicit ownership, ordering, cancellation, and rollback
+semantics.
 
-For the contributor wiring checklist and current six-hook/three-command
-surface, see [Luau fighter behavior](luau.md). Keep shared fighter, projectile,
-and throw paths consistent when a lifecycle boundary applies, and add behavior
-coverage for no-op/native equivalence, independent effects, trades and
-cancellation bookkeeping, local side effects, and checkpoint/error rollback.
-The current Reflector migration is only a policy decision; Rust still performs
-its geometry, owner swap, damage scaling, and projectile motion.
+Keep shared fighter, projectile, and throw paths consistent when a lifecycle
+boundary applies, and add behavior coverage for no-op/native equivalence,
+independent effects, trades, cancellation bookkeeping, local side effects, and
+checkpoint/error rollback. Rust performs Reflector geometry, owner swap, damage
+scaling, and projectile motion.
 
 The eventual RL interface should expose reset, one-frame step, observation,
 termination, checkpoint and restore. Keep reward definitions in the training

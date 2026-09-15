@@ -45,6 +45,11 @@ validation; independent Melee
 observations must supply the fidelity oracle. See [replays.md](replays.md) for
 the exact selected fields and initialization contract.
 
+The fighter behavior checks exercise native input, action, collision, physics,
+and motion boundaries through integration and differential tests. Any retained
+compiler or callback experiments are historical and standalone; they are not a
+Skirmish gameplay contract or supported authoring path.
+
 ## GitHub Actions suites
 
 Three independent workflows run on pushes, pull requests, and manual dispatch:

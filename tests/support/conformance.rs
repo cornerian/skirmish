@@ -16,8 +16,8 @@ pub fn data() -> MatchData {
         serde_json::from_str(include_str!("../fixtures/game/locomotion.json")).unwrap();
     #[derive(serde::Deserialize)]
     struct ShieldFixture {
-        rules: skirmish::game::shield::Rules,
-        attributes: skirmish::game::shield::Attributes,
+        rules: skirmish::fighter::shield::Rules,
+        attributes: skirmish::fighter::shield::Attributes,
     }
     let shield: ShieldFixture =
         serde_json::from_str(include_str!("../fixtures/game/shield.json")).unwrap();

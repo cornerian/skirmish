@@ -1,6 +1,6 @@
 # Dash-attack profile
 
-`skirmish::game::dash` ports the Dash-phase input dispatch from `ftCo_Dash.c`,
+`skirmish::fighter::dash` ports the Dash-phase input dispatch from `ftCo_Dash.c`,
 the shared dash-attack/shield arms of `ftCo_Run.c`'s `ftCo_Run_IASA`, and the
 dash attack itself from `ftCo_AttackDash.c`. Enable it with `rules.dash` plus
 each fighter's `dash_attack` resource; `tests/support/dash.rs` builds an
@@ -15,7 +15,7 @@ Without `rules.dash`, Dash and Run keep their previous behaviour (existing
 `grab`/`shield`/`locomotion` tests are unaffected); `Match::new` still works
 with a fully absent profile.
 
-When `rules.dash` is present, `game::dash::update_actions` is the single place
+When `rules.dash` is present, `fighter::dash::update_actions` is the single place
 Dash, Run and AttackDash frames are dispatched from: `simulation::update_actions`
 calls it before `grab::update_actions`. When it consumes a frame (any of the
 per-phase checks below, a jump-squat entry or a run/turn-run/RunBrake

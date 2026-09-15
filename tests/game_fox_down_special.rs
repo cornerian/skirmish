@@ -10,17 +10,38 @@ mod conformance;
 #[path = "support/fox_down_special.rs"]
 mod down_special_resources;
 
-use skirmish::characters::Specials;
+use skirmish::game::script::LocalValue;
 use skirmish::game::{Action, BUTTON_B, Controller, Event, Match, data::MatchData};
 
-fn down_special_mut(
-    fighter: &mut skirmish::game::data::FighterData,
-) -> &mut skirmish::characters::fox::down::DownSpecial {
-    let Some(Specials::Fox { down, .. }) = fighter.specials.as_mut() else {
-        panic!("test fixture is missing its down-special resource");
-    };
-    down.as_mut()
+fn down_special_mut(fighter: &mut skirmish::game::data::FighterData) -> &mut serde_json::Value {
+    fighter
+        .specials
+        .as_mut()
+        .and_then(|s| s.resources.values.get_mut("down"))
         .expect("test fixture is missing its down-special resource")
+}
+
+fn state_number(state: &skirmish::game::Fighter, key: &str) -> f32 {
+    match state
+        .action_state
+        .get(key)
+        .expect("missing action-state key")
+    {
+        LocalValue::Number(value) => *value as f32,
+        LocalValue::Integer(value) => *value as f32,
+        value => panic!("action-state key {key} is not numeric: {value:?}"),
+    }
+}
+
+fn state_bool(state: &skirmish::game::Fighter, key: &str) -> bool {
+    match state
+        .action_state
+        .get(key)
+        .expect("missing action-state key")
+    {
+        LocalValue::Bool(value) => *value,
+        value => panic!("action-state key {key} is not boolean: {value:?}"),
+    }
 }
 
 const IDLE: [Controller; 2] = [Controller {
@@ -78,8 +99,8 @@ fn ground_entry_is_the_fourth_check_after_a_fresh_downward_b() {
     assert_eq!(state.fighters[0].action, Action::SpecialLwStart);
     // Start never counts releaseLag down (unlike Loop/Turn/Hit): confirmed
     // by reading every one of its Anim/Phys callbacks in the pinned source.
-    assert_eq!(state.fighters[0].down_special.release_lag, 40.0);
-    assert!(!state.fighters[0].down_special.is_release);
+    assert_eq!(state_number(&state.fighters[0], "release_lag"), 40.0);
+    assert!(!state_bool(&state.fighters[0], "is_release"));
     // Right at the strict ground boundary must not fire.
     let mut game = Match::new(data(), 0).unwrap();
     let state = game.step(input(0, down(-0.6))).unwrap();
@@ -111,7 +132,7 @@ fn holding_b_keeps_loop_active_past_the_release_lag() {
         state = game.step(input(0, held_b())).unwrap().clone();
     }
     assert_eq!(state.fighters[0].action, Action::SpecialLw);
-    assert!(!state.fighters[0].down_special.is_release);
+    assert!(!state_bool(&state.fighters[0], "is_release"));
 }
 
 #[test]
@@ -127,7 +148,8 @@ fn releasing_b_only_exits_loop_once_the_release_lag_elapses() {
     // first counted frame) reaches zero.
     let mut state = game.step(IDLE).unwrap();
     assert!(
-        state.fighters[0].down_special.is_release || state.fighters[0].action == Action::SpecialLw
+        state_bool(&state.fighters[0], "is_release")
+            || state.fighters[0].action == Action::SpecialLw
     );
     for _ in 0..45 {
         state = game.step(IDLE).unwrap();
@@ -256,7 +278,7 @@ fn ground_to_air_conversion_preserves_the_frame_and_release_state() {
     for _ in 0..4 {
         game.step(input(0, held_b())).unwrap();
     }
-    let before = game.state().fighters[0].down_special.clone();
+    let before = state_number(&game.state().fighters[0], "gravity_delay");
     // Fall the short remaining distance onto the floor; the air loop
     // converts to the grounded one at the same frame, preserving state.
     let mut state = game.state().clone();
@@ -268,10 +290,7 @@ fn ground_to_air_conversion_preserves_the_frame_and_release_state() {
     }
     assert!(state.fighters[0].grounded);
     assert_eq!(state.fighters[0].action, Action::SpecialLw);
-    assert_eq!(
-        state.fighters[0].down_special.gravity_delay,
-        before.gravity_delay
-    );
+    assert_eq!(state_number(&state.fighters[0], "gravity_delay"), before);
 }
 
 #[test]
@@ -295,7 +314,6 @@ fn slippi_action_names_are_stable() {
 
 #[test]
 fn slippi_ids_are_360_through_369() {
-    use skirmish::characters;
     for (action, state) in [
         (Action::SpecialLwStart, 360),
         (Action::SpecialLw, 361),
@@ -308,7 +326,8 @@ fn slippi_ids_are_360_through_369() {
         (Action::SpecialAirLwEnd, 368),
         (Action::SpecialAirLwTurn, 369),
     ] {
-        let (id, _animation) = characters::slippi_ids(Some(2), action).unwrap();
+        let (id, _animation) =
+            skirmish::game::script::definition::builtin_slippi_ids(Some(2), action).unwrap();
         assert_eq!(id, state);
     }
 }
@@ -327,9 +346,9 @@ fn hit_phase_is_wired_but_unreachable_through_ordinary_dispatch() {
     // `hit_check` function Hit shares. Here: confirm the phase is still
     // fully wired into the observation layer despite being unreachable in
     // play, matching the design note's brief.
-    use skirmish::characters;
     for action in [Action::SpecialLwHit, Action::SpecialAirLwHit] {
-        let (state, _animation) = characters::slippi_ids(Some(2), action).unwrap();
+        let (state, _animation) =
+            skirmish::game::script::definition::builtin_slippi_ids(Some(2), action).unwrap();
         assert!(matches!(state, 362 | 367));
     }
 }
@@ -389,13 +408,18 @@ fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
     resource.rules.knockback_speed = 0.0;
     {
         let p = down_special_mut(&mut resource.fighters[0]);
-        for attack in [&mut p.start.ground, &mut p.start.air] {
-            attack.move_id = Some(21);
-            for (index, frame) in attack.frames.iter_mut().enumerate() {
-                frame.hitboxes = if index < 2 {
-                    vec![reflector_start_hitbox()]
+        for phase in ["ground", "air"] {
+            p["start"][phase]["move_id"] = serde_json::json!(21);
+            for (index, frame) in p["start"][phase]["frames"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .enumerate()
+            {
+                frame["hitboxes"] = if index < 2 {
+                    serde_json::to_value(vec![reflector_start_hitbox()]).unwrap()
                 } else {
-                    vec![]
+                    serde_json::json!([])
                 };
             }
         }
@@ -439,22 +463,19 @@ fn reflector_start_hits_a_nearby_opponent_on_the_pack_documented_frames() {
 #[test]
 fn invalid_down_special_resources_are_rejected() {
     let mut resource = data();
-    down_special_mut(&mut resource.fighters[0])
-        .attributes
-        .turn_frames = 0.0;
+    down_special_mut(&mut resource.fighters[0])["attributes"]["turn_frames"] =
+        serde_json::json!(0.0);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    down_special_mut(&mut resource.fighters[0])
-        .attributes
-        .air_momentum_div = 0.0;
+    down_special_mut(&mut resource.fighters[0])["attributes"]["air_momentum_div"] =
+        serde_json::json!(0.0);
     assert!(Match::new(resource, 0).is_err());
 
     let mut resource = data();
-    down_special_mut(&mut resource.fighters[0])
-        .start
-        .ground
-        .frames
+    down_special_mut(&mut resource.fighters[0])["start"]["ground"]["frames"]
+        .as_array_mut()
+        .unwrap()
         .clear();
     assert!(Match::new(resource, 0).is_err());
 
@@ -469,11 +490,8 @@ fn invalid_down_special_resources_are_rejected() {
     let mut hitbox = reflector_start_hitbox();
     hitbox.clank = false;
     hitbox.group = 99;
-    down_special_mut(&mut resource.fighters[0])
-        .start
-        .ground
-        .frames[0]
-        .hitboxes = vec![hitbox];
+    down_special_mut(&mut resource.fighters[0])["start"]["ground"]["frames"][0]["hitboxes"] =
+        serde_json::to_value(vec![hitbox]).unwrap();
     assert!(Match::new(resource, 0).is_err());
 
     // Reflector Start's own `clank` bit is `true` (the pack's own value);
@@ -482,11 +500,8 @@ fn invalid_down_special_resources_are_rejected() {
     // already are (`validation.rs`'s "clank/rebound flags require an
     // explicit ordinary profile").
     let mut resource = data();
-    down_special_mut(&mut resource.fighters[0])
-        .start
-        .ground
-        .frames[0]
-        .hitboxes = vec![reflector_start_hitbox()];
+    down_special_mut(&mut resource.fighters[0])["start"]["ground"]["frames"][0]["hitboxes"] =
+        serde_json::to_value(vec![reflector_start_hitbox()]).unwrap();
     assert!(Match::new(resource, 0).is_err());
 
     // Staling requires a nonzero `move_id` on a phase that actually has a
@@ -505,14 +520,13 @@ fn invalid_down_special_resources_are_rejected() {
     }
     {
         let p = down_special_mut(&mut resource.fighters[0]);
-        p.start.ground.frames[0].hitboxes = vec![reflector_start_hitbox()];
-        p.start.ground.move_id = None;
+        p["start"]["ground"]["frames"][0]["hitboxes"] =
+            serde_json::to_value(vec![reflector_start_hitbox()]).unwrap();
+        p["start"]["ground"]["move_id"] = serde_json::Value::Null;
     }
     assert!(Match::new(resource.clone(), 0).is_err());
-    down_special_mut(&mut resource.fighters[0])
-        .start
-        .ground
-        .move_id = Some(21);
+    down_special_mut(&mut resource.fighters[0])["start"]["ground"]["move_id"] =
+        serde_json::json!(21);
     assert!(Match::new(resource, 0).is_ok());
 
     let mut resource = data();

@@ -552,7 +552,7 @@ fn invalid_resources_inputs_and_foreign_checkpoints_fail_atomically() {
             cstick: [0.0; 2],
             trigger: 0.0,
             // 0x1000 (Start) is unsupported; 0x1 (D-pad left) no longer is
-            // (`game::taunt`, `game::BUTTON_DPAD_LEFT`).
+            // (`fighter::taunt`, `game::BUTTON_DPAD_LEFT`).
             buttons: 0x1000,
             stick: [0.0; 2],
         },

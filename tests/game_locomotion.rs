@@ -3,10 +3,10 @@
 //! Explicit timings are test resources, not extracted character attributes.
 use skirmish::{
     collision::ecb,
+    fighter::locomotion::MultiJump,
     game::{
         Action, BUTTON_A, BUTTON_X, Controller, Match, State,
         data::{CollisionBox, MatchData},
-        locomotion::MultiJump,
     },
 };
 

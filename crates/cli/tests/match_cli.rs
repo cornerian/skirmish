@@ -1,4 +1,5 @@
 use skirmish::game::{Controller, Phase, data::MatchData};
+
 use skirmish_equivalence::{match_trace, trace};
 use std::{io::Cursor, process::Command};
 

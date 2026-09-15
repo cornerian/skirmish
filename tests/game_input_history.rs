@@ -1,7 +1,6 @@
 //! The shared source input timers advance once per frame, including hitlag.
-use skirmish::game::{
-    Action, BUTTON_A, Controller, Match, damage::HitlagDisplacementRules, data::MatchData,
-};
+use skirmish::fighter::damage::HitlagDisplacementRules;
+use skirmish::game::{Action, BUTTON_A, Controller, Match, data::MatchData};
 
 fn data() -> MatchData {
     let mut data: MatchData =

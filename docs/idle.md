@@ -1,7 +1,7 @@
 # Idle animation cycling (batch after the Run animation rate)
 
-`skirmish::game::idle` (wiring: the resource, the state, the per-frame
-animation-phase draw, `src/game/idle.rs`) and `skirmish::fighter::idle`
+`skirmish::fighter::idle` (wiring: the resource, the state, the per-frame
+animation-phase draw, `src/game/simulation.rs`) and `skirmish::fighter::idle`
 (pure arithmetic: the weighted pick and its re-draw gate, `src/fighter/
 idle.rs`) cover `Action::Wait`'s idle-animation cycling. Pinned decomp rev
 `0bac93a5`. Sources: `src/melee/ft/ftwaitanim.c` (`ftCo_8008A698`:11-17,
@@ -60,7 +60,7 @@ Wait1_0 = 2 at 637, Wait2 = 3, Unk004 = 4, Unk005 = 5, Wait1_1 = 6 at 641).
     weight never reaches `max` asserts (`HSD_ASSERTREPORT`, `ftwaitanim.c:
     59`) instead of returning -- the source relies on `__assert` never
     returning; this port rejects such tables at validation time instead
-    (`game::idle::validate`; the C oracle reproduces the source's own
+    (`fighter::idle::validate`; the C oracle reproduces the source's own
     control flow exactly, including the non-return, via `longjmp`).
   - Enter the picked (or restarted) idle: `fp->anim_id` is set, the idle's
     own script data (`Fighter_WaitAnimData`, hurtbox/flags commands) is
@@ -125,7 +125,7 @@ unchanged.
 
 ## RNG
 
-`game::idle::update_animation` draws from the match's shared `HsdRng`
+`fighter::idle::update_animation` draws from the match's shared `HsdRng`
 during the per-player animation-phase loop in `simulation::advance`, in
 player order, matching `ftCo_Wait_Anim`'s own place in Melee's per-fighter
 callback order. That loop reassigns `state.rng_seed` from the loop's own

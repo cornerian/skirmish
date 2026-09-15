@@ -11,7 +11,7 @@
 
 use proptest::prelude::*;
 use skirmish::{
-    characters::arithmetic::fox::{entry_ground_velocity, has_input, should_turn},
+    compat::math::kinematics::{entry_ground_velocity, has_input, should_turn},
     fighter::Movement,
 };
 
@@ -890,7 +890,7 @@ fn boundaries() {
 
 /// `doEnter` scales its blend by `ft_GetGroundFrictionMultiplier(fp)`
 /// (`ft_081B.c:1235-1240`), a per-floor-material lookup this port does not
-/// model (`characters::arithmetic::fox::entry_ground_velocity` always uses
+/// model (`compat::math::kinematics::entry_ground_velocity` always uses
 /// 1.0). Demonstrates the gap directly: on ordinary terrain (multiplier
 /// 1.0) the two agree; away from 1.0 they deliberately, documentedly
 /// diverge.

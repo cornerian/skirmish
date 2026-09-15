@@ -1,7 +1,5 @@
-use skirmish::game::{
-    data::MatchData,
-    locomotion::{WalkAnimation, WalkRules},
-};
+use skirmish::fighter::locomotion::{WalkAnimation, WalkRules};
+use skirmish::game::data::MatchData;
 
 /// Invented walk-kind thresholds
 /// (`walk_middle_animation_stick_threshold`/`walk_fast_stick_threshold`):

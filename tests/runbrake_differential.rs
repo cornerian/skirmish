@@ -174,7 +174,7 @@ proptest! {
     /// magnitude, matching `ftCo_RunBrake_Phys`'s own friction-only
     /// deceleration) velocity sequence, threading each call's
     /// `cmd_vars1_after`/`x0_after`/`frames_after` into the next -- the
-    /// same state `game::locomotion::update_animation`'s `Action::RunBrake`
+    /// same state `fighter::locomotion::update_animation`'s `Action::RunBrake`
     /// arm threads through `Fighter.locomotion` across real frames.
     #[test]
     fn generated_velocity_sequences_match_c(

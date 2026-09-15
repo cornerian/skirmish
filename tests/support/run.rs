@@ -1,4 +1,5 @@
-use skirmish::game::{data::MatchData, locomotion::RunAnimation};
+use skirmish::fighter::locomotion::RunAnimation;
+use skirmish::game::data::MatchData;
 
 /// Invented Run figatree length. `scaling` equals `tests/fixtures/game/
 /// locomotion.json`'s `dash_max_velocity` (2.5) so a fighter at top ground

@@ -14,7 +14,7 @@ during Wait/Walk/Dash/Run/Jump/Fall/Landing/Squat.... Melee poses every
 state from its figatree every frame (`ftAnim_8006EBA4`) and reads the ECB's
 six bones from that pose (`ft_081B.c:36-68`). This batch adds that missing
 per-frame pose for every movement (non-attack) action this codebase already
-models the timing of: `src/game/movement.rs`.
+models the timing of: `src/game/simulation.rs`.
 
 ## Resource shape
 `FighterData.movement_poses: Option<MovementPoses>` where each field is a
@@ -46,7 +46,7 @@ establishes for the reported Slippi state age:
   (`fighter.locomotion.walk.frame`/`run.frame`), already advanced and
   wrapped earlier in `simulation::advance` than any collision phase.
 - Wait reads `fighter.idle.frame`, and only while `fighter.idle.animation
-  == 2` (Wait1_0); every other idle sub-motion `game::idle` can cycle to
+  == 2` (Wait1_0); every other idle sub-motion `fighter::idle` can cycle to
   keeps the rest pose, since it has no track of its own here.
 - Every other mapped action reads `fighter.action_frame` directly: this
   module runs during the frame's own collision phase, strictly before the
@@ -70,10 +70,10 @@ establishes for the reported Slippi state age:
   reserved for a future blend batch.
 - Loop vs. hold: Fall, FallAerial, FallSpecial, SquatWait and OttottoWait
   persist indefinitely, so their pose index wraps
-  (`game::movement::loop_period`, see below); every other mapped action is
+  (`fighter::movement::loop_period`, see below); every other mapped action is
   bounded by an existing frame threshold that transitions it away before
   its own `action_frame` can exceed the matching pose array
-  (`game::locomotion::update_actions` runs, and applies any such
+  (`fighter::locomotion::update_actions` runs, and applies any such
   transition, earlier in `simulation::advance` than the collision phase
   that reads the pose), so holding at the last supplied frame is a
   defensive clamp for those, except EntryStart, which genuinely holds its
@@ -119,7 +119,7 @@ convention for a cyclic clip) produces: an `n`-sample loop wraps every
 `ftCo_Fall_Enter`, is needed to explain "state age resets while staying in
 the same action, velocity untouched" -- it is simply what a looping
 `cur_anim_frame` does, and Slippi's `state_age` mirrors `cur_anim_frame`
-directly. `game::movement::loop_period(frame_count) = frame_count - 1`
+directly. `fighter::movement::loop_period(frame_count) = frame_count - 1`
 implements this (used both by `movement::pose`'s own index and by
 `observation.rs`'s `action_age` for Fall/FallAerial/FallSpecial/SquatWait/
 OttottoWait, so the reported state age matches the pose actually sampled).

@@ -22,8 +22,8 @@ use skirmish::game::{
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
-    rules: skirmish::game::shield::Rules,
-    attributes: skirmish::game::shield::Attributes,
+    rules: skirmish::fighter::shield::Rules,
+    attributes: skirmish::fighter::shield::Attributes,
 }
 
 /// Fighter 0 (facing +X, far from fighter 1 at x=20) short-hops and lands;

@@ -1,7 +1,7 @@
 //! Native match integration for the source-backed fighter push callback.
 use skirmish::{
     collision::stage,
-    fighter::nudge::Rules,
+    game::nudge::Rules,
     game::{
         BUTTON_A, Controller, Match,
         data::{MatchData, StageGeometry},

@@ -1,6 +1,6 @@
 # Smash attack profile
 
-`skirmish::game::smash` ports the ordinary grounded smashes from
+`skirmish::fighter::smash` ports the ordinary grounded smashes from
 `ftCo_AttackS4.c`, `ftCo_AttackHi4.c` and `ftCo_AttackLw4.c`, the fresh
 C-stick predicates from `ft_0DF1.c` and the smash charge state machine from
 `ft_0DF0.c`: the forward smash with its High, HighSlight, Straight, LowSlight

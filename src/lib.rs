@@ -2,7 +2,6 @@
 //!
 //! This crate does not yet implement the complete game.
 
-pub mod characters;
 pub mod collision;
 pub mod compat;
 pub mod controller;

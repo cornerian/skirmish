@@ -1,29 +1,28 @@
-//! Fighter movement and combat mechanics.
+//! Mechanics and state belonging to one fighter, including aerial and shield
+//! behavior. Match, inter-fighter interactions, and deeper game logic live in
+//! [`crate::game`].
+#![forbid(unsafe_code)]
 
 pub mod action_instance;
 pub mod aerial;
-pub mod clank;
 pub mod combat;
 pub mod combo;
 pub mod damage;
 pub mod dash;
-pub mod death;
 pub mod edge;
-pub mod entry;
 pub mod escape;
 pub mod escape_air;
-pub mod grab;
+pub mod helpers;
 pub mod idle;
 pub mod instance;
 pub mod jab;
 pub mod ledge;
 pub mod locomotion;
 pub mod movement;
-pub mod nudge;
-pub mod rebirth;
 pub mod shield;
 pub mod smash;
 pub mod special;
+pub mod specials;
 pub mod stale;
 pub mod taunt;
 pub mod tilt;

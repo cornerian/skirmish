@@ -1,6 +1,6 @@
 # Fighter nudges
 
-`fighter::nudge::velocity` ports ftCommon_8007E0E4, ftCommon_8007DD7C and
+`game::nudge::velocity` ports ftCommon_8007E0E4, ftCommon_8007DD7C and
 ftCommon_8007DFD0 from the pinned `src/melee/ft/ftcommon.c`; Body::effective_position
 ports ftCommon_8007F8B4. It returns fixed X/Z velocity increments for one fighter
 in an ordered body list. It does not correct penetration, prevent every crossing,

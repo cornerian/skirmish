@@ -1,22 +1,22 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::characters::{
-    Specials,
-    fox::{down::DownSpecial, side::Rules},
-};
 use skirmish::{
-    fighter::clank as clank_math,
-    game::{clank, data::MatchData},
+    game::clank as clank_math,
+    game::{
+        clank,
+        data::MatchData,
+        script::resources::{Resources, Specials},
+    },
 };
 
 #[derive(serde::Deserialize)]
 struct Fixture {
-    rules: Rules,
-    parameters: DownSpecial,
+    rules: skirmish::fighter::specials::Rules,
+    parameters: serde_json::Value,
 }
 
 /// Install the invented `tests/fixtures/game/fox-down-special.json` motion
-/// on both fighters. `rules` here is `characters::fox::side::Rules`, shared
+/// on both fighters. `rules` here is `fighter::specials::Rules`, shared
 /// common data (`x218`/`x220`/`x21C`) the down special's own aerial entry
 /// reads too (`vertical_threshold`); `data.locomotion` (already installed by
 /// `conformance::data()`) supplies the mid-move turn/jump-cancel/platform-
@@ -26,11 +26,11 @@ pub fn profile(mut data: MatchData) -> MatchData {
         serde_json::from_str(include_str!("../fixtures/game/fox-down-special.json")).unwrap();
     data.rules.specials = Some(fixture.rules);
     for fighter in &mut data.fighters {
-        fighter.specials = Some(Specials::Fox {
-            neutral: None,
-            side: None,
-            up: None,
-            down: Some(fixture.parameters.clone()),
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("down".into(), fixture.parameters.clone());
+        fighter.specials = Some(Specials {
+            character: "fox".into(),
+            resources: Resources::new(values).unwrap(),
         });
     }
     data
@@ -45,7 +45,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
 pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
     data.rules.clank = Some(clank::Rules {
         profile: clank::Profile::OrdinaryGroundedNonSlash,
-        response: clank_math::Rules {
+            response: clank_math::ResponseRules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,

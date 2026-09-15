@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::grab::capture_alignment;
+use skirmish::game::grab::capture_alignment;
 
 unsafe extern "C" {
     fn oracle_capture_alignment(

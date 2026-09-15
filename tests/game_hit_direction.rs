@@ -1,9 +1,8 @@
 //! End-to-end fighter-contact direction, facing and grounded projection.
 use skirmish::{
-    fighter::damage::HurtHeight,
+    fighter::damage::{DamageMotionRules, DamagePoseAttributes, GroundLaunchRules, HurtHeight},
     game::{
         BUTTON_A, Controller, Event, Match, State,
-        damage::{DamageMotionRules, DamagePoseAttributes, GroundLaunchRules},
         data::{Bone, MatchData},
     },
 };

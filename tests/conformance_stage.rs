@@ -10,7 +10,7 @@ mod support;
 
 use skirmish::{
     collision::stage,
-    fighter::nudge::Rules as NudgeRules,
+    game::nudge::Rules as NudgeRules,
     game::{BUTTON_X, Event, Match, data::StageGeometry, nudge::Attributes as NudgeAttributes},
 };
 use support::*;

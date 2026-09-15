@@ -3,12 +3,13 @@
 #[path = "support/ledge.rs"]
 mod ledge_resources;
 
-use skirmish::collision::stage::{self, Joint, Line};
+use skirmish::fighter::ledge::{self, Options, Side, SlowRules, Snap};
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State,
     data::{AttackFrame, Hitbox, MatchData, StageGeometry},
-    ledge::{self, Options, Side, SlowRules, Snap},
 };
+
+use skirmish::collision::stage::{self, Joint, Line};
 
 const IDLE: [Controller; 2] = [Controller {
     buttons: 0,

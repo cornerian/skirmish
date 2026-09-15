@@ -60,7 +60,7 @@ Fox/Falco phases (`ftfoxspecialn.c`)
   zero this move's own `update_actions` performs), `cmd_vars[0..3]` and
   `isBlasterLoop` all cleared, then `ftFox_SpecialN_SpawnBlaster` (the
   cosmetic gun, unmodeled per above). No stick check of its own: dispatch
-  priority (`characters::fox::MOVES` = `[side, up, neutral, down]`) already
+  priority in the Fox module (`[side, up, neutral, down]`) already
   excludes any input the side/up/down branches would have claimed first; the
   genuine gate is the shared, exact-boundary `fighter::special::
   neutral_input` (`ftCo_800D67C4`, unchanged, still used by this move's own
@@ -196,7 +196,7 @@ them:
   Start/AirStart entry (`ftFox_SpecialN_InitializeState`, called by
   `ftFx_SpecialN_Enter`/`ftFx_SpecialAirN_Enter`, *not* by every internal
   Start->Loop/Loop->Loop/Loop->End transition -- those each preserve the
-  running register, the same way `characters::fox::side`'s own
+  running register, the same way the Fox module's side policy
   `gravity_delay` survives its own phase transitions), read by
   `CheckLoopInput` every Start and Loop frame. For Fox, the Start clip sets
   it at frame 4 (ground and air alike); the Loop clip's own frame-0 value
@@ -205,7 +205,7 @@ them:
   the *first* Loop pass -- see `neutral::enter_loop`'s own
   `preserve_armed` parameter).
 
-`characters::fox::neutral::NeutralSpecial::script: Option<Box<NeutralScript>>`
+`specials.neutral.script`
 carries this per-fighter, per-phase, per-ground/air trace (`cmd_vars: Vec<[Option<u32>; 4]>`,
 `allow_interrupt: Vec<bool>` -- exporter-confirmed `false` throughout every
 phase this move uses it for), validated to have exactly as many frames as
@@ -461,7 +461,7 @@ damage pipeline with the item's own knockback, no item pickup):
   unmodeled; the bounce affects the projectile's own velocity only.
 - **Reflector collision**: if the projectile's swept capsule intersects a
   fighter whose `fighter.shield.reflecting` bit is set (the *existing*
-  field `characters::fox::down`'s own Reflector already sets on every Loop/
+  field Fox's down-special policy sets on every Loop/
   Turn/Hit entry, previously documented as having "no effect in this
   engine -- there are no projectiles to reflect", see `docs/
   fox-down-special.md`), against that fighter's own `down::Reflect`
@@ -501,12 +501,12 @@ damage pipeline with the item's own knockback, no item pickup):
 Resource and state shape
 ---------------------------
 
-- `characters::Specials::Fox.neutral` changes type from the shared shell's
+- Fox's `specials.neutral` resource changes type from the shared shell's
   `specials::neutral::Parameters` to this move's own
-  `characters::fox::neutral::NeutralSpecial { neutral_thresholds: [f32; 2],
+  `NeutralSpecial { neutral_thresholds: [f32; 2],
   start: Phase, loop_phase: Phase, end: Phase, attributes: Attributes,
   laser: Laser, script: Option<Box<NeutralScript>> }` (`Phase` reused from
-  `characters::fox::side::Phase`, matching `down.rs`'s own precedent of
+  shared phase resource shape, matching the other special resources'
   reusing that shape rather than redeclaring an identical struct).
   `Attributes { angle, speed, landing_lag }` (`x10`/`x14`/`x18`).
   `Laser { lifetime, hitboxes, move_id }` reuses the existing fighter
@@ -516,15 +516,16 @@ Resource and state shape
   `radius`) already exists there and `bone`/`clank`/`rebound`/`element`/
   `group` are simply unused by a projectile (`bone: 0`, `group: 0`, rest at
   their defaults). `NeutralScript { start, loop_phase, end: ScriptPhase }`
-  (`ScriptPhase`/`ScriptFrames` also reused from `characters::fox::side`,
+  (the script phase shape is shared with the side resource,
   shared with `SideSpecial::script`'s own `SideScript { dash: ScriptPhase }`
   -- see "Script-driven arming and fire timing" above); boxed because
-  `characters::Specials` is an enum over every character's full moveset, so
+  the resource contains every fighter's full moveset, so
   inlining this optional, sparsely-populated field would otherwise grow
   every `MatchData` on the stack (this was caught by an unrelated,
   deeply-recursive test overflowing its default stack purely from the size
   increase -- see `NeutralSpecial::script`'s own doc comment).
-- `Fighter.fox_neutral_special: characters::fox::neutral::State {
+- Fighter neutral-special state (`repeat_armed`, `fire`, and `cmd_vars`)
+  is stored in generic fighter action/script state:
   repeat_armed: bool, fire: bool, cmd_vars: [u32; 4] }` -- `repeat_armed`
   mirrors `isBlasterLoop`; `fire` is this port's own signal from the
   per-fighter `SpecialMove` dispatch (which cannot itself reach
@@ -551,7 +552,7 @@ Resource and state shape
 What moves, what doesn't (retiring the shared shell for Fox)
 ----------------------------------------------------------------
 
-`characters::Specials` has exactly one variant (`Fox`) today; the shared
+`game::script::definition` currently registers Fox and Falco; the shared
 `game::specials::neutral` shell's own end-to-end tests (`tests/
 game_special.rs`, `tests/support/special.rs`) exercised it *through* Fox,
 since no other character exists to attach it to. Once Fox has his own

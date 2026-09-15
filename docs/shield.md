@@ -1,7 +1,7 @@
 # Native shields
 
-`game::shield` connects processed digital/analog shoulder input to GuardOn,
-Guard, GuardOff, GuardSetOff and GuardReflect. `game::escape` adds the ordinary
+`fighter::shield` connects processed digital/analog shoulder input to GuardOn,
+Guard, GuardOff, GuardSetOff and GuardReflect. `fighter::escape` adds the ordinary
 grounded evasions EscapeF, EscapeB and EscapeN entered from those states. Shield contacts run the original matrix-aware
 `lbColl_80006E58` narrowphase before hurtbox checks. A shrinking shield can miss
 an attack that subsequently hits a hurtbox. The shield bone uses unit local
@@ -93,7 +93,7 @@ The implementation preserves these examined source branches:
   already down (fresh, inside the window) dodges from Wait or an
   interruptible AppealS pose on that exact frame, without ever raising
   GuardOn first; Walk's chain has no `ftCo_80099794` call, so the same
-  input from Walk still raises GuardOn as usual. `game::escape::
+  input from Walk still raises GuardOn as usual. `fighter::escape::
   try_wait_chain_spot_dodge` implements this, called from
   `simulation::update_actions` ahead of `shield::update_actions`.
 - Escape samples carry the scripted fighter-wide `Fighter::x1988` collision

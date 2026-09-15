@@ -2,6 +2,7 @@
 //! follow-up from Wait, interruptible-pose smash/tilt/jab priority, the
 //! rapid jab's entry count/loop/exit, root motion and checkpoint restore) in
 //! an explicitly synthetic native world.
+
 #[path = "support/grab.rs"]
 mod grab_support;
 #[path = "support/jab.rs"]
@@ -11,10 +12,10 @@ mod smash_support;
 #[path = "support/tilt.rs"]
 mod tilt_support;
 
-use skirmish::game::{
-    Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State, data::MatchData,
-    jab::Stage, shield,
-};
+use skirmish::fighter::jab::Stage;
+use skirmish::fighter::shield;
+use skirmish::game::{Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller};
+use skirmish::game::{Match, State, data::MatchData};
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {

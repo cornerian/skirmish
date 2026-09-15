@@ -8,8 +8,8 @@ use skirmish::game::{
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {
-    rules: skirmish::game::shield::Rules,
-    attributes: skirmish::game::shield::Attributes,
+    rules: skirmish::fighter::shield::Rules,
+    attributes: skirmish::fighter::shield::Attributes,
 }
 
 const IDLE: [Controller; 2] = [Controller {
@@ -52,7 +52,7 @@ fn data() -> MatchData {
             ..Default::default()
         }],
     });
-    let mut parameters: skirmish::game::locomotion::Parameters =
+    let mut parameters: skirmish::fighter::locomotion::Parameters =
         serde_json::from_str(include_str!("fixtures/game/locomotion.json")).unwrap();
     parameters.pass_stick_threshold = 0.7;
     parameters.pass_window = 3;

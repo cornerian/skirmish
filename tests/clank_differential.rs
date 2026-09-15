@@ -1,9 +1,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 use proptest::prelude::*;
-use skirmish::fighter::clank::{
-    self, Fighter, Hit, ReboundRules, Response, Rules, Victim, Victims,
-};
+use skirmish::game::clank::{self, Fighter, Hit, ReboundRules, Response, Rules, Victim, Victims};
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]

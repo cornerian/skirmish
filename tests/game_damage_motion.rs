@@ -1,10 +1,9 @@
 //! End-to-end ordinary Damage motion selection, physics poses and timing.
 use skirmish::{
     collision::ecb,
-    fighter::damage::{DamageMotion, HurtHeight},
+    fighter::damage::{DamageMotion, DamageMotionRules, DamagePoseAttributes, HurtHeight},
     game::{
         Action, BUTTON_A, Controller, Error, Event, Match,
-        damage::{DamageMotionRules, DamagePoseAttributes},
         data::{Bone, CollisionBox, MatchData},
     },
 };

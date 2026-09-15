@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::grab::escape_timer;
+use skirmish::game::grab::escape_timer;
 
 unsafe extern "C" {
     fn oracle_escape_formula(

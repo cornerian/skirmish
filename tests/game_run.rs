@@ -214,7 +214,7 @@ fn without_the_resource_run_keeps_a_single_integer_frame() {
 /// directly by `run_animation_rate`'s own unit test
 /// (`src/fighter/locomotion.rs`). Reaching it through an actual Run frame in
 /// this integration harness would need `ground_velocity` to oppose `facing`
-/// while `Action::Run` stays current; `game::locomotion::update_actions`'s
+/// while `Action::Run` stays current; `fighter::locomotion::update_actions`'s
 /// own `Action::Run` arm only remains in Run while `stick * facing >
 /// turn_threshold` and `|stick| >= run_threshold` (else RunTurn or
 /// RunBrake), which -- combined with `ftCo_Run_Phys`'s acceleration toward

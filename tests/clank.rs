@@ -1,11 +1,11 @@
 //! Explicit synthetic kernel compositions, not an implemented match scheduler.
-use skirmish::fighter::{
-    clank::{self, Fighter, Hit, ReboundRules, Response, Rules, Victim, Victims},
-    combat, stale,
+use skirmish::{
+    fighter::{combat, stale},
+    game::clank::{self, ClashFighter, Hit, ReboundRules, Response, ResponseRules, Victim, Victims},
 };
 
-fn fighters(damage: [f32; 2]) -> [Fighter; 2] {
-    core::array::from_fn(|side| Fighter {
+fn fighters(damage: [f32; 2]) -> [ClashFighter; 2] {
+    core::array::from_fn(|side| ClashFighter {
         id: side as u32 + 1,
         grounded: true,
         x: side as f32 * 4.0 - 2.0,
@@ -21,8 +21,8 @@ fn fighters(damage: [f32; 2]) -> [Fighter; 2] {
         response: Response::default(),
     })
 }
-fn rules() -> Rules {
-    Rules {
+fn rules() -> ResponseRules {
+    ResponseRules {
         damage_gap: 9,
         duration_scale: 0.5,
         duration_base: 2.0,
@@ -224,7 +224,7 @@ fn undefined_numeric_inputs_and_overflow_preserve_all_outputs() {
             &mut pair,
             [0, 0],
             &mut mask,
-            &Rules {
+            &ResponseRules {
                 duration_scale: f32::MAX,
                 ..rules()
             }

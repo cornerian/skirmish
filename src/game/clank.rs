@@ -6,11 +6,254 @@ use super::{
     Action, Error, Event, Fighter,
     data::{AttackFrame, Bone, FighterData, MatchData},
 };
-use crate::{
-    collision::sweep,
-    fighter::{clank as math, combat},
-};
+use crate::{collision::sweep, fighter::combat};
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResponseRules {
+    pub damage_gap: i32,
+    pub duration_scale: f32,
+    pub duration_base: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Victim {
+    pub id: u32,
+    pub remaining: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Victims {
+    entries: [Victim; 12],
+    next: u8,
+}
+
+impl Victims {
+    pub fn from_parts(entries: [Victim; 12], next: u8) -> Option<Self> {
+        (next < 12).then_some(Self { entries, next })
+    }
+    pub fn entries(&self) -> &[Victim; 12] {
+        &self.entries
+    }
+    pub fn next(&self) -> u8 {
+        self.next
+    }
+    pub fn contains(&self, id: u32) -> bool {
+        id != 0 && self.entries.iter().any(|entry| entry.id == id)
+    }
+    pub fn record(&mut self, id: u32) -> Result<bool, ClankError> {
+        if id == 0 {
+            return Err(ClankError::InvalidIdentity);
+        }
+        if self.contains(id) {
+            return Ok(false);
+        }
+        let index = match self.entries.iter().position(|entry| entry.id == 0) {
+            Some(index) => index,
+            None => {
+                let index = usize::from(self.next);
+                self.next = (self.next + 1) % 12;
+                index
+            }
+        };
+        self.entries[index] = Victim { id, remaining: 0 };
+        Ok(true)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Hit {
+    pub enabled: bool,
+    pub group: u32,
+    pub damage: f32,
+    pub clank: bool,
+    pub rebound: bool,
+    pub hits_grounded: bool,
+    pub victims: Victims,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Response {
+    pub damage: i32,
+    pub rebound_duration: f32,
+    pub towards: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ClashFighter {
+    pub id: u32,
+    pub grounded: bool,
+    pub x: f32,
+    pub hits: [Hit; 4],
+    pub response: Response,
+}
+
+pub fn eligible(fighters: &[ClashFighter; 2], slots: [usize; 2]) -> bool {
+    fighters[0].id != 0
+        && fighters[1].id != 0
+        && fighters[0].id != fighters[1].id
+        && fighters.iter().enumerate().all(|(side, f)| {
+            f.grounded
+                && f.hits.get(slots[side]).is_some_and(|hit| {
+                    hit.enabled
+                        && hit.clank
+                        && hit.hits_grounded
+                        && !hit.victims.contains(fighters[1 - side].id)
+                })
+        })
+}
+
+pub fn resolve_pair(
+    fighters: &mut [ClashFighter; 2],
+    slots: [usize; 2],
+    second_candidates: &mut [bool; 4],
+    rules: &ResponseRules,
+) -> Result<bool, ClankError> {
+    if fighters.iter().any(|f| f.id == 0) || fighters[0].id == fighters[1].id {
+        return Err(ClankError::InvalidIdentity);
+    }
+    if slots.into_iter().any(|slot| slot >= 4) {
+        return Err(ClankError::InvalidSlot);
+    }
+    if rules.damage_gap < 0
+        || ![rules.duration_scale, rules.duration_base]
+            .into_iter()
+            .all(f32::is_finite)
+        || fighters.iter().any(|f| {
+            f.response.damage < 0
+                || ![f.x, f.response.rebound_duration, f.response.towards]
+                    .into_iter()
+                    .all(f32::is_finite)
+        })
+    {
+        return Err(ClankError::InvalidParameters);
+    }
+    let damage = [
+        fighters[0].hits[slots[0]].damage,
+        fighters[1].hits[slots[1]].damage,
+    ];
+    let integers = [integer_damage(damage[0])?, integer_damage(damage[1])?];
+    let mut next = fighters.clone();
+    let mut candidates = *second_candidates;
+    for side in [1, 0] {
+        if integers[side] - rules.damage_gap < integers[1 - side] {
+            let hit = next[side].hits[slots[side]];
+            let opponent = next[1 - side].id;
+            for (slot, same_group) in next[side].hits.iter_mut().enumerate() {
+                if same_group.enabled && same_group.group == hit.group {
+                    let inserted = same_group.victims.record(opponent)?;
+                    if side == 1 && inserted {
+                        candidates[slot] = false;
+                    }
+                }
+            }
+            let amount = if damage[side] != 0.0 && integers[side] == 0 {
+                1
+            } else {
+                integers[side]
+            };
+            if amount > next[side].response.damage {
+                next[side].response.damage = amount;
+                if hit.rebound && next[side].grounded {
+                    let duration = amount as f32 * rules.duration_scale + rules.duration_base;
+                    if !duration.is_finite() {
+                        return Err(ClankError::InvalidParameters);
+                    }
+                    next[side].response.rebound_duration = duration;
+                    next[side].response.towards = if next[side].x < next[1 - side].x {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                }
+            }
+        }
+    }
+    *fighters = next;
+    *second_candidates = candidates;
+    Ok(integers[0] - rules.damage_gap < integers[1])
+}
+
+fn integer_damage(damage: f32) -> Result<i32, ClankError> {
+    if (0.0..2_147_483_648.0).contains(&damage) {
+        Ok(damage as i32)
+    } else {
+        Err(ClankError::InvalidDamage)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReboundRules {
+    pub animation_length: f32,
+    pub push_scale: f32,
+    pub push_base: f32,
+    pub surface_friction_multiplier: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Rebound {
+    pub animation_rate: f32,
+    pub impulse: f32,
+    pub ground_acceleration: f32,
+}
+
+pub fn rebound(duration: f32, towards: f32, rules: &ReboundRules) -> Result<Rebound, ClankError> {
+    if duration <= 0.0
+        || ![
+            duration,
+            towards,
+            rules.animation_length,
+            rules.push_scale,
+            rules.push_base,
+            rules.surface_friction_multiplier,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+    {
+        return Err(ClankError::InvalidParameters);
+    }
+    let impulse = -towards * (duration * rules.push_scale + rules.push_base);
+    let ground_acceleration = if rules.surface_friction_multiplier < 1.0 {
+        impulse * rules.surface_friction_multiplier
+    } else {
+        impulse
+    };
+    let animation_rate = (rules.animation_length + 0.1) / duration;
+    if ![impulse, ground_acceleration, animation_rate]
+        .into_iter()
+        .all(f32::is_finite)
+    {
+        return Err(ClankError::InvalidParameters);
+    }
+    Ok(Rebound {
+        animation_rate,
+        impulse,
+        ground_acceleration,
+    })
+}
+
+pub fn apply_rebound_friction(impulse: &mut f32) -> bool {
+    if *impulse != 0.0 {
+        *impulse = 0.0;
+        false
+    } else {
+        true
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ClankError {
+    #[error("clank requires distinct nonzero native fighter identities")]
+    InvalidIdentity,
+    #[error("clank hitbox slot is outside 0..4")]
+    InvalidSlot,
+    #[error("cached clank damage is outside the nonnegative C int conversion range")]
+    InvalidDamage,
+    #[error("invalid or nonfinite clank/rebound parameters")]
+    InvalidParameters,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -22,7 +265,7 @@ pub enum Profile {
 #[serde(deny_unknown_fields)]
 pub struct Rules {
     pub profile: Profile,
-    pub response: math::Rules,
+    pub response: ResponseRules,
     pub push_scale: f32,
     pub push_base: f32,
     pub hitlag_maximum: f32,
@@ -68,10 +311,10 @@ pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
     for amount in [1.0, 999.0] {
         let duration = amount * r.response.duration_scale + r.response.duration_base;
         if duration != 0.0 {
-            let response = math::rebound(
+            let response = rebound(
                 duration,
                 1.0,
-                &math::ReboundRules {
+                &ReboundRules {
                     animation_length: a.animation_length,
                     push_scale: r.push_scale,
                     push_base: r.push_base,
@@ -92,14 +335,14 @@ pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Slot {
     pub group: Option<u8>,
-    pub victims: math::Victims,
+    pub victims: Victims,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct State {
     pub slots: [Slot; 4],
     /// Original pending response is cleared after ProcessHit; recovery state persists.
-    pub response: math::Response,
+    pub response: Response,
     pub clock: f32,
     pub rate: f32,
     pub impulse: f32,
@@ -141,7 +384,7 @@ pub(crate) fn sample(state: &mut State, frame: Option<&AttackFrame>) {
                 .slots
                 .iter()
                 .find(|s| s.group == Some(hit.group))
-                .map_or_else(math::Victims::default, |s| s.victims);
+                .map_or_else(Victims::default, |s| s.victims);
             state.slots[slot] = Slot {
                 group: Some(hit.group),
                 victims,
@@ -178,9 +421,9 @@ pub(crate) fn scan(
         let player = 1 - side;
         let f = &state.fighters[player];
         let frame = data.fighters[player]
-            .attack(f.action, f.prone, f.ledge.slow)
+            .attack_for(f)
             .and_then(|a| a.frames.get(f.action_frame as usize));
-        math::Fighter {
+        ClashFighter {
             id: player as u32 + 1,
             grounded: f.grounded,
             x: f.position[0],
@@ -188,7 +431,7 @@ pub(crate) fn scan(
             hits: core::array::from_fn(|slot| {
                 frame
                     .and_then(|frame| frame.hitboxes.get(slot))
-                    .map_or_else(math::Hit::default, |hit| math::Hit {
+                    .map_or_else(Hit::default, |hit| Hit {
                         enabled: true,
                         group: u32::from(hit.group),
                         damage: f.staling.hits[slot].map_or(hit.damage as f32, |h| h.damage),
@@ -207,7 +450,7 @@ pub(crate) fn scan(
     if pair.iter().all(|f| f.grounded) {
         for outer in 0..4 {
             for inner in 0..4 {
-                if !candidates[inner] || !math::eligible(&pair, [outer, inner]) {
+                if !candidates[inner] || !eligible(&pair, [outer, inner]) {
                     continue;
                 }
                 let (Some(first), Some(second)) = (&swept[1][outer], &swept[0][inner]) else {
@@ -224,13 +467,9 @@ pub(crate) fn scan(
                     return Err(Error::NonFinite);
                 }
                 if collided {
-                    let stop = math::resolve_pair(
-                        &mut pair,
-                        [outer, inner],
-                        &mut candidates,
-                        &rules.response,
-                    )
-                    .map_err(physics)?;
+                    let stop =
+                        resolve_pair(&mut pair, [outer, inner], &mut candidates, &rules.response)
+                            .map_err(physics)?;
                     let suppressed = [pair[1].hits[inner].victims.contains(pair[0].id), stop];
                     if suppressed.into_iter().any(|side| side) {
                         state.events.push(Event::Clank {
@@ -286,14 +525,14 @@ pub(crate) fn finish(
                     .as_ref()
                     .ok_or_else(|| Error::Data("missing rebound animation".into()))?;
                 let frozen_pose = fd
-                    .attack(f.action, f.prone, f.ledge.slow)
+                    .attack_for(f)
                     .and_then(|a| a.frames.get(f.action_frame as usize))
                     .map_or(&fd.bones, |frame| &frame.bones)
                     .clone();
-                let rebound = math::rebound(
+                let rebound = rebound(
                     response.rebound_duration,
                     response.towards,
-                    &math::ReboundRules {
+                    &ReboundRules {
                         animation_length: animation.animation_length,
                         push_scale: rules.push_scale,
                         push_base: rules.push_base,
@@ -310,7 +549,7 @@ pub(crate) fn finish(
             }
             f.hitlag = lag;
         }
-        f.clank.response = math::Response::default();
+        f.clank.response = Response::default();
         super::staling::flush(
             f,
             &data.fighters[player],

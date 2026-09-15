@@ -4,11 +4,11 @@
 //! decomp call chain cited in `src/game/projectile.rs`) but not covered by
 //! an automated test; this file closes that gap.
 //!
-//! Fighter 0 carries the Blaster (`characters::fox::neutral`); fighter 1
-//! carries the Reflector (`characters::fox::down`), so a laser fired by 0
+//! Fighter 0 carries the Blaster from `scripts/fighters/fox.luau`'s
+//! `neutral` resource; fighter 1 carries its `down` resource, so a laser fired by 0
 //! can be shield-bounced or Reflector-caught by 1. The two fixtures are
 //! merged by hand (each `support` profile otherwise installs its own
-//! `Specials::Fox` wholesale on both fighters, clobbering the other move).
+//! Fox `Specials` wholesale on both fighters, clobbering the other move).
 
 #[path = "support/conformance.rs"]
 mod conformance;
@@ -17,7 +17,6 @@ mod down_special_resources;
 #[path = "support/fox_neutral_special.rs"]
 mod neutral_special_resources;
 
-use skirmish::characters::Specials;
 use skirmish::game::{Action, BUTTON_B, BUTTON_L, Controller, Event, Match, data::MatchData};
 
 const IDLE: [Controller; 2] = [Controller {
@@ -67,36 +66,24 @@ fn down_input(stick_y: f32) -> Controller {
 /// integration fixture's own bone table), not to assert a real game value.
 fn data(damage_mul: f32, max_damage: i32) -> MatchData {
     let neutral_data = neutral_special_resources::profile(conformance::data());
-    let Some(Specials::Fox { neutral, .. }) = neutral_data.fighters[0].specials.clone() else {
-        panic!("test fixture is missing its neutral-special resource");
-    };
+    let neutral = neutral_data.fighters[0].specials.clone().unwrap();
     let mut resource = down_special_resources::profile(conformance::data());
-    let Some(Specials::Fox { down, .. }) = resource.fighters[1].specials.clone() else {
-        panic!("test fixture is missing its down-special resource");
-    };
-    let mut down = down.expect("down-special fixture must be populated");
-    down.reflect.offset = [0.0, 1.5, 0.0];
-    down.reflect.size = 2.0;
-    down.reflect.bone = 0;
-    down.reflect.damage_mul = damage_mul;
-    down.reflect.max_damage = max_damage;
+    let mut down = resource.fighters[1].specials.clone().unwrap();
+    let reflect = &mut down.resources.values.get_mut("down").unwrap()["reflect"];
+    reflect["offset"] = serde_json::json!([0.0, 1.5, 0.0]);
+    reflect["size"] = serde_json::json!(2.0);
+    reflect["bone"] = serde_json::json!(0);
+    reflect["damage_mul"] = serde_json::json!(damage_mul);
+    reflect["max_damage"] = serde_json::json!(max_damage);
     // `rules.specials` (shared side/down common data) requires every
     // fighter to carry a side- or down-special resource once it is set
     // (`validation.rs`); fighter 0 gets an unused `down` too so it still
     // validates -- dispatch priority (`side, up, neutral, down`) means its
     // own centered-stick B press is always claimed by `neutral` first.
-    resource.fighters[0].specials = Some(Specials::Fox {
-        neutral,
-        side: None,
-        up: None,
-        down: Some(down.clone()),
-    });
-    resource.fighters[1].specials = Some(Specials::Fox {
-        neutral: None,
-        side: None,
-        up: None,
-        down: Some(down),
-    });
+    let mut both = down.clone();
+    both.resources.values.extend(neutral.resources.values);
+    resource.fighters[0].specials = Some(both);
+    resource.fighters[1].specials = Some(down);
     resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
     resource.stage.blast = [-200.0, 200.0, -200.0, 200.0];
     resource

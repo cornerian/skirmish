@@ -1,12 +1,12 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::characters::{Specials, fox::side::SideSpecial, fox::up::UpSpecial};
 use skirmish::{
-    fighter::clank as clank_math,
+    game::clank as clank_math,
     game::{
         clank,
         data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
         escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
+        script::resources::{Resources, Specials},
     },
 };
 
@@ -14,13 +14,13 @@ use skirmish::{
 struct Fixture {
     // Shared with the side special (`up::validate` takes the same `Rules`);
     // only `vertical_threshold` is actually read by this move's own dispatch.
-    rules: skirmish::characters::fox::side::Rules,
-    parameters: UpSpecial,
+    rules: skirmish::fighter::specials::Rules,
+    parameters: serde_json::Value,
 }
 
 #[derive(serde::Deserialize)]
 struct SideFixture {
-    parameters: SideSpecial,
+    parameters: serde_json::Value,
 }
 
 #[derive(serde::Deserialize)]
@@ -48,11 +48,12 @@ pub fn profile(mut data: MatchData) -> MatchData {
     data.rules.specials = Some(fixture.rules);
     for fighter in &mut data.fighters {
         fighter.escape_air = Some(escape_air.parameters.clone());
-        fighter.specials = Some(Specials::Fox {
-            neutral: None,
-            side: Some(side.parameters.clone()),
-            up: Some(fixture.parameters.clone()),
-            down: None,
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("side".into(), side.parameters.clone());
+        values.insert("up".into(), fixture.parameters.clone());
+        fighter.specials = Some(Specials {
+            character: "fox".into(),
+            resources: Resources::new(values).unwrap(),
         });
     }
     data
@@ -70,7 +71,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
 pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
     data.rules.clank = Some(clank::Rules {
         profile: clank::Profile::OrdinaryGroundedNonSlash,
-        response: clank_math::Rules {
+        response: clank_math::ResponseRules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,

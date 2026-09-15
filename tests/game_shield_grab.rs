@@ -7,8 +7,9 @@ mod grab_support;
 
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, Match, State,
-    data::MatchData, grab::ShieldGrabRules, shield,
+    data::MatchData, grab::ShieldGrabRules,
 };
+use skirmish::fighter::shield;
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {

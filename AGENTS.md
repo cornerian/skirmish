@@ -5,6 +5,11 @@ semantics before reducing code. Prefer standard collections and established
 libraries where their behavior matches. Never replace a subsystem with a stub
 and call it translated; report partial function coverage explicitly.
 
+Module ownership follows the simulation boundary: `fighter` owns mechanics and
+state for one fighter, while `game` owns the match, inter-fighter interactions,
+and deeper game logic. Aerial and shield state are fighter-local examples;
+clank, grab, nudge, hit resolution, death, entry and rebirth are game-owned.
+
 Hard requirement: native modern-machine builds, execution, and tests must never
 require an ISO, DOL, emulator, or GameCube runtime. Use native game resources,
 host-compiled original C, generated scenarios and future replay observations.
@@ -45,5 +50,9 @@ owned by the resource task.
   The old history is archived on `archive/pre-rust-rewrite-20260909`; `main`
   starts with a fresh root commit, per the user's explicit instruction.
 
-Fighter scripting API extensions should follow
-[the Luau hook and primitive guidance](docs/luau.md#adding-a-hook-or-primitive).
+Fighter behavior is implemented and documented at the native Rust event and
+motion boundaries. Pon integration is in progress: the embedded runtime
+imports the class based fighter API and its native ABI is covered by focused
+tests, while full Fox loading, gameplay parity, and async rollback remain
+unverified. The installable pure-Python SDK lives in `scripts/api`;
+`tools/pon-probe` remains a separate embedding probe.

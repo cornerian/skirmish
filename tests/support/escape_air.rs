@@ -1,7 +1,5 @@
-use skirmish::game::{
-    data::MatchData,
-    escape_air::{Parameters, Rules},
-};
+use skirmish::fighter::escape_air::{Parameters, Rules};
+use skirmish::game::data::MatchData;
 
 #[derive(serde::Deserialize)]
 struct Fixture {

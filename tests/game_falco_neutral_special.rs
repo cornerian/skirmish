@@ -1,6 +1,6 @@
-//! Falco's own neutral special (Laser), wired through `Specials::Falco`
-//! rather than `Specials::Fox` for the first time (`docs/falco.md`): the
-//! exact same `characters::fox::neutral` state machine and
+//! Falco's own neutral special (Laser), wired through `Specials` with the
+//! Falco character key rather than Fox's for the first time (`docs/falco.md`): the
+//! exact same `scripts/fighters/fox.luau` `neutral` state machine and
 //! `game::projectile` system Fox's own Blaster already uses (see that
 //! module's doc and `tests/falco_laser_table_differential.rs`'s own
 //! confirmation that the pinned decomp gives "Falco laser" the
@@ -75,17 +75,29 @@ fn spawned_kind(state: &skirmish::game::State, owner: usize) -> Option<Projectil
     })
 }
 
+fn spawned_count(state: &skirmish::game::State, owner: usize) -> usize {
+    state
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                Event::ProjectileSpawned { owner: o, .. } if *o == owner
+            )
+        })
+        .count()
+}
+
 fn hit_this_frame(state: &skirmish::game::State, owner: usize, victim: usize) -> bool {
     state.events.iter().any(
         |event| matches!(event, Event::ProjectileHit { owner: o, victim: v } if *o == owner && *v == victim),
     )
 }
 
-/// Runs fighter 0 through a full Start entry and returns the first frame
-/// the laser spawns (matching `game_neutral_special.rs`'s own
-/// `a_fresh_b_press_repeats_the_loop_while_no_press_ends_it` timing note:
-/// the Start clip's own extra entry-frame advance means the fixture's
-/// two-frame clip already runs out one idle frame later).
+/// Runs fighter 0 through the Start-to-Loop entry transition and returns the
+/// frame whose Loop row 0 fires the laser. The entry callback's own extra
+/// animation advance makes the two-frame Start clip transition on this second
+/// step; the command row is sampled before the Loop frame advances.
 fn fire(game: &mut Match) -> skirmish::game::State {
     game.step(input(0, press_b())).unwrap();
     game.step(IDLE).unwrap().clone()
@@ -111,6 +123,25 @@ fn falcos_shot_is_tagged_as_his_own_laser_kind() {
 }
 
 #[test]
+fn falcos_entry_command_row_fires_once_and_does_not_repeat_next_frame() {
+    let mut game = Match::new(data(), 0).unwrap();
+    let first = game.step(input(0, press_b())).unwrap();
+    assert_eq!(first.fighters[0].action, Action::SpecialNStart);
+    let entry_fire = game.step(IDLE).unwrap().clone();
+    assert_eq!(entry_fire.fighters[0].action, Action::SpecialNLoop);
+    assert_eq!(entry_fire.fighters[0].action_frame, 1);
+    assert_eq!(spawned_count(&entry_fire, 0), 1);
+    assert_eq!(
+        spawned_kind(&entry_fire, 0),
+        Some(ProjectileKind::FalcoLaser)
+    );
+
+    let next_frame = game.step(IDLE).unwrap().clone();
+    assert_eq!(spawned_count(&next_frame, 0), 0);
+    assert_eq!(next_frame.projectiles.len(), 1);
+}
+
+#[test]
 fn falcos_laser_travels_at_his_own_slower_speed() {
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [30.0, 0.0]];
@@ -120,8 +151,8 @@ fn falcos_laser_travels_at_his_own_slower_speed() {
     let next = game.step(IDLE).unwrap();
     let position_1 = next.projectiles[0].position[0];
     // `fighters/falco.json`'s own `specials.neutral.attributes.speed`
-    // (`5.0`), not Fox's `7.0` -- see `characters::fox::neutral::
-    // Attributes::speed`'s own doc.
+    // (`5.0`), not Fox's `7.0` -- see the `neutral.attributes.speed`
+    // resource in `scripts/fighters/fox.luau`.
     assert!(
         (position_1 - position_0 - 5.0).abs() < 1e-4,
         "{position_1} - {position_0}"
@@ -212,18 +243,18 @@ fn falcos_laser_still_bounces_off_a_shield_like_foxs_does() {
     );
 }
 
-/// `Specials::Falco` and `Specials::Fox` both resolve `SpecialNStart`/
+/// Falco and Fox `Specials` both resolve `SpecialNStart`/
 /// `SpecialAirNStart` (and the other four neutral-special phases) to the
 /// same Slippi ids -- already covered end to end by `tests::
 /// game_falco_specials::falco_and_fox_resolve_the_same_slippi_special_ids`;
 /// repeated here narrowly as a same-file sanity check that this fixture's
-/// own `Specials::Falco` wiring reaches the real dispatcher, not just the
-/// bare `characters::slippi_ids` function.
+/// own Falco `Specials` wiring reaches the real dispatcher, not just the
+/// bare `game::script::definition::builtin_slippi_ids` function.
 #[test]
 fn falco_neutral_actions_resolve_through_the_shared_slippi_table() {
-    use skirmish::characters;
+    use skirmish::game::script::definition::builtin_slippi_ids;
     assert_eq!(
-        characters::slippi_ids(Some(20), Action::SpecialNStart),
+        builtin_slippi_ids(Some(20), Action::SpecialNStart),
         Some((341, 295))
     );
 }

@@ -3,7 +3,7 @@
 //! ordinary damage pipeline with the item's own knockback. No item pickup,
 //! no clank-vs-item, no absorption (no absorbing character exists in this
 //! codebase). See `docs/fox-neutral-special.md` for the full citation list
-//! and scope; Fox's Blaster (`characters::fox::neutral`) is the first and
+//! and scope; the bundled fighter's Blaster policy is the first and
 //! today only spawner, but nothing here is Fox-specific.
 //!
 //! Modeled on the source's own generic "ray" item helpers
@@ -13,19 +13,45 @@
 //! (`itlgunray.c`).
 
 use super::{
-    Event, State, damage,
+    Event, State,
     data::{Hitbox, MatchData},
-    script, shield, staling,
+    script, staling,
 };
 use crate::{
     collision::{
         bones::Pose,
         stage::{Query, Stage, Surface},
     },
-    fighter::combat::Capsule,
+    fighter::{combat::Capsule, shield},
 };
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+
+/// A fully validated projectile command staged by a fighter lifecycle
+/// transaction. Keeping hitboxes typed avoids reparsing callback JSON during
+/// the post-fighter phase.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub(crate) struct PendingProjectile {
+    pub kind: ProjectileKind,
+    pub position: [f32; 3],
+    pub angle: f32,
+    pub speed: f32,
+    pub lifetime: f32,
+    pub hitboxes: Vec<Hitbox>,
+    pub move_id: u16,
+}
+
+pub(crate) const MAX_PENDING_PROJECTILES: usize = 8;
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct ReflectDescriptor {
+    bone: u32,
+    max_damage: i32,
+    offset: [f32; 3],
+    size: f32,
+    damage_mul: f32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -253,7 +279,10 @@ fn step(
     // `down::Reflect.max_damage` (`ftColl_80077464`, `ftcoll.c:764`).
     if state.fighters[victim].shield.reflecting
         && let Some(specials) = data.fighters[victim].specials.as_ref()
-        && let Some(down) = specials.fox_down()
+        && let Some(path) =
+            crate::game::script::definition::projectile_contact_resource(&data.fighters[victim])
+        && let Some(down) = specials.lookup(&path)
+        && let Ok(down) = serde_json::from_value::<ReflectDescriptor>(down.clone())
     {
         let swept = Capsule {
             start: previous_position,
@@ -261,13 +290,13 @@ fn step(
             radius: state.projectiles[index].collision_radius(),
         };
         let bone_matrix = poses[victim]
-            .world_matrix(down.reflect.bone as usize)
+            .world_matrix(down.bone as usize)
             .map_err(|e| super::Error::Physics(e.to_string()))?;
-        let center = crate::collision::bones::transform_point(bone_matrix, down.reflect.offset);
+        let center = crate::collision::bones::transform_point(bone_matrix, down.offset);
         let reflect_capsule = Capsule {
             start: center,
             end: center,
-            radius: down.reflect.size,
+            radius: down.size,
         };
         let mut contact = crate::collision::shield::Contact::default();
         let overlaps = crate::collision::shield::capsule_matrix(
@@ -299,43 +328,35 @@ fn step(
                 hitstun: fighter.hitstun,
                 flags,
             };
-            let program = if let Some(program) = data.fighters[victim].script.as_ref() {
-                if program
-                    .has_hook(script::Hook::OnProjectileContact)
-                    .map_err(|error| super::Error::Data(error.to_string()))?
-                {
-                    Some(program.clone())
-                } else {
-                    script::bundled_source(data.fighters[victim].specials.as_ref())
-                        .map(script::Program::new)
-                        .transpose()
-                        .map_err(|error| super::Error::Data(error.to_string()))?
-                }
-            } else {
-                script::bundled_source(data.fighters[victim].specials.as_ref())
-                    .map(script::Program::new)
-                    .transpose()
-                    .map_err(|error| super::Error::Data(error.to_string()))?
-            };
-            let Some(program) = program else {
+            // The selected fighter program is compiled and cached at resource
+            // load time. A custom program owns the whole policy surface: a
+            // missing contact hook is an intentional no-op, never a reason to
+            // compile or inherit a bundled Fox/Falco program here.
+            let Some(program) =
+                crate::game::script::definition::cached_program(&data.fighters[victim])
+            else {
                 return Ok(Outcome::Keep);
             };
-            let locals = state.fighters[victim].script_state.clone();
             let hit = script::HitView {
                 damage: damage as f32,
-                max_damage: down.reflect.max_damage,
+                max_damage: down.max_damage,
                 projectile: true,
                 ..Default::default()
             };
             let result = program
-                .dispatch(
-                    script::Hook::OnProjectileContact,
+                .dispatch_with_context(
+                    script::Hook::ProjectileContact,
                     &view,
                     Some(&hit),
-                    &locals,
+                    script::CombatContext {
+                        persistent: &state.fighters[victim].script_state,
+                        action_state: &state.fighters[victim].action_state,
+                        resources: data.fighters[victim].script_resources.get(),
+                    },
                 )
                 .map_err(|error| super::Error::Data(error.to_string()))?;
             state.fighters[victim].script_state = result.locals;
+            state.fighters[victim].action_state = result.action_state;
             script::apply_commands(state, victim, &result.commands)?;
             result.hit.is_some_and(|patch| patch.reflect)
         } else {
@@ -352,7 +373,7 @@ fn step(
                 // `oracle_reflect_damage_scaling`); the global cap
                 // (`it_804D6D28->xD8`) stays unmodeled, as before, since its
                 // real runtime value is not in the pinned decomp.
-                let scaled = hit.damage as f32 * down.reflect.damage_mul + 0.99;
+                let scaled = hit.damage as f32 * down.damage_mul + 0.99;
                 hit.damage = scaled.max(0.0) as u32;
             }
             // `down::Reflect.speed_mul` is deliberately not applied: Fox's
@@ -494,18 +515,20 @@ fn step(
                                 )
                             }),
                     };
-                    let accepted = damage::apply_hit(
+                    let accepted = super::hit_resolution::apply_hit(
                         data,
                         state,
                         owner,
                         &hit,
                         staled,
                         height,
-                        damage::HitDirection::FighterContact(damage::FighterContact {
-                            hurt_start: hurt.start,
-                            hurt_end: hurt.end,
-                            position: contact.position,
-                        }),
+                        super::hit_resolution::HitDirection::FighterContact(
+                            super::hit_resolution::FighterContact {
+                                hurt_start: hurt.start,
+                                hurt_end: hurt.end,
+                                position: contact.position,
+                            },
+                        ),
                         true,
                     )?;
                     if !accepted {

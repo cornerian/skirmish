@@ -1,19 +1,9 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::characters::{
-    Specials,
-    fox::side::{Rules, SideSpecial},
-};
-use skirmish::game::{
-    data::MatchData,
-    escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
-};
+use skirmish::fighter::escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules};
+use skirmish::game::data::MatchData;
 
-#[derive(serde::Deserialize)]
-struct Fixture {
-    rules: Rules,
-    parameters: SideSpecial,
-}
+use skirmish::game::script::resources::{Resources, Specials};
 
 #[derive(serde::Deserialize)]
 struct EscapeAirFixture {
@@ -33,16 +23,17 @@ pub fn profile(mut data: MatchData) -> MatchData {
     for fighter in &mut data.fighters {
         fighter.escape_air = Some(escape_air.parameters.clone());
     }
-    let fixture: Fixture =
+    let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../fixtures/game/fox-side-special.json")).unwrap();
-    data.rules.specials = Some(fixture.rules);
+    data.rules.specials = Some(serde_json::from_value(fixture["rules"].clone()).unwrap());
+    let mut values = std::collections::BTreeMap::new();
+    values.insert("side".to_owned(), fixture["parameters"].clone());
+    let specials = Specials {
+        character: "Fox".to_owned(),
+        resources: Resources::new(values).unwrap(),
+    };
     for fighter in &mut data.fighters {
-        fighter.specials = Some(Specials::Fox {
-            neutral: None,
-            side: Some(fixture.parameters.clone()),
-            up: None,
-            down: None,
-        });
+        fighter.specials = Some(specials.clone());
     }
     data
 }

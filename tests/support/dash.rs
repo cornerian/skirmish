@@ -1,9 +1,5 @@
-use skirmish::game::{
-    dash::{DashAttack, Rules},
-    data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
-    grab::ShieldGrabRules,
-    tilt::GroundFrameFlags,
-};
+use skirmish::fighter::{dash::{DashAttack, Rules}, tilt::GroundFrameFlags};
+use skirmish::game::{data::{Attack, AttackFrame, Bone, Hitbox, MatchData}, grab::ShieldGrabRules};
 
 /// Invented dash rules: `early_frames` (x44), `roll_frames` (x48),
 /// `transition_friction` (x54) and `attack_friction_multiplier` (x50).

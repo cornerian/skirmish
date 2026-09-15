@@ -1,32 +1,55 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
-use skirmish::characters::{Specials, fox::neutral::NeutralSpecial};
+use skirmish::game::script::resources::{Resources, Specials};
 use skirmish::game::{Controller, Match, data::MatchData};
-
-#[derive(serde::Deserialize)]
-struct Fixture {
-    parameters: NeutralSpecial,
-}
+use std::collections::BTreeMap;
 
 /// Install the invented `tests/fixtures/game/falco-neutral-special.json`
-/// motion on both fighters, wired through `Specials::Falco` (not `::Fox`).
+/// motion on both fighters, wired through `Specials` with the Falco character
+/// key (rather than Fox's).
 /// Numeric attributes (`speed`/`laser.lifetime`/every hitbox's own
 /// `growth`/`fixed`/fourth-hitbox `center`/`radius`) are Falco's own
-/// exporter-confirmed values, genuinely different from Fox's (see
-/// `characters::fox::neutral::{Attributes,Laser}`'s own doc comments and
-/// `docs/falco.md`); the bone poses themselves are the same invented
+/// exporter-confirmed values, genuinely different from Fox's (see the
+/// `neutral` resource in `scripts/fighters/fox.luau` and `docs/falco.md`);
+/// the bone poses themselves are the same invented
 /// two-bone pose `tests/support/neutral_special.rs` uses, not a real
 /// Falco animation.
 pub fn profile(mut data: MatchData) -> MatchData {
-    let fixture: Fixture =
+    let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../fixtures/game/falco-neutral-special.json")).unwrap();
+    let mut values = BTreeMap::new();
+    let mut neutral = fixture["parameters"].clone();
+    // The neutral policy consumes the exported command-variable trace.  A
+    // command 2 sample on Loop's first animation frame is the fixture's real fire
+    // event, replacing the removed implicit legacy-fire path.
+    let trace = |len: usize, slot: usize, frame: Option<usize>| {
+        let mut cmd_vars = vec![vec![serde_json::Value::Null; 4]; len];
+        if let Some(frame) = frame {
+            cmd_vars[frame][slot] = serde_json::json!(1);
+        }
+        serde_json::json!({ "cmd_vars": cmd_vars, "allow_interrupt": vec![false; len] })
+    };
+    neutral["script"] = serde_json::json!({
+        "start": {
+            "ground": trace(neutral["start"]["ground"]["frames"].as_array().unwrap().len(), 0, None),
+            "air": trace(neutral["start"]["air"]["frames"].as_array().unwrap().len(), 0, None)
+        },
+        "loop_phase": {
+            "ground": trace(neutral["loop_phase"]["ground"]["frames"].as_array().unwrap().len(), 2, Some(0)),
+            "air": trace(neutral["loop_phase"]["air"]["frames"].as_array().unwrap().len(), 2, Some(0))
+        },
+        "end": {
+            "ground": trace(neutral["end"]["ground"]["frames"].as_array().unwrap().len(), 1, None),
+            "air": trace(neutral["end"]["air"]["frames"].as_array().unwrap().len(), 1, None)
+        }
+    });
+    values.insert("neutral".to_owned(), neutral);
+    let specials = Specials {
+        character: "Falco".to_owned(),
+        resources: Resources::new(values).unwrap(),
+    };
     for fighter in &mut data.fighters {
-        fighter.specials = Some(Specials::Falco {
-            neutral: Some(fixture.parameters.clone()),
-            side: None,
-            up: None,
-            down: None,
-        });
+        fighter.specials = Some(specials.clone());
     }
     data
 }

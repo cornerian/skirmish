@@ -45,6 +45,14 @@ For gameplay resources, retain:
 - Coordinate axes, handedness, units, scale conventions and transform order.
 - Bone ID mappings, parent relationships, local versus world transforms, bind
   transforms and joint flags affecting gameplay poses.
+- Preserve semantic fighter-part mappings when gameplay refers to a part rather
+  than a raw bone index.  For example, Fox Blaster resolves
+  `FtPart_RThumbNb` (source part ID 35) through the per-character
+  `FighterPartsTable.part_to_joint` table in `PlCo.dat`; source part ID 35 is
+  not itself a skeleton joint index.  The current converted gameplay pack
+  contains Fox's 73-bone bind/per-frame pose arrays but omits this mapping and
+  any named-joint/semantic-part table, so a muzzle origin cannot safely choose
+  a numeric bone by inspection.
 - Frame origin, tick rate, animation rate/interpolation rules and the relationship
   between action commands and pose samples. Preserve original tracks/commands
   when a converted representation has not yet been validated.

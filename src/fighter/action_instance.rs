@@ -1,6 +1,6 @@
 //! Fighter action-instance state from `ft_800895E0` and `ft_80089824`.
 use super::instance::Counter;
-use crate::game::{Action, damage::ProneOrientation};
+use crate::{fighter::damage::ProneOrientation, game::Action};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]

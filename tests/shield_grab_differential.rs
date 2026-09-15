@@ -4,7 +4,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::grab::{dash_shield_grab, shield_grab};
+use skirmish::game::grab::{dash_shield_grab, shield_grab};
 
 const HSD_PAD_A: u32 = 0x100;
 const HSD_PAD_LR: u32 = 0x60;

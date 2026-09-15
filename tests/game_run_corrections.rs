@@ -4,9 +4,10 @@
 //! constant, RunBrake models its own velocity-gated marker freeze
 //! (`ftCo_RunBrake.c:49-77`), and Run's `run.x0` turn-run lockout
 //! (`ftCo_Run.c:72,96-98,125-126`) gates RunTurn/RunBrake entry from Run in
-//! both `game::locomotion::update_actions` and `game::dash::
+//! both `fighter::locomotion::update_actions` and `fighter::dash::
 //! update_dash_or_run`'s Run arm.
-use skirmish::game::{Action, Controller, Match, State, data::MatchData, locomotion::Parameters};
+use skirmish::fighter::locomotion::Parameters;
+use skirmish::game::{Action, Controller, Match, State, data::MatchData};
 
 fn data() -> MatchData {
     let mut data: MatchData =

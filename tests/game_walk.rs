@@ -7,8 +7,8 @@ mod tilt_support;
 mod walk_support;
 
 use skirmish::{
-    fighter::locomotion::{walk_animation_rate, walk_retype_frame},
-    game::{Action, Controller, Match, State, data::MatchData, locomotion::WalkKind},
+    fighter::locomotion::{WalkKind, walk_animation_rate, walk_retype_frame},
+    game::{Action, Controller, Match, State, data::MatchData},
 };
 
 fn data() -> MatchData {

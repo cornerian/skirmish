@@ -32,7 +32,10 @@ pub struct State {
 /// `ft_800890D0` on a motion change, or the deferred `ft_800892A0` restart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub(crate) enum Transition {
-    Move(Action),
+    Move {
+        action: Action,
+        owner: Option<usize>,
+    },
     Restart,
 }
 
@@ -71,18 +74,13 @@ impl Transitions {
         self.len == 0 && self.overflow.is_empty()
     }
 
-    /// Matches `Vec::drain(..)`'s "empty afterward" behavior and exact push
-    /// order (inline slots were filled first, so they precede whatever
-    /// spilled into `overflow`).
-    fn drain(&mut self) -> impl Iterator<Item = Transition> + '_ {
+    fn take_owned(&mut self) -> ([Option<Transition>; 4], usize, Vec<Transition>) {
         let len = self.len as usize;
         let items = self.items;
+        self.items = [None; 4];
         self.len = 0;
-        items
-            .into_iter()
-            .take(len)
-            .flatten()
-            .chain(self.overflow.drain(..))
+        let overflow = std::mem::take(&mut self.overflow);
+        (items, len, overflow)
     }
 }
 
@@ -113,9 +111,12 @@ pub(crate) fn validate(rules: &Rules) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn transition(fighter: &mut Fighter, action: Action) {
+pub(crate) fn transition(fighter: &mut Fighter, action: Action, owner: Option<usize>) {
     fighter.staling.hits = [None; 4];
-    fighter.staling.transitions.push(Transition::Move(action));
+    fighter
+        .staling
+        .transitions
+        .push(Transition::Move { action, owner });
 }
 
 /// `ft_800892A0`: the current identity restarts its attack instance.
@@ -133,24 +134,32 @@ pub(crate) fn flush(
     action_counter: &mut crate::fighter::instance::Counter,
 ) -> Result<(), Error> {
     crate::fighter::action_instance::flush(&mut fighter.action_instance, action_counter);
-    for transition in fighter.staling.transitions.drain() {
+    let (inline, inline_len, overflow) = fighter.staling.transitions.take_owned();
+    for transition in inline
+        .into_iter()
+        .take(inline_len)
+        .flatten()
+        .chain(overflow)
+    {
         if rules.is_none() {
             continue;
         }
-        let action = match transition {
-            Transition::Move(action) => action,
+        match transition {
+            Transition::Move { action, owner } => {
+                let move_id = match data.attack_for_owner(fighter, action, owner) {
+                    Some(attack) => attack.move_id.ok_or_else(|| {
+                        Error::Data("staling requires an explicit attack move_id".into())
+                    })?,
+                    None => crate::game::grab::move_id(data.grab.as_ref(), action)?.unwrap_or(1),
+                };
+                fighter.staling.identity.change_move(move_id, counter);
+                continue;
+            }
             Transition::Restart => {
                 fighter.staling.identity.restart(counter);
                 continue;
             }
-        };
-        let move_id = match data.attack(action, fighter.prone, fighter.ledge.slow) {
-            Some(attack) => attack
-                .move_id
-                .ok_or_else(|| Error::Data("staling requires an explicit attack move_id".into()))?,
-            None => super::grab::move_id(data.grab.as_ref(), action)?.unwrap_or(1),
-        };
-        fighter.staling.identity.change_move(move_id, counter);
+        }
     }
     Ok(())
 }

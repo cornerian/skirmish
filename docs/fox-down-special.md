@@ -104,10 +104,10 @@ countdown back to Loop; platform drop from Start/Loop; conversions; the
 
 ## Implementation (2026-09-11 batch)
 
-Implemented as `src/game/characters/fox/down.rs`: the five-phase Start/
+Implemented through the fighter callback policy: the five-phase Start/
 Loop/Turn/Hit/End state machine, the ground-fourth/air-directional fresh
-entry, the mid-move turn (`should_turn_mid_move` in `fighter::characters::
-fox`, reusing `locomotion::Parameters::turn_threshold`, not the side
+entry, the mid-move turn (`should_turn_mid_move` in `compat::math::kinematics`,
+reusing `locomotion::Parameters::turn_threshold`, not the side
 special's own `x220`), the ground jump cancel and aerial jump (reusing
 `locomotion::jump_input`/`try_aerial_jump`), the platform drop (a new
 `collision::begin_pass_as`, generalizing the existing `begin_pass` to a
@@ -169,7 +169,7 @@ handling. This branch is genuinely reachable: Fox's `air_drift_max` sits
 well below his run speed, so a jump out of a run, or `Fall` from the side
 special's own air End (`self_vel.x = x3C * facing`), can carry an aerial
 Reflector's entry velocity above the maximum even after the `xA8`
-division. `x1FC` is exposed as `characters::fox::side::Rules::
+division. `x1FC` is exposed through shared `fighter::specials::Rules::
 air_drift_recovery_step` (the same shared `ftCommonData` struct as
 `x218`/`x21C`/`x220`), read by the down special even though the side
 special's own air phases never touch it (their fixed custom friction

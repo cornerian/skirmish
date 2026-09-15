@@ -3,11 +3,10 @@
 //! in docs/match.md, and every input resource carries an experimental profile.
 use super::{data::*, *};
 use crate::{
-    characters::common as specials,
     collision::{bones, ecb, shield as body_collision, stage},
-    fighter::{
-        Movement, combat, damage as damage_math, locomotion as movement_math, nudge as push,
-    },
+    fighter::specials,
+    fighter::{Movement, combat, damage as damage_math, locomotion as movement_math},
+    game::nudge as push,
 };
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
@@ -77,6 +76,7 @@ fn spawn(
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
         script_state: Default::default(),
+        action_state: Default::default(),
         position,
         depth: 0.0,
         deferred_position: [0.0; 3],
@@ -94,7 +94,7 @@ fn spawn(
         // plain `player == 0` hardcode is kept as the default so every such
         // fixture is unaffected; `docs/match-start.md` records this scoping.
         facing: if data.rules.entry.is_some() {
-            crate::fighter::entry::spawn_facing(data.stage.spawns, player)
+            crate::game::entry::spawn_facing(data.stage.spawns, player)
         } else if player == 0 {
             1.0
         } else {
@@ -115,10 +115,6 @@ fn spawn(
             ..Default::default()
         },
         aerial: aerial::State::default(),
-        side_special: crate::characters::fox::side::State::default(),
-        up_special: crate::characters::fox::up::State::default(),
-        down_special: crate::characters::fox::down::State::default(),
-        neutral_special: crate::characters::fox::neutral::State::default(),
         tilt: tilt::State::default(),
         smash: smash::State::default(),
         dash: dash::State::default(),
@@ -160,6 +156,9 @@ fn spawn(
         hitboxes: [hitboxes::Track::default(); 4],
         staling: staling::State::default(),
         previous_input: Controller::default(),
+        script_events: Default::default(),
+        pending_projectiles: Vec::new(),
+        effects: Default::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], geometry)?;
     fighter.last_ground_line = fighter.ground_line;
@@ -192,6 +191,19 @@ fn spawn(
 }
 
 pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
+    // Every native motion transition receives a fresh lifecycle generation,
+    // including same-action re-entry.  Script callbacks are drained by the
+    // later event phase; no VM call is made from this entry routine.
+    if fighter
+        .script_events
+        .begin_action(Some(fighter.action), action)
+        .is_err()
+    {
+        // The bounded rollback queue is part of the transition transaction.
+        // Do not mutate the native action when its generation record cannot
+        // be staged.
+        return;
+    }
     let identity =
         crate::fighter::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
     let leaving_down_tilt = fighter.action == Action::AttackLw3;
@@ -208,32 +220,17 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     }
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
-    // The side special's gravity delay is freshly assigned by every phase's
-    // own entry; a mid-phase ground<->air conversion preserves it explicitly
-    // around this reset (`specials::transfer_ground_air`).
-    fighter.side_special = crate::characters::fox::side::State::default();
-    // Same convention as the side special's own reset above: the up
-    // special's gravity delay, rotate/launch angle and Travel counters are
-    // all freshly assigned by their own phase's entry, with mid-phase
-    // ground<->air conversions preserving them explicitly around this reset
-    // (`specials::transfer_ground_air`, the up special's own `land`).
-    fighter.up_special = crate::characters::fox::up::State::default();
-    // Fighter_ChangeMotionState unconditionally clears `fp->mv.fx.SpecialLw`;
-    // every internal Reflector transition (`crate::characters::fox::down`) restores
-    // the whole-move fields (release_lag/is_release/gravity_delay) it
-    // preserves across phase changes explicitly around this reset, the same
-    // pattern as `side_special` above.
-    fighter.down_special = crate::characters::fox::down::State::default();
-    // Blaster keeps no whole-move state across a `simulation::enter` at
-    // all: `repeat_armed` is freshly re-evaluated every Loop cycle, and a
-    // mid-move ground<->air conversion never happens for this move (see
-    // `crate::characters::fox::neutral`'s own module doc), so there is nothing to
-    // preserve around this reset, unlike the other three specials above.
-    fighter.neutral_special = crate::characters::fox::neutral::State::default();
+    // Generic script action variables are scoped to one native action.
+    fighter.action_state.clear();
     if !ledge::owns_action(action) {
         fighter.ledge.slow = false;
     }
-    staling::transition(fighter, action);
+    let owner = fighter
+        .script_events
+        .pending_transitions
+        .last()
+        .and_then(|transition| transition.behavior_index);
+    staling::transition(fighter, action, owner);
     if leaving_down_tilt {
         // ft_800890D0 runs before the x21EC restart of the stale instance.
         staling::restart_identity(fighter);
@@ -259,7 +256,7 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.dash = dash::State::default();
     // Fighter_ChangeMotionState sets fp->anim_id from the destination motion
     // state's own table entry; every Wait entry's own entry is assumed 2
-    // (Wait1_0, see game::idle::State). idle::State is read only while
+    // (Wait1_0, see fighter::idle::State). idle::State is read only while
     // Action::Wait is current, so resetting it unconditionally here (like
     // dash/smash above) is harmless for every other destination.
     fighter.idle = idle::State::default();
@@ -402,32 +399,6 @@ pub(crate) fn advance(
         _ => inputs,
     };
 
-    // Character scripts run once per simulation frame before native physics.
-    // Their persistent locals live in Fighter and therefore roll back with
-    // the enclosing Match::step transaction.
-    for player in 0..2 {
-        let Some(program) = data.fighters[player].script.as_ref() else {
-            continue;
-        };
-        let fighter = state.fighters[player].clone();
-        let view = script::FighterView {
-            id: player as u8,
-            action: format!("{:?}", fighter.action),
-            action_frame: fighter.action_frame,
-            velocity: fighter.velocity,
-            grounded: fighter.grounded,
-            percent: fighter.percent,
-            hitlag: fighter.hitlag,
-            hitstun: fighter.hitstun,
-            flags: Default::default(),
-        };
-        let result = program
-            .dispatch(script::Hook::OnFrame, &view, None, &fighter.script_state)
-            .map_err(|error| Error::Data(format!("fighter script hook failed: {error}")))?;
-        state.fighters[player].script_state = result.locals;
-        script::apply_commands(state, player, &result.commands)?;
-    }
-
     // Slippi's recorder clears these transient fields before their producer
     // callbacks. Contacts and landings later in the frame replace them.
     for fighter in &mut state.fighters {
@@ -547,7 +518,6 @@ pub(crate) fn advance(
                     &mut state.events,
                     (&data.fighters[player], &data.rules, input),
                 )?;
-                specials::update_ground_contact(fighter);
             }
             staling::flush(
                 fighter,
@@ -591,6 +561,11 @@ pub(crate) fn advance(
         if !active[player] {
             continue;
         }
+        specials::tick_countdowns_at_phase(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            crate::game::script::action_events::CountdownPhase::Animation,
+        )?;
         (clank_owns[player], shield_owns[player]) = update_animation(
             &mut state.fighters[player],
             &data.fighters[player],
@@ -599,6 +574,30 @@ pub(crate) fn advance(
             player,
             inputs[player],
             &mut idle_rng,
+        )?;
+        if let Some(error) = state.fighters[player].script_events.native_error.as_deref() {
+            return Err(Error::Data(error.into()));
+        }
+        drain_script_transitions(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+        )?;
+        dispatch_script_deadlines(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+        )?;
+        drain_script_transitions(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
         )?;
         update_nudge(
             data,
@@ -634,6 +633,16 @@ pub(crate) fn advance(
             clank_owns[player],
             shield_owns[player],
         )?;
+        if let Some(error) = fighter.script_events.native_error.as_deref() {
+            return Err(Error::Data(error.into()));
+        }
+        drain_script_transitions(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+        )?;
         let shielding_before_pass = shield::active(fighter);
         if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
@@ -644,13 +653,21 @@ pub(crate) fn advance(
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
             shield_active_into_pass[player] = shielding_before_pass;
-        } else {
-            crate::characters::fox::down::platform_drop(
+            drain_script_transitions(
                 fighter,
                 &data.fighters[player],
-                &geometry,
+                &data.rules,
+                state.next_frame,
+                player,
+            )?;
+        } else {
+            specials::platform_drop(
+                fighter,
+                &data.fighters[player],
+                &data.rules,
                 input,
-            );
+                &geometry,
+            )?;
         }
     }
     grab::synchronize_actions(data, state)?;
@@ -728,7 +745,24 @@ pub(crate) fn advance(
             fighter.damage_elapsed = fighter.damage_elapsed.saturating_add(1);
         }
         let previous_position = fighter.position;
-        move_fighter(fighter, &data.fighters[player], &data.rules, input);
+        move_fighter(fighter, &data.fighters[player], &data.rules, input)?;
+        // Movement may enter a new action (for example Jump -> Fall); publish
+        // that transition before advancing action-relative deadlines so the
+        // scheduler observes the destination generation and frame clock.
+        drain_script_transitions(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+        )?;
+        drain_script_deadlines(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+        )?;
         combat_history::push(fighter, &data.rules.damage.combo);
         stage_motion::carry(&data.stage, &state.stage, fighter)?;
         advance_ecb_lock(fighter);
@@ -745,12 +779,6 @@ pub(crate) fn advance(
             &mut state.events,
             (&data.fighters[player], &data.rules, input),
         )?;
-        // After this frame's own collision resolution, so a move's own
-        // per-frame contact state (Fox's up special's `rotateModel`) reads
-        // this frame's fresh `floor_normal`/`grounded`, not last frame's
-        // (unlike `tick_ground_timers`, ticked from `move_fighter` above,
-        // before this call).
-        specials::update_ground_contact(fighter);
         staling::flush(
             fighter,
             &data.fighters[player],
@@ -785,25 +813,10 @@ pub(crate) fn advance(
         pose(&state.fighters[1], &data.fighters[1])?,
     ];
     // Item logic runs after fighters, at its own GObj priority: any pending
-    // shot from this frame's own fighter dispatch (`crate::characters::fox::
-    // neutral`) spawns now, then every active projectile (a freshly
+    // shot from this frame's own fighter dispatch spawns now, then every active
     // spawned one included, matching the source's own same-frame item
     // Anim/Phys/Coll run) advances once.
-    for player in 0..2 {
-        if let Some(projectile) = crate::characters::fox::neutral::drain_pending_shot(
-            &mut state.fighters[player],
-            &data.fighters[player],
-            player,
-            &mut state.attack_instances,
-        ) {
-            let projectile_kind = projectile.kind;
-            state.projectiles.push(projectile);
-            state.events.push(Event::ProjectileSpawned {
-                owner: player,
-                projectile_kind,
-            });
-        }
-    }
+    specials::emit_projectiles(data, state)?;
     projectile::advance(data, state, &poses, &stage)?;
     ledge::scan(
         data,
@@ -838,10 +851,7 @@ pub(crate) fn advance(
     let mut swept = [[None; 4]; 2];
     for player in 0..2 {
         let fighter = &mut state.fighters[player];
-        let frame = if data.fighters[player]
-            .attack(fighter.action, fighter.prone, fighter.ledge.slow)
-            .is_some()
-        {
+        let frame = if data.fighters[player].attack_for(fighter).is_some() {
             Some(attack_frame(fighter, &data.fighters[player])?)
         } else {
             None
@@ -880,7 +890,7 @@ pub(crate) fn advance(
         Shield,
         Fighter {
             height: damage_math::HurtHeight,
-            geometry: damage::FighterContact,
+            geometry: hit_resolution::FighterContact,
         },
     }
     // At most one hit per attacker (the inner loop `break`s on the first
@@ -892,9 +902,7 @@ pub(crate) fn advance(
         let victim = 1 - attacker;
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
         if frozen[attacker]
-            || data.fighters[attacker]
-                .attack(source.action, source.prone, source.ledge.slow)
-                .is_none()
+            || data.fighters[attacker].attack_for(source).is_none()
             || target.invincibility > 0
             || target.intangibility > 0
             || !target.body_state.accepts_contact()
@@ -970,7 +978,7 @@ pub(crate) fn advance(
                         });
                     body_contact = Some(HitContact::Fighter {
                         height,
-                        geometry: damage::FighterContact {
+                        geometry: hit_resolution::FighterContact {
                             hurt_start: hurt.start,
                             hurt_end: hurt.end,
                             position: contact.position,
@@ -998,14 +1006,14 @@ pub(crate) fn advance(
             let Some((hit, staled, HitContact::Fighter { height, geometry })) = candidate else {
                 continue;
             };
-            prepared_hits[attacker] = damage::prepare_hit(
+            prepared_hits[attacker] = hit_resolution::prepare_hit(
                 data,
                 state,
                 attacker,
                 hit,
                 *staled,
                 *height,
-                damage::HitDirection::FighterContact(*geometry),
+                hit_resolution::HitDirection::FighterContact(*geometry),
                 false,
             )?;
         }
@@ -1043,7 +1051,7 @@ pub(crate) fn advance(
             HitContact::Shield => {
                 shield_contact[1 - attacker] = true;
                 newly_hit[1 - attacker] = true;
-                shield::apply_contact(data, state, attacker, hit, staled)?;
+                hit_resolution::apply_shield_contact(data, state, attacker, hit, staled)?;
             }
             HitContact::Fighter { height, geometry } => {
                 let prepared = if scripted_hits {
@@ -1051,19 +1059,19 @@ pub(crate) fn advance(
                         .take()
                         .expect("prepared fighter hit")
                 } else {
-                    damage::prepare_hit(
+                    hit_resolution::prepare_hit(
                         data,
                         state,
                         attacker,
                         hit,
                         staled,
                         height,
-                        damage::HitDirection::FighterContact(geometry),
+                        hit_resolution::HitDirection::FighterContact(geometry),
                         false,
                     )?
                     .expect("unconditionally accepted native hit")
                 };
-                let _ = damage::resolve_prepared_hit(data, state, prepared)?;
+                let _ = hit_resolution::resolve_prepared_hit(data, state, prepared)?;
                 newly_hit[1 - attacker] = true;
             }
         }
@@ -1090,8 +1098,8 @@ pub(crate) fn advance(
         let mut rng = crate::compat::math::random::HsdRng::new(state.rng_seed);
         for player in 0..2 {
             let fighter = &state.fighters[player];
-            blast_deaths[player] = crate::fighter::death::select(
-                crate::fighter::death::Query {
+            blast_deaths[player] = crate::game::death::select(
+                crate::game::death::Query {
                     excluded: [
                         death::owns_action(fighter.action),
                         fighter.action == Action::Respawn,
@@ -1173,10 +1181,10 @@ pub(crate) fn advance(
                 });
                 if !matches!(
                     kind,
-                    crate::fighter::death::Kind::UpStar
-                        | crate::fighter::death::Kind::UpStarIce
-                        | crate::fighter::death::Kind::UpScreen
-                        | crate::fighter::death::Kind::UpScreenIce
+                    crate::game::death::Kind::UpStar
+                        | crate::game::death::Kind::UpStarIce
+                        | crate::game::death::Kind::UpScreen
+                        | crate::game::death::Kind::UpScreenIce
                 ) {
                     lose_stock(data, state, player, true)?;
                 } else {
@@ -1203,7 +1211,7 @@ pub(crate) fn advance(
             }
             if !frozen[player] && !newly_hit[player] && fighter.hitlag == 0.0 {
                 if !grab::advance_action_frame(fighter, throw_release)
-                    && !locomotion::hold_action_frame(fighter)
+                    && !locomotion::hold_action_frame(fighter, &data.fighters[player])
                     && !smash::charging(fighter)
                 {
                     fighter.action_frame = fighter.action_frame.saturating_add(1);
@@ -1245,6 +1253,358 @@ pub(crate) fn advance(
             _ => None,
         };
         finish(state, winner, FinishReason::Time);
+    }
+    if let Some(error) = state
+        .fighters
+        .iter()
+        .find_map(|fighter| fighter.script_events.native_error.as_deref())
+    {
+        return Err(Error::Data(error.into()));
+    }
+    Ok(())
+}
+
+/// Deliver action transition notifications after native action entry and
+/// before the next simulation phase. A callback may commit another action
+/// transition; newly staged records are appended and drained with a hard
+/// bound, so a zero-time script cascade cannot hang the simulation.
+fn drain_script_transitions(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    frame: u32,
+    player: usize,
+) -> Result<(), Error> {
+    let mut pending = fighter.script_events.take_pending_transitions();
+    let mut cursor = 0;
+    let mut repeated_destination = None;
+    let mut repeated_count = 0usize;
+    while cursor < pending.len() {
+        if cursor >= crate::game::script::events::MAX_EVENT_CASCADE {
+            return Err(Error::Data(
+                "script action transition cascade exceeded native bound".into(),
+            ));
+        }
+        let transition = pending[cursor];
+        cursor += 1;
+        // Several native helpers can enter actions before this event phase
+        // drains. Only the final committed destination may initialize its
+        // action callback; an intermediate generation must not write into the
+        // final action's state.
+        if transition.to != fighter.action
+            || transition.generation != fighter.script_events.action_generation
+        {
+            continue;
+        }
+        #[cfg(feature = "experimental-continuations")]
+        if !transition.retain_move {
+            fighter.script_events.pending_move = None;
+            fighter.script_events.pending_move_timer = None;
+        }
+        if repeated_destination == Some(transition.to) {
+            repeated_count += 1;
+        } else {
+            repeated_destination = Some(transition.to);
+            repeated_count = 1;
+        }
+        if repeated_count > 8 && transition.from == Some(transition.to) {
+            return Err(Error::Data(
+                "script action transition cascade repeated a same-action destination".into(),
+            ));
+        }
+        let old_behavior = fighter.script_events.active_move;
+        if !transition.retain_move {
+            fighter.script_events.active_move = transition.behavior_index.map(|index| {
+                let entry = crate::game::script::move_registry::MoveEntry {
+                    behavior_index: index,
+                    canonical: Some(transition.to),
+                };
+                crate::game::script::move_selection::SelectedMove::with_lifetime(
+                    entry,
+                    transition.to,
+                    transition.generation,
+                    transition.move_lifetime.unwrap_or_default(),
+                )
+            });
+        } else if let Some(owner) = fighter.script_events.active_move.as_mut() {
+            // Native phase changes update the current action identity and
+            // scheduler generation while retaining the logical move lifetime.
+            owner.action = transition.to;
+            owner.generation = transition.generation;
+            #[cfg(feature = "experimental-continuations")]
+            if let Some(pending) = fighter.script_events.pending_move.as_mut() {
+                pending.continuation.await_token.generation = transition.generation.get();
+            }
+        }
+        let owner = crate::game::script::scheduler::OwnerId::new(player as u32);
+        let mut scheduler = fighter.script_events.scheduler.clone();
+        #[cfg(feature = "experimental-continuations")]
+        let move_timer = fighter.script_events.pending_move_timer;
+        #[cfg(not(feature = "experimental-continuations"))]
+        let move_timer = None;
+        if transition.retain_move {
+            scheduler.enter_action_retaining(owner, transition.to, move_timer)
+        } else {
+            scheduler.enter_action(owner, transition.to)
+        }
+        .map_err(|error| Error::Data(error.to_string()))?;
+        if let Some(cache) = data.script_resources.get() {
+            // Stage the complete destination schedule before publishing it.
+            // A malformed frame/marker table therefore cannot leave a partly
+            // entered scheduler visible to the next callback phase.
+            cache
+                .action_events()
+                .schedule_action_markers(&mut scheduler, owner, transition.to)
+                .map_err(|error| Error::Data(error.to_string()))?;
+            cache
+                .action_events()
+                .schedule_action_frames(&mut scheduler, owner, transition.to)
+                .map_err(|error| Error::Data(error.to_string()))?;
+            fighter.script_events.scheduler = scheduler;
+        }
+        if let Some(from) = transition.from {
+            crate::game::script::lifecycle::invoke_with_native_callback_for_action_owner(
+                crate::game::script::Hook::ActionExited,
+                fighter,
+                Some(data),
+                Some(rules),
+                serde_json::json!({
+                    "event": {
+                        "kind": "action_exited",
+                        "from": from,
+                        "to": transition.to,
+                        "generation": transition.generation.get(),
+                    },
+                    "frame": frame,
+                    "player": player,
+                }),
+                None,
+                crate::game::script::lifecycle::NativeContext::empty(),
+                from,
+                old_behavior
+                    .filter(|owner| owner.action == from)
+                    .map(|owner| owner.behavior_index),
+            )?;
+        }
+        let context = serde_json::json!({
+            "event": {
+                "kind": "action_entered",
+                "from": transition.from,
+                "to": transition.to,
+                "generation": transition.generation.get(),
+                "preserve_state": transition.preserve_state,
+                "keep_frame": transition.keep_frame,
+            },
+            "frame": frame,
+            "player": player,
+        });
+        let entered_action = fighter.action;
+        let entered_generation = fighter.script_events.action_generation;
+        crate::game::script::lifecycle::invoke(
+            crate::game::script::Hook::ActionEntered,
+            fighter,
+            Some(data),
+            Some(rules),
+            context,
+            None,
+        )?;
+        // The native animation entry path samples the destination command row
+        // at frame zero before the end-of-frame action-frame increment. This
+        // preserves row-zero command events when a callback enters an action
+        // during the animation phase.
+        if fighter.action == entered_action
+            && fighter.script_events.action_generation == entered_generation
+        {
+            crate::fighter::specials::sample_command_trace(fighter, data, rules)?;
+        }
+        #[cfg(feature = "experimental-continuations")]
+        if fighter.action == entered_action
+            && fighter.script_events.action_generation == entered_generation
+            && let Some(behavior_index) = transition.behavior_index
+            && let Some(program) = data
+                .script_resources
+                .get()
+                .and_then(|resources| resources.program())
+            && program
+                .metadata()
+                .behaviors
+                .get(behavior_index)
+                .is_some_and(|behavior| behavior.run.is_some())
+        {
+            crate::game::script::lifecycle::invoke_async_move_start(
+                fighter,
+                data,
+                rules,
+                &program,
+                behavior_index,
+                frame,
+                player,
+            )?;
+        }
+        let mut appended = fighter.script_events.take_pending_transitions();
+        if pending.len().saturating_add(appended.len())
+            > crate::game::script::events::MAX_EVENT_CASCADE
+        {
+            return Err(Error::Data(
+                "script action transition cascade exceeded native bound".into(),
+            ));
+        }
+        pending.append(&mut appended);
+    }
+    #[cfg(feature = "experimental-continuations")]
+    if let Some(selection) = fighter.script_events.pending_move_selection
+        && selection.canonical.is_none()
+        && let Some(program) = data
+            .script_resources
+            .get()
+            .and_then(|resources| resources.program())
+        && program
+            .metadata()
+            .behaviors
+            .get(selection.behavior_index)
+            .is_some_and(|behavior| behavior.run.is_some())
+    {
+        fighter.script_events.pending_move_selection = None;
+        // A fresh actionless selection is an explicit reselection boundary.
+        // Drop the old copied continuation and timer before preparing the
+        // replacement; the prepared executor receives this empty state and
+        // therefore cannot resume the interrupted instance.
+        fighter.script_events.pending_move = None;
+        if let Some(timer) = fighter.script_events.pending_move_timer.take() {
+            fighter.script_events.scheduler.cancel(timer);
+        }
+        let owner = crate::game::script::scheduler::OwnerId::new(player as u32);
+        if fighter
+            .script_events
+            .scheduler
+            .action_scope(owner)
+            .is_none()
+        {
+            let mut scheduler = fighter.script_events.scheduler.clone();
+            scheduler
+                .enter_action(owner, fighter.action)
+                .map_err(|error| Error::Data(error.to_string()))?;
+            fighter.script_events.scheduler = scheduler;
+        }
+        fighter.script_events.active_move = Some(
+            crate::game::script::move_selection::SelectedMove::with_lifetime(
+                crate::game::script::move_registry::MoveEntry {
+                    behavior_index: selection.behavior_index,
+                    canonical: Some(fighter.action),
+                },
+                fighter.action,
+                fighter.script_events.action_generation,
+                selection.lifetime,
+            ),
+        );
+        crate::game::script::lifecycle::invoke_async_move_start(
+            fighter,
+            data,
+            rules,
+            &program,
+            selection.behavior_index,
+            frame,
+            player,
+        )?;
+    }
+    Ok(())
+}
+
+fn drain_script_deadlines(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    frame: u32,
+    player: usize,
+) -> Result<(), Error> {
+    let owner = crate::game::script::scheduler::OwnerId::new(player as u32);
+    if fighter
+        .script_events
+        .scheduler
+        .action_scope(owner)
+        .is_none()
+    {
+        let mut scheduler = fighter.script_events.scheduler.clone();
+        scheduler
+            .enter_action(owner, fighter.action)
+            .map_err(|error| Error::Data(error.to_string()))?;
+        if let Some(cache) = data.script_resources.get() {
+            cache
+                .action_events()
+                .schedule_action_markers(&mut scheduler, owner, fighter.action)
+                .map_err(|error| Error::Data(error.to_string()))?;
+            cache
+                .action_events()
+                .schedule_action_frames(&mut scheduler, owner, fighter.action)
+                .map_err(|error| Error::Data(error.to_string()))?;
+        }
+        fighter.script_events.scheduler = scheduler;
+    }
+    let scheduled = fighter
+        .script_events
+        .scheduler
+        .advance_action(owner, fighter.action_frame)
+        .map_err(|error| Error::Data(error.to_string()))?;
+    for event in scheduled {
+        if let crate::game::script::events::Event::ScheduledDeadline { token, timer, .. } = event {
+            fighter
+                .script_events
+                .push_deadline_event(token, Some(timer))
+                .map_err(|error| Error::Data(error.to_string()))?;
+        }
+    }
+    dispatch_script_deadlines(fighter, data, rules, frame, player)?;
+    Ok(())
+}
+
+fn dispatch_script_deadlines(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    frame: u32,
+    player: usize,
+) -> Result<(), Error> {
+    let events = fighter.script_events.take_deadline_events();
+    // Freeze ownership for this delivery batch. A preceding generic timer
+    // may cancel the move, but must not reclassify an already queued
+    // continuation timer as an authored callback.
+    #[cfg(feature = "experimental-continuations")]
+    let batch_async_timer = fighter.script_events.pending_move_timer;
+    for (token, exact_timer) in events {
+        #[cfg(not(feature = "experimental-continuations"))]
+        let _ = exact_timer;
+        #[cfg(feature = "experimental-continuations")]
+        let async_owned = exact_timer.is_some() && exact_timer == batch_async_timer;
+        #[cfg(not(feature = "experimental-continuations"))]
+        let async_owned = false;
+        // Async Move.run timers are internal continuation events. They must
+        // not also enter the generic authored deadline hook, where a numeric
+        // token collision could run an unrelated callback.
+        if !async_owned {
+            crate::game::script::lifecycle::invoke(
+                crate::game::script::Hook::ScheduledDeadline,
+                fighter,
+                Some(data),
+                Some(rules),
+                serde_json::json!({
+                    "event": {"kind": "scheduled_deadline", "token": token},
+                    "frame": frame,
+                    "player": player,
+                }),
+                None,
+            )?;
+            // A deadline callback may explicitly advance an owned move to a
+            // retained native phase. Commit that transition before delivering
+            // the move-owned continuation event so its generation/token pair
+            // is rebound atomically rather than being rejected as stale.
+            drain_script_transitions(fighter, data, rules, frame, player)?;
+        }
+        #[cfg(feature = "experimental-continuations")]
+        if let Some(timer) = exact_timer {
+            crate::game::script::lifecycle::invoke_async_move_resume(
+                fighter, data, frame, player, timer, token,
+            )?;
+        }
     }
     Ok(())
 }
@@ -1497,7 +1857,7 @@ fn update_animation(
         rules.respawn_invincibility_frames,
     );
     entry::update_animation(f, data, rules.entry.as_ref())?;
-    specials::update_animation(f, data, input, collision::on_platform(f, geometry));
+    specials::update_animation(f, data, rules, input, collision::on_platform(f, geometry))?;
     ledge::update_animation(f, data, geometry, rules.ledge.as_ref())?;
     wall_jump::update_animation(f, data, rules.wall_jump.as_ref());
     grab::update_fighter_animation(f, data);
@@ -1507,7 +1867,7 @@ fn update_animation(
     // entries) so a same-frame entry into Wait is not also animated this
     // frame -- Melee's own Anim callback for the destination motion state
     // is not re-invoked within the same frame's callback that produced the
-    // transition, the same ordering `game::locomotion::advance_run_animation`
+    // transition, the same ordering `fighter::locomotion::advance_run_animation`
     // relies on for Dash/RunTurn-to-Run.
     idle::update_animation(f, data, idle_rng);
     match f.action {
@@ -1581,7 +1941,7 @@ fn update_actions(
     ) {
         return Ok(());
     }
-    if damage::update_actions(f, &rules.damage, input) {
+    if damage::update_actions(f, data, &rules.damage, input) {
         return Ok(());
     }
     if ledge::update_actions(f, data, rules.ledge.as_ref(), input) {
@@ -1622,7 +1982,7 @@ fn update_actions(
         return Ok(());
     }
     let dash_before_special = f.action == Action::Dash;
-    if specials::update_actions(f, data, rules, input) {
+    if specials::update_actions(f, data, rules, input)? {
         // A special starting from Dash falls through to the same friction
         // tail the ordinary dash-to-something-else transition applies,
         // even though specials::update_actions runs after that module
@@ -1713,12 +2073,17 @@ fn update_actions(
     Ok(())
 }
 
-fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Controller) {
+fn move_fighter(
+    f: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    input: Controller,
+) -> Result<(), Error> {
     if entry::owns_action(f.action) {
         // ftCo_EntryStart_Phys/ftCo_EntryEnd_Phys: position is written
         // directly from the timer curve, not integrated from velocity.
         entry::move_fighter(f, rules.entry.as_ref());
-        return;
+        return Ok(());
     }
     let attrs = &data.movement;
     let mut movement = Movement {
@@ -1730,71 +2095,82 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         stick_x: input.stick[0],
         ..Movement::default()
     };
+    // Declared action clocks/countdowns are native state transitions and run
+    // once per active phase, independent of ground versus air physics.
+    specials::tick_ground_timers(f, data, rules)?;
     if f.grounded {
-        specials::tick_ground_timers(f);
         if f.action == Action::Rebound
-            && !crate::fighter::clank::apply_rebound_friction(&mut f.clank.impulse)
+            && !crate::game::clank::apply_rebound_friction(&mut f.clank.impulse)
         {
             // Rebound's first physics callback retains projected self velocity.
-        } else if let Some(target) = damage::ground_recovery_velocity(f, data)
-            .or_else(|| escape::ground_target_velocity(f, data))
-            .or_else(|| smash::ground_target_velocity(f, data))
-            .or_else(|| jab::ground_target_velocity(f, data))
-            .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
-            .or_else(|| taunt::ground_target_velocity(f, data))
-            .or_else(|| specials::ground_target_velocity(f, data))
-        {
-            // ft_80085030 converts the animation's local TransN delta into the
-            // exact target ground velocity before projecting it onto the floor.
-            // Escape rolls share it; the spot dodge uses ordinary friction.
-            movement.ground_acceleration = target - movement.ground_velocity;
-            movement.project_ground();
-        } else if locomotion::ground_motion(f, data, &mut movement, input) {
-            // Explicit locomotion parameters supply dash/run acceleration.
-        } else if edge::owns_action(f.action) {
-            // ftCo_Ottotto_Phys / ftCo_OttottoWait_Phys: empty. No friction,
-            // no movement; velocity was already zeroed on Ottotto's entry.
-        } else if f.action == Action::Walk {
-            movement_math::walk(
-                &mut movement,
-                &movement_math::WalkParameters {
-                    accel_mul: 1.0,
-                    acceleration_mul: attrs.walk_acceleration_mul,
-                    acceleration_base: attrs.walk_acceleration_base,
-                    max_velocity: attrs.walk_max_velocity,
-                    ground_friction: attrs.ground_friction,
-                    taper_gain: rules.walk_accel_taper_gain,
-                    ground_friction_multiplier: 1.0,
-                    animation_speed_multiplier: 1.0,
-                },
-            );
-        } else if let Some(friction) = specials::ground_friction_override(f, data) {
-            // A move's own dedicated ground friction, distinct from the
-            // fighter's ordinary attribute (the side special's End phase).
-            movement.friction_ground(friction);
-            movement.project_ground();
+        } else if specials::apply_ground_profile(f, data, &mut movement)? {
+            // A linked profile owns its complete ground operation sequence;
+            // target tracks and friction are applied exactly once in authored
+            // order by the native executor.
         } else {
-            let mut friction = attrs.ground_friction;
-            if f.ground_velocity.abs() > attrs.walk_max_velocity {
-                friction *= rules.friction_above_walk;
+            let target = damage::ground_recovery_velocity(f, data)
+                .or_else(|| escape::ground_target_velocity(f, data))
+                .or_else(|| smash::ground_target_velocity(f, data))
+                .or_else(|| jab::ground_target_velocity(f, data))
+                .or_else(|| dash::ground_target_velocity(f, data, rules.dash.as_ref()))
+                .or_else(|| taunt::ground_target_velocity(f, data));
+            let target = match target {
+                Some(target) => Some(target),
+                None => specials::ground_target_velocity(f, data, rules)?,
+            };
+            if let Some(target) = target {
+                // ft_80085030 converts the animation's local TransN delta into the
+                // exact target ground velocity before projecting it onto the floor.
+                // Escape rolls share it; the spot dodge uses ordinary friction.
+                movement.ground_acceleration = target - movement.ground_velocity;
+                movement.project_ground();
+            } else if locomotion::ground_motion(f, data, &mut movement, input) {
+                // Explicit locomotion parameters supply dash/run acceleration.
+            } else if edge::owns_action(f.action) {
+                // ftCo_Ottotto_Phys / ftCo_OttottoWait_Phys: empty. No friction,
+                // no movement; velocity was already zeroed on Ottotto's entry.
+            } else if f.action == Action::Walk {
+                movement_math::walk(
+                    &mut movement,
+                    &movement_math::WalkParameters {
+                        accel_mul: 1.0,
+                        acceleration_mul: attrs.walk_acceleration_mul,
+                        acceleration_base: attrs.walk_acceleration_base,
+                        max_velocity: attrs.walk_max_velocity,
+                        ground_friction: attrs.ground_friction,
+                        taper_gain: rules.walk_accel_taper_gain,
+                        ground_friction_multiplier: 1.0,
+                        animation_speed_multiplier: 1.0,
+                    },
+                );
+            } else if let Some(friction) = specials::ground_friction_override(f, data, rules)? {
+                // A move's own dedicated ground friction, distinct from the
+                // fighter's ordinary attribute (the side special's End phase).
+                movement.friction_ground(friction);
+                movement.project_ground();
+            } else {
+                let mut friction = attrs.ground_friction;
+                if f.ground_velocity.abs() > attrs.walk_max_velocity {
+                    friction *= rules.friction_above_walk;
+                }
+                movement.friction_ground(friction);
+                // Rebound_Phys uses ApplyGroundMovement, which scales the already
+                // clamped acceleration on slippery surfaces before projection.
+                if f.action == Action::Rebound
+                    && let Some(clank) = &rules.clank
+                    && clank.surface_friction_multiplier < 1.0
+                {
+                    movement.ground_acceleration *= clank.surface_friction_multiplier;
+                }
+                movement.project_ground();
             }
-            movement.friction_ground(friction);
-            // Rebound_Phys uses ApplyGroundMovement, which scales the already
-            // clamped acceleration on slippery surfaces before projection.
-            if f.action == Action::Rebound
-                && let Some(clank) = &rules.clank
-                && clank.surface_friction_multiplier < 1.0
-            {
-                movement.ground_acceleration *= clank.surface_friction_multiplier;
-            }
-            movement.project_ground();
         }
     } else if !(f.action == Action::Jump && f.action_frame == 0)
         && !ledge::skip_jump_physics(f, data)
     {
         // ftCo_Jump_Phys_Inner skips gravity/drift on the launch callback.
         // The launch velocity is still integrated below on that frame.
-        if specials::air_physics(f, data, rules, &mut movement) {
+        if specials::air_physics(f, data, rules, &mut movement)? {
             // A move that owns this action's air phase drives the frame's
             // airborne physics entirely (gravity-delayed fall plus a fixed
             // air friction, or a root-motion dash's velocity set).
@@ -1914,6 +2290,7 @@ fn move_fighter(f: &mut Fighter, data: &FighterData, rules: &Rules, input: Contr
         f.position[axis] += f.knockback[axis];
         f.position[axis] += f.shield.attacker_push[axis];
     }
+    Ok(())
 }
 
 // Reused across `pose()` calls on the same thread so the resource-to-physics
@@ -1970,10 +2347,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         pose
     } else if matches!(fighter.action, Action::ReboundStop | Action::Rebound) {
         clank::pose(fighter, data).ok_or_else(|| Error::Data("missing rebound pose".into()))?
-    } else if data
-        .attack(fighter.action, fighter.prone, fighter.ledge.slow)
-        .is_some()
-    {
+    } else if data.attack_for(fighter).is_some() {
         &attack_frame(fighter, data)?.bones
     } else if aerial::landing_index(fighter.action).is_some() {
         aerial::landing_pose(fighter, data)
@@ -2021,10 +2395,22 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
 }
 
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
-    data.attack(fighter.action, fighter.prone, fighter.ledge.slow)
+    let attack = &data
+        .attack_for(fighter)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
-        .frames
-        .get(fighter.action_frame as usize)
+        .frames;
+    let frame = if crate::fighter::specials::animation_loop_for_owner(fighter, data) {
+        // Looping is a registration-time declaration for this action. Keep
+        // the native action frame and motion phase untouched; only the
+        // finite pose/hitbox sample wraps at its nonempty frame count.
+        usize::try_from(fighter.action_frame)
+            .ok()
+            .and_then(|frame| (!attack.is_empty()).then(|| frame % attack.len()))
+    } else {
+        usize::try_from(fighter.action_frame).ok()
+    };
+    frame
+        .and_then(|frame| attack.get(frame))
         .ok_or_else(|| Error::Physics("attack pose frame is outside the supplied animation".into()))
 }
 
@@ -2048,7 +2434,7 @@ pub(crate) fn hurtbox_state(
                 .ok_or_else(|| Error::Physics("incomplete teeter hurtbox state sample".into()))
         };
     }
-    let Some(_) = data.attack(fighter.action, fighter.prone, fighter.ledge.slow) else {
+    let Some(_) = data.attack_for(fighter) else {
         return Ok(base);
     };
     let frame = attack_frame(fighter, data)?;

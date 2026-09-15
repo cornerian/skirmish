@@ -152,7 +152,7 @@ v1, which has no `entry` rules).
 
 `src/game/entry.rs` (`EntryRules`, `State`, `owns_action`, `enter`/
 `enter_start`/`enter_end`/`exit`, `update_animation`, `move_fighter`) and
-`src/fighter/entry.rs` (the pure `entry_delay`, `spawn_facing`, `amplitude`,
+`src/game/entry.rs` (the pure `entry_delay`, `spawn_facing`, `amplitude`,
 `start_progress`, `end_progress` helpers) implement the design above almost
 literally: `game::entry::update_animation` mirrors each pinned Anim
 function's exact control flow (including `ftCo_Entry_Anim`'s check-before-

@@ -67,8 +67,8 @@ stocks yields a different escape timer.
 
 ## Implemented (this batch)
 
-`ftCo_800DA824` itself is `crate::fighter::grab::escape_timer` (pure f32
-math, `src/fighter/grab.rs`), keeping the source's exact evaluation order.
+`ftCo_800DA824` itself is `crate::game::grab::escape_timer` (pure f32
+math, `src/game/grab.rs`), keeping the source's exact evaluation order.
 `crate::game::grab::capture_timer` (`src/game/grab.rs`) calls it with
 `escape.formula`'s six constants plus this frame's `standing`/`handicap`
 when `formula` is `Some`, otherwise keeps the legacy flattened
@@ -145,7 +145,7 @@ extracted to `/mnt/archive/datasets/melee/skirmish-gameplay/v2/rules.json`
 parity replay's settings (handicap 9, standing 0), the formula reduces
 exactly to `75.0 + percent * 1.6`, matching the flattened `timer_base`/
 `timer_percent_scale` this same exporter already wrote for Fox — verified
-by direct derivation in `src/fighter/grab.rs`'s
+by direct derivation in `src/game/grab.rs`'s
 `escape_timer_at_the_real_fox_constants_and_replay_settings_matches_the_
 flattened_value` test, not hardcoded. That JSON dataset directory does
 not itself embed `escape_formula` into a `MatchData`'s `rules.grab.escape`
