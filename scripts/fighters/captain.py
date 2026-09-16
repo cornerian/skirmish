@@ -224,6 +224,12 @@ class FalconDive(SpecialMove):
     ground = action(Action.SPECIAL_HI, slippi_state=353, animation=307)
     air = action(Action.SPECIAL_AIR_HI, slippi_state=354, animation=308)
 
+    # ftCa_SpecialHi_Coll converts grounded SpecialHi to its airborne phase
+    # when the move leaves the ground, retaining the native state and frame.
+    # Landing remains owned by the dedicated landed hook below: the source
+    # does not unconditionally convert aerial Dive back to grounded SpecialHi.
+    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
         fighter.action_state.dive_released = False

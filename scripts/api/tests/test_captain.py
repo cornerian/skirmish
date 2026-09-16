@@ -242,6 +242,17 @@ class CaptainFalconTests(unittest.TestCase):
         context.rules = rules
         self.assertFalse(punch.input_pressed(self.Fighter(None), context))
 
+    def test_falcon_dive_ground_to_air_transition_preserves_state_and_frame(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        ground = self.Fighter(move.ground)
+        move._transition_ground_air(ground, SimpleNamespace(grounded=False))
+        self.assertEqual(
+            ground.changes,
+            [(move.air, {"preserve_state": True, "keep_frame": True})],
+        )
+        self.assertEqual(move.on_ground, {})
+
     def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
         captain = _load_captain()
         move = captain.specials.up
