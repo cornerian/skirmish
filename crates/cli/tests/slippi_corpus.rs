@@ -8,7 +8,7 @@ fn archived_replays_preserve_import_summaries_and_reject_unsupported_formats() {
     let manifest: Value =
         serde_json::from_slice(&fs::read(directory.join("manifest.json")).unwrap()).unwrap();
     let fixtures = manifest["files"].as_array().unwrap();
-    assert_eq!(fixtures.len(), 10);
+    assert_eq!(fixtures.len(), 11);
 
     for fixture in fixtures {
         let name = fixture["file"].as_str().unwrap();

@@ -8,7 +8,7 @@
   "candidate_count": 3996,
   "selection": "Greedy weighted coverage of header character IDs (100), stage IDs (25), format versions (25), occupied-port layouts (15), and duration buckets (10). Ties prefer smaller files, then lexicographically larger SHA-256. Candidates come from the pinned archive subset-manifest.json; short <7200, medium <14400, long >=14400 metadata lastFrame values. This is a coverage sample, not a representative accuracy benchmark.",
   "expectation_provenance": "Header and lastFrame fields read from the original bytes; expected_summary snapshots captured with the existing inspect-replay command (Peppi 2.1.2). These are import regressions, not independently established simulator parity.",
-  "total_bytes": 32840742,
+  "total_bytes": 34920496,
   "files": [
     {
       "source_path": "DOC/18_21_00 [C2] Marth + Dr. Mario + Yoshi + [HELA] Captain Falcon (BF).slp",
@@ -476,6 +476,53 @@
         "selected_frames": 11843,
         "first_frame": -123,
         "last_frame": 11719,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Game"
+      }
+    },
+    {
+      "source_path": "CPTFALCON/10_07_23 Captain Falcon + Marth (FD).slp",
+      "bytes": 2079754,
+      "sha256": "1d9540602c6217a0aa5e7cc00ff3145c667ae2f4a8a9e81282ec51d671c98281",
+      "version": "2.0.1",
+      "stage_id": 32,
+      "players": [
+        {
+          "port": 1,
+          "character_id": 0,
+          "character": "captain-falcon"
+        },
+        {
+          "port": 4,
+          "character_id": 9,
+          "character": "marth"
+        }
+      ],
+      "last_frame": 8838,
+      "duration_bucket": "medium (2-4m)",
+      "stage": "final-destination",
+      "file": "11-captain-falcon-marth-final-destination.slp",
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "1d9540602c6217a0aa5e7cc00ff3145c667ae2f4a8a9e81282ec51d671c98281",
+        "bytes": 2079754,
+        "version": [
+          2,
+          0,
+          1
+        ],
+        "stage": 32,
+        "ports": [
+          "P1",
+          "P4"
+        ],
+        "physical_frames": 8962,
+        "surviving_frames": 8962,
+        "discarded_frames": 0,
+        "selected_frames": 8962,
+        "first_frame": -123,
+        "last_frame": 8838,
         "latest_finalized_frame": null,
         "timeline": "last_recorded",
         "end_method": "Game"

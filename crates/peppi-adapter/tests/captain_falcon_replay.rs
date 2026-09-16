@@ -244,3 +244,80 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     assert_eq!(air.pre.joystick.x.to_bits(), (-0.9875_f32).to_bits());
     assert_eq!(air.pre.joystick.y.to_bits(), 0.0_f32.to_bits());
 }
+
+#[test]
+fn captain_two_player_fixture_records_roster_and_special_entries() {
+    let replay = Replay::read(std::io::Cursor::new(include_bytes!(
+        "../../../tests/fixtures/slippi/11-captain-falcon-marth-final-destination.slp"
+    )))
+    .unwrap();
+    let summary = replay.summary(Timeline::LastRecorded).unwrap();
+    assert_eq!(summary.version, Version(2, 0, 1));
+    assert_eq!(summary.stage, 32); // Final Destination
+    assert_eq!(summary.ports, [Port::P1, Port::P4]);
+    assert_eq!(summary.physical_frames, 8_962);
+    assert_eq!(summary.first_frame, Some(-123));
+    assert_eq!(summary.last_frame, Some(8_838));
+    assert_eq!(summary.latest_finalized_frame, None);
+    assert_eq!(
+        summary.end_method,
+        peppi_adapter::peppi::game::EndMethod::Game
+    );
+
+    let roster = replay.roster();
+    assert!(!roster.is_teams);
+    assert_eq!(
+        roster
+            .players
+            .iter()
+            .map(|player| (
+                player.port,
+                player.character,
+                player.player_type,
+                player.team
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                Port::P1,
+                0,
+                peppi_adapter::peppi::game::PlayerType::Human,
+                None
+            ),
+            (
+                Port::P4,
+                9,
+                peppi_adapter::peppi::game::PlayerType::Human,
+                None
+            ),
+        ]
+    );
+
+    // These are the complete Captain Falcon special-action Post states
+    // observed in this recording. They are replay observations, not claims
+    // about native simulation parity.
+    let mut observed = std::collections::BTreeSet::new();
+    for index in 0..summary.selected_frames {
+        observed.insert(captain(&replay, index).post.state);
+    }
+    assert!([349, 351, 358, 368]
+        .into_iter()
+        .all(|state| observed.contains(&state)));
+
+    // Representative recorded entries, retaining controller input and both
+    // sides of each action-state transition for future adapter consumers.
+    for (frame, pre_state, post_state, buttons, stick) in [
+        (1328, 28, 368, 66_048, (-0.675_f32, 0.725_f32)),
+        (1822, 25, 358, 262_656, (-0.9875_f32, 0.0_f32)),
+        (2411, 20, 349, 262_656, (-0.9875_f32, 0.0_f32)),
+        (2422, 349, 351, 262_656, (-0.9875_f32, 0.0_f32)),
+        (5214, 29, 368, 66_048, (0.6875_f32, 0.7125_f32)),
+    ] {
+        let actor = captain(&replay, (frame + 123) as usize);
+        assert_eq!(actor.pre.state, pre_state, "entry pre-state at {frame}");
+        assert_eq!(actor.post.state, post_state, "entry post-state at {frame}");
+        assert_eq!(actor.pre.buttons, buttons, "entry buttons at {frame}");
+        assert_eq!(actor.pre.joystick.x.to_bits(), stick.0.to_bits());
+        assert_eq!(actor.pre.joystick.y.to_bits(), stick.1.to_bits());
+    }
+}
