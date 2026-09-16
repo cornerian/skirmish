@@ -78,8 +78,10 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
         assert_eq!(last.post.airborne, Some(1), "airborne at {end}");
     }
 
-    // The recording also contains a down-special entry at 6594, followed by
-    // its state-359 ground/air segment and state-361 continuation.
+    // The recording also contains an aerial down-special entry at 6594,
+    // followed by its state-359 and state-361 aerial phases. These labels are
+    // Captain Falcon's aerial down-special states in ftCaptain/forward.h, not
+    // a grounded-to-air transition.
     let entry = captain(&replay, (6594 + 123) as usize);
     assert_eq!(entry.pre.state, 27);
     assert_eq!(entry.pre.buttons, 131_584);
