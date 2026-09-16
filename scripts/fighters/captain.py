@@ -71,10 +71,17 @@ class FalconPunch(SpecialMove):
         fighter.action_frame = 1
         return True
 
-    @hook.command_changed(0, actions=(ground, air))
+    @hook.command_changed(0, actions=(air,))
     def command_changed(self, fighter: Fighter, ctx: MoveContext) -> None:
-        """Mark the upstream cmd_vars[0] launch cue without inventing motion."""
-        if ctx.event.value:
+        """Expose the airborne IASA command cue without inventing physics.
+
+        The upstream ground IASA callback is empty.  Air IASA consumes a
+        non-zero ``cmd_vars[0]`` and computes velocity from resource-owned
+        parameters; this API has no IASA hook, so the host-visible pending
+        flag is the complete representable portion of that contract.
+        """
+        value = getattr(getattr(ctx, "event", None), "value", None)
+        if fighter.action == self.air and value:
             fighter.action_state.launch_armed = True
 
     @hook.animation_end(ground, air)
