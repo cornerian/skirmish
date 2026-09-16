@@ -247,6 +247,7 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     // The three callbacks below are selected from exported logical slots,
     // ensuring the loader retained the actual bound Captain move methods.
     let punch = callback(&program, "move_0", "input_pressed");
+    let raptor_boost = callback(&program, "move_1", "input_pressed");
     let dive = callback(&program, "move_2", "input_pressed");
     let kick = callback(&program, "move_3", "input_pressed");
     let punch_command = callback(&program, "move_0", "command_changed");
@@ -261,6 +262,16 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     assert_eq!(
         program
             .dispatch(&punch, fighter.clone(), &[context_value.clone()])
+            .unwrap(),
+        NativeValue::Bool(true)
+    );
+
+    // Side-B from WAIT selects the ground Raptor Boost start and mirrors the
+    // native entry callback's atomic velocity and ground-velocity reset.
+    state.lock().unwrap().stick = [0.6, 0.0];
+    assert_eq!(
+        program
+            .dispatch(&raptor_boost, fighter.clone(), &[context_value.clone()])
             .unwrap(),
         NativeValue::Bool(true)
     );
@@ -324,7 +335,15 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     let velocity = host
         .sets
         .iter()
-        .find(|(path, _)| path == "fighter.velocity")
+        .find(|(path, value)| {
+            path == "fighter.velocity"
+                && matches!(value, NativeValue::List(values)
+                    if values.len() == 2
+                        && matches!((&values[0], &values[1]),
+                            (NativeValue::F32(x), NativeValue::F32(y))
+                                if (*x - 1.801565).abs() < 0.0001
+                                    && (*y - 0.746232).abs() < 0.0001))
+        })
         .map(|(_, value)| value);
     assert!(matches!(velocity, Some(NativeValue::List(values))
         if values.len() == 2
@@ -332,4 +351,18 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
                 (NativeValue::F32(x), NativeValue::F32(y))
                     if (*x - 1.801565).abs() < 0.0001
                         && (*y - 0.746232).abs() < 0.0001)));
+
+    assert!(host.calls.iter().any(|(path, args)| {
+        path == "fighter.change_action"
+            && args.first() == Some(&NativeValue::String("special_s_start".into()))
+    }));
+    assert!(host.sets.iter().any(|(path, value)| {
+        path == "fighter.velocity"
+            && matches!(value, NativeValue::List(values)
+                if values == &vec![NativeValue::F32(0.0), NativeValue::F32(0.0)])
+    }));
+    assert!(host
+        .sets
+        .iter()
+        .any(|(path, value)| path == "fighter.ground_velocity" && *value == NativeValue::F32(0.0)));
 }
