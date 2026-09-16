@@ -421,7 +421,7 @@ class CaptainFalconTests(unittest.TestCase):
         context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
                                ground_open=True)
         context.rules = rules
-        fighter = self.Fighter(None)
+        fighter = self.Fighter(None, grounded=True)
         self.assertTrue(move.input_pressed(fighter, context))
         self.assertEqual(fighter.action, move.ground)
         self.assertEqual(move.ground.as_dict()["slippi_state"], 357)
@@ -431,6 +431,14 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(fighter.action, move.ground_end)
         move.animation_end(fighter, context)
         self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
+
+        airborne_ground_kick = self.Fighter(move.ground, grounded=False)
+        move.animation_end(airborne_ground_kick, context)
+        self.assertEqual(airborne_ground_kick.action, move.ground_end_air)
+        self.assertEqual(move.ground_end_air.as_dict()["slippi_state"], 362)
+        self.assertEqual(move.ground_end_air.as_dict()["animation"], 315)
+        move.animation_end(airborne_ground_kick, context)
+        self.assertEqual(airborne_ground_kick.changes[-1], (Action.FALL, {}))
 
         context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
                                air_open=True)
@@ -500,6 +508,7 @@ class CaptainFalconTests(unittest.TestCase):
             "special.down.air": 313,
             "special.down.landing": 314,
             "special.down.air_end": 316,
+            "special.down.ground_end_air": 315,
         }
         for action_name, animation in expected_animation_by_action.items():
             self.assertEqual(exported["actions"][action_name]["animation"], animation)

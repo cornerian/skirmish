@@ -311,6 +311,8 @@ pub enum Action {
     SpecialAirLwLandingEnd,
     /// Captain Falcon's aerial Falcon Kick airborne end (Slippi 361).
     SpecialAirLwEndAir,
+    /// Captain Falcon's grounded Falcon Kick airborne end (Slippi 362).
+    SpecialLwEndAir,
     Eliminated,
 }
 

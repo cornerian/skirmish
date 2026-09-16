@@ -463,6 +463,11 @@ class FalconKick(SpecialMove):
         slippi_state=361,
         animation=316,
     )
+    ground_end_air = action(
+        Action.SPECIAL_LW_END_AIR,
+        slippi_state=362,
+        animation=315,
+    )
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
@@ -489,15 +494,20 @@ class FalconKick(SpecialMove):
         fighter.action_frame = 1
         return True
 
-    @hook.animation_end(ground, ground_end, air, air_end, landing)
+    @hook.animation_end(ground, ground_end, air, air_end, landing, ground_end_air)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
         if fighter.action == self.ground:
-            fighter.change_action(self.ground_end)
+            # The native grounded Kick callback checks GA state at animation
+            # completion: a ground move that has left the stage uses its
+            # distinct airborne end motion (state 362 / motion 315).
+            fighter.change_action(self.ground_end if fighter.grounded else self.ground_end_air)
         elif fighter.action == self.ground_end:
             fighter.change_action(Action.WAIT)
         elif fighter.action == self.air:
             fighter.change_action(self.air_end)
         elif fighter.action == self.air_end:
+            fighter.change_action(Action.FALL)
+        elif fighter.action == self.ground_end_air:
             fighter.change_action(Action.FALL)
         elif fighter.action == self.landing:
             fighter.change_action(Action.WAIT)
