@@ -1,9 +1,6 @@
 //! Runtime-backed Captain Falcon action-state mapping.
 //!
-//! This test deliberately goes through the bundled Pon registry rather than
-//! reproducing Captain's metadata in Rust.  The animation ids asserted here
-//! are metadata identifiers only; they are not animation samples or timing
-//! measurements.
+//! This test asserts Captain Falcon's bundled state and animation metadata.
 
 use skirmish::game::{self, script::definition};
 use skirmish_replay::observation;
@@ -24,6 +21,7 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
         (game::Action::SpecialAirNStart, 348, 302),
         (game::Action::SpecialHi, 353, 307),
         (game::Action::SpecialAirHi, 354, 308),
+        (game::Action::SpecialLwEnd, 360, 314),
         (game::Action::SpecialAirLw, 359, 313),
         (game::Action::SpecialAirLwEnd, 361, 316),
     ] {
