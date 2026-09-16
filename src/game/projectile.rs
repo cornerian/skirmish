@@ -322,6 +322,7 @@ fn step(
                 action: format!("{:?}", fighter.action),
                 action_frame: fighter.action_frame,
                 velocity: fighter.velocity,
+                ground_velocity: fighter.ground_velocity,
                 grounded: fighter.grounded,
                 percent: fighter.percent,
                 hitlag: fighter.hitlag,

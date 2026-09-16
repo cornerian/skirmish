@@ -399,6 +399,7 @@ pub struct FighterView {
     pub action: String,
     pub action_frame: u32,
     pub velocity: [f32; 2],
+    pub ground_velocity: f32,
     pub grounded: bool,
     pub percent: f32,
     pub hitlag: f32,
@@ -455,6 +456,7 @@ impl Default for HitPatch {
 pub enum Command {
     SetAction(String),
     SetVelocity([f32; 2]),
+    SetGroundVelocity(f32),
     ApplyHitlag { fighter: u8, frames: u32 },
 }
 
@@ -562,6 +564,7 @@ impl CombatHost {
             "action" => starlark::NativeValue::String(self.fighter.action.clone()),
             "action_frame" => starlark::NativeValue::Int(i64::from(self.fighter.action_frame)),
             "velocity" => starlark::NativeValue::Vec2(self.fighter.velocity),
+            "ground_velocity" => starlark::NativeValue::F32(self.fighter.ground_velocity),
             "grounded" => starlark::NativeValue::Bool(self.fighter.grounded),
             "percent" => starlark::NativeValue::F32(self.fighter.percent),
             "hitlag" => starlark::NativeValue::F32(self.fighter.hitlag),
@@ -852,6 +855,11 @@ impl starlark::NativeHost for CombatHost {
                 }
                 self.fighter.velocity = value;
                 self.push_command(Command::SetVelocity(value))?;
+            }
+            ("fighter", "ground_velocity", starlark::NativeValue::F32(value)) => {
+                let value = finite(value).map_err(|e| starlark::Error::Host(e.to_string()))?;
+                self.fighter.ground_velocity = value;
+                self.push_command(Command::SetGroundVelocity(value))?;
             }
             ("fighter", "flags.reflecting", starlark::NativeValue::Bool(value)) => {
                 let _ = value;
@@ -1515,6 +1523,12 @@ pub(crate) fn apply_commands(
                 }
                 state.fighters[actor].velocity = *velocity;
             }
+            Command::SetGroundVelocity(velocity) => {
+                if !velocity.is_finite() {
+                    return Err(super::Error::NonFinite);
+                }
+                state.fighters[actor].ground_velocity = *velocity;
+            }
             Command::ApplyHitlag { fighter, frames } => {
                 let target = state
                     .fighters
@@ -1612,6 +1626,7 @@ mod combat_resource_tests {
         let fighter = FighterView {
             action: "Action.SPECIAL_S_START".into(),
             velocity: [2.0, 3.0],
+            ground_velocity: 4.0,
             ..FighterView::default()
         };
         let result = program
@@ -1633,6 +1648,10 @@ mod combat_resource_tests {
         assert!(result.commands.iter().any(|command| matches!(
             command,
             super::Command::SetVelocity([x, y]) if *x == 2.0 && *y == 0.0
+        )));
+        assert!(result.commands.iter().any(|command| matches!(
+            command,
+            super::Command::SetGroundVelocity(value) if *value == 3.0
         )));
     }
 }
