@@ -58,11 +58,16 @@ pub struct Report {
     pub outcome: Outcome,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Diagnostic {
     pub last_simulated_frame: Option<i32>,
     pub simulated_frames: u64,
     pub terminal: Terminal,
+    /// Present when diagnostic stepping stopped because the transition stream
+    /// or native stepper returned an error. This preserves the underlying
+    /// validation/source error even when an earlier mismatch is retained as
+    /// the report outcome.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -303,6 +308,7 @@ pub fn validate_with_comparison_ports_mode(
                     last_simulated_frame: Some(report.last_frame),
                     simulated_frames: report.simulated_frames,
                     terminal: Terminal::EndOfReplay,
+                    error: None,
                 });
                 match report.first_mismatch {
                     Some(mismatch) => Outcome::Mismatch {
@@ -322,6 +328,7 @@ pub fn validate_with_comparison_ports_mode(
                     last_simulated_frame: error.last_simulated_frame,
                     simulated_frames: error.simulated_frames,
                     terminal: Terminal::Error,
+                    error: Some(error.error.to_string()),
                 });
                 match error.first_mismatch {
                     Some(mismatch) => Outcome::Mismatch {

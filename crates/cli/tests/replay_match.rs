@@ -2596,6 +2596,7 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
     );
     assert_eq!(report["diagnostic"]["simulated_frames"], recording.inputs.len());
     assert_eq!(report["diagnostic"]["terminal"], "end_of_replay");
+    assert_eq!(report["diagnostic"]["error"], Value::Null);
 }
 
 #[test]
