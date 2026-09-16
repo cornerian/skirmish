@@ -78,6 +78,7 @@ struct CaptainState {
     sets: Vec<(String, NativeValue)>,
     action: String,
     stick: [f32; 2],
+    facing: f32,
 }
 
 struct CaptainHost {
@@ -89,7 +90,7 @@ impl NativeHost for CaptainHost {
         let state = self.state.lock().unwrap();
         let value = match path {
             "fighter.action" => NativeValue::String(state.action.clone()),
-            "fighter.facing" => NativeValue::F32(1.0),
+            "fighter.facing" => NativeValue::F32(state.facing),
             "fighter.action_state" => object(NativeKind::State, "fighter.action_state"),
             "fighter.velocity" => NativeValue::Vec2([0.0, 0.0]),
             "context.input" => object(NativeKind::Input, "context.input"),
@@ -109,6 +110,7 @@ impl NativeHost for CaptainHost {
             "neutral.attributes.specialn_vel_x" => NativeValue::F32(1.95),
             "neutral.attributes.specialn_vel_mul" => NativeValue::F32(0.92),
             "up.attributes" => object(NativeKind::Value, "up.attributes"),
+            "up.attributes.specialhi_input_var" => NativeValue::F32(0.225),
             "up.attributes.specialhi_freefall_air_spd_mul" => NativeValue::F32(0.72),
             "up.attributes.specialhi_landing_lag" => NativeValue::Int(30),
             "down.attributes" => object(NativeKind::Value, "down.attributes"),
@@ -118,11 +120,13 @@ impl NativeHost for CaptainHost {
     }
 
     fn set(&mut self, path: &str, value: NativeValue) -> Result<(), Error> {
-        self.state
-            .lock()
-            .unwrap()
-            .sets
-            .push((path.to_owned(), value));
+        let mut state = self.state.lock().unwrap();
+        if path == "fighter.facing" {
+            if let NativeValue::F32(facing) = &value {
+                state.facing = *facing;
+            }
+        }
+        state.sets.push((path.to_owned(), value));
         Ok(())
     }
 
@@ -231,6 +235,7 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     let state = Arc::new(Mutex::new(CaptainState {
         action: "Action.WAIT".into(),
         stick: [0.0, 0.0],
+        facing: 1.0,
         ..CaptainState::default()
     }));
     let host = shared_host(CaptainHost {
@@ -245,6 +250,7 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     let dive = callback(&program, "move_2", "input_pressed");
     let kick = callback(&program, "move_3", "input_pressed");
     let punch_command = callback(&program, "move_0", "command_changed");
+    let dive_command = callback(&program, "move_2", "command_changed");
     let dive_animation_end = callback(&program, "move_2", "animation_end");
 
     program.prepare_for_current_thread().unwrap();
@@ -283,6 +289,19 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     program
         .dispatch(&punch_command, fighter.clone(), &[context()])
         .unwrap();
+
+    // The captured up-special input variable (.225) turns Falcon toward the
+    // replay's stick x=-.6625 command before native model rotation/physics.
+    {
+        let mut state = state.lock().unwrap();
+        state.action = "Action.SPECIAL_AIR_HI".into();
+        state.stick = [-0.6625, 0.7375];
+        state.facing = 1.0;
+    }
+    program
+        .dispatch(&dive_command, fighter.clone(), &[context()])
+        .unwrap();
+    assert_eq!(state.lock().unwrap().facing, -1.0);
 
     // The captured up-special attributes pass unchanged through the terminal
     // animation boundary: .72 mobility and 30 frames of landing lag.

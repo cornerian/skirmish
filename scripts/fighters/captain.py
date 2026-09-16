@@ -221,15 +221,29 @@ class FalconDive(SpecialMove):
 
     @hook.command_changed(0, actions=(air,))
     def command_changed(self, fighter: Fighter, ctx: MoveContext) -> None:
-        # Source IASA consumes a non-zero cmd_vars[0] and marks the dive as
-        # launched.  Direction turning and movement remain native gaps.
+        # Source IASA consumes a non-zero cmd_vars[0], marks the dive as
+        # launched, and updates facing when the horizontal stick magnitude
+        # exceeds PlCa's resource-owned input threshold.  The accompanying
+        # model rotation and catch physics remain native gaps.
         value = getattr(getattr(ctx, "event", None), "value", None)
         if fighter.action == self.air and value:
             fighter.action_state.dive_released = True
+            resource = getattr(ctx, "resource", None)
+            attributes = resource("up.attributes") if resource is not None else None
+            threshold = (getattr(attributes, "specialhi_input_var", None)
+                         if attributes is not None else None)
+            input_state = getattr(ctx, "input", None)
+            if input_state is None:
+                return
+            stick_x = input_state.stick[0]
+            if (threshold is not None and abs(stick_x) > threshold
+                    and stick_x != 0):
+                fighter.facing = 1.0 if stick_x > 0 else -1.0
 
     @hook.animation_end(ground, air)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        attributes = ctx.resource("up.attributes")
+        resource = getattr(ctx, "resource", None)
+        attributes = resource("up.attributes") if resource is not None else None
         if attributes is None:
             return
         mobility = getattr(attributes, "specialhi_freefall_air_spd_mul", None)
@@ -246,7 +260,8 @@ class FalconDive(SpecialMove):
             # Let collision::land enter ordinary LANDING so it can apply the
             # native landing interrupt/post-enter setup.
             return False
-        attributes = ctx.resource("up.attributes")
+        resource = getattr(ctx, "resource", None)
+        attributes = resource("up.attributes") if resource is not None else None
         if attributes is None:
             return False
         mobility = getattr(attributes, "specialhi_freefall_air_spd_mul", None)
@@ -259,11 +274,18 @@ class FalconDive(SpecialMove):
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
         rules = _special_rules(ctx)
-        if rules is None:
+        if rules is not None:
+            threshold = getattr(rules, "vertical_threshold", None)
+            if (threshold is None or not validation.number(threshold)
+                    or not 0 < threshold <= 1):
+                return False
+        resource = getattr(ctx, "resource", None)
+        attributes = resource("up.attributes") if resource is not None else None
+        if attributes is None:
             return True
-        threshold = getattr(rules, "vertical_threshold", None)
-        return (threshold is not None and validation.number(threshold)
-                and 0 < threshold <= 1)
+        input_var = getattr(attributes, "specialhi_input_var", None)
+        return (input_var is not None and validation.number(input_var)
+                and 0 < input_var <= 1)
 
 
 class FalconKick(SpecialMove):

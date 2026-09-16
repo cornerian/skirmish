@@ -234,6 +234,31 @@ class CaptainFalconTests(unittest.TestCase):
         move.landed(air, context)
         self.assertEqual(air.fall_special, [{"mobility": 0.8, "landing_lag": 20}])
 
+    def test_falcon_dive_command_updates_facing_at_strict_resource_threshold(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        fighter = self.Fighter(move.air)
+        resource = SimpleNamespace(attributes=SimpleNamespace(
+            specialhi_input_var=0.225,
+        ))
+        context = self.context(
+            resource_value=resource,
+            input_value=self.Input((), (-0.6625, 0.7375)),
+            event_value=1,
+        )
+        move.command_changed(fighter, context)
+        self.assertEqual(fighter.facing, -1.0)
+        self.assertTrue(fighter.action_state.dive_released)
+
+        fighter.facing = 1.0
+        context.input = self.Input((), (0.225, 0.0))
+        move.command_changed(fighter, context)
+        self.assertEqual(fighter.facing, 1.0)
+
+        context.input = self.Input((), (0.5, 0.0))
+        move.command_changed(fighter, context)
+        self.assertEqual(fighter.facing, 1.0)
+
     def test_falcon_dive_validation_rejects_missing_or_bad_dispatch_threshold(self):
         captain = _load_captain()
         move = captain.specials.up
@@ -243,6 +268,15 @@ class CaptainFalconTests(unittest.TestCase):
             rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=1.5)))))
         self.assertTrue(move.validate(SimpleNamespace(
             rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)))))
+
+        resource = SimpleNamespace(attributes=SimpleNamespace(
+            specialhi_input_var=0.225,
+        ))
+        valid = self.context(resource_value=resource)
+        valid.rules = SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5))
+        self.assertTrue(move.validate(valid))
+        resource.attributes.specialhi_input_var = 0.0
+        self.assertFalse(move.validate(valid))
 
     def test_falcon_kick_accepts_only_downward_aerial_b_and_reaches_fall(self):
         captain = _load_captain()
