@@ -56,11 +56,16 @@ class CaptainFalconTests(unittest.TestCase):
             self.grounded = grounded
             self.ground_velocity = 3.0
             self.velocity = [3.0, 4.0]
+            self.facing = 1.0
             self.changes = []
+            self.fall_special = []
 
         def change_action(self, action, **kwargs):
             self.changes.append((action, kwargs))
             self.action = action
+
+        def enter_fall_special(self, **kwargs):
+            self.fall_special.append(kwargs)
 
     @staticmethod
     def context(*, resource_value=object(), input_value=None, ground_open=False,
@@ -72,7 +77,8 @@ class CaptainFalconTests(unittest.TestCase):
             air_open=air_open,
             grounded=grounded,
             event=SimpleNamespace(value=event_value),
-            resource=lambda _path: resource,
+            resource=lambda path: (getattr(resource, "attributes", None)
+                                    if path.endswith(".attributes") else resource),
         )
 
     def test_b_entry_requires_resource_and_starts_ground_or_air_action(self):
@@ -129,6 +135,22 @@ class CaptainFalconTests(unittest.TestCase):
         move.command_changed(air, self.context(event_value=0))
         self.assertTrue(air.action_state.launch_armed)
 
+        resource = SimpleNamespace(attributes=SimpleNamespace(
+            specialn_stick_range_y_neg=-1.0,
+            specialn_stick_range_y_pos=1.0,
+            specialn_angle_diff=90.0,
+            specialn_vel_x=2.0,
+        ))
+        cue_context = self.context(
+            resource_value=resource,
+            input_value=self.Input((), (0.0, 0.5)),
+            event_value=1,
+        )
+        air.velocity = [0.0, 0.0]
+        move.command_changed(air, cue_context)
+        self.assertAlmostEqual(air.velocity[0], 2.0 * 0.3826834324, places=6)
+        self.assertAlmostEqual(air.velocity[1], 2.0 * 0.9238795325, places=6)
+
     def test_enter_clears_pending_command_and_validation_requires_both_traces(self):
         captain = _load_captain()
         move = captain.specials.neutral
@@ -139,7 +161,16 @@ class CaptainFalconTests(unittest.TestCase):
 
         class ValidContext:
             def resource(self, path):
-                return SimpleNamespace(cmd_vars=[[0, 0, 0, 0]], allow_interrupt=[False])
+                return SimpleNamespace(
+                    cmd_vars=[[0, 0, 0, 0]], allow_interrupt=[False],
+                    attributes=SimpleNamespace(
+                        specialn_stick_range_y_neg=-1.0,
+                        specialn_stick_range_y_pos=1.0,
+                        specialn_angle_diff=90.0,
+                        specialn_vel_x=2.0,
+                        specialn_vel_mul=0.5,
+                    ),
+                )
 
             def frames(self, path):
                 return 1
@@ -155,6 +186,63 @@ class CaptainFalconTests(unittest.TestCase):
                 return object()
 
         self.assertFalse(move.validate(InvalidContext()))
+
+    def test_falcon_dive_uses_upward_dispatch_and_353_354_states(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        rules = SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5,
+                                                          horizontal_threshold=0.5))
+        ground = self.Fighter(None, grounded=True)
+        context = self.context(input_value=self.Input((Button.B,), (-0.6625, 0.7375)),
+                               ground_open=True)
+        context.rules = rules
+        self.assertTrue(move.input_pressed(ground, context))
+        self.assertEqual(ground.action, move.ground)
+        self.assertEqual(move.ground.as_dict()["slippi_state"], 353)
+
+        air = self.Fighter(None)
+        context = self.context(input_value=self.Input((Button.B,), (-0.6625, 0.7375)),
+                               air_open=True)
+        context.rules = rules
+        self.assertTrue(move.input_pressed(air, context))
+        self.assertEqual(air.action, move.air)
+        self.assertEqual(move.air.as_dict()["slippi_state"], 354)
+
+        punch = captain.specials.neutral
+        context = self.context(input_value=self.Input((Button.B,), (-0.6625, 0.7375)),
+                               ground_open=True)
+        context.rules = rules
+        self.assertFalse(punch.input_pressed(self.Fighter(None), context))
+
+    def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        attributes = SimpleNamespace(specialhi_freefall_air_spd_mul=0.8,
+                                     specialhi_landing_lag=20)
+        resource = SimpleNamespace(attributes=attributes)
+        context = self.context(resource_value=resource)
+        ground = self.Fighter(move.ground)
+        move.animation_end(ground, context)
+        self.assertEqual(ground.fall_special, [{"mobility": 0.8, "landing_lag": 20}])
+
+        air = self.Fighter(move.air)
+        move.enter(air, context)
+        move.landed(air, context)
+        self.assertEqual(air.changes, [(Action.WAIT, {})])
+        air.action = move.air
+        move.command_changed(air, SimpleNamespace(event=SimpleNamespace(value=1)))
+        move.landed(air, context)
+        self.assertEqual(air.fall_special, [{"mobility": 0.8, "landing_lag": 20}])
+
+    def test_falcon_dive_validation_rejects_missing_or_bad_dispatch_threshold(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        self.assertFalse(move.validate(SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.0)))))
+        self.assertFalse(move.validate(SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=1.5)))))
+        self.assertTrue(move.validate(SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)))))
 
     def test_exports_identity_and_resource_backed_punch(self):
         from fighter.api import export_definition
