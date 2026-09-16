@@ -31,17 +31,12 @@ from skirmish import (
     register as fighter,
     validation,
 )
-from shared.common import FighterBase
-
-
-def _special_rules(ctx: MoveContext):
-    rules = getattr(ctx, "rules", None)
-    return getattr(rules, "specials", None)
+from shared.common import FighterBase, resource_attributes, special_rules, start_action
 
 
 def _directional_b(ctx: MoveContext) -> bool:
     """Use host-provided dispatch thresholds when the host exposes them."""
-    rules = _special_rules(ctx)
+    rules = special_rules(ctx)
     if rules is None:
         return False
     stick = getattr(ctx.input, "stick", (0.0, 0.0))
@@ -114,8 +109,7 @@ class FalconPunch(SpecialMove):
             return True
         if not (ctx.ground_open or ctx.air_open):
             return False
-        fighter.change_action(self.ground if ctx.ground_open else self.air)
-        fighter.action_frame = 1
+        start_action(fighter, self.ground if ctx.ground_open else self.air)
         return True
 
     @hook.command_changed(0, actions=(air,))
@@ -131,8 +125,7 @@ class FalconPunch(SpecialMove):
         value = getattr(getattr(ctx, "event", None), "value", None)
         if fighter.action == self.air and value:
             fighter.action_state.launch_armed = True
-            resource = ctx.resource(self.resource)
-            attributes = getattr(resource, "attributes", None)
+            attributes = resource_attributes(ctx, self.resource)
             fields = (
                 "specialn_stick_range_y_neg",
                 "specialn_stick_range_y_pos",
@@ -240,7 +233,7 @@ class FalconDive(SpecialMove):
         if (ctx.resource(self.resource) is None
                 or not ctx.input.just_pressed(Button.B)):
             return False
-        rules = _special_rules(ctx)
+        rules = special_rules(ctx)
         if rules is None:
             return False
         threshold = getattr(rules, "vertical_threshold", None)
@@ -249,12 +242,11 @@ class FalconDive(SpecialMove):
         if fighter.action in (self.ground, self.air):
             return True
         if ctx.ground_open:
-            fighter.change_action(self.ground)
+            start_action(fighter, self.ground)
         elif ctx.air_open:
-            fighter.change_action(self.air)
+            start_action(fighter, self.air)
         else:
             return False
-        fighter.action_frame = 1
         return True
 
     @hook.command_changed(0, actions=(air,))
@@ -266,8 +258,7 @@ class FalconDive(SpecialMove):
         value = getattr(getattr(ctx, "event", None), "value", None)
         if fighter.action == self.air and value:
             fighter.action_state.dive_released = True
-            resource = getattr(ctx, "resource", None)
-            attributes = resource("up.attributes") if resource is not None else None
+            attributes = resource_attributes(ctx, "up.attributes")
             threshold = (getattr(attributes, "specialhi_input_var", None)
                          if attributes is not None else None)
             input_state = getattr(ctx, "input", None)
@@ -280,8 +271,7 @@ class FalconDive(SpecialMove):
 
     @hook.animation_end(ground, air)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        resource = getattr(ctx, "resource", None)
-        attributes = resource("up.attributes") if resource is not None else None
+        attributes = resource_attributes(ctx, "up.attributes")
         if attributes is None:
             return
         mobility = getattr(attributes, "specialhi_freefall_air_spd_mul", None)
@@ -298,8 +288,7 @@ class FalconDive(SpecialMove):
             # Let collision::land enter ordinary LANDING so it can apply the
             # native landing interrupt/post-enter setup.
             return False
-        resource = getattr(ctx, "resource", None)
-        attributes = resource("up.attributes") if resource is not None else None
+        attributes = resource_attributes(ctx, "up.attributes")
         if attributes is None:
             return False
         mobility = getattr(attributes, "specialhi_freefall_air_spd_mul", None)
@@ -311,14 +300,13 @@ class FalconDive(SpecialMove):
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
-        rules = _special_rules(ctx)
+        rules = special_rules(ctx)
         if rules is not None:
             threshold = getattr(rules, "vertical_threshold", None)
             if (threshold is None or not validation.number(threshold)
                     or not 0 < threshold <= 1):
                 return False
-        resource = getattr(ctx, "resource", None)
-        attributes = resource("up.attributes") if resource is not None else None
+        attributes = resource_attributes(ctx, "up.attributes")
         if attributes is None:
             return True
         input_var = getattr(attributes, "specialhi_input_var", None)
@@ -387,14 +375,13 @@ class RaptorBoost(SpecialMove):
         if fighter.action in (self.ground_start, self.ground, self.air_start, self.air):
             return True
         if ctx.ground_open:
-            fighter.change_action(self.ground_start)
+            start_action(fighter, self.ground_start)
             self._clear_ground_start_velocity(fighter)
         elif ctx.air_open:
-            fighter.change_action(self.air_start)
+            start_action(fighter, self.air_start)
             self._clear_air_start_velocity(fighter)
         else:
             return False
-        fighter.action_frame = 1
         return True
 
     @hook.action_enter(ground_start, air_start)
@@ -468,7 +455,7 @@ class RaptorBoost(SpecialMove):
 
     @classmethod
     def _horizontal_threshold(cls, ctx: MoveContext):
-        rules = _special_rules(ctx)
+        rules = special_rules(ctx)
         threshold = getattr(rules, "side_stick_threshold", None)
         if (threshold is None or not validation.number(threshold)
                 or not 0 < threshold <= 1):
@@ -477,7 +464,7 @@ class RaptorBoost(SpecialMove):
 
     def _landing_lag(self, ctx: MoveContext, field: str):
         resource = ctx.resource(self.resource)
-        attributes = getattr(resource, "attributes", None) if resource is not None else None
+        attributes = resource_attributes(ctx, resource)
         lag = getattr(attributes, field, None) if attributes is not None else None
         if lag is None or not validation.number(lag) or lag < 0:
             return None
@@ -501,7 +488,7 @@ class RaptorBoost(SpecialMove):
             return True
         if self._horizontal_threshold(ctx) is None:
             return False
-        attributes = getattr(resource, "attributes", None)
+        attributes = resource_attributes(ctx, resource)
         return validation.fields(
             attributes,
             nonnegative=(
@@ -570,7 +557,7 @@ class FalconKick(SpecialMove):
             self.landing,
         ):
             return True
-        rules = _special_rules(ctx)
+        rules = special_rules(ctx)
         threshold = getattr(rules, "vertical_threshold", None) if rules is not None else None
         if (threshold is None or ctx.input.stick[1] > -threshold
                 or not (ctx.ground_open or ctx.air_open)):
@@ -578,8 +565,7 @@ class FalconKick(SpecialMove):
         # Generic dispatch exposes the two legal surfaces independently.  A
         # simultaneous opening is grounded by precedence, matching the
         # native grounded branch; otherwise the aerial motion is selected.
-        fighter.change_action(self.ground if ctx.ground_open else self.air)
-        fighter.action_frame = 1
+        start_action(fighter, self.ground if ctx.ground_open else self.air)
         return True
 
     @hook.animation_end(ground, ground_end, air, air_end, landing, ground_end_air)
@@ -610,7 +596,7 @@ class FalconKick(SpecialMove):
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
-        rules = _special_rules(ctx)
+        rules = special_rules(ctx)
         if rules is None:
             return True
         threshold = getattr(rules, "vertical_threshold", None)
