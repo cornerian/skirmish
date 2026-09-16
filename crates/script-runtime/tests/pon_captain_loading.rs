@@ -307,6 +307,10 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
         .iter()
         .find(|(path, _)| path == "fighter.velocity")
         .map(|(_, value)| value);
-    assert!(matches!(velocity, Some(NativeValue::Vec2([x, y]))
-        if (*x - 1.883566).abs() < 0.0001 && (*y - 0.505521).abs() < 0.0001));
+    assert!(matches!(velocity, Some(NativeValue::List(values))
+        if values.len() == 2
+            && matches!((&values[0], &values[1]),
+                (NativeValue::F32(x), NativeValue::F32(y))
+                    if (*x - 1.801565).abs() < 0.0001
+                        && (*y - 0.746232).abs() < 0.0001)));
 }

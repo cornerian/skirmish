@@ -133,8 +133,11 @@ class FalconPunch(SpecialMove):
             angle = 3.141592653589793 / 180 * (
                 stick_y * attributes.specialn_angle_diff / (maximum - minimum)
             )
-            fighter.velocity[1] = attributes.specialn_vel_x * math.sin(angle)
-            fighter.velocity[0] = attributes.specialn_vel_x * fighter.facing * math.cos(angle)
+            velocity_x = attributes.specialn_vel_x * fighter.facing * math.cos(angle)
+            velocity_y = attributes.specialn_vel_x * math.sin(angle)
+            # Assign the vector atomically; indexed writes target a transient
+            # native member and do not update the host-owned velocity field.
+            fighter.velocity = (velocity_x, velocity_y)
 
     @hook.animation_end(ground, air)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
