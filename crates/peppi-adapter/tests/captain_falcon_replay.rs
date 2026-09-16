@@ -32,13 +32,77 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     assert_eq!(summary.first_frame, Some(-123));
     assert_eq!(summary.last_frame, Some(8_514));
     assert_eq!(summary.latest_finalized_frame, Some(8_514));
-    assert_eq!(summary.end_method, peppi_adapter::peppi::game::EndMethod::Resolved);
+    assert_eq!(
+        summary.end_method,
+        peppi_adapter::peppi::game::EndMethod::Resolved
+    );
+
+    let roster = replay.roster();
+    assert!(roster.is_teams);
+    assert_eq!(
+        roster
+            .players
+            .iter()
+            .map(|player| player.port)
+            .collect::<Vec<_>>(),
+        [Port::P1, Port::P2, Port::P3, Port::P4]
+    );
+    assert_eq!(
+        roster
+            .players
+            .iter()
+            .map(|player| player.character)
+            .collect::<Vec<_>>(),
+        [9, 22, 17, 0]
+    );
+    assert_eq!(
+        roster
+            .players
+            .iter()
+            .map(|player| player.team)
+            .collect::<Vec<_>>(),
+        [
+            Some(peppi_adapter::peppi::game::Team { color: 0, shade: 0 }),
+            Some(peppi_adapter::peppi::game::Team { color: 1, shade: 0 }),
+            Some(peppi_adapter::peppi::game::Team { color: 1, shade: 0 }),
+            Some(peppi_adapter::peppi::game::Team { color: 0, shade: 0 }),
+        ]
+    );
+    assert!(
+        roster
+            .players
+            .iter()
+            .all(|player| { player.player_type == peppi_adapter::peppi::game::PlayerType::Human })
+    );
+    assert!(roster.players.iter().all(|player| player.stocks == 4));
+    assert_eq!(
+        roster
+            .players
+            .iter()
+            .map(|player| player.costume)
+            .collect::<Vec<_>>(),
+        [1, 2, 2, 2]
+    );
+
+    // These settings come from the authoritative GameStart parse, rather than
+    // being inferred from the frame stream.
+    let start = &replay.game().start;
+    assert_eq!(start.timer, 480);
+    assert_eq!(start.item_spawn_frequency, -1);
+    assert_eq!(start.stage, 31);
 
     // GameStart uses the external CSS character ID. Captain Falcon is P4
     // (external ID 0); frame Post uses the corresponding internal ID 2.
     let players = &replay.game().start.players;
     assert_eq!(players.len(), 4);
-    assert_eq!(players.iter().find(|p| p.port == Port::P4).unwrap().character, 0);
+    assert_eq!(
+        players
+            .iter()
+            .find(|p| p.port == Port::P4)
+            .unwrap()
+            .character,
+        0
+    );
 
     // Frame 522 is an actual recorded Captain action-state transition. Keep
     // both controller observations and the resulting state so future parity
@@ -55,7 +119,6 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     assert_eq!(actor.post.state_age.unwrap().to_bits(), 1.0_f32.to_bits());
     assert_eq!(actor.post.airborne, Some(1));
     assert_eq!(actor.post.jumps, Some(0));
-
 
     // Four recorded state-354 windows. The final frame of the second window
     // transitions to state 252 in Post while still reporting state 354 in
@@ -74,7 +137,10 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
         }
         let last = captain(&replay, (end + 123) as usize);
         assert_eq!(last.pre.state, 354, "state-354 window end pre at {end}");
-        assert_eq!(last.post.state, final_post_state, "window end post at {end}");
+        assert_eq!(
+            last.post.state, final_post_state,
+            "window end post at {end}"
+        );
         assert_eq!(last.post.airborne, Some(1), "airborne at {end}");
     }
 
@@ -82,21 +148,56 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     // Captain's pre-state and stick direction. Positions and facing are
     // retained as observations of the movement that begins at each entry.
     for (frame_id, pre_state, stick_x, stick_y, direction, position) in [
-        (522, 27, -0.6625_f32, 0.7375_f32, -1.0_f32, [155.83063_f32, -18.104641_f32]),
-        (2066, 32, -0.65_f32, 0.75_f32, -1.0_f32, [126.28996_f32, -29.326918_f32]),
-        (2397, 32, -0.6375_f32, 0.75_f32, -1.0_f32, [175.08943_f32, -38.935917_f32]),
-        (3929, 27, 0.7_f32, 0.7_f32, 1.0_f32, [-137.69496_f32, 36.903496_f32]),
+        (
+            522,
+            27,
+            -0.6625_f32,
+            0.7375_f32,
+            -1.0_f32,
+            [155.83063_f32, -18.104641_f32],
+        ),
+        (
+            2066,
+            32,
+            -0.65_f32,
+            0.75_f32,
+            -1.0_f32,
+            [126.28996_f32, -29.326918_f32],
+        ),
+        (
+            2397,
+            32,
+            -0.6375_f32,
+            0.75_f32,
+            -1.0_f32,
+            [175.08943_f32, -38.935917_f32],
+        ),
+        (
+            3929,
+            27,
+            0.7_f32,
+            0.7_f32,
+            1.0_f32,
+            [-137.69496_f32, 36.903496_f32],
+        ),
     ] {
         let actor = captain(&replay, (frame_id + 123) as usize);
         assert_eq!(actor.pre.state, pre_state, "Dive pre-state at {frame_id}");
         assert_eq!(actor.pre.buttons, 66_048, "Dive B input at {frame_id}");
-        assert_eq!(actor.pre.buttons_physical, 512, "Dive physical B input at {frame_id}");
+        assert_eq!(
+            actor.pre.buttons_physical, 512,
+            "Dive physical B input at {frame_id}"
+        );
         assert_eq!(actor.pre.joystick.x.to_bits(), stick_x.to_bits());
         assert_eq!(actor.pre.joystick.y.to_bits(), stick_y.to_bits());
         assert_eq!(actor.post.state, 354, "Dive post-state at {frame_id}");
         assert_eq!(actor.post.state_age.unwrap().to_bits(), 1.0_f32.to_bits());
         assert_eq!(actor.post.airborne, Some(1));
-        assert_eq!(actor.post.direction.to_bits(), direction.to_bits(), "Dive facing at {frame_id}");
+        assert_eq!(
+            actor.post.direction.to_bits(),
+            direction.to_bits(),
+            "Dive facing at {frame_id}"
+        );
         assert_eq!(actor.post.position.x.to_bits(), position[0].to_bits());
         assert_eq!(actor.post.position.y.to_bits(), position[1].to_bits());
     }
@@ -125,7 +226,10 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     let before_end = captain(&replay, (6651 + 123) as usize);
     assert_eq!(before_end.pre.state, 361);
     assert_eq!(before_end.post.state, 361);
-    assert_eq!(before_end.post.state_age.unwrap().to_bits(), 28.0_f32.to_bits());
+    assert_eq!(
+        before_end.post.state_age.unwrap().to_bits(),
+        28.0_f32.to_bits()
+    );
     let end = captain(&replay, (6652 + 123) as usize);
     assert_eq!(end.pre.state, 29);
     assert_eq!(end.post.state, 29);

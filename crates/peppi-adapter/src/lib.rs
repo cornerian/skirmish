@@ -80,6 +80,27 @@ pub struct Inputs {
     pub start: Option<row::Start>,
 }
 
+/// The players and team mode recorded in a replay's GameStart event.
+///
+/// This is an immutable adapter-owned view of the setup metadata. Character
+/// IDs are the external CSS IDs from Slippi, not frame Post's internal IDs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Roster {
+    pub players: Vec<RosterPlayer>,
+    pub is_teams: bool,
+}
+
+/// Setup metadata for one player in a replay roster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct RosterPlayer {
+    pub port: Port,
+    pub character: u8,
+    pub player_type: peppi::game::PlayerType,
+    pub team: Option<peppi::game::Team>,
+    pub stocks: u8,
+    pub costume: u8,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Summary {
     pub parser: &'static str,
@@ -104,6 +125,7 @@ pub struct Summary {
 #[derive(Debug)]
 pub struct Replay {
     game: Game,
+    roster: Roster,
     indices: Vec<usize>,
     latest_finalized: Option<i32>,
     digest: [u8; 32],
@@ -140,6 +162,22 @@ impl Replay {
         frames::validate(&game)?;
         let (indices, latest_finalized) = timeline(&game)?;
         Ok(Self {
+            roster: Roster {
+                players: game
+                    .start
+                    .players
+                    .iter()
+                    .map(|player| RosterPlayer {
+                        port: player.port,
+                        character: player.character,
+                        player_type: player.r#type,
+                        team: player.team,
+                        stocks: player.stocks,
+                        costume: player.costume,
+                    })
+                    .collect(),
+                is_teams: game.start.is_teams,
+            },
             game,
             indices,
             latest_finalized,
@@ -152,6 +190,11 @@ impl Replay {
     /// for analysis and future compatibility checks. This is read-only access.
     pub fn game(&self) -> &Game {
         &self.game
+    }
+
+    /// Return the immutable GameStart roster metadata.
+    pub fn roster(&self) -> &Roster {
+        &self.roster
     }
     pub fn sha256(&self) -> [u8; 32] {
         self.digest
