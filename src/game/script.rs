@@ -1596,6 +1596,7 @@ mod action_name_tests {
 #[cfg(test)]
 mod combat_resource_tests {
     use super::{CombatContext, FighterView, HitView, LocalState, Program};
+    use crate::game::script::definition::AssetStore;
     use crate::game::script::lifecycle_resources::ResourceCache;
     use crate::game::script::resources::{Resources, Specials};
     use std::collections::BTreeMap;
@@ -1627,8 +1628,12 @@ mod combat_resource_tests {
             ResourceCache::build(Some(&data.fighters[0]), None, false)
                 .expect("resource fixture builds"),
         );
-        let program = Program::new(include_str!("../../scripts/fighters/captain.py"))
-            .expect("Captain source compiles");
+        let assets = AssetStore::builtins();
+        let program = Program::new_registered(
+            include_str!("../../scripts/fighters/captain.py"),
+            &assets,
+        )
+        .expect("Captain source and registered shared assets compile");
         let persistent = LocalState::new();
         let action_state = LocalState::new();
         let fighter = FighterView {
