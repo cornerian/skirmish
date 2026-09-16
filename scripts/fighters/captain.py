@@ -2,11 +2,10 @@
 
 This is intentionally a partial authoring slice.  Falcon Punch (ground and
 air entry, command-variable launch cue, ground/air conversion, and terminal
-recovery) and the representable Falcon Dive entry/lifecycle are wired to
-resource data; side and down specials are retained as canonical engine actions
-with no translated Python behavior yet.  Hitbox, animation, and parameter
-values belong to the validated native resource pack and are not duplicated
-here.
+recovery), Falcon Dive, and the observed aerial Falcon Kick landing phase are
+wired to resource data; side specials are retained as canonical engine
+actions.  Hitbox, animation, and parameter values belong to the validated
+native resource pack and are not duplicated here.
 """
 
 import math
@@ -302,6 +301,7 @@ class FalconKick(SpecialMove):
 
     air = action(Action.SPECIAL_AIR_LW, slippi_state=359, animation=313)
     air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361, animation=316)
+    landing = action(Action.SPECIAL_LW_END, slippi_state=360, animation=314)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
@@ -318,12 +318,22 @@ class FalconKick(SpecialMove):
         fighter.action_frame = 1
         return True
 
-    @hook.animation_end(air, air_end)
+    @hook.animation_end(air, air_end, landing)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
         if fighter.action == self.air:
             fighter.change_action(self.air_end)
         elif fighter.action == self.air_end:
             fighter.change_action(Action.FALL)
+        elif fighter.action == self.landing:
+            fighter.change_action(Action.WAIT)
+
+    @hook.landed(air, air_end)
+    def landed(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        """Consume collision landing into Captain's source landing motion."""
+        if fighter.action not in (self.air, self.air_end):
+            return False
+        fighter.change_action(self.landing)
+        return True
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:

@@ -306,6 +306,22 @@ class CaptainFalconTests(unittest.TestCase):
         neutral_context.rules = rules
         self.assertFalse(move.input_pressed(self.Fighter(None), neutral_context))
 
+    def test_falcon_kick_landing_uses_source_end_motion_then_waits(self):
+        captain = _load_captain()
+        move = captain.specials.down
+        context = self.context()
+
+        self.assertEqual(move.landing.as_dict()["action"], "Action.SPECIAL_LW_END")
+        self.assertEqual(move.landing.as_dict()["slippi_state"], 360)
+        self.assertEqual(move.landing.as_dict()["animation"], 314)
+
+        for airborne in (move.air, move.air_end):
+            fighter = self.Fighter(airborne)
+            self.assertTrue(move.landed(fighter, context))
+            self.assertEqual(fighter.changes, [(move.landing, {})])
+            move.animation_end(fighter, context)
+            self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
+
     def test_landing_descriptor_uses_canonical_api_action(self):
         from fighter import action
         self.assertEqual(action(Action.LANDING).as_dict()["action"], "Action.LANDING")
