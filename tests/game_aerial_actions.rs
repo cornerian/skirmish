@@ -7,6 +7,7 @@ use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match,
     data::{Hitbox, MatchData},
 };
+use skirmish_replay::{observation, slippi::Port};
 use support::{ATTACKS, LANDINGS, STICKS, data, game, input, step};
 
 fn attack(stick: [f32; 2]) -> Controller {
@@ -68,12 +69,30 @@ fn held_or_opposite_cstick_does_not_repeat_after_attack_end_but_neutral_rearms()
     for frame in 1..8 {
         let state = step(&mut game, if frame % 2 == 0 { right } else { left });
         assert_eq!(state.fighters[0].action, Action::AttackAirF);
-        assert_eq!(state.fighters[0].action_frame, frame + 1);
+        assert_eq!(state.fighters[0].action_frame, frame + 2);
     }
     assert_eq!(step(&mut game, right).fighters[0].action, Action::Fall);
     assert_eq!(step(&mut game, left).fighters[0].action, Action::Fall);
     step(&mut game, Controller::default());
     assert_eq!(step(&mut game, left).fighters[0].action, Action::AttackAirB);
+}
+
+#[test]
+fn aerial_entry_reports_the_extra_animation_age_on_entry_and_follow_up() {
+    let mut game = game();
+    let entry = step(&mut game, Controller {
+        cstick: [1.0, 0.0],
+        ..Default::default()
+    });
+    assert_eq!(entry.fighters[0].action, Action::AttackAirF);
+    let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observed.fighters[0].action_state, Some(66));
+    assert_eq!(observed.fighters[0].action_age, 1.0);
+
+    step(&mut game, Controller::default());
+    let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
+    assert_eq!(observed.fighters[0].action_state, Some(66));
+    assert_eq!(observed.fighters[0].action_age, 2.0);
 }
 
 #[test]
@@ -284,7 +303,7 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
     )));
     assert_eq!(hit.fighters[0].hitboxes[0].current[0], 2.0);
     assert_eq!(hit.fighters[0].facing, -1.0);
-    assert_eq!(hit.fighters[0].action_frame, 1);
+    assert_eq!(hit.fighters[0].action_frame, 2);
     let checkpoint = game.checkpoint();
     let mut expected = vec![];
     for _ in 0..4 {
@@ -299,9 +318,9 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
         );
         expected.push(state);
     }
-    assert_eq!(expected[0].fighters[0].action_frame, 1);
-    assert_eq!(expected[2].fighters[0].action_frame, 1);
-    assert_eq!(expected[3].fighters[0].action_frame, 2);
+    assert_eq!(expected[0].fighters[0].action_frame, 2);
+    assert_eq!(expected[2].fighters[0].action_frame, 2);
+    assert_eq!(expected[3].fighters[0].action_frame, 3);
     game.restore_checkpoint(&checkpoint).unwrap();
     for state in expected {
         assert_eq!(step(&mut game, Controller::default()), &state);

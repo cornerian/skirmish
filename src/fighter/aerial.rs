@@ -205,11 +205,15 @@ pub(crate) fn interruptible(fighter: &Fighter) -> bool {
 }
 
 fn commands(f: &mut Fighter, movement: &Move) {
-    if f.aerial.applied_frame == Some(f.action_frame) {
+    // AttackAir's entry calls ftAnim_8006EBA4 once after the motion change,
+    // so the native action clock is one ahead of the zero-based resource
+    // sample on the entry frame.  EscapeAir uses the same convention.
+    let sample = f.action_frame.saturating_sub(1);
+    if f.aerial.applied_frame == Some(sample) {
         return;
     }
-    let flags = movement.flags[f.action_frame as usize];
-    f.aerial.applied_frame = Some(f.action_frame);
+    let flags = movement.flags[sample as usize];
+    f.aerial.applied_frame = Some(sample);
     f.aerial.landing_lag_enabled = flags.landing_lag;
     f.aerial.allow_interrupt = flags.allow_interrupt;
     if flags.reverse_facing {
@@ -231,7 +235,8 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData) {
         return;
     }
     if let Some(index) = attack_index(f.action) {
-        if f.action_frame as usize >= p.moves[index].attack.frames.len() {
+        let sample = f.action_frame.saturating_sub(1) as usize;
+        if sample >= p.moves[index].attack.frames.len() {
             crate::game::simulation::enter(f, Action::Fall);
         } else {
             commands(f, &p.moves[index]);

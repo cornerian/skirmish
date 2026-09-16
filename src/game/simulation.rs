@@ -237,7 +237,17 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         staling::restart_identity(fighter);
     }
     fighter.action = action;
-    fighter.action_frame = 0;
+    // `ftCo_AttackAir_EnterFromMsid` calls `ftAnim_8006EBA4` immediately
+    // after `Fighter_ChangeMotionState`, advancing the selected aerial's
+    // animation to frame one on its entry frame.  Keep the engine's shared
+    // post-frame increment unchanged; storing that entry advance here makes
+    // both native and script-selected aerials expose the same visible age
+    // without an observation-layer exception.
+    fighter.action_frame = if crate::fighter::aerial::attack_index(action).is_some() {
+        1
+    } else {
+        0
+    };
     // Fighter_ChangeMotionState unconditionally calls mpClearFloorSkip.
     fighter.skip_floor = None;
     // Ordinary transitions (Ft_MF_None) reset the scripted collision state.
@@ -2438,15 +2448,23 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .attack_for(fighter)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames;
+    // AttackAir and EscapeAir both perform an explicit animation advance in
+    // their entry callback.  Their authored pose samples remain zero-based,
+    // so the entry clock's extra unit is not a second sample.
+    let action_frame = if crate::fighter::aerial::attack_index(fighter.action).is_some() {
+        fighter.action_frame.saturating_sub(1)
+    } else {
+        fighter.action_frame
+    };
     let frame = if crate::fighter::specials::animation_loop_for_owner(fighter, data) {
         // Looping is a registration-time declaration for this action. Keep
         // the native action frame and motion phase untouched; only the
         // finite pose/hitbox sample wraps at its nonempty frame count.
-        usize::try_from(fighter.action_frame)
+        usize::try_from(action_frame)
             .ok()
             .and_then(|frame| (!attack.is_empty()).then(|| frame % attack.len()))
     } else {
-        usize::try_from(fighter.action_frame).ok()
+        usize::try_from(action_frame).ok()
     };
     frame
         .and_then(|frame| attack.get(frame))
