@@ -227,3 +227,27 @@ fn captain_special_entries_preserve_source_input_evidence() {
         );
     }
 }
+
+#[test]
+fn captain_kick_end_records_stable_air_velocity_without_knockback() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(REPLAY)).unwrap();
+    let mut self_x = Vec::new();
+    for frame_id in 6623..=6651 {
+        let actor = captain_at_frame(&replay, frame_id);
+        let velocity = actor
+            .post
+            .velocities
+            .unwrap_or_else(|| panic!("Captain velocities missing at frame {frame_id}"));
+        assert_eq!(velocity.knockback_x.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(velocity.knockback_y.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(velocity.self_y.to_bits(), (-2.9_f32).to_bits());
+        assert_eq!(velocity.self_x_ground.to_bits(), 0.0_f32.to_bits());
+        self_x.push(velocity.self_x_air);
+    }
+
+    assert_eq!(self_x[0].to_bits(), (-1.2154238_f32).to_bits());
+    assert_eq!(self_x[28].to_bits(), (-0.9354241_f32).to_bits());
+    for pair in self_x.windows(2) {
+        assert!((pair[1] - pair[0] - 0.01).abs() < 0.000001);
+    }
+}
