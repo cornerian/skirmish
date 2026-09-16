@@ -23,6 +23,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
             anchor_offset,
         };
         let motion = |offsets: &[[f32; 3]]| Motion {
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: offsets.iter().copied().map(frame).collect(),
         };
         let attack_offsets = [
@@ -34,6 +36,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
         ];
         let attack = Attack {
             move_id: None,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: attack_offsets
                 .iter()
                 .enumerate()

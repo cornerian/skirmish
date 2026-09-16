@@ -94,6 +94,13 @@ pub struct Frame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Motion {
+    /// Motion-state entry blend duration retained from the exported pose
+    /// resource. Ledge scheduling currently consumes sampled frames only.
+    #[serde(default)]
+    pub blend_frames: u8,
+    /// Motion-state dynamics variant paired with `blend_frames`.
+    #[serde(default)]
+    pub dynamics_variant: u8,
     pub frames: Vec<Frame>,
 }
 
@@ -1056,6 +1063,22 @@ mod box_bounds {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn motion_accepts_and_preserves_exported_blend_metadata() {
+        let motion: Motion = serde_json::from_str(
+            r#"{
+                "blend_frames": 3,
+                "dynamics_variant": 2,
+                "frames": []
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(motion.blend_frames, 3);
+        assert_eq!(motion.dynamics_variant, 2);
+        assert_eq!(serde_json::to_value(motion).unwrap()["blend_frames"], 3);
+    }
 
     #[test]
     fn source_regions_preserve_strict_angle_and_main_stick_climb_gate() {
