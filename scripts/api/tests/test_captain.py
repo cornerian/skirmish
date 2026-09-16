@@ -278,6 +278,141 @@ class CaptainFalconTests(unittest.TestCase):
         resource.attributes.specialhi_input_var = 0.0
         self.assertFalse(move.validate(valid))
 
+    def test_raptor_boost_dispatch_requires_horizontal_b_and_clears_entry_velocity(self):
+        captain = _load_captain()
+        move = captain.specials.side
+        rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+        resource = SimpleNamespace(attributes=SimpleNamespace(
+            specials_miss_landing_lag=20.0,
+            specials_hit_landing_lag=30.0,
+        ))
+
+        ground = self.Fighter(None)
+        context = self.context(
+            resource_value=resource,
+            input_value=self.Input((Button.B,), (-0.6, 0.0)),
+            ground_open=True,
+        )
+        context.rules = rules
+        self.assertTrue(move.input_pressed(ground, context))
+        self.assertEqual(ground.action, move.ground_start)
+        self.assertEqual(ground.action_frame, 1)
+        self.assertEqual(ground.velocity, (0.0, 0.0))
+        self.assertEqual(ground.ground_velocity, 0.0)
+
+        air = self.Fighter(None)
+        context = self.context(
+            resource_value=resource,
+            input_value=self.Input((Button.B,), (0.6, 0.0)),
+            air_open=True,
+        )
+        context.rules = rules
+        self.assertTrue(move.input_pressed(air, context))
+        self.assertEqual(air.action, move.air_start)
+        self.assertEqual(air.action_frame, 1)
+        self.assertEqual(air.velocity, (0.0, 0.0))
+
+        for stick_x in (0.0, 0.49):
+            context = self.context(
+                resource_value=resource,
+                input_value=self.Input((Button.B,), (stick_x, 0.0)),
+                ground_open=True,
+            )
+            context.rules = rules
+            self.assertFalse(move.input_pressed(self.Fighter(None), context))
+        context = self.context(
+            resource_value=None,
+            input_value=self.Input((Button.B,), (0.8, 0.0)),
+            ground_open=True,
+        )
+        context.rules = rules
+        self.assertFalse(move.input_pressed(self.Fighter(None), context))
+
+    def test_raptor_boost_exports_source_action_metadata_without_contact_transition(self):
+        from fighter.api import export_definition
+
+        captain = _load_captain()
+        exported = export_definition(captain).as_dict()
+        side = exported["movesets"]["specials"]["side"]
+        behavior = next(item for item in exported["behaviors"] if item["id"] == side)
+        self.assertEqual(behavior["resource"], "side")
+        self.assertEqual(behavior["actions"]["ground_start"]["slippi_state"], 349)
+        self.assertEqual(behavior["actions"]["ground_start"]["animation"], 303)
+        self.assertEqual(behavior["actions"]["ground"]["slippi_state"], 350)
+        self.assertEqual(behavior["actions"]["ground"]["animation"], 304)
+        self.assertEqual(behavior["actions"]["air_start"]["slippi_state"], 351)
+        self.assertEqual(behavior["actions"]["air_start"]["animation"], 305)
+        self.assertEqual(behavior["actions"]["air"]["slippi_state"], 352)
+        self.assertEqual(behavior["actions"]["air"]["animation"], 306)
+        callbacks = behavior["callbacks"]
+        self.assertFalse(any(
+            callback["hook"] == "animation_ended"
+            and callback.get("callback", "").endswith("_transition_animation_end")
+            for callback in callbacks
+        ))
+
+    def test_raptor_boost_terminal_and_landing_lags_match_source_callbacks(self):
+        captain = _load_captain()
+        move = captain.specials.side
+        resource = SimpleNamespace(attributes=SimpleNamespace(
+            specials_miss_landing_lag=0.0,
+            specials_hit_landing_lag=18.0,
+        ))
+        context = self.context(resource_value=resource)
+
+        ground = self.Fighter(move.ground_start)
+        move.animation_end_ground(ground, context)
+        self.assertEqual(ground.changes, [(Action.WAIT, {})])
+        ground = self.Fighter(move.ground)
+        move.animation_end_ground(ground, context)
+        self.assertEqual(ground.changes, [(Action.WAIT, {})])
+
+        air_start = self.Fighter(move.air_start)
+        move.animation_end_air(air_start, context)
+        self.assertEqual(air_start.changes, [(Action.FALL, {})])
+        self.assertEqual(air_start.fall_special, [])
+
+        air = self.Fighter(move.air)
+        move.animation_end_air(air, context)
+        self.assertEqual(air.fall_special, [{"mobility": 1, "landing_lag": 18.0}])
+
+        air_start = self.Fighter(move.air_start)
+        self.assertTrue(move.landed(air_start, context))
+        self.assertEqual(air_start.fall_special, [{"mobility": 1, "landing_lag": 0.0}])
+        air = self.Fighter(move.air)
+        self.assertTrue(move.landed(air, context))
+        self.assertEqual(air.fall_special, [{"mobility": 1, "landing_lag": 18.0}])
+
+    def test_raptor_boost_validation_requires_finite_nonnegative_lags(self):
+        captain = _load_captain()
+        move = captain.specials.side
+        valid = self.context(resource_value=SimpleNamespace(attributes=SimpleNamespace(
+            specials_miss_landing_lag=0.0,
+            specials_hit_landing_lag=18.0,
+        )))
+        valid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+        self.assertTrue(move.validate(valid))
+
+        valid.rules.specials.horizontal_threshold = 0.0
+        self.assertFalse(move.validate(valid))
+        valid.rules.specials.horizontal_threshold = 0.5
+        valid.resource_value = None
+        valid.resource = lambda path: None
+        self.assertTrue(move.validate(valid))
+
+        for field, value in (
+            ("specials_miss_landing_lag", -1.0),
+            ("specials_hit_landing_lag", float("inf")),
+        ):
+            resource = SimpleNamespace(attributes=SimpleNamespace(
+                specials_miss_landing_lag=0.0,
+                specials_hit_landing_lag=18.0,
+            ))
+            setattr(resource.attributes, field, value)
+            invalid = self.context(resource_value=resource)
+            invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+            self.assertFalse(move.validate(invalid))
+
     def test_falcon_kick_accepts_only_downward_aerial_b_and_reaches_fall(self):
         captain = _load_captain()
         move = captain.specials.down

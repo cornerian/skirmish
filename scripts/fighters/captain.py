@@ -2,10 +2,12 @@
 
 This is intentionally a partial authoring slice.  Falcon Punch (ground and
 air entry, command-variable launch cue, ground/air conversion, and terminal
-recovery), Falcon Dive, and the observed aerial Falcon Kick landing phase are
-wired to resource data; side specials are retained as canonical engine
-actions.  Hitbox, animation, and parameter values belong to the validated
-native resource pack and are not duplicated here.
+recovery), Raptor Boost's contact-independent entry and recovery phases,
+Falcon Dive, and the observed aerial Falcon Kick landing phase are wired to
+resource data.  Hit detection, physics, effects, and other native-only
+callbacks remain outside this declarative layer.  Hitbox, animation, and
+parameter values belong to the validated native resource pack and are not
+duplicated here.
 """
 
 import math
@@ -24,7 +26,6 @@ from skirmish import (
     hook,
     register as fighter,
     validation,
-    ActionMove,
 )
 from shared.common import FighterBase
 
@@ -289,6 +290,153 @@ class FalconDive(SpecialMove):
                 and 0 < input_var <= 1)
 
 
+class RaptorBoost(SpecialMove):
+    """Captain Falcon's contact-independent Raptor Boost phases.
+
+    The native start callbacks clear source-owned velocity and the native
+    collision callbacks decide whether a start becomes the follow-through.
+    This slice therefore exposes directional entry, exact action metadata,
+    animation terminal recovery, and aerial landing recovery only.  It does
+    not manufacture hit detection, per-frame physics, effects, or wall
+    behavior.
+    """
+
+    resource = "side"
+
+    ground_start = action(
+        Action.SPECIAL_S_START,
+        slippi_state=349,
+        animation=303,
+    )
+    ground = action(
+        Action.SPECIAL_S,
+        slippi_state=350,
+        animation=304,
+    )
+    air_start = action(
+        Action.SPECIAL_AIR_S_START,
+        slippi_state=351,
+        animation=305,
+    )
+    air = action(
+        Action.SPECIAL_AIR_S,
+        slippi_state=352,
+        animation=306,
+    )
+
+    @hook.input_pressed(Button.B)
+    def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        resource = ctx.resource(self.resource)
+        threshold = self._horizontal_threshold(ctx)
+        if resource is None or threshold is None:
+            return False
+        if not ctx.input.just_pressed(Button.B):
+            return False
+        stick_x = ctx.input.stick[0]
+        if abs(stick_x) < threshold:
+            return False
+
+        if fighter.action in (self.ground_start, self.ground, self.air_start, self.air):
+            return True
+        if ctx.ground_open:
+            fighter.change_action(self.ground_start)
+            self._clear_ground_start_velocity(fighter)
+        elif ctx.air_open:
+            fighter.change_action(self.air_start)
+            self._clear_air_start_velocity(fighter)
+        else:
+            return False
+        fighter.action_frame = 1
+        return True
+
+    @hook.action_enter(ground_start, air_start)
+    def action_enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Mirror the source entry velocity reset for direct action entry."""
+        if fighter.action == self.ground_start:
+            self._clear_ground_start_velocity(fighter)
+        elif fighter.action == self.air_start:
+            self._clear_air_start_velocity(fighter)
+
+    @hook.animation_end(ground_start, ground)
+    def animation_end_ground(self, fighter: Fighter, ctx: MoveContext) -> None:
+        fighter.change_action(Action.WAIT)
+
+    @hook.animation_end(air_start, air)
+    def animation_end_air(self, fighter: Fighter, ctx: MoveContext) -> None:
+        lag_name = (
+            "specials_miss_landing_lag"
+            if fighter.action == self.air_start
+            else "specials_hit_landing_lag"
+        )
+        lag = self._landing_lag(ctx, lag_name)
+        if lag is None:
+            return
+        if lag == 0:
+            fighter.change_action(Action.FALL)
+        else:
+            fighter.enter_fall_special(mobility=1, landing_lag=lag)
+
+    @hook.landed(air_start, air)
+    def landed(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        lag_name = (
+            "specials_miss_landing_lag"
+            if fighter.action == self.air_start
+            else "specials_hit_landing_lag"
+        )
+        lag = self._landing_lag(ctx, lag_name)
+        if lag is None:
+            return False
+        # ftCo_LandingFallSpecial_Enter is represented by the host's
+        # fall-special entry; unlike animation completion, native landing
+        # consumes this callback even when the resource lag is zero.
+        fighter.enter_fall_special(mobility=1, landing_lag=lag)
+        return True
+
+    @classmethod
+    def _horizontal_threshold(cls, ctx: MoveContext):
+        rules = _special_rules(ctx)
+        threshold = getattr(rules, "horizontal_threshold", None)
+        if (threshold is None or not validation.number(threshold)
+                or not 0 < threshold <= 1):
+            return None
+        return threshold
+
+    def _landing_lag(self, ctx: MoveContext, field: str):
+        resource = ctx.resource(self.resource)
+        attributes = getattr(resource, "attributes", None) if resource is not None else None
+        lag = getattr(attributes, field, None) if attributes is not None else None
+        if lag is None or not validation.number(lag) or lag < 0:
+            return None
+        return lag
+
+    @staticmethod
+    def _clear_ground_start_velocity(fighter: Fighter) -> None:
+        # The tuple assignment is the native ABI's atomic velocity setter;
+        # indexed writes can address a transient member instead of host state.
+        fighter.velocity = (0.0, 0.0)
+        fighter.ground_velocity = 0.0
+
+    @staticmethod
+    def _clear_air_start_velocity(fighter: Fighter) -> None:
+        fighter.velocity = (0.0, 0.0)
+
+    @hook.validate
+    def validate(self, ctx: MoveContext) -> bool:
+        resource = ctx.resource(self.resource)
+        if resource is None:
+            return True
+        if self._horizontal_threshold(ctx) is None:
+            return False
+        attributes = getattr(resource, "attributes", None)
+        return validation.fields(
+            attributes,
+            nonnegative=(
+                "specials_miss_landing_lag",
+                "specials_hit_landing_lag",
+            ),
+        )
+
+
 class FalconKick(SpecialMove):
     """Observed aerial Falcon Kick entry and finite recovery phase only.
 
@@ -354,7 +502,7 @@ class CaptainFalcon(FighterBase):
     action_state = CaptainFalconActionState
     specials = SpecialMoves(
         FalconPunch(),
-        ActionMove(Action.SPECIAL_S),
+        RaptorBoost(),
         FalconDive(),
         FalconKick(),
     )
@@ -365,6 +513,7 @@ __all__ = [
     "CaptainFalconActionState",
     "CaptainFalconParameters",
     "FalconPunch",
+    "RaptorBoost",
     "FalconDive",
     "FalconKick",
 ]
