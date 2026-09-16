@@ -1177,7 +1177,7 @@ mod tests {
 // Tests for the unified ledge callbacks and snap arithmetic.
 
 #[cfg(test)]
-mod tests {
+mod slow_variant_tests {
     use super::slow_variant;
 
     #[test]
