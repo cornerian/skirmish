@@ -2569,6 +2569,33 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
             assert_eq!(report["outcome"]["checked_frames"], recording.inputs.len());
         }
     }
+
+    // Diagnostic mode keeps the first difference but continues native
+    // stepping, allowing later Captain/Fox behavior to be measured in the
+    // same run.
+    let bytes = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.post.percent.set(31, Some(123.0));
+    });
+    fs::write(&replay_path, bytes).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skirmish"))
+        .arg("validate-replay")
+        .arg(&replay_path)
+        .arg("--initialization")
+        .arg(&initialization_path)
+        .arg("--continue-after-mismatch")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["outcome"]["status"], "mismatch");
+    assert_eq!(report["outcome"]["frame"], FIRST + 31);
+    assert_eq!(report["outcome"]["checked_frames"], 31);
+    assert_eq!(
+        report["diagnostic"]["last_simulated_frame"],
+        FIRST + recording.inputs.len() as i32 - 1
+    );
+    assert_eq!(report["diagnostic"]["simulated_frames"], recording.inputs.len());
+    assert_eq!(report["diagnostic"]["terminal"], "end_of_replay");
 }
 
 #[test]

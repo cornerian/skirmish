@@ -52,7 +52,17 @@ pub struct Report {
     /// scoped comparison explicit in machine-readable reports.
     pub comparison_ports: Vec<Port>,
     pub checkpoint_next_frame: i32,
+    /// Present only for `--continue-after-mismatch`, where the first
+    /// mismatch is retained while later frames are simulated.
+    pub diagnostic: Option<Diagnostic>,
     pub outcome: Outcome,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Diagnostic {
+    pub last_simulated_frame: Option<i32>,
+    pub simulated_frames: u64,
+    pub terminal: Terminal,
 }
 
 #[derive(Debug, Serialize)]
@@ -75,9 +85,46 @@ pub enum Outcome {
     },
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Terminal {
+    FirstMismatch,
+    EndOfReplay,
+    Error,
+}
+
 impl Report {
     pub fn is_match(&self) -> bool {
         matches!(self.outcome, Outcome::Matched { .. })
+    }
+}
+
+fn validation_error_location<E, D, R>(
+    error: &ValidationError<E, D, R>,
+    checkpoint_next_frame: i32,
+) -> (Option<i32>, u64) {
+    match error {
+        ValidationError::Advance {
+            frame,
+            checked_frames,
+            ..
+        } => (Some(*frame), *checked_frames),
+        ValidationError::Read { checked_frames, .. } => (
+            i64::from(checkpoint_next_frame)
+                .checked_add_unsigned(*checked_frames)
+                .and_then(|f| i32::try_from(f).ok()),
+            *checked_frames,
+        ),
+        ValidationError::Sequence {
+            actual,
+            checked_frames,
+            ..
+        } => (Some(*actual), *checked_frames),
+        ValidationError::FrameOverflow {
+            after,
+            checked_frames,
+        } => (Some(*after), *checked_frames),
+        _ => (None, 0),
     }
 }
 
@@ -124,6 +171,28 @@ pub fn validate_with_comparison_ports(
     ports: [Port; 2],
     timeline: Timeline,
     comparison_ports: &[Port],
+) -> Result<Report> {
+    validate_with_comparison_ports_mode(
+        replay,
+        game,
+        checkpoint,
+        ports,
+        timeline,
+        comparison_ports,
+        false,
+    )
+}
+
+/// Compare selected players, optionally continuing native stepping after the
+/// first differing observation for diagnostic replay investigation.
+pub fn validate_with_comparison_ports_mode(
+    replay: &Replay,
+    game: &mut game::Match,
+    checkpoint: &Checkpoint<game::Checkpoint>,
+    ports: [Port; 2],
+    timeline: Timeline,
+    comparison_ports: &[Port],
+    continue_after_mismatch: bool,
 ) -> Result<Report> {
     let settings = &replay.game().start;
     ensure!(ports[0] != ports[1], "duplicate player ports");
@@ -218,58 +287,96 @@ pub fn validate_with_comparison_ports(
         ports,
         characters,
     };
-    let result = replay_validation::validate_fallible(
-        &mut stepper,
-        checkpoint,
-        transitions,
-        |expected, actual| {
-            observation::compare_for_ports(expected, actual, comparison_ports)
-                .expect("comparison ports were validated against the complete match pair")
-        },
-    );
-    let outcome = match result {
-        Ok(report) => Outcome::Matched {
-            first_frame: report.first_frame,
-            last_frame: report.last_frame,
-            checked_frames: report.checked_frames,
-        },
-        Err(ValidationError::Mismatch {
-            frame,
-            checked_frames,
-            difference,
-        }) => Outcome::Mismatch {
-            frame,
-            checked_frames,
-            difference,
-        },
-        Err(error) => {
-            let (frame, checked_frames) = match &error {
-                ValidationError::Advance {
-                    frame,
-                    checked_frames,
-                    ..
-                } => (Some(*frame), *checked_frames),
-                ValidationError::Read { checked_frames, .. } => (
-                    i64::from(checkpoint.next_frame)
-                        .checked_add_unsigned(*checked_frames)
-                        .and_then(|f| i32::try_from(f).ok()),
-                    *checked_frames,
-                ),
-                ValidationError::Sequence {
-                    actual,
-                    checked_frames,
-                    ..
-                } => (Some(*actual), *checked_frames),
-                ValidationError::FrameOverflow {
-                    after,
-                    checked_frames,
-                } => (Some(*after), *checked_frames),
-                _ => (None, 0),
-            };
-            Outcome::Error {
+    let mut diagnostic = None;
+    let outcome = if continue_after_mismatch {
+        match replay_validation::validate_fallible_continue(
+            &mut stepper,
+            checkpoint,
+            transitions,
+            |expected, actual| {
+                observation::compare_for_ports(expected, actual, comparison_ports)
+                    .expect("comparison ports were validated against the complete match pair")
+            },
+        ) {
+            Ok(report) => {
+                diagnostic = Some(Diagnostic {
+                    last_simulated_frame: Some(report.last_frame),
+                    simulated_frames: report.simulated_frames,
+                    terminal: Terminal::EndOfReplay,
+                });
+                match report.first_mismatch {
+                    Some(mismatch) => Outcome::Mismatch {
+                        frame: mismatch.frame,
+                        checked_frames: mismatch.checked_frames,
+                        difference: mismatch.difference,
+                    },
+                    None => Outcome::Matched {
+                        first_frame: report.first_frame,
+                        last_frame: report.last_frame,
+                        checked_frames: report.checked_frames,
+                    },
+                }
+            }
+            Err(error) => {
+                diagnostic = Some(Diagnostic {
+                    last_simulated_frame: error.last_simulated_frame,
+                    simulated_frames: error.simulated_frames,
+                    terminal: Terminal::Error,
+                });
+                match error.first_mismatch {
+                    Some(mismatch) => Outcome::Mismatch {
+                        frame: mismatch.frame,
+                        checked_frames: mismatch.checked_frames,
+                        difference: mismatch.difference,
+                    },
+                    None => {
+                        let (frame, checked_frames) = validation_error_location(
+                            &error.error,
+                            checkpoint.next_frame,
+                        );
+                        Outcome::Error {
+                            frame,
+                            checked_frames,
+                            message: error.error.to_string(),
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        match replay_validation::validate_fallible(
+            &mut stepper,
+            checkpoint,
+            transitions,
+            |expected, actual| {
+                observation::compare_for_ports(expected, actual, comparison_ports)
+                    .expect("comparison ports were validated against the complete match pair")
+            },
+        ) {
+            Ok(report) => Outcome::Matched {
+                first_frame: report.first_frame,
+                last_frame: report.last_frame,
+                checked_frames: report.checked_frames,
+            },
+            Err(ValidationError::Mismatch {
                 frame,
                 checked_frames,
-                message: error.to_string(),
+                difference,
+            }) => Outcome::Mismatch {
+                frame,
+                checked_frames,
+                difference,
+            },
+            Err(error) => {
+                let (frame, checked_frames) = validation_error_location(
+                    &error,
+                    checkpoint.next_frame,
+                );
+                Outcome::Error {
+                    frame,
+                    checked_frames,
+                    message: error.to_string(),
+                }
             }
         }
     };
@@ -282,6 +389,7 @@ pub fn validate_with_comparison_ports(
         ports,
         comparison_ports: comparison_ports.to_vec(),
         checkpoint_next_frame: checkpoint.next_frame,
+        diagnostic,
         outcome,
     })
 }

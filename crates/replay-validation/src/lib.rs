@@ -46,6 +46,38 @@ pub struct ValidationReport {
     pub checked_frames: u64,
 }
 
+/// The first differing observation found while a diagnostic validation run
+/// continued stepping the native simulation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FirstMismatch<D> {
+    pub frame: i32,
+    pub checked_frames: u64,
+    pub difference: D,
+}
+
+/// Complete result metadata for a diagnostic run. Unlike [`ValidationReport`],
+/// `checked_frames` remains the length of the exact matching prefix while
+/// `simulated_frames` records every successful native step.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContinuedValidationReport<D> {
+    pub first_frame: i32,
+    pub last_frame: i32,
+    pub checked_frames: u64,
+    pub simulated_frames: u64,
+    pub first_mismatch: Option<FirstMismatch<D>>,
+}
+
+/// A diagnostic run can encounter a real stream, sequence, or simulation
+/// error after already observing a mismatch. Preserve both pieces of
+/// information so callers do not mistake the partial run for a clean result.
+#[derive(Debug)]
+pub struct ContinuedValidationError<E, D, R> {
+    pub error: ValidationError<E, D, R>,
+    pub first_mismatch: Option<FirstMismatch<D>>,
+    pub last_simulated_frame: Option<i32>,
+    pub simulated_frames: u64,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ValidationError<E, D, R = Infallible> {
     #[error("no expected transitions were supplied")]
@@ -173,6 +205,149 @@ where
     })
 }
 
+/// Validate a streaming sequence to its end while retaining the first
+/// mismatch. This is intended for diagnosis: it always advances through
+/// later inputs after a difference, but it never treats a differing run as a
+/// successful validation. A genuine stream, sequence, or simulation error
+/// still terminates the run and is returned with the mismatch metadata seen
+/// so far.
+pub fn validate_fallible_continue<S, T, F, D, R>(
+    stepper: &mut S,
+    checkpoint: &Checkpoint<S::Checkpoint>,
+    transitions: T,
+    mut compare: F,
+) -> Result<ContinuedValidationReport<D>, ContinuedValidationError<S::Error, D, R>>
+where
+    S: FrameStepper,
+    T: IntoIterator<Item = Result<Transition<S::Input, S::Observation>, R>>,
+    F: FnMut(&S::Observation, &S::Observation) -> Option<D>,
+    R: Error + 'static,
+{
+    let mut transitions = transitions.into_iter();
+    let first = match transitions.next() {
+        None => {
+            return Err(ContinuedValidationError {
+                error: ValidationError::Empty,
+                first_mismatch: None,
+                last_simulated_frame: None,
+                simulated_frames: 0,
+            });
+        }
+        Some(Err(source)) => {
+            return Err(ContinuedValidationError {
+                error: ValidationError::Read {
+                    checked_frames: 0,
+                    source,
+                },
+                first_mismatch: None,
+                last_simulated_frame: None,
+                simulated_frames: 0,
+            });
+        }
+        Some(Ok(first)) => first,
+    };
+
+    if let Err(source) = stepper.restore(&checkpoint.state) {
+        return Err(ContinuedValidationError {
+            error: ValidationError::Restore { source },
+            first_mismatch: None,
+            last_simulated_frame: None,
+            simulated_frames: 0,
+        });
+    }
+
+    let mut checked_frames = 0;
+    let mut simulated_frames = 0;
+    let mut last_simulated_frame = None;
+    let mut previous: Option<i32> = None;
+    let mut first_mismatch = None;
+
+    for transition in std::iter::once(Ok(first)).chain(transitions) {
+        let transition = match transition {
+            Ok(transition) => transition,
+            Err(source) => {
+                return Err(ContinuedValidationError {
+                    error: ValidationError::Read {
+                        checked_frames,
+                        source,
+                    },
+                    first_mismatch,
+                    last_simulated_frame,
+                    simulated_frames,
+                });
+            }
+        };
+        let expected = match previous {
+            None => checkpoint.next_frame,
+            Some(after) => match after.checked_add(1) {
+                Some(expected) => expected,
+                None => {
+                    return Err(ContinuedValidationError {
+                        error: ValidationError::FrameOverflow {
+                            after,
+                            checked_frames,
+                        },
+                        first_mismatch,
+                        last_simulated_frame,
+                        simulated_frames,
+                    });
+                }
+            },
+        };
+        if transition.frame != expected {
+            return Err(ContinuedValidationError {
+                error: ValidationError::Sequence {
+                    expected,
+                    actual: transition.frame,
+                    checked_frames,
+                },
+                first_mismatch,
+                last_simulated_frame,
+                simulated_frames,
+            });
+        }
+
+        let actual = match stepper.advance(&transition.input) {
+            Ok(actual) => actual,
+            Err(source) => {
+                return Err(ContinuedValidationError {
+                    error: ValidationError::Advance {
+                        frame: transition.frame,
+                        checked_frames,
+                        source,
+                    },
+                    first_mismatch,
+                    last_simulated_frame,
+                    simulated_frames,
+                });
+            }
+        };
+        simulated_frames += 1;
+        last_simulated_frame = Some(transition.frame);
+        if first_mismatch.is_none() {
+            if let Some(difference) = compare(&transition.expected, &actual) {
+                first_mismatch = Some(FirstMismatch {
+                    frame: transition.frame,
+                    checked_frames,
+                    difference,
+                });
+            }
+        }
+        if first_mismatch.is_none() {
+            checked_frames += 1;
+        }
+        previous = Some(transition.frame);
+    }
+
+    Ok(ContinuedValidationReport {
+        first_frame: checkpoint.next_frame,
+        last_frame: previous.expect("the nonempty stream simulated at least one frame"),
+        checked_frames,
+        simulated_frames,
+        first_mismatch,
+    })
+}
+
 /// Clone a stepper and restore a checkpoint for an independent counterfactual
 /// branch. The original is untouched. Implementors must ensure `Clone` does not
 /// share mutable simulation state across branches.
@@ -209,4 +384,108 @@ pub fn compare_f32_bits(expected: &f32, actual: &f32) -> Option<BitDifference<u3
 pub fn compare_f64_bits(expected: &f64, actual: &f64) -> Option<BitDifference<u64>> {
     let (expected, actual) = (expected.to_bits(), actual.to_bits());
     (expected != actual).then_some(BitDifference { expected, actual })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Stepper {
+        value: i32,
+        advances: usize,
+    }
+
+    impl FrameStepper for Stepper {
+        type Checkpoint = i32;
+        type Input = i32;
+        type Observation = i32;
+        type Error = std::io::Error;
+
+        fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<(), Self::Error> {
+            self.value = *checkpoint;
+            Ok(())
+        }
+
+        fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
+            self.value += *input;
+            self.advances += 1;
+            Ok(self.value)
+        }
+    }
+
+    fn transitions() -> Vec<Transition<i32, i32>> {
+        vec![
+            Transition {
+                frame: 10,
+                input: 1,
+                expected: 99,
+            },
+            Transition {
+                frame: 11,
+                input: 1,
+                expected: 2,
+            },
+            Transition {
+                frame: 12,
+                input: 1,
+                expected: 3,
+            },
+        ]
+    }
+
+    #[test]
+    fn default_validation_stops_at_the_first_mismatch() {
+        let mut stepper = Stepper {
+            value: -1,
+            advances: 0,
+        };
+        let result = validate(
+            &mut stepper,
+            &Checkpoint {
+                next_frame: 10,
+                state: 0,
+            },
+            transitions(),
+            |expected, actual| (*expected != *actual).then_some((*expected, *actual)),
+        );
+        assert!(matches!(
+            result,
+            Err(ValidationError::Mismatch {
+                frame: 10,
+                checked_frames: 0,
+                difference: (99, 1),
+            })
+        ));
+        assert_eq!(stepper.advances, 1);
+    }
+
+    #[test]
+    fn continued_validation_advances_past_the_first_mismatch() {
+        let mut stepper = Stepper {
+            value: -1,
+            advances: 0,
+        };
+        let report = validate_fallible_continue(
+            &mut stepper,
+            &Checkpoint {
+                next_frame: 10,
+                state: 0,
+            },
+            transitions().into_iter().map(Ok::<_, std::io::Error>),
+            |expected, actual| (*expected != *actual).then_some((*expected, *actual)),
+        )
+        .unwrap();
+        assert_eq!(stepper.advances, 3);
+        assert_eq!(report.last_frame, 12);
+        assert_eq!(report.simulated_frames, 3);
+        assert_eq!(report.checked_frames, 0);
+        assert_eq!(
+            report.first_mismatch,
+            Some(FirstMismatch {
+                frame: 10,
+                checked_frames: 0,
+                difference: (99, 1),
+            })
+        );
+    }
 }

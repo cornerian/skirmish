@@ -58,6 +58,10 @@ enum Commands {
         /// match pair. Repeat for multiple players; omitted means both.
         #[arg(long, value_parser = slippi::Port::parse, value_name = "PORT")]
         compare_port: Option<Vec<slippi::Port>>,
+        /// Keep stepping after the first mismatch to expose later behavior.
+        /// The command still exits unsuccessfully when any mismatch occurs.
+        #[arg(long)]
+        continue_after_mismatch: bool,
         /// Also write the JSON report (including `initialization_sha256`) here.
         #[arg(long)]
         report: Option<PathBuf>,
@@ -178,6 +182,7 @@ fn main() -> Result<()> {
             initialization,
             finalized_only,
             compare_port,
+            continue_after_mismatch,
             report,
         } => {
             let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
@@ -194,20 +199,23 @@ fn main() -> Result<()> {
                 slippi::Timeline::LastRecorded
             };
             let validated = match compare_port.as_deref() {
-                Some(compare_ports) => match_validation::validate_with_comparison_ports(
+                Some(compare_ports) => match_validation::validate_with_comparison_ports_mode(
                     &replay,
                     &mut game,
                     &checkpoint,
                     initial.ports,
                     policy,
                     compare_ports,
+                    continue_after_mismatch,
                 )?,
-                None => match_validation::validate(
+                None => match_validation::validate_with_comparison_ports_mode(
                     &replay,
                     &mut game,
                     &checkpoint,
                     initial.ports,
                     policy,
+                    &initial.ports,
+                    continue_after_mismatch,
                 )?,
             };
             let mut output = serde_json::to_value(&validated)?;
