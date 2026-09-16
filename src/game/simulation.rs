@@ -630,6 +630,12 @@ pub(crate) fn advance(
             continue;
         }
         let fighter = &mut state.fighters[player];
+        // CaptureCaptain's IASA is empty, and the holder's catch motion is
+        // driven only by its animation callback. Do not let generic input
+        // dispatch tear down the dedicated relation between animation phases.
+        if special_capture::is_captured(fighter) || special_capture::holds_victim(fighter) {
+            continue;
+        }
         let input = inputs[player];
         update_actions(
             fighter,
