@@ -1,0 +1,312 @@
+//! Native Pon loading and callback conformance for Captain Falcon.
+//!
+//! The host below is deliberately a small resource-shaped fixture rather than
+//! a gameplay pack.  It supplies only the native object paths exercised by the
+//! translated Falcon Punch, Dive, and aerial Kick callbacks.
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+use skirmish_script_runtime::{
+    CompiledProgram, Error, HostRef, NativeHost, NativeKind, NativeObject, NativeValue,
+    SourceBundle, shared_host,
+};
+
+fn captain_bundle() -> SourceBundle {
+    SourceBundle::new("fighter-api-captain-conformance-v1")
+        .with_file(
+            "captain.py",
+            include_str!("../../../scripts/fighters/captain.py"),
+        )
+        .and_then(|bundle| {
+            bundle.with_file(
+                "shared/common.py",
+                include_str!("../../../scripts/fighters/common.py"),
+            )
+        })
+        .expect("Captain Falcon module path")
+}
+
+fn captain_program() -> CompiledProgram {
+    CompiledProgram::new_with_bundle(
+        include_str!("../../../scripts/fighters/captain.py"),
+        "captain.py",
+        [],
+        Some(captain_bundle()),
+    )
+    .expect("construct Captain Falcon Pon program")
+}
+
+fn callback(
+    program: &CompiledProgram,
+    move_id: &str,
+    event: &str,
+) -> skirmish_script_runtime::CallbackHandle {
+    let prefix = format!("{move_id}.");
+    let name = program
+        .callback_keys()
+        .expect("Captain callback export")
+        .into_iter()
+        .find(|name| name.starts_with(&prefix) && name.ends_with(event))
+        .unwrap_or_else(|| panic!("Captain callback {move_id}.{event} was not exported"));
+    program.bind_callback(&name)
+}
+
+fn action_record<'a>(
+    root: &'a BTreeMap<String, NativeValue>,
+    name: &str,
+) -> &'a BTreeMap<String, NativeValue> {
+    let NativeValue::Dict(actions) = &root["actions"] else {
+        panic!("Captain actions must be a dictionary");
+    };
+    let NativeValue::Dict(action) = &actions[name] else {
+        panic!("Captain action {name} must be a dictionary");
+    };
+    action
+}
+
+fn object(kind: NativeKind, path: &str) -> NativeValue {
+    NativeValue::Object(NativeObject {
+        kind,
+        path: path.into(),
+    })
+}
+
+#[derive(Default)]
+struct CaptainState {
+    calls: Vec<(String, Vec<NativeValue>)>,
+    sets: Vec<(String, NativeValue)>,
+    action: String,
+    stick: [f32; 2],
+}
+
+struct CaptainHost {
+    state: Arc<Mutex<CaptainState>>,
+}
+
+impl NativeHost for CaptainHost {
+    fn get(&mut self, path: &str) -> Result<NativeValue, Error> {
+        let state = self.state.lock().unwrap();
+        let value = match path {
+            "fighter.action" => NativeValue::String(state.action.clone()),
+            "fighter.facing" => NativeValue::F32(1.0),
+            "fighter.action_state" => object(NativeKind::State, "fighter.action_state"),
+            "fighter.velocity" => NativeValue::Vec2([0.0, 0.0]),
+            "context.input" => object(NativeKind::Input, "context.input"),
+            "context.input.stick" => NativeValue::Vec2(state.stick),
+            "context.rules" => object(NativeKind::Context, "context.rules"),
+            "context.rules.specials" => object(NativeKind::Context, "context.rules.specials"),
+            "context.rules.specials.vertical_threshold" => NativeValue::F32(0.5),
+            "context.rules.specials.horizontal_threshold" => NativeValue::F32(0.5),
+            "context.ground_open" => NativeValue::Bool(true),
+            "context.air_open" => NativeValue::Bool(true),
+            "context.event" => object(NativeKind::Context, "context.event"),
+            "context.event.value" => NativeValue::Int(1),
+            "neutral.attributes" => object(NativeKind::Value, "neutral.attributes"),
+            "neutral.attributes.specialn_stick_range_y_neg" => NativeValue::F32(0.125),
+            "neutral.attributes.specialn_stick_range_y_pos" => NativeValue::F32(0.625),
+            "neutral.attributes.specialn_angle_diff" => NativeValue::F32(30.0),
+            "neutral.attributes.specialn_vel_x" => NativeValue::F32(1.95),
+            "neutral.attributes.specialn_vel_mul" => NativeValue::F32(0.92),
+            "up.attributes" => object(NativeKind::Value, "up.attributes"),
+            "up.attributes.specialhi_freefall_air_spd_mul" => NativeValue::F32(0.72),
+            "up.attributes.specialhi_landing_lag" => NativeValue::Int(30),
+            "down.attributes" => object(NativeKind::Value, "down.attributes"),
+            _ => return Err(Error::Host(format!("unexpected Captain get path {path}"))),
+        };
+        Ok(value)
+    }
+
+    fn set(&mut self, path: &str, value: NativeValue) -> Result<(), Error> {
+        self.state
+            .lock()
+            .unwrap()
+            .sets
+            .push((path.to_owned(), value));
+        Ok(())
+    }
+
+    fn call(&mut self, path: &str, args: &[NativeValue]) -> Result<NativeValue, Error> {
+        self.state
+            .lock()
+            .unwrap()
+            .calls
+            .push((path.to_owned(), args.to_vec()));
+        match path {
+            "context.input.just_pressed" => Ok(NativeValue::Bool(true)),
+            "context.resource" => {
+                let Some(NativeValue::String(resource)) = args.first() else {
+                    return Err(Error::Host("Captain resource path is not a string".into()));
+                };
+                Ok(object(NativeKind::Value, resource))
+            }
+            "fighter.change_action" | "fighter.enter_fall_special" => Ok(NativeValue::None),
+            other => Err(Error::Host(format!("unexpected Captain call path {other}"))),
+        }
+    }
+
+    fn call_named(
+        &mut self,
+        path: &str,
+        args: &[NativeValue],
+        named: &BTreeMap<String, NativeValue>,
+    ) -> Result<NativeValue, Error> {
+        self.state
+            .lock()
+            .unwrap()
+            .calls
+            .push((path.to_owned(), args.to_vec()));
+        match path {
+            "fighter.enter_fall_special" => {
+                assert_eq!(named["mobility"], NativeValue::F32(0.72));
+                assert_eq!(named["landing_lag"], NativeValue::Int(30));
+                Ok(NativeValue::None)
+            }
+            other => Err(Error::Host(format!(
+                "unexpected Captain named call path {other}"
+            ))),
+        }
+    }
+}
+
+fn context() -> NativeValue {
+    object(NativeKind::Context, "context")
+}
+
+#[test]
+fn captain_definition_exports_resource_backed_callbacks_and_slippi_states() {
+    let program = captain_program();
+    let metadata = program
+        .export_metadata()
+        .expect("export Captain definition");
+    let NativeValue::Dict(root) = metadata else {
+        panic!("Captain definition must be a dictionary");
+    };
+    assert_eq!(root["name"], NativeValue::String("captain-falcon".into()));
+    assert_eq!(
+        root["external_ids"],
+        NativeValue::List(vec![NativeValue::Int(0)])
+    );
+
+    let NativeValue::Dict(movesets) = &root["movesets"] else {
+        panic!("Captain movesets must be a dictionary");
+    };
+    let NativeValue::Dict(specials) = &movesets["specials"] else {
+        panic!("Captain specials must be a dictionary");
+    };
+    let expected = [
+        ("neutral", "special.neutral.ground", 347),
+        ("up", "special.up.ground", 353),
+        ("down", "special.down.air", 359),
+    ];
+    for (slot, action_name, state) in expected {
+        let NativeValue::String(move_id) = &specials[slot] else {
+            panic!("Captain {slot} move id must be a string");
+        };
+        let action = action_record(&root, action_name);
+        assert_eq!(
+            action["source_behavior"],
+            NativeValue::String(move_id.clone())
+        );
+        assert_eq!(action["slippi_state"], NativeValue::Int(state));
+    }
+
+    for move_id in ["move_0", "move_2", "move_3"] {
+        for event in ["input_pressed", "animation_end"] {
+            if program
+                .callback_keys()
+                .expect("Captain callbacks")
+                .iter()
+                .any(|name| name.starts_with(&format!("{move_id}.")) && name.ends_with(event))
+            {
+                let _ = callback(&program, move_id, event);
+            }
+        }
+    }
+}
+
+#[test]
+fn captain_callbacks_dispatch_against_resource_shaped_host() {
+    let program = captain_program();
+    let state = Arc::new(Mutex::new(CaptainState {
+        action: "Action.WAIT".into(),
+        stick: [0.0, 0.0],
+        ..CaptainState::default()
+    }));
+    let host = shared_host(CaptainHost {
+        state: Arc::clone(&state),
+    });
+    let fighter = HostRef::new(host.clone(), NativeKind::Fighter, "fighter");
+    let context_value = context();
+
+    // The three callbacks below are selected from exported logical slots,
+    // ensuring the loader retained the actual bound Captain move methods.
+    let punch = callback(&program, "move_0", "input_pressed");
+    let dive = callback(&program, "move_2", "input_pressed");
+    let kick = callback(&program, "move_3", "input_pressed");
+    let punch_command = callback(&program, "move_0", "command_changed");
+    let dive_animation_end = callback(&program, "move_2", "animation_end");
+
+    program.prepare_for_current_thread().unwrap();
+
+    // Neutral B is intentionally dispatched with a neutral stick.  The host
+    // action starts as WAIT and the callback must choose ground Falcon Punch.
+    state.lock().unwrap().stick = [0.0, 0.0];
+    assert_eq!(
+        program
+            .dispatch(&punch, fighter.clone(), &[context_value.clone()])
+            .unwrap(),
+        NativeValue::Bool(true)
+    );
+    state.lock().unwrap().stick = [-0.6625, 0.7375];
+    assert_eq!(
+        program
+            .dispatch(&dive, fighter.clone(), &[context_value.clone()])
+            .unwrap(),
+        NativeValue::Bool(true)
+    );
+    assert_eq!(
+        program
+            .dispatch(&kick, fighter.clone(), &[context_value])
+            .unwrap(),
+        NativeValue::Bool(false),
+        "upward replay stick must not enter aerial Falcon Kick"
+    );
+
+    // The captured PlCa neutral attributes drive the aerial launch angle and
+    // speed for this exact y=.5 command sample.
+    {
+        let mut state = state.lock().unwrap();
+        state.action = "Action.SPECIAL_AIR_N_START".into();
+        state.stick = [0.0, 0.5];
+    }
+    program
+        .dispatch(&punch_command, fighter.clone(), &[context()])
+        .unwrap();
+
+    // The captured up-special attributes pass unchanged through the terminal
+    // animation boundary: .72 mobility and 30 frames of landing lag.
+    state.lock().unwrap().action = "Action.SPECIAL_HI".into();
+    program
+        .dispatch(&dive_animation_end, fighter, &[context()])
+        .unwrap();
+
+    let host = state.lock().unwrap();
+    assert!(
+        host.calls
+            .iter()
+            .any(|(path, _)| path == "context.resource")
+    );
+    assert!(
+        host.sets
+            .iter()
+            .any(|(path, _)| path == "fighter.action_frame")
+    );
+    let velocity = host
+        .sets
+        .iter()
+        .find(|(path, _)| path == "fighter.velocity")
+        .map(|(_, value)| value);
+    assert!(matches!(velocity, Some(NativeValue::Vec2([x, y]))
+        if (*x - 1.883566).abs() < 0.0001 && (*y - 0.505521).abs() < 0.0001));
+}
