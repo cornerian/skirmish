@@ -1621,7 +1621,31 @@ mod combat_resource_tests {
                         "specials_hit_landing_lag": 0.0,
                     },
                 }),
-            )]))
+            ), (
+                    "up".into(),
+                    serde_json::json!({
+                        "capture": {
+                            "attachment": {
+                                "holder_bone": 0,
+                                "holder_point": [0.0, 0.0, 0.0],
+                                "victim_bone": 0,
+                                "victim_point": [0.0, 0.0, 0.0]
+                            },
+                            "throw": {
+                                "release_frame": 0,
+                                "hit": {
+                                    "damage": 12,
+                                    "angle_raw": 361,
+                                    "growth": 82,
+                                    "fixed": 0,
+                                    "base": 40,
+                                    "element": 1
+                                }
+                            }
+                        }
+                    }),
+                ),
+            ]))
             .expect("resource fixture indexes"),
         });
         let resources = Arc::new(

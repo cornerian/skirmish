@@ -202,6 +202,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     for fighter in &data.fighters {
         script::lifecycle_resources::validate(fighter, rules)
             .map_err(|error| Error::Data(format!("invalid specials resource: {error}")))?;
+        super::special_capture::validate_resource(fighter)?;
         if let Some(program) = &fighter.script {
             script::validate_program(program)
                 .map_err(|error| Error::Data(format!("invalid fighter script: {error}")))?;

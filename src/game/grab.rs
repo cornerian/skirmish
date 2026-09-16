@@ -1490,6 +1490,20 @@ fn attach(
         .as_ref()
         .ok_or_else(|| Error::Data("capture state requires grab resources".into()))?
         .attachment;
+    attach_points(data, state, holder, victim, attachment, allow_lift)
+}
+
+/// Apply a holder/victim bone attachment from any capture family.  Ordinary
+/// grabs and source-specific captures share the transform arithmetic while
+/// retaining ownership of their own relation and lifecycle state.
+pub(crate) fn attach_points(
+    data: &MatchData,
+    state: &mut MatchState,
+    holder: usize,
+    victim: usize,
+    attachment: Attachment,
+    allow_lift: bool,
+) -> Result<(), Error> {
     let holder_pose = simulation::pose(&state.fighters[holder], &data.fighters[holder])?;
     let holder_anchor = BoneCapsule::sphere(attachment.holder_bone, attachment.holder_point, 0.0)
         .transform(&holder_pose, 1.0)
@@ -1505,11 +1519,19 @@ fn attach(
         state.fighters[victim].position[1],
         state.fighters[victim].depth,
     ];
+    let capture_lift_threshold = if allow_lift {
+        data.rules
+            .grab
+            .as_ref()
+            .map_or(0.0, |rules| rules.capture_lift_threshold)
+    } else {
+        0.0
+    };
     let (position, lifted) = self::capture_alignment(
         position,
         holder_anchor,
         victim_anchor,
-        data.rules.grab.as_ref().unwrap().capture_lift_threshold,
+        capture_lift_threshold,
         data.fighters[victim].bones[0].scale[1],
     );
     state.fighters[victim].position = [position[0], position[1]];

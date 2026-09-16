@@ -1,6 +1,7 @@
 //! Generic, dotted-path lookup for character resources.
 
 use crate::game::data::Attack;
+use crate::game::grab::Attachment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -17,14 +18,25 @@ pub struct Resources {
     attacks: Vec<Attack>,
     #[serde(skip)]
     attack_ids: BTreeMap<String, AttackId>,
+    #[serde(skip)]
+    captain_dive_capture: Option<CaptainDiveCapture>,
 }
 
 impl Resources {
     pub fn new(values: BTreeMap<String, Value>) -> Result<Self, String> {
+        let captain_dive_capture = values
+            .get("up")
+            .and_then(|up| up.get("capture"))
+            .map(|value| {
+                serde_json::from_value(value.clone())
+                    .map_err(|error| format!("invalid up.capture resource: {error}"))
+            })
+            .transpose()?;
         let mut result = Self {
             values,
             attacks: Vec::new(),
             attack_ids: BTreeMap::new(),
+            captain_dive_capture,
         };
         result.index_attacks()?;
         Ok(result)
@@ -110,6 +122,34 @@ pub struct Specials {
     pub resources: Resources,
 }
 
+/// Resource-backed semantic description of Falcon Dive's dedicated capture.
+/// This is intentionally separate from ordinary grab/throw parameters: the
+/// native interaction has its own victim motion and release callback.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptainDiveCapture {
+    pub attachment: Attachment,
+    pub throw: CaptainDiveThrow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptainDiveThrow {
+    pub release_frame: u32,
+    pub hit: CaptainDiveHit,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptainDiveHit {
+    pub damage: u32,
+    pub angle_raw: u32,
+    pub growth: u32,
+    pub fixed: u32,
+    pub base: u32,
+    pub element: u8,
+}
+
 impl<'de> Deserialize<'de> for Specials {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -142,5 +182,9 @@ impl Specials {
     }
     pub fn character_key(&self) -> String {
         self.character.to_ascii_lowercase()
+    }
+
+    pub(crate) fn captain_dive_capture(&self) -> Option<&CaptainDiveCapture> {
+        self.resources.captain_dive_capture.as_ref()
     }
 }

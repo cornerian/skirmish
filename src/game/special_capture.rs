@@ -1,14 +1,16 @@
 //! Captain Falcon's Falcon Dive capture relation.
 //!
 //! Native source gives this interaction its own victim motion (`CaptureCaptain`)
-//! and does not route it through the ordinary grab pair scheduler. The exact
-//! release hit (`ftCo_800DE7C0`, sourced from `xDF4[1]`) and the resource-level
-//! XRotN/TransN2 attachment transforms are not present in Skirmish's current
-//! data model, so this module records only the source-supported relation and
-//! action/freeze lifecycle. It deliberately does not invent damage, knockback,
-//! or numeric bone identities.
+//! and does not route it through the ordinary grab pair scheduler. Its
+//! attachment and release hit are consumed from the Captain resource tree;
+//! older fixtures without that optional tree retain the relation-only
+//! lifecycle until their resources are upgraded.
 
-use super::{Action, Error, Fighter, MatchData, State as MatchState};
+use super::{
+    Action, Error, Fighter, MatchData, State as MatchState,
+    data::{HitElement, Hitbox},
+    script::resources::CaptainDiveCapture,
+};
 use serde::Serialize;
 
 /// Which native side of the relation owns the supported attachment behavior.
@@ -110,7 +112,7 @@ pub(crate) fn capture(
 /// callback enters `SpecialHiThrow`; this function clears the relation before
 /// any later generic grab/collision work can observe it. A cleared relation is
 /// never released a second time.
-pub(crate) fn update_pairs(state: &mut MatchState) -> Result<(), Error> {
+pub(crate) fn update_pairs(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
     for holder in 0..2 {
         let Some(victim) = state.fighters[holder].special_capture.victim else {
             continue;
@@ -122,7 +124,11 @@ pub(crate) fn update_pairs(state: &mut MatchState) -> Result<(), Error> {
             return Err(Error::Physics("invalid Captain capture relation".into()));
         }
         if state.fighters[holder].action == Action::SpecialHiThrow {
-            release(state, holder, victim);
+            let release_frame =
+                captain_dive_capture(data, holder).map_or(0, |capture| capture.throw.release_frame);
+            if state.fighters[holder].action_frame >= release_frame {
+                release(data, state, holder, victim)?;
+            }
         } else if state.fighters[holder].action != Action::SpecialHiCatch {
             return Err(Error::Physics(
                 "Captain capture holder left catch without release".into(),
@@ -150,7 +156,7 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         if state.fighters[holder].action != Action::SpecialHiCatch
             || state.fighters[victim].action != Action::CaptureCaptain
         {
-            release(state, holder, victim);
+            release_without_hit(state, holder, victim);
         }
     }
 }
@@ -166,22 +172,99 @@ pub(crate) fn break_for_player(state: &mut MatchState, player: usize) {
     if let Some(victim) = state.fighters[player].special_capture.victim
         && victim <= 1
     {
-        release(state, player, victim);
+        release_without_hit(state, player, victim);
     } else if let Some(holder) = state.fighters[player].special_capture.captor
         && holder <= 1
     {
-        release(state, holder, player);
+        release_without_hit(state, holder, player);
     }
 }
 
-fn release(state: &mut MatchState, holder: usize, victim: usize) {
+pub(crate) fn attach_all(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
+    for holder in 0..2 {
+        let Some(victim) = state.fighters[holder].special_capture.victim else {
+            continue;
+        };
+        if state.fighters[holder].special_capture.attachment != Attachment::GroundedHolderToVictim {
+            continue;
+        }
+        let Some(capture) = captain_dive_capture(data, holder) else {
+            continue;
+        };
+        crate::game::grab::attach_points(data, state, holder, victim, capture.attachment, false)?;
+    }
+    Ok(())
+}
+
+fn captain_dive_capture(data: &MatchData, holder: usize) -> Option<&CaptainDiveCapture> {
+    data.fighters
+        .get(holder)?
+        .specials
+        .as_ref()?
+        .captain_dive_capture()
+}
+
+fn release(
+    data: &MatchData,
+    state: &mut MatchState,
+    holder: usize,
+    victim: usize,
+) -> Result<(), Error> {
+    let resource = captain_dive_capture(data, holder).cloned();
     state.fighters[holder].special_capture = State::default();
     state.fighters[victim].special_capture = State::default();
 
-    // The exact native release hit is intentionally unavailable: xDF4[1]
-    // cannot be reconstructed from current resources without inventing its
-    // damage/knockback. Returning the victim to ordinary collision keeps the
-    // relation finite and makes this gap observable in focused tests.
+    if let Some(capture) = resource {
+        let hit = capture.throw.hit;
+        let staled = crate::game::staling::hit(
+            &state.fighters[holder].staling,
+            hit.damage,
+            data.rules.staling.as_ref(),
+        )?;
+        let accepted = crate::game::hit_resolution::apply_hit(
+            data,
+            state,
+            holder,
+            &Hitbox {
+                clank: false,
+                rebound: false,
+                // The current collision model only distinguishes active
+                // versus inert contacts. Exported element 1 is an active
+                // ordinary hit, so preserve that observable branch.
+                element: HitElement::Normal,
+                group: 0,
+                bone: 0,
+                center: [0.0; 3],
+                radius: 0.0,
+                damage: hit.damage,
+                shield_damage: 0,
+                angle_degrees: hit.angle_raw as f32,
+                growth: hit.growth,
+                fixed: hit.fixed,
+                base: hit.base,
+            },
+            staled,
+            crate::fighter::damage::HurtHeight::Middle,
+            crate::game::hit_resolution::HitDirection::Throw,
+            false,
+        )?;
+        if accepted && data.rules.staling.is_some() {
+            state.fighters[holder]
+                .staling
+                .queue
+                .record(staled.identity, false);
+        }
+        return Ok(());
+    }
+
+    release_without_hit(state, holder, victim);
+    Ok(())
+}
+
+fn release_without_hit(state: &mut MatchState, holder: usize, victim: usize) {
+    state.fighters[holder].special_capture = State::default();
+    state.fighters[victim].special_capture = State::default();
+
     let action = if state.fighters[victim].grounded {
         Action::Wait
     } else {
@@ -234,11 +317,51 @@ pub(crate) fn is_captured(fighter: &Fighter) -> bool {
     fighter.special_capture.is_captured()
 }
 
+/// Captain's dedicated path has no meaningful fallback constants. A Captain
+/// resource must therefore carry the semantic capture payload before a match
+/// can be constructed; other characters may omit the optional tree.
+pub(crate) fn validate_resource(data: &super::data::FighterData) -> Result<(), Error> {
+    let Some(specials) = &data.specials else {
+        return Ok(());
+    };
+    if specials.character_key() != "captain-falcon" {
+        return Ok(());
+    }
+    let capture = specials.captain_dive_capture().ok_or_else(|| {
+        Error::Data("Captain Falcon specials.up.capture resource is required".into())
+    })?;
+    let attachment = capture.attachment;
+    if attachment.holder_bone >= data.bones.len()
+        || attachment.victim_bone >= data.bones.len()
+        || attachment
+            .holder_point
+            .into_iter()
+            .chain(attachment.victim_point)
+            .any(|value| !value.is_finite() || value.abs() > 1_000_000.0)
+    {
+        return Err(Error::Data(
+            "invalid Captain Falcon Dive attachment resource".into(),
+        ));
+    }
+    let hit = capture.throw.hit;
+    if capture.throw.release_frame >= 1_000_000
+        || hit.damage > 999
+        || hit.angle_raw > 511
+        || hit.growth > 1000
+        || hit.fixed > 1000
+        || hit.base > 1000
+        || hit.element > 31
+    {
+        return Err(Error::Data(
+            "invalid Captain Falcon Dive release resource".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{
-        Attachment, State, break_for_player, capture, update_pairs, valid_relationship,
-    };
+    use super::{Attachment, State, break_for_player, capture, update_pairs, valid_relationship};
     use crate::game::{Action, Match};
 
     fn fixture() -> (Match, crate::game::data::MatchData) {
@@ -246,6 +369,42 @@ mod tests {
             "../../tests/fixtures/game/integration-match.json"
         ))
         .expect("integration game fixture");
+        let match_ = Match::new(data.clone(), 1).expect("synthetic match");
+        (match_, data)
+    }
+
+    fn resource_fixture() -> (Match, crate::game::data::MatchData) {
+        let mut data: crate::game::data::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration game fixture");
+        data.fighters[0].specials = Some(
+            serde_json::from_value(serde_json::json!({
+                "character": "synthetic",
+                "up": {
+                    "capture": {
+                        "attachment": {
+                            "holder_bone": 0,
+                            "holder_point": [0.0, 0.0, 0.0],
+                            "victim_bone": 0,
+                            "victim_point": [0.0, 0.0, 0.0]
+                        },
+                        "throw": {
+                            "release_frame": 0,
+                            "hit": {
+                                "damage": 12,
+                                "angle_raw": 361,
+                                "growth": 82,
+                                "fixed": 0,
+                                "base": 40,
+                                "element": 1
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("Captain Dive resource"),
+        );
         let match_ = Match::new(data.clone(), 1).expect("synthetic match");
         (match_, data)
     }
@@ -299,12 +458,12 @@ mod tests {
         assert!(valid_relationship(&state.fighters, 1));
 
         state.fighters[0].action = Action::SpecialHiThrow;
-        update_pairs(&mut state).expect("Catch -> Throw release");
+        update_pairs(&data, &mut state).expect("Catch -> Throw release");
         assert_eq!(state.fighters[0].special_capture, State::default());
         assert_eq!(state.fighters[1].special_capture, State::default());
         assert_eq!(state.fighters[1].action, Action::Wait);
         let released = state.fighters[1].action_frame;
-        update_pairs(&mut state).expect("released relation is inert");
+        update_pairs(&data, &mut state).expect("released relation is inert");
         assert_eq!(state.fighters[1].action_frame, released);
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
@@ -329,6 +488,26 @@ mod tests {
         );
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
+    }
+
+    #[test]
+    fn resource_release_applies_the_exported_hit_once_through_damage_resolution() {
+        let (match_, data) = resource_fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = false;
+        capture(&data, &mut state, 0, 1, false).expect("Dive capture");
+        state.fighters[0].action = Action::SpecialHiThrow;
+
+        update_pairs(&data, &mut state).expect("resource release");
+        assert!(state.fighters[0].special_capture.is_empty());
+        assert!(state.fighters[1].special_capture.is_empty());
+        assert_eq!(state.fighters[1].percent, 12.0);
+        let action = state.fighters[1].action;
+        update_pairs(&data, &mut state).expect("released relation is inert");
+        assert_eq!(state.fighters[1].percent, 12.0);
+        assert_eq!(state.fighters[1].action, action);
     }
 
     #[test]

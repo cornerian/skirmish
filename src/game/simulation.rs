@@ -614,7 +614,7 @@ pub(crate) fn advance(
     // process Catch -> Throw without involving generic grab scheduling.
     special_capture::release_broken_pairs(state);
     let pair_frozen = grab::update_pairs(data, state, inputs, active)?;
-    special_capture::update_pairs(state)?;
+    special_capture::update_pairs(data, state)?;
     for player in 0..2 {
         if pair_frozen[player] {
             if active[player] {
@@ -807,6 +807,7 @@ pub(crate) fn advance(
     grab::release_broken_pairs(state);
     special_capture::release_broken_pairs(state);
     grab::attach_all(data, state)?;
+    special_capture::attach_all(data, state)?;
     let captured_before_scan = state
         .fighters
         .each_ref()
