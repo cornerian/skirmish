@@ -19,6 +19,10 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
     for (action, state, animation) in [
         (game::Action::SpecialNStart, 347, 301),
         (game::Action::SpecialAirNStart, 348, 302),
+        (game::Action::SpecialSStart, 349, 303),
+        (game::Action::SpecialS, 350, 304),
+        (game::Action::SpecialAirSStart, 351, 305),
+        (game::Action::SpecialAirS, 352, 306),
         (game::Action::SpecialHi, 353, 307),
         (game::Action::SpecialAirHi, 354, 308),
         (game::Action::SpecialLwEnd, 360, 314),
