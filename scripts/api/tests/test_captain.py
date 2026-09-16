@@ -293,6 +293,8 @@ class CaptainFalconTests(unittest.TestCase):
         resource = SimpleNamespace(attributes=SimpleNamespace(
             specials_miss_landing_lag=20.0,
             specials_hit_landing_lag=30.0,
+            specials_grav=0.08,
+            specials_terminal_vel=2.4,
         ))
 
         ground = self.Fighter(None)
@@ -399,6 +401,8 @@ class CaptainFalconTests(unittest.TestCase):
         resource = SimpleNamespace(attributes=SimpleNamespace(
             specials_miss_landing_lag=0.0,
             specials_hit_landing_lag=18.0,
+            specials_grav=0.08,
+            specials_terminal_vel=2.4,
         ))
         context = self.context(resource_value=resource)
 
@@ -431,6 +435,8 @@ class CaptainFalconTests(unittest.TestCase):
         valid = self.context(resource_value=SimpleNamespace(attributes=SimpleNamespace(
             specials_miss_landing_lag=0.0,
             specials_hit_landing_lag=18.0,
+            specials_grav=0.08,
+            specials_terminal_vel=2.4,
         )))
         valid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
         self.assertTrue(move.validate(valid))
@@ -449,11 +455,51 @@ class CaptainFalconTests(unittest.TestCase):
             resource = SimpleNamespace(attributes=SimpleNamespace(
                 specials_miss_landing_lag=0.0,
                 specials_hit_landing_lag=18.0,
+                specials_grav=0.08,
+                specials_terminal_vel=2.4,
             ))
             setattr(resource.attributes, field, value)
             invalid = self.context(resource_value=resource)
             invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
             self.assertFalse(move.validate(invalid))
+
+        for field, value in (
+            ("specials_grav", -0.01),
+            ("specials_terminal_vel", float("inf")),
+        ):
+            resource = SimpleNamespace(attributes=SimpleNamespace(
+                specials_miss_landing_lag=0.0,
+                specials_hit_landing_lag=18.0,
+                specials_grav=0.08,
+                specials_terminal_vel=2.4,
+            ))
+            setattr(resource.attributes, field, value)
+            invalid = self.context(resource_value=resource)
+            invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+            self.assertFalse(move.validate(invalid))
+
+    def test_raptor_boost_air_follow_through_binds_source_gravity_profile(self):
+        from fighter.api import export_definition
+
+        captain = _load_captain()
+        exported = export_definition(captain).as_dict()
+        side = exported["movesets"]["specials"]["side"]
+        behavior = next(item for item in exported["behaviors"] if item["id"] == side)
+        air = behavior["actions"]["air"]
+        gravity = air["motion"]["kwargs"]["air"][0]
+        self.assertEqual(gravity["callee"], "motion.gravity")
+        self.assertEqual(gravity["kwargs"]["acceleration"], {
+            "callee": "resource",
+            "args": ["side.attributes.specials_grav"],
+            "kwargs": {},
+        })
+        self.assertEqual(gravity["kwargs"]["terminal_velocity"], {
+            "callee": "resource",
+            "args": ["side.attributes.specials_terminal_vel"],
+            "kwargs": {},
+        })
+        self.assertEqual(gravity["kwargs"]["delay"], 0)
+        self.assertNotIn("motion", behavior["actions"]["air_start"])
 
     def test_falcon_kick_dispatches_ground_or_air_and_reaches_recovery(self):
         captain = _load_captain()

@@ -25,6 +25,8 @@ from skirmish import (
     Transition,
     action,
     hook,
+    motion,
+    resource as bind_resource,
     register as fighter,
     validation,
 )
@@ -302,6 +304,19 @@ class RaptorBoost(SpecialMove):
 
     resource = "side"
 
+    # ftCa_SpecialAirS_Phys applies the character gravity continuously during
+    # the follow-through (state 352).  The start state has a source-side
+    # cmd_vars[1] gate, so it intentionally does not share this profile.
+    air_motion = motion.profile(
+        air=(
+            motion.gravity(
+                acceleration=bind_resource("side.attributes.specials_grav"),
+                terminal_velocity=bind_resource("side.attributes.specials_terminal_vel"),
+                delay=0,
+            ),
+        ),
+    )
+
     ground_start = action(
         Action.SPECIAL_S_START,
         slippi_state=349,
@@ -321,6 +336,7 @@ class RaptorBoost(SpecialMove):
         Action.SPECIAL_AIR_S,
         slippi_state=352,
         animation=306,
+        motion=air_motion,
     )
 
     @hook.input_pressed(Button.B)
@@ -458,6 +474,8 @@ class RaptorBoost(SpecialMove):
             nonnegative=(
                 "specials_miss_landing_lag",
                 "specials_hit_landing_lag",
+                "specials_grav",
+                "specials_terminal_vel",
             ),
         )
 
