@@ -240,8 +240,9 @@ class FalconDive(SpecialMove):
         if fighter.action != self.air:
             return False
         if not fighter.action_state.dive_released:
-            fighter.change_action(Action.LANDING)
-            return True
+            # Let collision::land enter ordinary LANDING so it can apply the
+            # native landing interrupt/post-enter setup.
+            return False
         attributes = ctx.resource("up.attributes")
         if attributes is None:
             return False

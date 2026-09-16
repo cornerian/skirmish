@@ -227,8 +227,8 @@ class CaptainFalconTests(unittest.TestCase):
 
         air = self.Fighter(move.air)
         move.enter(air, context)
-        move.landed(air, context)
-        self.assertEqual(air.changes, [(Action.LANDING, {})])
+        self.assertFalse(move.landed(air, context))
+        self.assertEqual(air.changes, [])
         air.action = move.air
         move.command_changed(air, SimpleNamespace(event=SimpleNamespace(value=1)))
         move.landed(air, context)
