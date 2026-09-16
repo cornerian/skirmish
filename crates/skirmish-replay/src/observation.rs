@@ -808,7 +808,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         | SpecialAirS | SpecialAirSEnd | SpecialHiHold | SpecialHiHoldAir | SpecialHi
         | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
-        | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn => {
+        | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn
+        | SpecialLwGroundEnd | SpecialAirLwLandingEnd | SpecialAirLwEndAir => {
             skirmish::game::script::definition::builtin_slippi_state(character, fighter.action)?
                 as u16
         }
