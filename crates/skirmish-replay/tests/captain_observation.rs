@@ -4,8 +4,12 @@
 
 use skirmish::game::{self, script::definition};
 use skirmish_replay::observation;
+use skirmish_replay::slippi::Port;
 
 const CAPTAIN_EXTERNAL_ID: u8 = 0;
+const REPLAY: &[u8] = include_bytes!(
+    "../../../tests/fixtures/slippi/01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp"
+);
 
 #[test]
 fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
@@ -159,5 +163,45 @@ fn captain_real_slippi_special_state_spans_are_preserved() {
             (359, 6594, 6622),
             (361, 6623, 6651),
         ]
+    );
+}
+
+#[test]
+fn actor_selective_observation_reads_captain_from_four_player_frame() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(REPLAY)).unwrap();
+    let frame = replay
+        .frame_indices(skirmish_replay::slippi::Timeline::LastRecorded)
+        .unwrap()
+        .iter()
+        .copied()
+        .find_map(|index| {
+            let frame = replay.frame(index).unwrap();
+            (frame.id == 522).then(|| frame)
+        })
+        .expect("recorded frame 522");
+
+    let observations = observation::expected_for_ports(&frame, &[Port::P4, Port::P1]).unwrap();
+    assert_eq!(observations.len(), 2);
+    let captain = &observations[0];
+    assert_eq!(captain.port, Port::P4);
+    assert_eq!(captain.character, 2);
+    assert_eq!(captain.action_state, Some(354));
+    assert_eq!(captain.direction.to_bits(), (-1.0_f32).to_bits());
+    assert!(captain.airborne);
+    assert_eq!(captain.jumps_remaining, 0);
+    assert_eq!(captain.position[0].to_bits(), 155.83063_f32.to_bits());
+    assert_eq!(captain.position[1].to_bits(), (-18.104641_f32).to_bits());
+
+    assert_eq!(observations[1].port, Port::P1);
+    assert_eq!(observations[1].character, 18);
+
+    let mut missing_frame = frame.clone();
+    missing_frame.actors.retain(|actor| actor.port != Port::P4);
+    let missing = observation::expected_for_ports(&missing_frame, &[Port::P4]).unwrap_err();
+    assert!(missing.contains("missing leader P4"), "{missing}");
+    let duplicate = observation::expected_for_ports(&frame, &[Port::P4, Port::P4]).unwrap_err();
+    assert!(
+        duplicate.contains("P4") && duplicate.contains("duplicated"),
+        "{duplicate}"
     );
 }

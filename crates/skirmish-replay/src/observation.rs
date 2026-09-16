@@ -178,6 +178,132 @@ fn actors(frame: &slippi::Frame, ports: [Port; 2]) -> Result<[&slippi::Actor; 2]
     Ok([find(ports[0])?, find(ports[1])?])
 }
 
+/// Selects recorded leader actors by port without imposing a player-count
+/// restriction. This is intentionally a replay observation helper: it reads
+/// the requested actors and never projects them into a two-player match or
+/// feeds their state into the simulator.
+fn selected_actors<'a>(
+    frame: &'a slippi::Frame,
+    ports: &[Port],
+) -> Result<Vec<&'a slippi::Actor>, String> {
+    if ports.is_empty() {
+        return Err("actor selectors must include at least one port".into());
+    }
+
+    let mut selected = Vec::with_capacity(ports.len());
+    for (index, &port) in ports.iter().enumerate() {
+        if ports[..index].contains(&port) {
+            return Err(format!("actor selector {port} is duplicated"));
+        }
+        let matches: Vec<_> = frame
+            .actors
+            .iter()
+            .filter(|actor| actor.port == port && !actor.follower)
+            .collect();
+        match matches.as_slice() {
+            [] => return Err(format!("frame {} is missing leader {port}", frame.id)),
+            [actor] => selected.push(*actor),
+            _ => {
+                return Err(format!(
+                    "frame {} has duplicate leaders for {port}",
+                    frame.id
+                ));
+            }
+        }
+    }
+    Ok(selected)
+}
+
+fn expected_actor(actor: &slippi::Actor) -> Result<FighterObservation, String> {
+    let post = &actor.post;
+    let airborne = match post.airborne {
+        Some(0) => false,
+        Some(1) => true,
+        _ => {
+            return Err(format!(
+                "{} post.airborne must be present and either 0 or 1",
+                actor.port
+            ));
+        }
+    };
+    let l_cancel = post.l_cancel.filter(|status| *status <= 2).ok_or_else(|| {
+        format!(
+            "{} post.l_cancel must be present and within 0..=2",
+            actor.port
+        )
+    })?;
+    if post.hurtbox_state.is_some_and(|state| state > 2) {
+        return Err(format!(
+            "{} post.hurtbox_state must be within 0..=2",
+            actor.port
+        ));
+    }
+    let flags = post
+        .state_flags
+        .ok_or_else(|| format!("{} post.state_flags must be present", actor.port))?;
+    Ok(FighterObservation {
+        port: actor.port,
+        action_state: Some(post.state),
+        action_age: post
+            .state_age
+            .ok_or_else(|| format!("{} post.state_age must be present", actor.port))?,
+        position: [post.position.x, post.position.y],
+        direction: post.direction,
+        percent: post.percent,
+        shield: post.shield,
+        stocks: post.stocks,
+        airborne,
+        jumps_remaining: post
+            .jumps
+            .ok_or_else(|| format!("{} post.jumps must be present", actor.port))?,
+        last_ground_id: post
+            .ground
+            .ok_or_else(|| format!("{} post.ground must be present", actor.port))?,
+        l_cancel,
+        character: post.character,
+        last_attack_landed: post.last_attack_landed,
+        combo_count: post.combo_count,
+        last_hit_by: post.last_hit_by,
+        last_hit_by_instance: post.last_hit_by_instance,
+        instance_id: post.instance_id,
+        state_flags: Some([flags.0, flags.1, flags.2, flags.3, flags.4]),
+        misc_as: Some(
+            post.misc_as
+                .ok_or_else(|| format!("{} post.misc_as must be present", actor.port))?,
+        ),
+        hurtbox_state: post.hurtbox_state,
+        velocities: post.velocities.map(|velocity| {
+            [
+                velocity.self_x_air,
+                velocity.self_y,
+                velocity.knockback_x,
+                velocity.knockback_y,
+                velocity.self_x_ground,
+            ]
+        }),
+        hitlag: post.hitlag,
+        animation_index: post.animation_index,
+    })
+}
+
+/// Returns normalized, recorded observations for the requested leader ports.
+///
+/// Unlike [`expected`], this API accepts frames containing more than two
+/// actors, such as a four-player Slippi replay. Selectors must be distinct and
+/// present as leader actors in the frame; follower records are never silently
+/// substituted. The result preserves the selector order and recorded ports.
+/// This is read-only replay observation, not simulation and not a synthetic
+/// two-player projection.
+pub fn expected_for_ports(
+    frame: &slippi::Frame,
+    ports: &[Port],
+) -> Result<Vec<FighterObservation>, String> {
+    selected_actors(frame, ports)?
+        .into_iter()
+        .map(expected_actor)
+        .collect()
+}
+
 pub fn controllers(
     frame: &slippi::Frame,
     ports: [Port; 2],
@@ -237,80 +363,9 @@ pub fn controllers(
 }
 
 pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, String> {
-    let convert = |actor: &slippi::Actor| {
-        let post = &actor.post;
-        let airborne = match post.airborne {
-            Some(0) => false,
-            Some(1) => true,
-            _ => {
-                return Err(format!(
-                    "{} post.airborne must be present and either 0 or 1",
-                    actor.port
-                ));
-            }
-        };
-        let l_cancel = post.l_cancel.filter(|status| *status <= 2).ok_or_else(|| {
-            format!(
-                "{} post.l_cancel must be present and within 0..=2",
-                actor.port
-            )
-        })?;
-        if post.hurtbox_state.is_some_and(|state| state > 2) {
-            return Err(format!(
-                "{} post.hurtbox_state must be within 0..=2",
-                actor.port
-            ));
-        }
-        let flags = post
-            .state_flags
-            .ok_or_else(|| format!("{} post.state_flags must be present", actor.port))?;
-        Ok(FighterObservation {
-            port: actor.port,
-            action_state: Some(post.state),
-            action_age: post
-                .state_age
-                .ok_or_else(|| format!("{} post.state_age must be present", actor.port))?,
-            position: [post.position.x, post.position.y],
-            direction: post.direction,
-            percent: post.percent,
-            shield: post.shield,
-            stocks: post.stocks,
-            airborne,
-            jumps_remaining: post
-                .jumps
-                .ok_or_else(|| format!("{} post.jumps must be present", actor.port))?,
-            last_ground_id: post
-                .ground
-                .ok_or_else(|| format!("{} post.ground must be present", actor.port))?,
-            l_cancel,
-            character: post.character,
-            last_attack_landed: post.last_attack_landed,
-            combo_count: post.combo_count,
-            last_hit_by: post.last_hit_by,
-            last_hit_by_instance: post.last_hit_by_instance,
-            instance_id: post.instance_id,
-            state_flags: Some([flags.0, flags.1, flags.2, flags.3, flags.4]),
-            misc_as: Some(
-                post.misc_as
-                    .ok_or_else(|| format!("{} post.misc_as must be present", actor.port))?,
-            ),
-            hurtbox_state: post.hurtbox_state,
-            velocities: post.velocities.map(|velocity| {
-                [
-                    velocity.self_x_air,
-                    velocity.self_y,
-                    velocity.knockback_x,
-                    velocity.knockback_y,
-                    velocity.self_x_ground,
-                ]
-            }),
-            hitlag: post.hitlag,
-            animation_index: post.animation_index,
-        })
-    };
     let [first, second] = actors(frame, ports)?;
     Ok(Observation {
-        fighters: [convert(first)?, convert(second)?],
+        fighters: [expected_actor(first)?, expected_actor(second)?],
     })
 }
 
