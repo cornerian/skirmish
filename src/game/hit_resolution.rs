@@ -3,9 +3,8 @@
 use crate::fighter::damage::ProneOrientation;
 use crate::fighter::{combat, damage, shield};
 use crate::game::{
-    Action, Error, Event, Fighter, State,
     data::{Hitbox, MatchData},
-    script,
+    script, Action, Error, Event, Fighter, State,
 };
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
@@ -43,6 +42,15 @@ pub(crate) struct PreparedHit {
     damage_facing: f32,
     down_damage_face_up: Option<bool>,
     patch: script::HitPatch,
+    /// Captain Falcon's Dive callback consumed the fighter contact. This is
+    /// resolved by the dedicated relation path, never by ordinary damage.
+    special_capture: bool,
+}
+
+impl PreparedHit {
+    pub(crate) fn is_special_capture(&self) -> bool {
+        self.special_capture
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -263,6 +271,14 @@ pub(crate) fn prepare_hit(
         (attacker, script::Hook::BeforeHit),
         (victim, script::Hook::BeforeReceiveHit),
     ] {
+        // ftCo_CaptureCaptain is a native victim callback after Captain's
+        // before-hit transition. A generic victim hook would let ordinary
+        // damage/grab code claim the same contact before the relation exists.
+        if hook == script::Hook::BeforeReceiveHit
+            && state.fighters[attacker].action == Action::SpecialHiCatch
+        {
+            continue;
+        }
         let Some(program) = crate::game::script::definition::cached_program(&data.fighters[id])
         else {
             continue;
@@ -312,6 +328,10 @@ pub(crate) fn prepare_hit(
     if patch.cancelled {
         return Ok(None);
     }
+    let special_capture = state.fighters[attacker].action == Action::SpecialHiCatch
+        && !crate::game::special_capture::is_captured(&target)
+        && state.fighters[attacker].special_capture.is_empty()
+        && state.fighters[victim].special_capture.is_empty();
     let prepared = PreparedHit {
         attacker,
         victim,
@@ -325,6 +345,7 @@ pub(crate) fn prepare_hit(
         damage_facing,
         down_damage_face_up,
         patch,
+        special_capture,
     };
     Ok(Some(prepared))
 }
@@ -347,7 +368,16 @@ pub(crate) fn resolve_prepared_hit(
         damage_facing,
         down_damage_face_up,
         patch,
+        special_capture,
     } = prepared;
+    if special_capture {
+        // The native catch callback changes Captain's action first; its
+        // contact then enters the dedicated CaptureCaptain relation without
+        // applying ordinary percent, hitlag, knockback, or a fabricated
+        // release hit.
+        crate::game::special_capture::capture(data, state, attacker, victim, was_grounded)?;
+        return Ok(true);
+    }
     let rules = &data.rules;
     if !patch.damage.is_finite()
         || patch.damage < 0.0

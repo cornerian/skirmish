@@ -609,7 +609,12 @@ pub(crate) fn advance(
     }
     state.rng_seed = idle_rng.seed();
 
+    // Captain Falcon's Dive relation has its own native catch/throw callback;
+    // clear forced lifecycle breaks before validating the dedicated pair, then
+    // process Catch -> Throw without involving generic grab scheduling.
+    special_capture::release_broken_pairs(state);
     let pair_frozen = grab::update_pairs(data, state, inputs, active)?;
+    special_capture::update_pairs(state)?;
     for player in 0..2 {
         if pair_frozen[player] {
             if active[player] {
@@ -688,7 +693,10 @@ pub(crate) fn advance(
         }
         let fighter = &mut state.fighters[player];
         let input = inputs[player];
-        if fighter.grab.captor.is_some() {
+        if fighter.grab.captor.is_some()
+            || special_capture::is_captured(fighter)
+            || special_capture::holds_victim(fighter)
+        {
             fighter.nudge = [0.0; 2];
             combat_history::push(fighter, &data.rules.damage.combo);
             staling::flush(
@@ -791,6 +799,7 @@ pub(crate) fn advance(
     }
     let capture_previous = state.fighters.each_ref().map(|fighter| fighter.position);
     grab::release_broken_pairs(state);
+    special_capture::release_broken_pairs(state);
     grab::attach_all(data, state)?;
     let captured_before_scan = state
         .fighters
@@ -903,11 +912,14 @@ pub(crate) fn advance(
         let victim = 1 - attacker;
         let (source, target) = (&state.fighters[attacker], &state.fighters[victim]);
         if frozen[attacker]
+            || special_capture::is_captured(source)
             || data.fighters[attacker].attack_for(source).is_none()
             || target.invincibility > 0
             || target.intangibility > 0
             || !target.body_state.accepts_contact()
             || target.grab.captor.is_some()
+            || special_capture::is_captured(target)
+            || special_capture::holds_victim(target)
             || shield::break_invulnerable(target.action)
             || matches!(target.action, Action::Respawn | Action::Eliminated)
             || rebirth::invulnerable(target.action)
@@ -1048,6 +1060,7 @@ pub(crate) fn advance(
         {
             continue;
         }
+        let mut dedicated_capture = false;
         match contact {
             HitContact::Shield => {
                 shield_contact[1 - attacker] = true;
@@ -1072,11 +1085,15 @@ pub(crate) fn advance(
                     )?
                     .expect("unconditionally accepted native hit")
                 };
+                dedicated_capture = prepared.is_special_capture();
                 let _ = hit_resolution::resolve_prepared_hit(data, state, prepared)?;
                 newly_hit[1 - attacker] = true;
             }
         }
-        if matches!(contact, HitContact::Fighter { .. }) && data.rules.staling.is_some() {
+        if matches!(contact, HitContact::Fighter { .. })
+            && data.rules.staling.is_some()
+            && !dedicated_capture
+        {
             state.fighters[attacker]
                 .staling
                 .queue
@@ -1741,8 +1758,11 @@ fn update_nudge(
                 Action::Respawn | Action::Eliminated | Action::Rebirth | Action::RebirthWait
             ) || death::owns_action(fighter.action)
                 || fighter.grab.captor.is_some()
+                || special_capture::is_captured(fighter)
+                || special_capture::holds_victim(fighter)
                 || ledge::attached(fighter),
-            holds_victim: fighter.grab.victim.is_some(),
+            holds_victim: fighter.grab.victim.is_some()
+                || special_capture::holds_victim(fighter),
             nudge_disabled: attributes.nudge_disabled,
             hitlag: fighter.hitlag > 0.0,
             // ftCo_80099314 and ftCo_800998EC set x221D_b5 for the escape.

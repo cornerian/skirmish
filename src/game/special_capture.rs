@@ -139,6 +139,12 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         let Some(victim) = state.fighters[holder].special_capture.victim else {
             continue;
         };
+        if state.fighters[holder].action == Action::SpecialHiThrow {
+            // The normal path is consumed by `update_pairs`, which performs
+            // the one Catch -> Throw detach. Keep this fallback from clearing
+            // the relation before that dedicated transition is observed.
+            continue;
+        }
         if state.fighters[holder].action != Action::SpecialHiCatch
             || state.fighters[victim].action != Action::CaptureCaptain
         {
@@ -170,7 +176,10 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
     let other = 1 - player;
     let fighter = &fighters[player];
     let partner = &fighters[other];
-    match (fighter.special_capture.victim, fighter.special_capture.captor) {
+    match (
+        fighter.special_capture.victim,
+        fighter.special_capture.captor,
+    ) {
         (None, None) => fighter.special_capture.is_empty(),
         (Some(victim), None) => {
             victim == other
@@ -180,8 +189,7 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
                 && partner.special_capture.victim.is_none()
                 && partner.action == Action::CaptureCaptain
                 && partner.grab == super::grab::State::default()
-                && fighter.special_capture.attachment
-                    == partner.special_capture.attachment
+                && fighter.special_capture.attachment == partner.special_capture.attachment
         }
         (None, Some(captor)) => {
             captor == other
@@ -191,8 +199,7 @@ pub(crate) fn valid_relationship(fighters: &[Fighter; 2], player: usize) -> bool
                 && partner.special_capture.captor.is_none()
                 && partner.action == Action::SpecialHiCatch
                 && partner.grab == super::grab::State::default()
-                && fighter.special_capture.attachment
-                    == partner.special_capture.attachment
+                && fighter.special_capture.attachment == partner.special_capture.attachment
         }
         (Some(_), Some(_)) => false,
     }

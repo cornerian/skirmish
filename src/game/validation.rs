@@ -883,6 +883,10 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
             grab::valid_relationship(&state.fighters, player),
             "invalid paired capture state",
         )?;
+        require(
+            special_capture::valid_relationship(&state.fighters, player),
+            "invalid Captain special capture state",
+        )?;
         require(ledge::valid_state(f), "invalid ledge attachment state")?;
         require(
             f.wall_jump.wall_side.is_finite()

@@ -1343,6 +1343,8 @@ pub(crate) fn scan(
         if holder_frozen
             || source.grab != State::default()
             || target.grab != State::default()
+            || !source.special_capture.is_empty()
+            || !target.special_capture.is_empty()
             || target.invincibility > 0
             || target.intangibility > 0
             || !target.body_state.accepts_contact()
