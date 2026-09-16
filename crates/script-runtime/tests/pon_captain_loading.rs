@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use skirmish_script_runtime::host_object;
 use skirmish_script_runtime::{
     CompiledProgram, Error, HostRef, NativeHost, NativeKind, NativeObject, NativeValue,
     SourceBundle, shared_host,
@@ -79,6 +80,8 @@ struct CaptainState {
     action: String,
     stick: [f32; 2],
     facing: f32,
+    velocity: [f32; 2],
+    ground_velocity: f32,
 }
 
 struct CaptainHost {
@@ -92,7 +95,8 @@ impl NativeHost for CaptainHost {
             "fighter.action" => NativeValue::String(state.action.clone()),
             "fighter.facing" => NativeValue::F32(state.facing),
             "fighter.action_state" => object(NativeKind::State, "fighter.action_state"),
-            "fighter.velocity" => NativeValue::Vec2([0.0, 0.0]),
+            "fighter.velocity" => NativeValue::Vec2(state.velocity),
+            "fighter.ground_velocity" => NativeValue::F32(state.ground_velocity),
             "context.input" => object(NativeKind::Input, "context.input"),
             "context.input.stick" => NativeValue::Vec2(state.stick),
             "context.rules" => object(NativeKind::Context, "context.rules"),
@@ -114,6 +118,9 @@ impl NativeHost for CaptainHost {
             "up.attributes.specialhi_freefall_air_spd_mul" => NativeValue::F32(0.72),
             "up.attributes.specialhi_landing_lag" => NativeValue::Int(30),
             "down.attributes" => object(NativeKind::Value, "down.attributes"),
+            "side.attributes" => object(NativeKind::Value, "side.attributes"),
+            "side.attributes.specials_gr_vel_x" => NativeValue::F32(0.75),
+            "hit" => object(NativeKind::Hit, "hit"),
             _ => return Err(Error::Host(format!("unexpected Captain get path {path}"))),
         };
         Ok(value)
@@ -124,6 +131,18 @@ impl NativeHost for CaptainHost {
         if path == "fighter.facing" {
             if let NativeValue::F32(facing) = &value {
                 state.facing = *facing;
+            }
+        }
+        if path == "fighter.velocity" {
+            if let NativeValue::List(values) = &value {
+                if let [NativeValue::F32(x), NativeValue::F32(y)] = values.as_slice() {
+                    state.velocity = [*x, *y];
+                }
+            }
+        }
+        if path == "fighter.ground_velocity" {
+            if let NativeValue::F32(value) = &value {
+                state.ground_velocity = *value;
             }
         }
         state.sets.push((path.to_owned(), value));
@@ -141,6 +160,14 @@ impl NativeHost for CaptainHost {
             "context.resource" => {
                 let Some(NativeValue::String(resource)) = args.first() else {
                     return Err(Error::Host("Captain resource path is not a string".into()));
+                };
+                Ok(object(NativeKind::Value, resource))
+            }
+            "hit.resource" => {
+                let Some(NativeValue::String(resource)) = args.first() else {
+                    return Err(Error::Host(
+                        "Captain hit resource path is not a string".into(),
+                    ));
                 };
                 Ok(object(NativeKind::Value, resource))
             }
@@ -361,10 +388,12 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
             && matches!(value, NativeValue::List(values)
                 if values == &vec![NativeValue::F32(0.0), NativeValue::F32(0.0)])
     }));
-    assert!(host
-        .sets
-        .iter()
-        .any(|(path, value)| path == "fighter.ground_velocity" && *value == NativeValue::F32(0.0)));
+    assert!(
+        host.sets
+            .iter()
+            .any(|(path, value)| path == "fighter.ground_velocity"
+                && *value == NativeValue::F32(0.0))
+    );
 }
 
 #[test]
@@ -393,8 +422,46 @@ fn captain_grounded_down_special_dispatches_falcon_kick() {
         path == "fighter.change_action"
             && args.first() == Some(&NativeValue::String("special_lw".into()))
     }));
-    assert!(host
-        .sets
-        .iter()
-        .any(|(path, value)| path == "fighter.action_frame" && *value == NativeValue::Int(1)));
+    assert!(
+        host.sets
+            .iter()
+            .any(|(path, value)| path == "fighter.action_frame" && *value == NativeValue::Int(1))
+    );
+}
+
+#[test]
+fn captain_raptor_boost_contact_enters_follow_through_with_ground_multiplier() {
+    let program = captain_program();
+    let state = Arc::new(Mutex::new(CaptainState {
+        action: "Action.SPECIAL_S_START".into(),
+        velocity: [2.0, 3.0],
+        ground_velocity: 4.0,
+        facing: 1.0,
+        ..CaptainState::default()
+    }));
+    let host = shared_host(CaptainHost {
+        state: Arc::clone(&state),
+    });
+    let fighter = HostRef::new(host.clone(), NativeKind::Fighter, "fighter");
+    let hit = HostRef::new(host, NativeKind::Hit, "hit");
+    let contact = callback(&program, "move_1", "before_hit");
+
+    program.prepare_for_current_thread().unwrap();
+    program
+        .dispatch(&contact, fighter, &[host_object(&hit)])
+        .unwrap();
+
+    let host = state.lock().unwrap();
+    assert_eq!(host.action, "Action.SPECIAL_S_START");
+    assert!(host.calls.iter().any(|(path, args)| {
+        path == "fighter.change_action"
+            && args.first() == Some(&NativeValue::String("special_s".into()))
+    }));
+    assert!(host.sets.iter().any(|(path, value)| {
+        path == "fighter.velocity"
+            && *value == NativeValue::List(vec![NativeValue::F32(2.0), NativeValue::F32(0.0)])
+    }));
+    assert!(host.sets.iter().any(|(path, value)| {
+        path == "fighter.ground_velocity" && *value == NativeValue::F32(3.0)
+    }));
 }

@@ -328,6 +328,34 @@ class CaptainFalconTests(unittest.TestCase):
         context.rules = rules
         self.assertFalse(move.input_pressed(self.Fighter(None), context))
 
+    def test_raptor_boost_fighter_contact_enters_follow_through_and_scales_ground_speed(self):
+        captain = _load_captain()
+        move = captain.specials.side
+
+        attributes = SimpleNamespace(specials_gr_vel_x=0.75)
+        hit = SimpleNamespace(resource=lambda path: SimpleNamespace(attributes=attributes))
+        ground = self.Fighter(move.ground_start)
+        ground.velocity = [2.0, 3.0]
+        ground.ground_velocity = 4.0
+        move.before_hit(ground, hit)
+        self.assertEqual(ground.action, move.ground)
+        self.assertEqual(ground.velocity, (2.0, 0.0))
+        self.assertEqual(ground.ground_velocity, 3.0)
+
+        air = self.Fighter(move.air_start)
+        air.velocity = [2.0, 3.0]
+        move.before_hit(air, hit)
+        self.assertEqual(air.action, move.air)
+        self.assertEqual(air.velocity, [2.0, 3.0])
+
+        for multiplier in (None, float("inf")):
+            missing = SimpleNamespace(resource=lambda path, value=multiplier:
+                                      SimpleNamespace(attributes=SimpleNamespace(
+                                          specials_gr_vel_x=value)))
+            untouched = self.Fighter(move.ground_start)
+            move.before_hit(untouched, missing)
+            self.assertEqual(untouched.action, move.ground_start)
+
     def test_raptor_boost_exports_source_action_metadata_without_contact_transition(self):
         from fighter.api import export_definition
 

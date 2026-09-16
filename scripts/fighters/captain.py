@@ -17,6 +17,7 @@ from skirmish import (
     ActionState,
     Button,
     Fighter,
+    HitContext,
     MoveContext,
     Parameters,
     SpecialMove,
@@ -295,10 +296,8 @@ class RaptorBoost(SpecialMove):
 
     The native start callbacks clear source-owned velocity and the native
     collision callbacks decide whether a start becomes the follow-through.
-    This slice therefore exposes directional entry, exact action metadata,
-    animation terminal recovery, and aerial landing recovery only.  It does
-    not manufacture hit detection, per-frame physics, effects, or wall
-    behavior.
+    Contact is represented by the fighter's before-hit hook, while item
+    contacts, per-frame physics, effects, and wall behavior remain native.
     """
 
     resource = "side"
@@ -356,6 +355,33 @@ class RaptorBoost(SpecialMove):
             self._clear_ground_start_velocity(fighter)
         elif fighter.action == self.air_start:
             self._clear_air_start_velocity(fighter)
+
+    @hook.before_hit(actions=(ground_start, air_start))
+    def before_hit(self, fighter: Fighter, hit: HitContext) -> None:
+        """Enter Raptor Boost's follow-through on a fighter hurtbox hit.
+
+        ``ftCa_SpecialS_OnDetect`` clears vertical velocity on both paths;
+        grounded contact additionally scales ground traction by the captured
+        ``specials_gr_vel_x`` resource attribute.  The host has no depth
+        velocity, so the aerial z-clear has no planar equivalent to apply.
+        Missing or non-finite resource data leaves the action untouched.
+        """
+        if fighter.action not in (self.ground_start, self.air_start):
+            return
+        resource_lookup = getattr(hit, "resource", None)
+        resource = (resource_lookup(self.resource)
+                    if callable(resource_lookup) else resource_lookup)
+        attributes = getattr(resource, "attributes", None)
+        multiplier = getattr(attributes, "specials_gr_vel_x", None)
+        if multiplier is None or not validation.finite(multiplier):
+            return
+        if fighter.action == self.ground_start:
+            fighter.change_action(self.ground)
+            velocity = fighter.velocity
+            fighter.velocity = (velocity[0], 0.0)
+            fighter.ground_velocity *= multiplier
+        else:
+            fighter.change_action(self.air)
 
     @hook.animation_end(ground_start, ground)
     def animation_end_ground(self, fighter: Fighter, ctx: MoveContext) -> None:
