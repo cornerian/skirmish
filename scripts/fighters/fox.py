@@ -22,7 +22,7 @@ from skirmish import (
     resource as bind_resource,
     validation,
 )
-from shared.common import FighterBase
+from shared.common import FighterBase, resource_attributes, special_rules, start_action
 
 
 class FoxActionState(ActionState):
@@ -128,14 +128,12 @@ class Blaster(SpecialMove):
             return False
 
         if ctx.ground_open:
-            fighter.change_action(self.ground_start)
-            fighter.action_frame = 1
+            start_action(fighter, self.ground_start)
             fighter.ground_velocity = 0
             fighter.velocity[0] = 0
             fighter.velocity[1] = 0
         else:
-            fighter.change_action(self.air_start)
-            fighter.action_frame = 1
+            start_action(fighter, self.air_start)
         return True
 
     @hook.animation_end(
@@ -170,7 +168,8 @@ class Blaster(SpecialMove):
         elif fighter.action == self.ground_end:
             fighter.change_action(Action.WAIT)
         elif fighter.action == self.air_end:
-            landing_lag = resource.attributes.landing_lag
+            attributes = resource_attributes(ctx, resource)
+            landing_lag = attributes.landing_lag
             if landing_lag == 0:
                 fighter.change_action(Action.FALL)
             else:
@@ -186,7 +185,7 @@ class Blaster(SpecialMove):
         if resource is None:
             return
 
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         laser = resource.laser
         ecb = fighter.ecb.current
         ecb_midpoint = (ecb.top[1] + ecb.bottom[1]) * 0.5
@@ -228,7 +227,7 @@ class Blaster(SpecialMove):
         if thresholds[0] > 1 or thresholds[1] > 1:
             return False
 
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         laser = resource.laser
         if attributes is None or laser is None:
             return False
@@ -385,7 +384,7 @@ class Illusion(SpecialMove):
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         resource = ctx.resource("side")
-        rules = ctx.rules.specials if ctx.rules is not None else None
+        rules = special_rules(ctx)
         if resource is None or rules is None or not ctx.input.just_pressed(Button.B):
             return False
 
@@ -413,10 +412,9 @@ class Illusion(SpecialMove):
         if horizontal * fighter.facing < -rules.turn_threshold:
             fighter.facing = -fighter.facing
         if ctx.ground_open:
-            fighter.change_action(self.ground_start)
+            start_action(fighter, self.ground_start)
         else:
-            fighter.change_action(self.air_start)
-        fighter.action_frame = 1
+            start_action(fighter, self.air_start)
         return True
 
     @hook.action_enter(
@@ -431,7 +429,7 @@ class Illusion(SpecialMove):
         resource = ctx.resource("side")
         if resource is None:
             return
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         if fighter.action == self.ground_start:
             retention_loss = (-resource.ground_speed_retention) + 1.0
             retained = fighter.ground_velocity - fighter.ground_velocity * retention_loss
@@ -466,7 +464,7 @@ class Illusion(SpecialMove):
         elif fighter.action == self.air_dash:
             self._enter_end(fighter, resource)
         elif fighter.action == self.air_end:
-            attributes = resource.attributes
+            attributes = resource_attributes(ctx, resource)
             fighter.enter_fall_special(
                 mobility=attributes.freefall_mobility,
                 landing_lag=attributes.landing_lag,
@@ -478,14 +476,15 @@ class Illusion(SpecialMove):
         escape_air = ctx.resource("escape_air")
         if resource is None or escape_air is None:
             return False
+        attributes = resource_attributes(ctx, resource)
         fighter.enter_landing_special(
             escape_air.landing_animation_end,
-            resource.attributes.landing_lag,
+            attributes.landing_lag,
         )
         return True
 
     def _enter_end(self, fighter: Fighter, resource) -> None:
-        attributes = resource.attributes
+        attributes = resource_attributes(None, resource)
         if fighter.grounded:
             fighter.ground_velocity = attributes.ground_end_speed * fighter.facing
             fighter.change_action(self.ground_end)
@@ -500,7 +499,7 @@ class Illusion(SpecialMove):
         resource = ctx.resource("side")
         if resource is None:
             return True
-        rules = ctx.rules.specials if ctx.rules is not None else None
+        rules = special_rules(ctx)
         if rules is None:
             return False
 
@@ -519,7 +518,7 @@ class Illusion(SpecialMove):
         if not 0.0 <= resource.ground_speed_retention <= 1.0:
             return False
 
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         if not validation.fields(
             attributes,
             nonnegative=(
@@ -691,11 +690,11 @@ class FireFox(SpecialMove):
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         resource = ctx.resource("up")
-        rules = ctx.rules.specials if ctx.rules is not None else None
+        rules = special_rules(ctx)
         if resource is None or rules is None or not ctx.input.just_pressed(Button.B):
             return False
 
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         if fighter.action in (
             self.hold_ground,
             self.hold_air,
@@ -711,8 +710,7 @@ class FireFox(SpecialMove):
             if fighter.locomotion.up_special_b_age != 0:
                 return False
             ground_velocity = fighter.ground_velocity / attributes.entry_speed_div
-            fighter.change_action(self.hold_ground)
-            fighter.action_frame = 1
+            start_action(fighter, self.hold_ground)
             fighter.ground_velocity = ground_velocity
             fighter.action_state.gravity_delay = attributes.gravity_delay
             return True
@@ -723,8 +721,7 @@ class FireFox(SpecialMove):
             return False
 
         velocity_x = fighter.velocity[0] / attributes.entry_speed_div
-        fighter.change_action(self.hold_air)
-        fighter.action_frame = 1
+        start_action(fighter, self.hold_air)
         fighter.set_velocity(velocity_x, 0.0)
         fighter.action_state.gravity_delay = attributes.gravity_delay
         return True
@@ -742,7 +739,7 @@ class FireFox(SpecialMove):
         resource = ctx.resource("up")
         if resource is None:
             return
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
 
         if fighter.action == self.travel_air:
             fighter.set_motion_binding(
@@ -869,8 +866,7 @@ class FireFox(SpecialMove):
 
         gate = math.DEG_TO_RAD * (90.0 + attributes.bound_angle_degrees)
         if not (math.angle_xy(fighter.floor_normal, ctx.pre_landing.velocity) < gate):
-            fighter.change_action(self.bound)
-            fighter.action_frame = 1
+            start_action(fighter, self.bound)
             fighter.velocity[0] = fighter.velocity[0] * attributes.bound_speed_mul
             return True
 
@@ -952,7 +948,7 @@ class FireFox(SpecialMove):
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
         resource = ctx.resource()
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         required = (
             "gravity_delay",
             "entry_speed_div",
@@ -1199,7 +1195,7 @@ class Shine(SpecialMove):
     def press_b(self, fighter: Fighter, ctx: MoveContext) -> bool:
         if fighter.action in self._PHASES:
             return True
-        rules = ctx.rules.specials if ctx.rules is not None else None
+        rules = special_rules(ctx)
         resource = ctx.resource()
         if rules is None or not ctx.input.just_pressed(Button.B):
             return False
@@ -1219,8 +1215,10 @@ class Shine(SpecialMove):
             return False
 
         attributes = ctx.resource("down.attributes")
-        fighter.change_action(self.ground_start if grounded_start else self.air_start)
-        fighter.action_frame = 1
+        start_action(
+            fighter,
+            self.ground_start if grounded_start else self.air_start,
+        )
         fighter.action_state.release_lag = attributes.release_lag
         fighter.action_state.gravity_delay = attributes.gravity_delay
         fighter.action_state.is_release = False
@@ -1438,12 +1436,12 @@ class Shine(SpecialMove):
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
         resource = ctx.resource()
-        rules = ctx.rules.specials if ctx.rules is not None else None
+        rules = special_rules(ctx)
         locomotion = ctx.resource("locomotion")
         if rules is None or locomotion is None:
             return False
 
-        attributes = resource.attributes
+        attributes = resource_attributes(ctx, resource)
         if not validation.fields(
             attributes,
             finite=(
