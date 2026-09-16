@@ -108,3 +108,56 @@ fn captain_real_slippi_states_match_bundled_definition_metadata() {
         // 308/313/316 animation paired with each raw source state.
     }
 }
+
+#[test]
+fn captain_real_slippi_special_state_spans_are_preserved() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(include_bytes!(
+        "../../../tests/fixtures/slippi/01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp"
+    )))
+    .unwrap();
+
+    let mut spans = Vec::new();
+    for index in replay
+        .frame_indices(skirmish_replay::slippi::Timeline::LastRecorded)
+        .unwrap()
+        .iter()
+        .copied()
+    {
+        let frame = replay.frame(index).unwrap();
+        let actor = frame
+            .actors
+            .iter()
+            .find(|actor| actor.port == peppi_adapter::Port::P4 && !actor.follower)
+            .unwrap_or_else(|| panic!("Captain Falcon leader missing at frame {}", frame.id));
+        assert_eq!(
+            actor.post.character, 2,
+            "Captain Falcon must remain the internal-ID-2 actor at frame {}",
+            frame.id
+        );
+
+        let state = u32::from(actor.post.state);
+        if !(347..=363).contains(&state) {
+            continue;
+        }
+        if let Some((last_state, _start, end)) = spans.last_mut()
+            && *last_state == state
+            && *end + 1 == frame.id
+        {
+            *end = frame.id;
+        } else {
+            spans.push((state, frame.id, frame.id));
+        }
+    }
+
+    assert_eq!(
+        spans,
+        vec![
+            (354, 522, 585),
+            (354, 2066, 2128),
+            (354, 2397, 2460),
+            (354, 3929, 3992),
+            (359, 6594, 6622),
+            (361, 6623, 6651),
+        ]
+    );
+}
