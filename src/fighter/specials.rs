@@ -288,6 +288,28 @@ fn motion_cache(
     Some(cache)
 }
 
+/// Read the command tuple at the instant aerial profile physics runs.  The
+/// animation trace updates this action-state value before callbacks, so it
+/// must not be copied into the immutable motion binding or sampled from a
+/// stale event record.
+fn current_action_command(f: &Fighter) -> [i64; crate::game::script::motion::COMMAND_SLOTS] {
+    match f.action_state.get("command") {
+        Some(crate::game::script::LocalValue::Tuple(values))
+            if values.len() == crate::game::script::motion::COMMAND_SLOTS =>
+        {
+            let mut command = [0; crate::game::script::motion::COMMAND_SLOTS];
+            for (slot, value) in command.iter_mut().zip(values) {
+                *slot = match value {
+                    crate::game::script::LocalValue::Integer(value) => *value,
+                    _ => 0,
+                };
+            }
+            command
+        }
+        _ => [0; crate::game::script::motion::COMMAND_SLOTS],
+    }
+}
+
 fn sync_profile_delay(
     f: &mut Fighter,
     cache: &crate::game::script::lifecycle_resources::ResourceCache,
@@ -598,11 +620,13 @@ pub(crate) fn air_physics(
     if profile.air.is_empty() {
         return Ok(false);
     }
-    let applied = profile.apply_with_binding(
+    let command = current_action_command(f);
+    let applied = profile.apply_with_binding_and_command(
         &mut f.script_events.motion_state,
         movement,
         false,
         &f.script_events.motion_binding,
+        &command,
     );
     sync_profile_delay(f, &cache);
     Ok(applied)

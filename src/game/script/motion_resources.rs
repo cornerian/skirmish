@@ -15,7 +15,7 @@
 use super::lifecycle_resources::ResourceCache;
 use super::motion::{
     AirOperation, GroundOperation, MotionProfile, ScalarTrack, TrackEnd, TrackTransform,
-    VelocitySample, VelocityTrack,
+    VelocitySample, VelocityTrack, COMMAND_SLOTS, MAX_COMMAND_VALUE,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -122,6 +122,14 @@ impl AirOperationDescriptor {
     pub fn drift_or_friction(recovery_step: ScalarRef) -> Self {
         Self::DriftOrFriction { recovery_step }
     }
+
+    pub fn command_velocity_scale(index: usize, value: u32, multiplier: ScalarRef) -> Self {
+        Self::CommandVelocityScale {
+            index,
+            value,
+            multiplier,
+        }
+    }
 }
 
 impl GroundOperationDescriptor {
@@ -212,6 +220,11 @@ pub enum AirOperationDescriptor {
     },
     DriftOrFriction {
         recovery_step: ScalarRef,
+    },
+    CommandVelocityScale {
+        index: usize,
+        value: u32,
+        multiplier: ScalarRef,
     },
 }
 
@@ -426,6 +439,14 @@ fn parse_air_operation(value: &Value) -> Result<AirOperationDescriptor, MotionLi
                 &constructor,
                 "recovery_step",
             )?))
+        }
+        "motion.command_velocity_scale" => {
+            reject_unknown(&constructor, &keywords, &["index", "value", "multiplier"])?;
+            Ok(AirOperationDescriptor::command_velocity_scale(
+                required_command_index(&keywords, &constructor, "index")?,
+                required_command_value(&keywords, &constructor, "value")?,
+                required_scalar(&keywords, &constructor, "multiplier")?,
+            ))
         }
         _ => Err(MotionLinkError::UnknownConstructor(constructor)),
     }
@@ -651,6 +672,42 @@ fn required_scalar(
     parse_scalar(value)
 }
 
+fn required_command_index(
+    keywords: &BTreeMap<String, Value>,
+    constructor: &str,
+    keyword: &str,
+) -> Result<usize, MotionLinkError> {
+    let value = keywords
+        .get(keyword)
+        .ok_or_else(|| MotionLinkError::MissingKeyword {
+            constructor: constructor.to_owned(),
+            keyword: keyword.to_owned(),
+        })?;
+    value
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value < COMMAND_SLOTS)
+        .ok_or_else(|| invalid_type(constructor, keyword))
+}
+
+fn required_command_value(
+    keywords: &BTreeMap<String, Value>,
+    constructor: &str,
+    keyword: &str,
+) -> Result<u32, MotionLinkError> {
+    let value = keywords
+        .get(keyword)
+        .ok_or_else(|| MotionLinkError::MissingKeyword {
+            constructor: constructor.to_owned(),
+            keyword: keyword.to_owned(),
+        })?;
+    value
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value <= MAX_COMMAND_VALUE)
+        .ok_or_else(|| invalid_type(constructor, keyword))
+}
+
 fn parse_scalar(value: &Value) -> Result<ScalarRef, MotionLinkError> {
     if let Some(value) = value.as_f64() {
         let value = value as f32;
@@ -874,6 +931,15 @@ fn link_air<R: MotionResourceSource, P: MotionParameterSource>(
                 recovery_step: resolve(recovery_step, resources, parameters)?,
             }
         }
+        AirOperationDescriptor::CommandVelocityScale {
+            index,
+            value,
+            multiplier,
+        } => AirOperation::CommandVelocityScale {
+            index: *index,
+            value: *value,
+            multiplier: resolve(multiplier, resources, parameters)?,
+        },
     })
 }
 
@@ -1276,5 +1342,65 @@ mod tests {
             MotionDescriptor::from_compiled_constructor(&profile),
             Err(MotionLinkError::UntypedScalarReference)
         ));
+    }
+
+    #[test]
+    fn decodes_and_links_command_velocity_scale() {
+        let operation = constructor(
+            "motion.command_velocity_scale",
+            json!({
+                "index": 1,
+                "value": 1,
+                "multiplier": resource("move.attributes.specialn_vel_mul"),
+            }),
+        );
+        let descriptor = MotionDescriptor::from_compiled_constructor(&constructor(
+            "motion.profile",
+            json!({"air": [operation]}),
+        ))
+        .expect("descriptor");
+        assert!(matches!(
+            descriptor.air.first(),
+            Some(AirOperationDescriptor::CommandVelocityScale {
+                index: 1,
+                value: 1,
+                multiplier: ScalarRef::Resource(_),
+            })
+        ));
+        let resources = SyntheticResources(BTreeMap::from([(
+            "move.attributes.specialn_vel_mul".into(),
+            json!(0.5),
+        )]));
+        let profile = link_profile(&descriptor, &resources, &BTreeMap::new()).expect("profile");
+        assert_eq!(
+            profile.air,
+            vec![AirOperation::CommandVelocityScale {
+                index: 1,
+                value: 1,
+                multiplier: 0.5,
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_unbounded_command_constructor_values() {
+        for (field, value) in [("index", json!(COMMAND_SLOTS)), (
+            "value",
+            json!(u64::from(MAX_COMMAND_VALUE) + 1),
+        )] {
+            let operation = constructor(
+                "motion.command_velocity_scale",
+                json!({
+                    "index": if field == "index" { value.clone() } else { json!(0) },
+                    "value": if field == "value" { value } else { json!(0) },
+                    "multiplier": 1.0,
+                }),
+            );
+            let profile = constructor("motion.profile", json!({"air": [operation]}));
+            assert!(matches!(
+                MotionDescriptor::from_compiled_constructor(&profile),
+                Err(MotionLinkError::InvalidKeywordType { .. })
+            ));
+        }
     }
 }

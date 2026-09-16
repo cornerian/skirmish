@@ -163,8 +163,10 @@ class CaptainFalconTests(unittest.TestCase):
         captain = _load_captain()
         move = captain.specials.neutral
         fighter = self.Fighter(move.ground)
+        fighter.action_state.command = (7, 7, 7, 7)
         fighter.action_state.launch_armed = True
         move.enter(fighter, self.context())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
         self.assertFalse(fighter.action_state.launch_armed)
 
         class ValidContext:
@@ -194,6 +196,24 @@ class CaptainFalconTests(unittest.TestCase):
                 return object()
 
         self.assertFalse(move.validate(InvalidContext()))
+
+    def test_punch_air_profile_declares_only_the_source_command_one_scale(self):
+        from fighter.api import export_definition
+
+        captain = _load_captain()
+        exported = export_definition(captain).as_dict()
+        action_state = exported["action_state"]
+        self.assertEqual(action_state["command"], (0, 0, 0, 0))
+        air = exported["actions"]["special.neutral.air"]
+        operation = air["motion"]["kwargs"]["air"][0]
+        self.assertEqual(operation["callee"], "motion.command_velocity_scale")
+        self.assertEqual(operation["kwargs"]["index"], 1)
+        self.assertEqual(operation["kwargs"]["value"], 1)
+        self.assertEqual(operation["kwargs"]["multiplier"], {
+            "callee": "resource",
+            "args": ["neutral.attributes.specialn_vel_mul"],
+            "kwargs": {},
+        })
 
     def test_falcon_dive_uses_upward_dispatch_and_353_354_states(self):
         captain = _load_captain()

@@ -41,6 +41,11 @@ pub struct MotionState {
     pub gravity_delay: f32,
 }
 
+/// Number of command-variable slots exposed by the native action-state ABI.
+pub const COMMAND_SLOTS: usize = 4;
+/// Keep declarative command comparisons bounded at resource-load time.
+pub const MAX_COMMAND_VALUE: u32 = 1_000_000;
+
 /// Small per-fighter values supplied by the policy that selected a cached
 /// profile.  Facing and launch angle are runtime choices, so they are kept
 /// out of immutable resource tracks and out of the profile descriptor.
@@ -335,6 +340,15 @@ pub enum AirOperation {
     DriftOrFriction {
         recovery_step: f32,
     },
+    /// Multiply both self-velocity components only when the selected
+    /// action-state command slot contains the authored value.  A conditional
+    /// operation is a no-op when its command does not match, allowing the
+    /// native physics fallback to continue.
+    CommandVelocityScale {
+        index: usize,
+        value: u32,
+        multiplier: f32,
+    },
 }
 
 impl AirOperation {
@@ -366,6 +380,14 @@ impl AirOperation {
 
     pub const fn drift_or_friction(recovery_step: f32) -> Self {
         Self::DriftOrFriction { recovery_step }
+    }
+
+    pub const fn command_velocity_scale(index: usize, value: u32, multiplier: f32) -> Self {
+        Self::CommandVelocityScale {
+            index,
+            value,
+            multiplier,
+        }
     }
 }
 
@@ -436,7 +458,13 @@ impl MotionProfile {
     /// Returns whether this profile supplied at least one operation for the
     /// selected surface.
     pub fn apply(&self, state: &mut MotionState, movement: &mut Movement, grounded: bool) -> bool {
-        self.apply_with_binding(state, movement, grounded, &MotionBinding::default())
+        self.apply_with_binding_and_command(
+            state,
+            movement,
+            grounded,
+            &MotionBinding::default(),
+            &[],
+        )
     }
 
     /// Apply with the small runtime binding chosen by the script/event
@@ -448,6 +476,22 @@ impl MotionProfile {
         grounded: bool,
         binding: &MotionBinding,
     ) -> bool {
+        self.apply_with_binding_and_command(state, movement, grounded, binding, &[])
+    }
+
+    /// Apply with a runtime command-variable tuple supplied by the current
+    /// fighter action state.  Command values are deliberately passed at the
+    /// call site instead of being folded into [`MotionBinding`]: the binding
+    /// describes per-fighter direction, while commands change during an
+    /// action's animation trace.
+    pub fn apply_with_binding_and_command(
+        &self,
+        state: &mut MotionState,
+        movement: &mut Movement,
+        grounded: bool,
+        binding: &MotionBinding,
+        command: &[i64],
+    ) -> bool {
         if grounded {
             let mut applied = false;
             for operation in &self.ground {
@@ -455,10 +499,11 @@ impl MotionProfile {
             }
             applied
         } else {
+            let mut applied = false;
             for operation in &self.air {
-                apply_air(operation, state, movement, binding);
+                applied |= apply_air(operation, state, movement, binding, command);
             }
-            !self.air.is_empty()
+            applied
         }
     }
 
@@ -531,6 +576,19 @@ impl MotionProfile {
                 AirOperation::DriftOrFriction { recovery_step } => {
                     finite_nonnegative(*recovery_step, "drift recovery step")?;
                 }
+                AirOperation::CommandVelocityScale {
+                    index,
+                    value,
+                    multiplier,
+                } => {
+                    if *index >= COMMAND_SLOTS {
+                        return Err(MotionProfileError::Invalid("command index"));
+                    }
+                    if *value > MAX_COMMAND_VALUE {
+                        return Err(MotionProfileError::Invalid("command value"));
+                    }
+                    finite(*multiplier, "command velocity multiplier")?;
+                }
             }
         }
         for operation in &self.ground {
@@ -559,14 +617,19 @@ fn apply_air(
     state: &mut MotionState,
     movement: &mut Movement,
     binding: &MotionBinding,
-) {
+    command: &[i64],
+) -> bool {
     match operation {
         AirOperation::Gravity(gravity) => {
             if !state.tick_gravity_delay() {
                 movement.fall(gravity.acceleration, gravity.terminal_velocity);
             }
+            true
         }
-        AirOperation::Friction { amount } => movement.friction_air(*amount),
+        AirOperation::Friction { amount } => {
+            movement.friction_air(*amount);
+            true
+        }
         AirOperation::VelocityTrack(track) => {
             if let Some(sample) = track.sample(state.phase_frame) {
                 if let Some(x) = sample.x {
@@ -575,6 +638,9 @@ fn apply_air(
                 if let Some(y) = sample.y {
                     movement.self_velocity[1] = transform(y, track.y_transform, binding);
                 }
+                true
+            } else {
+                false
             }
         }
         AirOperation::DirectionalAcceleration {
@@ -585,16 +651,31 @@ fn apply_air(
             let target_y = *magnitude * binding.sine;
             movement.animation_velocity[0] = -(target_x - movement.self_velocity[0]);
             movement.animation_velocity[1] = -(target_y - movement.self_velocity[1]);
+            true
         }
-        AirOperation::DirectionalAcceleration { .. } => {}
+        AirOperation::DirectionalAcceleration { .. } => false,
         AirOperation::DriftClamp {
             maximum,
             acceleration,
         } => {
             movement.drift_clamp(*maximum, *acceleration);
+            true
         }
         AirOperation::DriftOrFriction { recovery_step } => {
             helpers::drift_or_friction_air(movement, *recovery_step);
+            true
+        }
+        AirOperation::CommandVelocityScale {
+            index,
+            value,
+            multiplier,
+        } => {
+            if command.get(*index).copied() != Some(i64::from(*value)) {
+                return false;
+            }
+            movement.self_velocity[0] *= *multiplier;
+            movement.self_velocity[1] *= *multiplier;
+            true
         }
     }
 }
@@ -883,5 +964,58 @@ mod tests {
             invalid.validate(),
             Err(MotionProfileError::Invalid("ground friction"))
         );
+    }
+
+    #[test]
+    fn command_velocity_scale_only_applies_for_the_matching_current_command() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::command_velocity_scale(1, 1, 0.5)],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::default();
+        let mut value = movement();
+        assert!(profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 1, 0, 0],
+        ));
+        assert_eq!(value.self_velocity[0].to_bits(), 0.5_f32.to_bits());
+        assert_eq!(value.self_velocity[1].to_bits(), 1.0_f32.to_bits());
+
+        let before = value.self_velocity;
+        assert!(!profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 0, 0, 0],
+        ));
+        assert_eq!(value.self_velocity, before);
+    }
+
+    #[test]
+    fn command_velocity_scale_validates_index_value_and_multiplier() {
+        for (operation, error) in [
+            (
+                AirOperation::command_velocity_scale(COMMAND_SLOTS, 1, 1.0),
+                "command index",
+            ),
+            (
+                AirOperation::command_velocity_scale(0, MAX_COMMAND_VALUE + 1, 1.0),
+                "command value",
+            ),
+            (
+                AirOperation::command_velocity_scale(0, 1, f32::NAN),
+                "command velocity multiplier",
+            ),
+        ] {
+            let profile = MotionProfile {
+                air: vec![operation],
+                ground: Vec::new(),
+            };
+            assert_eq!(profile.validate(), Err(MotionProfileError::Invalid(error)));
+        }
     }
 }

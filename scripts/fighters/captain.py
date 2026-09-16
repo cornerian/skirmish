@@ -51,8 +51,9 @@ def _directional_b(ctx: MoveContext) -> bool:
 
 
 class CaptainFalconActionState(ActionState):
-    """Only transient flags owned by the Falcon Punch policy."""
+    """Transient flags and source command variables owned by Falcon Punch."""
 
+    command: tuple[int, int, int, int] = (0, 0, 0, 0)
     launch_armed: bool = False
     dive_released: bool = False
 
@@ -65,6 +66,18 @@ class FalconPunch(SpecialMove):
     """Ground/air Falcon Punch policy; numeric data remains resource-owned."""
 
     resource = "neutral"
+
+    # ftCa_SpecialAirN_Phys scales both self-velocity components only for the
+    # source cmd_vars[1] == 1 branch.  The command tuple is supplied by the
+    # current action state when the native profile runs, so unmatched values
+    # leave the profile unapplied and preserve native fallback physics.
+    air_motion = motion.profile(
+        air=(motion.command_velocity_scale(
+            index=1,
+            value=1,
+            multiplier=bind_resource("neutral.attributes.specialn_vel_mul"),
+        ),),
+    )
 
     ground = action(
         Action.SPECIAL_N_START,
@@ -79,10 +92,12 @@ class FalconPunch(SpecialMove):
         animation=302,
         attack="neutral.air",
         command_trace="neutral.script.air",
+        motion=air_motion,
     )
 
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        fighter.action_state.command = (0, 0, 0, 0)
         fighter.action_state.launch_armed = False
 
     @hook.input_pressed(Button.B)
@@ -143,6 +158,17 @@ class FalconPunch(SpecialMove):
             # Assign the vector atomically; indexed writes target a transient
             # native member and do not update the host-owned velocity field.
             fighter.velocity = (velocity_x, velocity_y)
+
+    @hook.command_changed(1, actions=(air,))
+    def command_velocity_scale(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Retain the current source command for the native air profile.
+
+        The host writes ``fighter.action_state.command`` before dispatching
+        this notification.  The callback is intentionally empty: command 1
+        is consumed by the declarative physics operation, while command 0's
+        launch behavior remains in ``command_changed`` above.
+        """
+        return None
 
     @hook.animation_end(ground, air)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
