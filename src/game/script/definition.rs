@@ -641,10 +641,18 @@ impl AssetStore {
 
     pub fn builtins() -> Self {
         let mut assets = Self::default();
+        assets.register(
+            "captain.py",
+            include_str!("../../../scripts/fighters/captain.py"),
+        );
         assets.register("fox.py", include_str!("../../../scripts/fighters/fox.py"));
         assets.register(
             "falco.py",
             include_str!("../../../scripts/fighters/falco.py"),
+        );
+        assets.register_shared(
+            "common.py",
+            include_str!("../../../scripts/fighters/common.py"),
         );
         assets
     }
@@ -813,7 +821,7 @@ impl Registry {
     pub fn builtins() -> Result<Self, Error> {
         let assets = AssetStore::builtins();
         let mut registry = Self::default();
-        for name in ["fox.py", "falco.py"] {
+        for name in ["captain.py", "fox.py", "falco.py"] {
             let source = assets
                 .get(name)
                 .ok_or_else(|| Error::Invalid(format!("missing builtin {name}")))?;

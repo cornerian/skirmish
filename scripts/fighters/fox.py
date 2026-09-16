@@ -3,25 +3,14 @@
 from skirmish import (
     Action,
     ActionState,
-    AerialMoves,
     Button,
-    DefenseMoves,
-    Fighter,
-    GetupMoves,
-    GrabMoves,
-    GroundedMoves,
     HitContext,
-    LedgeMoves,
     MotionBinding,
     MoveContext,
     Parameters,
-    SmashMoves,
     SpecialMove,
     Transition,
     SpecialMoves,
-    TauntMoves,
-    ThrowMoves,
-    TiltMoves,
     action,
     clock,
     f32,
@@ -33,6 +22,7 @@ from skirmish import (
     resource as bind_resource,
     validation,
 )
+from shared.common import FighterBase
 
 
 class FoxActionState(ActionState):
@@ -1499,7 +1489,7 @@ class Shine(SpecialMove):
 
 
 @fighter
-class Fox(Fighter):
+class Fox(FighterBase):
     """Fox's resource-backed native fighter definition."""
 
     name = "fox"
@@ -1509,16 +1499,6 @@ class Fox(Fighter):
     action_state = FoxActionState
 
     specials = SpecialMoves(Blaster(), Illusion(), FireFox(), Shine())
-    aerials = AerialMoves()
-    grounded = GroundedMoves()
-    tilts = TiltMoves()
-    smashes = SmashMoves()
-    grabs = GrabMoves()
-    throws = ThrowMoves()
-    defense = DefenseMoves()
-    ledge = LedgeMoves()
-    getup = GetupMoves()
-    taunt = TauntMoves()
 
 
 __all__ = ["Fox", "Blaster", "Illusion", "FireFox", "Shine", "FoxActionState", "FoxParameters"]

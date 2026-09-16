@@ -11,6 +11,12 @@ use skirmish_script_runtime::{CompiledProgram, NativeValue, SourceBundle};
 fn fox_bundle() -> SourceBundle {
     SourceBundle::new("fighter-api-fox-conformance-v1")
         .with_file("fox.py", include_str!("../../../scripts/fighters/fox.py"))
+        .and_then(|bundle| {
+            bundle.with_file(
+                "shared/common.py",
+                include_str!("../../../scripts/fighters/common.py"),
+            )
+        })
         .expect("Fox module path")
 }
 

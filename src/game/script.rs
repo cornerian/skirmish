@@ -48,6 +48,7 @@ pub const MAX_COMMANDS: usize = 16;
 /// Selects the bundled source owned by each fighter when its reflector exists.
 pub fn bundled_source(specials: Option<&resources::Specials>) -> Option<&'static str> {
     match specials?.character_key().as_str() {
+        "captain-falcon" => Some(include_str!("../../scripts/fighters/captain.py")),
         "fox" => Some(include_str!("../../scripts/fighters/fox.py")),
         "falco" => Some(include_str!("../../scripts/fighters/falco.py")),
         _ => None,

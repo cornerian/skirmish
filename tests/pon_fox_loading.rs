@@ -6,6 +6,13 @@ use skirmish::game::script::definition::{AssetStore, Definition};
 fn registered_fox_load_decodes_schema_and_registers_special_callbacks() {
     let source = include_str!("../scripts/fighters/fox.py");
     let assets = AssetStore::builtins();
+    assert!(assets.shared("common.py").is_some());
+    assert!(
+        assets
+            .dependencies(source)
+            .unwrap()
+            .contains_key("shared/common.py")
+    );
     let definition = Definition::load_registered(source, &assets).expect("load Fox definition");
 
     assert_eq!(definition.manifest.name, "fox");
