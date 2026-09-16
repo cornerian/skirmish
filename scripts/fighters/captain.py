@@ -372,9 +372,7 @@ class RaptorBoost(SpecialMove):
             fighter.change_action(self.air)
             return
 
-        resource_lookup = getattr(hit, "resource", None)
-        resource = (resource_lookup(self.resource)
-                    if callable(resource_lookup) else resource_lookup)
+        resource = fighter.resource(self.resource)
         attributes = getattr(resource, "attributes", None)
         multiplier = getattr(attributes, "specials_gr_vel_x", None)
         if multiplier is None or not validation.finite(multiplier):

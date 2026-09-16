@@ -82,7 +82,7 @@ struct CaptainState {
     facing: f32,
     velocity: [f32; 2],
     ground_velocity: f32,
-    hit_resource_available: bool,
+    fighter_resource_available: bool,
 }
 
 struct CaptainHost {
@@ -121,6 +121,11 @@ impl NativeHost for CaptainHost {
             "down.attributes" => object(NativeKind::Value, "down.attributes"),
             "side.attributes" => object(NativeKind::Value, "side.attributes"),
             "side.attributes.specials_gr_vel_x" => NativeValue::F32(0.75),
+            "fighter.resource.side" => object(NativeKind::Value, "fighter.resource.side"),
+            "fighter.resource.side.attributes" => {
+                object(NativeKind::Value, "fighter.resource.side.attributes")
+            },
+            "fighter.resource.side.attributes.specials_gr_vel_x" => NativeValue::F32(0.75),
             "hit" => object(NativeKind::Hit, "hit"),
             _ => return Err(Error::Host(format!("unexpected Captain get path {path}"))),
         };
@@ -164,16 +169,16 @@ impl NativeHost for CaptainHost {
                 };
                 Ok(object(NativeKind::Value, resource))
             }
-            "hit.resource" => {
-                if !self.state.lock().unwrap().hit_resource_available {
-                    return Err(Error::Host("Captain hit resource is unavailable".into()));
+            "fighter.resource" => {
+                if !self.state.lock().unwrap().fighter_resource_available {
+                    return Ok(NativeValue::None);
                 }
                 let Some(NativeValue::String(resource)) = args.first() else {
                     return Err(Error::Host(
                         "Captain hit resource path is not a string".into(),
                     ));
                 };
-                Ok(object(NativeKind::Value, resource))
+                Ok(object(NativeKind::Value, format!("fighter.resource.{resource}").as_str()))
             }
             "fighter.change_action" | "fighter.enter_fall_special" => Ok(NativeValue::None),
             other => Err(Error::Host(format!("unexpected Captain call path {other}"))),
@@ -441,7 +446,7 @@ fn captain_raptor_boost_contact_enters_follow_through_with_ground_multiplier() {
         velocity: [2.0, 3.0],
         ground_velocity: 4.0,
         facing: 1.0,
-        hit_resource_available: true,
+        fighter_resource_available: true,
         ..CaptainState::default()
     }));
     let host = shared_host(CaptainHost {
@@ -479,7 +484,7 @@ fn captain_aerial_raptor_boost_contact_skips_ground_resource_and_planar_velocity
         velocity: [7.0, -2.0],
         ground_velocity: 9.0,
         facing: -1.0,
-        hit_resource_available: false,
+        fighter_resource_available: false,
         ..CaptainState::default()
     }));
     let host = shared_host(CaptainHost {

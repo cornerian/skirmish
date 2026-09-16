@@ -495,6 +495,7 @@ pub enum Error {
 struct CombatHost {
     fighter: FighterView,
     hit: Option<HitView>,
+    resources: Option<Arc<lifecycle_resources::ResourceCache>>,
     patch: HitPatch,
     persistent: LocalState,
     action_state: LocalState,
@@ -511,6 +512,7 @@ impl CombatHost {
         persistent: &LocalState,
         action_state: &LocalState,
         baseline: Option<&HitPatch>,
+        resources: Option<Arc<lifecycle_resources::ResourceCache>>,
         state_schema: &StateSchema,
         action_schema: &StateSchema,
     ) -> Self {
@@ -536,6 +538,7 @@ impl CombatHost {
         Self {
             fighter: fighter.clone(),
             hit: hit.cloned(),
+            resources,
             patch,
             persistent,
             action_state,
@@ -563,6 +566,10 @@ impl CombatHost {
             "percent" => starlark::NativeValue::F32(self.fighter.percent),
             "hitlag" => starlark::NativeValue::F32(self.fighter.hitlag),
             "hitstun" => starlark::NativeValue::Int(i64::from(self.fighter.hitstun)),
+            "resource" => starlark::NativeValue::Object(starlark::NativeObject {
+                kind: starlark::NativeKind::Value,
+                path: "fighter.resource".into(),
+            }),
             "flags" => starlark::NativeValue::Object(starlark::NativeObject {
                 kind: starlark::NativeKind::Value,
                 path: "fighter.flags".into(),
@@ -599,6 +606,26 @@ impl CombatHost {
                 )));
             }
         })
+    }
+
+    fn resource_value(&self, path: &str) -> Result<starlark::NativeValue, starlark::Error> {
+        let Some(resources) = self.resources.as_deref() else {
+            return Ok(starlark::NativeValue::None);
+        };
+        let Some(value) = resources.value_path(path) else {
+            return Ok(starlark::NativeValue::None);
+        };
+        let native_path = format!("fighter.resource.{path}");
+        match value {
+            serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                Ok(starlark::NativeValue::Object(starlark::NativeObject {
+                    kind: starlark::NativeKind::Value,
+                    path: native_path,
+                }))
+            }
+            _ => lifecycle_host::json_to_native(value, &native_path),
+        }
+        .map_err(|error| starlark::Error::Host(error.to_string()))
     }
 
     fn hit_value(&self, field: &str) -> Result<starlark::NativeValue, starlark::Error> {
@@ -788,6 +815,13 @@ impl starlark::NativeHost for CombatHost {
             .split_once('.')
             .ok_or_else(|| starlark::Error::Host("native root is not a field".into()))?;
         match root {
+            "fighter" if field == "resource" || field.starts_with("resource.") => {
+                if field == "resource" {
+                    self.fighter_value(field)
+                } else {
+                    self.resource_value(&field["resource.".len()..])
+                }
+            }
             "fighter" => self.fighter_value(field),
             "hit" => self.hit_value(field),
             _ => Err(starlark::Error::Host(format!(
@@ -881,6 +915,14 @@ impl starlark::NativeHost for CombatHost {
         args: &[starlark::NativeValue],
     ) -> Result<starlark::NativeValue, starlark::Error> {
         match path {
+            "fighter.resource" => {
+                let Some(starlark::NativeValue::String(path)) = args.first() else {
+                    return Err(starlark::Error::Host(
+                        "fighter.resource requires a string path".into(),
+                    ));
+                };
+                return self.resource_value(path);
+            }
             "fighter.change_action" | "fighter.set_action" => {
                 let Some(starlark::NativeValue::String(action)) = args.first() else {
                     return Err(starlark::Error::Host("action requires a string".into()));
@@ -1299,6 +1341,7 @@ impl Program {
             context_state.persistent,
             context_state.action_state,
             baseline,
+            context_state.resources.clone(),
             &self.metadata.state,
             &self.metadata.action_state,
         )));
@@ -1533,6 +1576,64 @@ mod action_name_tests {
         for spelling in ["appeal_sl", "APPEAL_SL", "AppealSL", "appeal_s_l"] {
             assert_eq!(parse_action(spelling), Some(Action::AppealSL), "{spelling}");
         }
+    }
+}
+
+#[cfg(test)]
+mod combat_resource_tests {
+    use super::{CombatContext, FighterView, HitView, LocalState, Program};
+    use crate::game::script::lifecycle_resources::ResourceCache;
+    use crate::game::script::resources::{Resources, Specials};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn combat_callback_reads_fighter_resource_scalar_and_nested_attribute() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        data.fighters[0].specials = Some(Specials {
+            character: "captain-falcon".into(),
+            resources: Resources::new(BTreeMap::from([(
+                "side".into(),
+                serde_json::json!({"attributes": {"specials_gr_vel_x": 0.75}}),
+            )]))
+            .expect("resource fixture indexes"),
+        });
+        let resources = Arc::new(
+            ResourceCache::build(Some(&data.fighters[0]), None, false)
+                .expect("resource fixture builds"),
+        );
+        let program = Program::new(include_str!("../../scripts/fighters/captain.py"))
+            .expect("Captain source compiles");
+        let persistent = LocalState::new();
+        let action_state = LocalState::new();
+        let fighter = FighterView {
+            action: "Action.SPECIAL_S_START".into(),
+            velocity: [2.0, 3.0],
+            ..FighterView::default()
+        };
+        let result = program
+            .dispatch_with_context(
+                super::Hook::BeforeHit,
+                &fighter,
+                Some(&HitView::default()),
+                CombatContext {
+                    persistent: &persistent,
+                    action_state: &action_state,
+                    resources: Some(resources),
+                },
+            )
+            .expect("combat callback reads resource through fighter host");
+        assert!(result.commands.iter().any(|command| matches!(
+            command,
+            super::Command::SetAction(action) if action == "special_s"
+        )));
+        assert!(result.commands.iter().any(|command| matches!(
+            command,
+            super::Command::SetVelocity([x, y]) if *x == 2.0 && *y == 0.0
+        )));
     }
 }
 

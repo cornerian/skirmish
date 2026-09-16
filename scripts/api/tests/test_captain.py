@@ -57,6 +57,7 @@ class CaptainFalconTests(unittest.TestCase):
             self.ground_velocity = 3.0
             self.velocity = [3.0, 4.0]
             self.facing = 1.0
+            self.resource_value = None
             self.changes = []
             self.fall_special = []
 
@@ -66,6 +67,13 @@ class CaptainFalconTests(unittest.TestCase):
 
         def enter_fall_special(self, **kwargs):
             self.fall_special.append(kwargs)
+
+        def resource(self, path):
+            resource = self.resource_value
+            if resource is None:
+                return None
+            return (getattr(resource, "attributes", None)
+                    if path.endswith(".attributes") else resource)
 
     @staticmethod
     def context(*, resource_value=object(), input_value=None, ground_open=False,
@@ -333,23 +341,24 @@ class CaptainFalconTests(unittest.TestCase):
         move = captain.specials.side
 
         attributes = SimpleNamespace(specials_gr_vel_x=0.75)
-        hit = SimpleNamespace(resource=lambda path: SimpleNamespace(attributes=attributes))
         ground = self.Fighter(move.ground_start)
+        ground.resource_value = SimpleNamespace(attributes=attributes)
         ground.velocity = [2.0, 3.0]
         ground.ground_velocity = 4.0
-        move.before_hit(ground, hit)
+        move.before_hit(ground, SimpleNamespace())
         self.assertEqual(ground.action, move.ground)
         self.assertEqual(ground.velocity, (2.0, 0.0))
         self.assertEqual(ground.ground_velocity, 3.0)
 
         air = self.Fighter(move.air_start)
+        air.resource_value = SimpleNamespace(attributes=attributes)
         air.velocity = [2.0, 3.0]
-        move.before_hit(air, hit)
+        move.before_hit(air, SimpleNamespace())
         self.assertEqual(air.action, move.air)
         self.assertEqual(air.velocity, [2.0, 3.0])
 
         air_without_attributes = self.Fighter(move.air_start)
-        move.before_hit(air_without_attributes, SimpleNamespace(resource=None))
+        move.before_hit(air_without_attributes, SimpleNamespace())
         self.assertEqual(air_without_attributes.action, move.air)
 
         for multiplier in (None, float("inf")):
@@ -357,7 +366,8 @@ class CaptainFalconTests(unittest.TestCase):
                                       SimpleNamespace(attributes=SimpleNamespace(
                                           specials_gr_vel_x=value)))
             untouched = self.Fighter(move.ground_start)
-            move.before_hit(untouched, missing)
+            untouched.resource_value = missing.resource(move.resource)
+            move.before_hit(untouched, SimpleNamespace())
             self.assertEqual(untouched.action, move.ground_start)
 
     def test_raptor_boost_exports_source_action_metadata(self):
