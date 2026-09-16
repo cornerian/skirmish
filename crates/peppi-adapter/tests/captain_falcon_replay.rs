@@ -10,14 +10,18 @@ const REPLAY: &[u8] = include_bytes!(
     "../../../tests/fixtures/slippi/01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp"
 );
 
-fn captain(replay: &Replay, index: usize) -> peppi_adapter::Actor {
+fn actor_at_port(replay: &Replay, index: usize, port: Port) -> peppi_adapter::Actor {
     replay
         .frame(index)
         .unwrap()
         .actors
         .into_iter()
-        .find(|actor| actor.port == Port::P4 && !actor.follower)
-        .unwrap_or_else(|| panic!("Captain Falcon leader missing at frame index {index}"))
+        .find(|actor| actor.port == port && !actor.follower)
+        .unwrap_or_else(|| panic!("Leader missing at port {port:?}, frame index {index}"))
+}
+
+fn captain(replay: &Replay, index: usize) -> peppi_adapter::Actor {
+    actor_at_port(replay, index, Port::P4)
 }
 
 #[test]
@@ -293,27 +297,27 @@ fn captain_two_player_fixture_records_roster_and_special_entries() {
         ]
     );
 
-    // These are the complete Captain Falcon special-action Post states
-    // observed in this recording. They are replay observations, not claims
-    // about native simulation parity.
+    // These are the Captain Falcon special-action Post states both observed
+    // in this recording and documented by the adapter's action-state table.
+    // They are replay observations, not claims about native simulation parity.
     let mut observed = std::collections::BTreeSet::new();
     for index in 0..summary.selected_frames {
-        observed.insert(captain(&replay, index).post.state);
+        observed.insert(actor_at_port(&replay, index, Port::P1).post.state);
     }
-    assert!([349, 351, 358, 368]
+    assert!([347, 349, 350, 351, 354]
         .into_iter()
         .all(|state| observed.contains(&state)));
 
     // Representative recorded entries, retaining controller input and both
     // sides of each action-state transition for future adapter consumers.
     for (frame, pre_state, post_state, buttons, stick) in [
-        (1328, 28, 368, 66_048, (-0.675_f32, 0.725_f32)),
-        (1822, 25, 358, 262_656, (-0.9875_f32, 0.0_f32)),
-        (2411, 20, 349, 262_656, (-0.9875_f32, 0.0_f32)),
-        (2422, 349, 351, 262_656, (-0.9875_f32, 0.0_f32)),
-        (5214, 29, 368, 66_048, (0.6875_f32, 0.7125_f32)),
+        (1310, 27, 354, 66_048, (-0.65_f32, 0.75_f32)),
+        (1573, 38, 351, 524_800, (0.9875_f32, 0.0_f32)),
+        (2150, 14, 347, 512, (0.0_f32, 0.0_f32)),
+        (4455, 20, 349, 262_656, (-0.9875_f32, 0.0_f32)),
+        (4481, 350, 350, 262_656, (-0.9875_f32, 0.0_f32)),
     ] {
-        let actor = captain(&replay, (frame + 123) as usize);
+        let actor = actor_at_port(&replay, (frame + 123) as usize, Port::P1);
         assert_eq!(actor.pre.state, pre_state, "entry pre-state at {frame}");
         assert_eq!(actor.post.state, post_state, "entry post-state at {frame}");
         assert_eq!(actor.pre.buttons, buttons, "entry buttons at {frame}");
