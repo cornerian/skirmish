@@ -37,6 +37,38 @@ def _load_fox():
 
 
 class FoxBlasterTests(unittest.TestCase):
+    def test_neutral_threshold_boundary_is_rejected_but_inner_stick_starts_blaster(self):
+        fox = _load_fox()
+        move = fox.specials.neutral
+
+        def attempt(stick):
+            fighter = SimpleNamespace(
+                action=Action.WAIT,
+                action_frame=7,
+                action_state=SimpleNamespace(),
+                ground_velocity=3.0,
+                velocity=[2.0, 0.0],
+            )
+            fighter.change_action = lambda action: setattr(fighter, "action", action)
+            context = SimpleNamespace(
+                ground_open=True,
+                air_open=False,
+                input=SimpleNamespace(
+                    stick=stick,
+                    just_pressed=lambda button: button == Button.B,
+                ),
+                resource=lambda path: SimpleNamespace(neutral_thresholds=(0.5, 0.5)),
+            )
+            return move.press(fighter, context), fighter
+
+        accepted, fighter = attempt((0.5 - 1e-6, 0.0))
+        self.assertTrue(accepted)
+        self.assertEqual(fighter.action, move.ground_start)
+
+        rejected, fighter = attempt((0.5, 0.0))
+        self.assertFalse(rejected)
+        self.assertEqual(fighter.action, Action.WAIT)
+
     def test_rejected_neutral_input_does_not_start_blaster(self):
         fox = _load_fox()
         move = fox.specials.neutral

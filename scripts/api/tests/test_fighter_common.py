@@ -34,6 +34,12 @@ def _load_common():
 
 
 class FighterCommonTests(unittest.TestCase):
+    def test_stick_axis_threshold_is_inclusive_and_uses_magnitude(self):
+        common = _load_common()
+        self.assertFalse(common.stick_axis_reaches_threshold(0.49, 0.5))
+        self.assertTrue(common.stick_axis_reaches_threshold(0.5, 0.5))
+        self.assertTrue(common.stick_axis_reaches_threshold(-0.5, 0.5))
+
     def test_special_rules_returns_optional_dispatch_table(self):
         common = _load_common()
         specials = object()

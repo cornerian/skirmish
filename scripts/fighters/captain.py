@@ -38,6 +38,7 @@ from shared.common import (
     special_rules,
     start_action,
     start_open_special,
+    stick_axis_reaches_threshold,
 )
 
 
@@ -49,8 +50,10 @@ def _directional_b(ctx: MoveContext) -> bool:
     stick = getattr(ctx.input, "stick", (0.0, 0.0))
     vertical = getattr(rules, "vertical_threshold", None)
     horizontal = getattr(rules, "horizontal_threshold", None)
-    return ((vertical is not None and abs(stick[1]) >= vertical)
-            or (horizontal is not None and abs(stick[0]) >= horizontal))
+    return ((vertical is not None
+             and stick_axis_reaches_threshold(stick[1], vertical))
+            or (horizontal is not None
+                and stick_axis_reaches_threshold(stick[0], horizontal)))
 
 
 class CaptainFalconActionState(ActionState):

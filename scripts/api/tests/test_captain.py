@@ -111,6 +111,31 @@ class CaptainFalconTests(unittest.TestCase):
         context = self.context(resource_value=None, input_value=self.Input((Button.B,)), ground_open=True)
         self.assertFalse(move.input_pressed(missing, context))
 
+    def test_neutral_punch_reserves_inclusive_directional_threshold(self):
+        captain = _load_captain()
+        move = captain.specials.neutral
+        rules = SimpleNamespace(specials=SimpleNamespace(
+            vertical_threshold=0.5,
+            horizontal_threshold=0.5,
+        ))
+
+        def attempt(stick):
+            fighter = self.Fighter(None)
+            context = self.context(
+                input_value=self.Input((Button.B,), stick),
+                ground_open=True,
+            )
+            context.rules = rules
+            return move.input_pressed(fighter, context), fighter
+
+        accepted, fighter = attempt((0.5 - 1e-6, 0.0))
+        self.assertTrue(accepted)
+        self.assertEqual(fighter.action, move.ground)
+
+        rejected, fighter = attempt((0.5, 0.0))
+        self.assertFalse(rejected)
+        self.assertIsNone(fighter.action)
+
     def test_terminal_animation_exits_ground_to_wait_and_air_to_fall(self):
         captain = _load_captain()
         move = captain.specials.neutral

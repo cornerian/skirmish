@@ -30,6 +30,7 @@ from shared.common import (
     special_rules,
     start_action,
     start_open_special,
+    stick_axis_reaches_threshold,
 )
 
 
@@ -127,9 +128,9 @@ class Blaster(SpecialMove):
         thresholds = resource.neutral_thresholds
         stick_x = ctx.input.stick[0]
         stick_y = ctx.input.stick[1]
-        if stick_x >= thresholds[0] or stick_x <= -thresholds[0]:
+        if stick_axis_reaches_threshold(stick_x, thresholds[0]):
             return False
-        if stick_y >= thresholds[1] or stick_y <= -thresholds[1]:
+        if stick_axis_reaches_threshold(stick_y, thresholds[1]):
             return False
 
         if not start_open_special(fighter, ctx, self.ground_start, self.air_start):

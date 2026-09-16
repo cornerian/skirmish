@@ -43,6 +43,11 @@ def special_rules(ctx):
     return getattr(rules, "specials", None)
 
 
+def stick_axis_reaches_threshold(value, threshold):
+    """Return whether an axis reaches an inclusive directional threshold."""
+    return abs(value) >= threshold
+
+
 def resource_attributes(ctx, resource=None):
     """Resolve a resource's attributes from a callback context.
 
@@ -92,6 +97,7 @@ __all__ = [
     "fresh_special_input",
     "resource_attributes",
     "special_rules",
+    "stick_axis_reaches_threshold",
     "start_action",
     "start_open_special",
 ]
