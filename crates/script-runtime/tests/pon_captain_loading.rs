@@ -82,6 +82,7 @@ struct CaptainState {
     facing: f32,
     velocity: [f32; 2],
     ground_velocity: f32,
+    hit_resource_available: bool,
 }
 
 struct CaptainHost {
@@ -164,6 +165,9 @@ impl NativeHost for CaptainHost {
                 Ok(object(NativeKind::Value, resource))
             }
             "hit.resource" => {
+                if !self.state.lock().unwrap().hit_resource_available {
+                    return Err(Error::Host("Captain hit resource is unavailable".into()));
+                }
                 let Some(NativeValue::String(resource)) = args.first() else {
                     return Err(Error::Host(
                         "Captain hit resource path is not a string".into(),
@@ -437,6 +441,7 @@ fn captain_raptor_boost_contact_enters_follow_through_with_ground_multiplier() {
         velocity: [2.0, 3.0],
         ground_velocity: 4.0,
         facing: 1.0,
+        hit_resource_available: true,
         ..CaptainState::default()
     }));
     let host = shared_host(CaptainHost {
@@ -464,4 +469,39 @@ fn captain_raptor_boost_contact_enters_follow_through_with_ground_multiplier() {
     assert!(host.sets.iter().any(|(path, value)| {
         path == "fighter.ground_velocity" && *value == NativeValue::F32(3.0)
     }));
+}
+
+#[test]
+fn captain_aerial_raptor_boost_contact_skips_ground_resource_and_planar_velocity() {
+    let program = captain_program();
+    let state = Arc::new(Mutex::new(CaptainState {
+        action: "Action.SPECIAL_AIR_S_START".into(),
+        velocity: [7.0, -2.0],
+        ground_velocity: 9.0,
+        facing: -1.0,
+        hit_resource_available: false,
+        ..CaptainState::default()
+    }));
+    let host = shared_host(CaptainHost {
+        state: Arc::clone(&state),
+    });
+    let fighter = HostRef::new(host.clone(), NativeKind::Fighter, "fighter");
+    let hit = HostRef::new(host, NativeKind::Hit, "hit");
+    let contact = callback(&program, "move_1", "before_hit");
+
+    program.prepare_for_current_thread().unwrap();
+    program
+        .dispatch(&contact, fighter, &[host_object(&hit)])
+        .unwrap();
+
+    let host = state.lock().unwrap();
+    assert!(host.calls.iter().any(|(path, args)| {
+        path == "fighter.change_action"
+            && args.first() == Some(&NativeValue::String("special_air_s".into()))
+    }));
+    assert!(host.calls.iter().all(|(path, _)| path != "hit.resource"));
+    assert!(host
+        .sets
+        .iter()
+        .all(|(path, _)| path != "fighter.velocity" && path != "fighter.ground_velocity"));
 }
