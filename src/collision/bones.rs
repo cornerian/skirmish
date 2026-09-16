@@ -443,6 +443,39 @@ mod tests {
     }
 
     #[test]
+    fn root_yaw_orients_local_forward_axis_without_external_mirroring() {
+        let translated = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        for (facing, expected_depth) in [(1.0, 28.0), (-1.0, 32.0)] {
+            let bones = [
+                Bone {
+                    local: LocalTransform {
+                        rotation: [0.0, facing * core::f32::consts::FRAC_PI_2, 0.0],
+                        ..LocalTransform::default()
+                    },
+                    ..Bone::default()
+                },
+                Bone {
+                    parent: Some(0),
+                    local: LocalTransform {
+                        translation: [2.0, 0.0, 0.0],
+                        ..LocalTransform::default()
+                    },
+                    ..Bone::default()
+                },
+            ];
+            let pose = Pose::evaluate_with_root(&bones, &translated).unwrap();
+            assert_eq!(
+                transform_point(pose.world_matrix(1).unwrap(), [0.0; 3]),
+                [10.0, 20.0, expected_depth]
+            );
+        }
+    }
+
+    #[test]
     fn parent_scale_compensation_differs_from_classical_scaling() {
         let mut bones = [
             Bone {

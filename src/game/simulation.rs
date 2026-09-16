@@ -2408,6 +2408,15 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     };
     let mut bones = take_physics_bones();
     bones.extend(local.iter().map(Bone::physics));
+    // ftPartSetRotY(fp, 0, M_PI_2 * facing_dir) runs whenever a motion
+    // state changes.  Keep that orientation in the HSD root joint so child
+    // bones, including collision geometry, compose through the same matrix
+    // hierarchy as the game.  The external root below is translation only;
+    // applying a diagonal X/Z reflection there assumes the authored +X axis
+    // is already the world-facing axis and loses the native quarter-turn.
+    if let Some(root) = bones.first_mut() {
+        root.local.rotation[1] = core::f32::consts::FRAC_PI_2 * fighter.facing;
+    }
     if fighter.action == Action::JumpAerial
         && data
             .locomotion
@@ -2417,10 +2426,10 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     {
         root.local.rotation[1] += fighter.locomotion.multi_jump_yaw;
     }
-    // Native match coordinates: local +X faces forward, +Y up, +Z depth.
+    // Position is supplied separately from the HSD root orientation above.
     let root = [
         [
-            fighter.facing,
+            1.0,
             0.0,
             0.0,
             fighter.position[0] + fighter.death.camera_offset[0],
@@ -2434,7 +2443,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
         [
             0.0,
             0.0,
-            fighter.facing,
+            1.0,
             fighter.depth + fighter.death.camera_offset[2],
         ],
     ];

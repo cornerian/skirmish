@@ -475,7 +475,11 @@ fn multijump_turn_rotates_bone_physics_and_flips_facing_at_halfway() {
     let halfway = step(&mut game, 0, [-1.0, 0.0]);
     assert_eq!(halfway.fighters[0].locomotion.multi_jump_turn_remaining, 2);
     assert_eq!(halfway.fighters[0].facing, -1.0);
-    assert!(halfway.fighters[0].ecb.desired.left[0] > -8.0);
+    // The native root yaw keeps the authored root-local forward axis in the
+    // HSD hierarchy.  At the halfway turn this axis is edge-on in world X,
+    // so the left extent remains the authored -8 boundary instead of being
+    // mirrored by an external X/Z scale.
+    assert_eq!(halfway.fighters[0].ecb.desired.left[0], -8.0);
     game.restore_checkpoint(&checkpoint).unwrap();
     assert_eq!(step(&mut game, 0, [-1.0, 0.0]), halfway);
 }
