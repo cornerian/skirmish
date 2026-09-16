@@ -123,15 +123,15 @@ class Blaster(SpecialMove):
         if fighter.action in (self.ground_end, self.air_end):
             return True
 
-        if not start_open_special(fighter, ctx, self.ground_start, self.air_start):
-            return False
-
         thresholds = resource.neutral_thresholds
         stick_x = ctx.input.stick[0]
         stick_y = ctx.input.stick[1]
         if stick_x >= thresholds[0] or stick_x <= -thresholds[0]:
             return False
         if stick_y >= thresholds[1] or stick_y <= -thresholds[1]:
+            return False
+
+        if not start_open_special(fighter, ctx, self.ground_start, self.air_start):
             return False
 
         if ctx.ground_open:
