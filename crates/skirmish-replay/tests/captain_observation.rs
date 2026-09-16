@@ -60,9 +60,10 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
     }
 }
 
-fn captain_at_frame(
+fn captain_at_frame_for_port(
     replay: &skirmish_replay::slippi::Replay,
     frame_id: i32,
+    port: peppi_adapter::Port,
 ) -> peppi_adapter::Actor {
     let index = replay
         .frame_indices(skirmish_replay::slippi::Timeline::LastRecorded)
@@ -76,8 +77,49 @@ fn captain_at_frame(
         .unwrap()
         .actors
         .into_iter()
-        .find(|actor| actor.port == peppi_adapter::Port::P4 && !actor.follower)
-        .unwrap_or_else(|| panic!("Captain Falcon leader missing at frame {frame_id}"))
+        .find(|actor| actor.port == port && !actor.follower)
+        .unwrap_or_else(|| panic!("Captain Falcon leader missing at {port:?} at frame {frame_id}"))
+}
+
+fn captain_at_frame(
+    replay: &skirmish_replay::slippi::Replay,
+    frame_id: i32,
+) -> peppi_adapter::Actor {
+    captain_at_frame_for_port(replay, frame_id, peppi_adapter::Port::P4)
+}
+
+#[test]
+fn captain_two_player_replay_states_map_to_authored_definition_metadata() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(include_bytes!(
+        "../../../tests/fixtures/slippi/11-captain-falcon-marth-final-destination.slp"
+    )))
+    .unwrap();
+
+    // Representative raw replay observations establish state-to-action
+    // mapping evidence. This is replay mapping, not simulation parity.
+    for (frame_id, action, state, animation) in [
+        (2150, game::Action::SpecialNStart, 347, 301),
+        (4455, game::Action::SpecialSStart, 349, 303),
+        (4481, game::Action::SpecialS, 350, 304),
+        (1573, game::Action::SpecialAirSStart, 351, 305),
+        (1310, game::Action::SpecialAirHi, 354, 308),
+    ] {
+        let actor = captain_at_frame_for_port(&replay, frame_id, peppi_adapter::Port::P1);
+        assert_eq!(
+            actor.post.character, 2,
+            "Captain internal ID at frame {frame_id}"
+        );
+        assert_eq!(
+            u32::from(actor.post.state),
+            state,
+            "recorded state at frame {frame_id}"
+        );
+        assert_eq!(
+            definition::builtin_slippi_ids(Some(CAPTAIN_EXTERNAL_ID), action),
+            Some((state, animation)),
+            "Captain authored mapping for replay frame {frame_id}"
+        );
+    }
 }
 
 #[test]
