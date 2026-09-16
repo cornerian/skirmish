@@ -215,7 +215,17 @@ pub(crate) fn is_captured(fighter: &Fighter) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Attachment, State};
+    use super::{Attachment, State, capture, update_pairs, valid_relationship};
+    use crate::game::{Action, Match};
+
+    fn fixture() -> (Match, crate::game::data::MatchData) {
+        let data: crate::game::data::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration game fixture");
+        let match_ = Match::new(data.clone(), 1).expect("synthetic match");
+        (match_, data)
+    }
 
     #[test]
     fn relation_modes_are_checkpoint_stable_and_do_not_encode_bones() {
@@ -240,5 +250,61 @@ mod tests {
         assert!(state.is_empty());
         assert!(!state.holds_victim());
         assert!(!state.is_captured());
+    }
+
+    #[test]
+    fn capture_and_throw_release_are_one_dedicated_pair_lifecycle() {
+        let (match_, data) = fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = true;
+        let positions = state.fighters.each_ref().map(|fighter| fighter.position);
+
+        capture(&data, &mut state, 0, 1, true).expect("grounded Dive capture");
+        assert_eq!(
+            state.fighters[0].special_capture.attachment,
+            Attachment::GroundedHolderToVictim
+        );
+        assert_eq!(state.fighters[1].special_capture.captor, Some(0));
+        assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
+        assert_eq!(
+            state.fighters.each_ref().map(|fighter| fighter.position),
+            positions
+        );
+        assert!(valid_relationship(&state.fighters, 0));
+        assert!(valid_relationship(&state.fighters, 1));
+
+        state.fighters[0].action = Action::SpecialHiThrow;
+        update_pairs(&mut state).expect("Catch -> Throw release");
+        assert_eq!(state.fighters[0].special_capture, State::default());
+        assert_eq!(state.fighters[1].special_capture, State::default());
+        assert_eq!(state.fighters[1].action, Action::Wait);
+        let released = state.fighters[1].action_frame;
+        update_pairs(&mut state).expect("released relation is inert");
+        assert_eq!(state.fighters[1].action_frame, released);
+        assert!(valid_relationship(&state.fighters, 0));
+        assert!(valid_relationship(&state.fighters, 1));
+    }
+
+    #[test]
+    fn airborne_capture_records_the_no_attachment_mode() {
+        let (match_, data) = fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = false;
+
+        capture(&data, &mut state, 0, 1, false).expect("airborne Dive capture");
+        assert_eq!(
+            state.fighters[0].special_capture.attachment,
+            Attachment::None
+        );
+        assert_eq!(
+            state.fighters[1].special_capture.attachment,
+            Attachment::None
+        );
+        assert!(valid_relationship(&state.fighters, 0));
+        assert!(valid_relationship(&state.fighters, 1));
     }
 }
