@@ -22,7 +22,14 @@ from skirmish import (
     resource as bind_resource,
     validation,
 )
-from shared.common import FighterBase, resource_attributes, special_rules, start_action
+from shared.common import (
+    FighterBase,
+    fresh_special_input,
+    resource_attributes,
+    special_rules,
+    start_action,
+    start_open_special,
+)
 
 
 class FoxActionState(ActionState):
@@ -98,9 +105,9 @@ class Blaster(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def press(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        resource = ctx.resource("neutral")
-        if resource is None or not ctx.input.just_pressed(Button.B):
+        if not fresh_special_input(ctx, self.resource):
             return False
+        resource = ctx.resource(self.resource)
 
         active_actions = (
             self.ground_start,
@@ -116,7 +123,7 @@ class Blaster(SpecialMove):
         if fighter.action in (self.ground_end, self.air_end):
             return True
 
-        if not (ctx.ground_open or ctx.air_open):
+        if not start_open_special(fighter, ctx, self.ground_start, self.air_start):
             return False
 
         thresholds = resource.neutral_thresholds
@@ -128,12 +135,9 @@ class Blaster(SpecialMove):
             return False
 
         if ctx.ground_open:
-            start_action(fighter, self.ground_start)
             fighter.ground_velocity = 0
             fighter.velocity[0] = 0
             fighter.velocity[1] = 0
-        else:
-            start_action(fighter, self.air_start)
         return True
 
     @hook.animation_end(

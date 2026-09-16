@@ -31,7 +31,14 @@ from skirmish import (
     register as fighter,
     validation,
 )
-from shared.common import FighterBase, resource_attributes, special_rules, start_action
+from shared.common import (
+    FighterBase,
+    fresh_special_input,
+    resource_attributes,
+    special_rules,
+    start_action,
+    start_open_special,
+)
 
 
 def _directional_b(ctx: MoveContext) -> bool:
@@ -98,7 +105,7 @@ class FalconPunch(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if ctx.resource(self.resource) is None or not ctx.input.just_pressed(Button.B):
+        if not fresh_special_input(ctx, self.resource):
             return False
         # Generic dispatch reserves directional B inputs for the directional
         # specials.  If no dispatch rules are supplied, preserve the API's
@@ -107,9 +114,8 @@ class FalconPunch(SpecialMove):
             return False
         if fighter.action in (self.ground, self.air):
             return True
-        if not (ctx.ground_open or ctx.air_open):
+        if not start_open_special(fighter, ctx, self.ground, self.air):
             return False
-        start_action(fighter, self.ground if ctx.ground_open else self.air)
         return True
 
     @hook.command_changed(0, actions=(air,))
@@ -253,8 +259,7 @@ class FalconDive(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if (ctx.resource(self.resource) is None
-                or not ctx.input.just_pressed(Button.B)):
+        if not fresh_special_input(ctx, self.resource):
             return False
         rules = special_rules(ctx)
         if rules is None:
@@ -588,7 +593,7 @@ class FalconKick(SpecialMove):
         # Generic dispatch exposes the two legal surfaces independently.  A
         # simultaneous opening is grounded by precedence, matching the
         # native grounded branch; otherwise the aerial motion is selected.
-        start_action(fighter, self.ground if ctx.ground_open else self.air)
+        start_open_special(fighter, ctx, self.ground, self.air)
         return True
 
     @hook.animation_end(ground, ground_end, air, air_end, landing, ground_end_air)

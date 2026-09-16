@@ -104,6 +104,40 @@ class FighterCommonTests(unittest.TestCase):
         self.assertEqual(fighter.changes, [action])
         self.assertEqual(fighter.action_frame, 1)
 
+    def test_fresh_special_helpers_gate_input_and_select_open_surface(self):
+        common = _load_common()
+
+        class Input:
+            def just_pressed(self, button):
+                return button.name == "B"
+
+        class Fighter:
+            action_frame = 0
+
+            def __init__(self):
+                self.actions = []
+
+            def change_action(self, action):
+                self.actions.append(action)
+
+        context = SimpleNamespace(
+            input=Input(),
+            ground_open=False,
+            air_open=True,
+            resource=lambda path: object(),
+        )
+        self.assertTrue(common.fresh_special_input(context, "neutral"))
+        fighter = Fighter()
+        air = object()
+        ground = object()
+        self.assertTrue(common.start_open_special(fighter, context, ground, air))
+        self.assertEqual(fighter.actions, [air])
+        self.assertEqual(fighter.action_frame, 1)
+
+        context.ground_open = False
+        context.air_open = False
+        self.assertFalse(common.start_open_special(fighter, context, ground, air))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from skirmish import (
     TauntMoves,
     ThrowMoves,
     TiltMoves,
+    Button,
 )
 
 
@@ -72,4 +73,25 @@ def start_action(fighter, action):
     fighter.action_frame = 1
 
 
-__all__ = ["FighterBase", "resource_attributes", "special_rules", "start_action"]
+def fresh_special_input(ctx, resource):
+    """Return whether a resource-backed B special has a fresh input."""
+    return (ctx.resource(resource) is not None
+            and ctx.input.just_pressed(Button.B))
+
+
+def start_open_special(fighter, ctx, ground_action, air_action):
+    """Start a special on the currently open ground or aerial surface."""
+    if not (ctx.ground_open or ctx.air_open):
+        return False
+    start_action(fighter, ground_action if ctx.ground_open else air_action)
+    return True
+
+
+__all__ = [
+    "FighterBase",
+    "fresh_special_input",
+    "resource_attributes",
+    "special_rules",
+    "start_action",
+    "start_open_special",
+]
