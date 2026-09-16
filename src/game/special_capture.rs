@@ -139,7 +139,9 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         let Some(victim) = state.fighters[holder].special_capture.victim else {
             continue;
         };
-        if state.fighters[holder].action == Action::SpecialHiThrow {
+        if state.fighters[holder].action == Action::SpecialHiThrow
+            && state.fighters[victim].action == Action::CaptureCaptain
+        {
             // The normal path is consumed by `update_pairs`, which performs
             // the one Catch -> Throw detach. Keep this fallback from clearing
             // the relation before that dedicated transition is observed.
@@ -150,6 +152,25 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         {
             release(state, holder, victim);
         }
+    }
+}
+
+/// Tear down a dedicated relation before a fighter is removed from play.
+/// Unlike `release_broken_pairs`, this is unconditional: a stock loss must
+/// not leave a Catch -> CaptureCaptain pair checkpointed across the death or
+/// respawn transition.
+pub(crate) fn break_for_player(state: &mut MatchState, player: usize) {
+    if player > 1 {
+        return;
+    }
+    if let Some(victim) = state.fighters[player].special_capture.victim
+        && victim <= 1
+    {
+        release(state, player, victim);
+    } else if let Some(holder) = state.fighters[player].special_capture.captor
+        && holder <= 1
+    {
+        release(state, holder, player);
     }
 }
 
@@ -215,7 +236,9 @@ pub(crate) fn is_captured(fighter: &Fighter) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Attachment, State, capture, update_pairs, valid_relationship};
+    use super::{
+        Attachment, State, break_for_player, capture, update_pairs, valid_relationship,
+    };
     use crate::game::{Action, Match};
 
     fn fixture() -> (Match, crate::game::data::MatchData) {
@@ -306,5 +329,27 @@ mod tests {
         );
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
+    }
+
+    #[test]
+    fn stock_loss_tears_down_either_side_without_release_hit() {
+        let (match_, data) = fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].grounded = false;
+        capture(&data, &mut state, 0, 1, false).expect("airborne Dive capture");
+
+        break_for_player(&mut state, 1);
+        assert!(state.fighters[0].special_capture.is_empty());
+        assert!(state.fighters[1].special_capture.is_empty());
+        assert_eq!(state.fighters[1].action, Action::Fall);
+
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].grounded = true;
+        capture(&data, &mut state, 0, 1, true).expect("grounded Dive capture");
+        break_for_player(&mut state, 0);
+        assert!(state.fighters[0].special_capture.is_empty());
+        assert!(state.fighters[1].special_capture.is_empty());
+        assert_eq!(state.fighters[1].action, Action::Wait);
     }
 }

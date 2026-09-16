@@ -1168,6 +1168,7 @@ pub(crate) fn advance(
     for (player, &knocked_out) in blast_knockouts.iter().enumerate() {
         if knocked_out {
             grab::break_for_player(state, player);
+            special_capture::break_for_player(state, player);
         }
     }
     for player in 0..2 {
@@ -1672,6 +1673,7 @@ fn lose_stock(
     player: usize,
     preserve_death: bool,
 ) -> Result<(), Error> {
+    special_capture::break_for_player(state, player);
     let fighter = &mut state.fighters[player];
     // ftCo_800D34E0 resets only the deceased player's queue.
     fighter.staling.queue.reset();
