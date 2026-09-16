@@ -605,6 +605,37 @@ class CaptainFalconTests(unittest.TestCase):
             move.animation_end(fighter, context)
             self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
 
+    def test_directional_special_dispatch_uses_inclusive_boundaries(self):
+        """Keep Captain's B-direction partition stable when helpers are shared."""
+        captain = _load_captain()
+        rules = SimpleNamespace(specials=SimpleNamespace(
+            vertical_threshold=0.5,
+            horizontal_threshold=0.5,
+            side_stick_threshold=0.5,
+        ))
+
+        def context(stick, *, ground_open=True, resource_value=object()):
+            value = self.context(
+                resource_value=resource_value,
+                input_value=self.Input((Button.B,), stick),
+                ground_open=ground_open,
+            )
+            value.rules = rules
+            return value
+
+        punch = captain.specials.neutral
+        self.assertFalse(punch.input_pressed(self.Fighter(None), context((0.5, 0.0))))
+        self.assertFalse(punch.input_pressed(self.Fighter(None), context((0.0, -0.5))))
+
+        side = captain.specials.side
+        self.assertTrue(side.input_pressed(self.Fighter(None), context((0.5, 0.0))))
+
+        dive = captain.specials.up
+        self.assertTrue(dive.input_pressed(self.Fighter(None), context((0.0, 0.5))))
+
+        kick = captain.specials.down
+        self.assertTrue(kick.input_pressed(self.Fighter(None), context((0.0, -0.5))))
+
     def test_landing_descriptor_uses_canonical_api_action(self):
         from fighter import action
         self.assertEqual(action(Action.LANDING).as_dict()["action"], "Action.LANDING")
