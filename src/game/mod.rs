@@ -303,6 +303,14 @@ pub enum Action {
     DeadUpFallIce,
     DeadUpFallHitCameraIce,
     Respawn,
+    /// Captain Falcon's grounded Falcon Kick motion end (Slippi 358).
+    /// This is distinct from Fox's `SpecialLwEnd` action, which retains its
+    /// existing canonical identity and discriminant.
+    SpecialLwGroundEnd,
+    /// Captain Falcon's aerial Falcon Kick landing end (Slippi 360).
+    SpecialAirLwLandingEnd,
+    /// Captain Falcon's aerial Falcon Kick airborne end (Slippi 361).
+    SpecialAirLwEndAir,
     Eliminated,
 }
 

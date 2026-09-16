@@ -413,11 +413,25 @@ class CaptainFalconTests(unittest.TestCase):
             invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
             self.assertFalse(move.validate(invalid))
 
-    def test_falcon_kick_accepts_only_downward_aerial_b_and_reaches_fall(self):
+    def test_falcon_kick_dispatches_ground_or_air_and_reaches_recovery(self):
         captain = _load_captain()
         move = captain.specials.down
         rules = SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5,
                                                           horizontal_threshold=0.5))
+        context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
+                               ground_open=True)
+        context.rules = rules
+        fighter = self.Fighter(None)
+        self.assertTrue(move.input_pressed(fighter, context))
+        self.assertEqual(fighter.action, move.ground)
+        self.assertEqual(move.ground.as_dict()["slippi_state"], 357)
+        self.assertEqual(move.ground_end.as_dict()["slippi_state"], 358)
+
+        move.animation_end(fighter, context)
+        self.assertEqual(fighter.action, move.ground_end)
+        move.animation_end(fighter, context)
+        self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
+
         context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
                                air_open=True)
         context.rules = rules
@@ -446,7 +460,8 @@ class CaptainFalconTests(unittest.TestCase):
         move = captain.specials.down
         context = self.context()
 
-        self.assertEqual(move.landing.as_dict()["action"], "Action.SPECIAL_LW_END")
+        self.assertEqual(move.landing.as_dict()["action"],
+                         "Action.SPECIAL_AIR_LW_LANDING_END")
         self.assertEqual(move.landing.as_dict()["slippi_state"], 360)
         self.assertEqual(move.landing.as_dict()["animation"], 314)
 
@@ -480,7 +495,10 @@ class CaptainFalconTests(unittest.TestCase):
             "special.neutral.air": 302,
             "special.up.ground": 307,
             "special.up.air": 308,
+            "special.down.ground": 311,
+            "special.down.ground_end": 312,
             "special.down.air": 313,
+            "special.down.landing": 314,
             "special.down.air_end": 316,
         }
         for action_name, animation in expected_animation_by_action.items():

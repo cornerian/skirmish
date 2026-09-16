@@ -36,6 +36,11 @@ class Action(str, Enum):
     SPECIAL_AIR_LW_END = "special_air_lw_end"
     SPECIAL_AIR_LW_TURN = "special_air_lw_turn"
     SPECIAL_AIR_LW_HIT = "special_air_lw_hit"
+    # Character-specific native motion identities which cannot share Fox's
+    # older generic down-special aliases.
+    SPECIAL_LW_GROUND_END = "special_lw_ground_end"
+    SPECIAL_AIR_LW_LANDING_END = "special_air_lw_landing_end"
+    SPECIAL_AIR_LW_END_AIR = "special_air_lw_end_air"
     LANDING = "landing"
 
     ATTACK_AIR_N = "attack_air_n"

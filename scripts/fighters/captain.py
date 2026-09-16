@@ -438,37 +438,64 @@ class RaptorBoost(SpecialMove):
 
 
 class FalconKick(SpecialMove):
-    """Observed aerial Falcon Kick entry and finite recovery phase only.
+    """Captain Falcon Kick's source-distinct motion lifecycle.
 
-    Ground Kick, rebound, wall interaction, hit effects, and command traces
-    remain deliberately unimplemented because they are not represented by
-    the captured slice or this API contract.
+    The entry and terminal motion identities are resource-backed.  Rebound,
+    wall interaction, hit effects, and per-frame physics remain native-only.
     """
 
     resource = "down"
 
+    ground = action(Action.SPECIAL_LW, slippi_state=357, animation=311)
+    ground_end = action(
+        Action.SPECIAL_LW_GROUND_END,
+        slippi_state=358,
+        animation=312,
+    )
     air = action(Action.SPECIAL_AIR_LW, slippi_state=359, animation=313)
-    air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361, animation=316)
-    landing = action(Action.SPECIAL_LW_END, slippi_state=360, animation=314)
+    landing = action(
+        Action.SPECIAL_AIR_LW_LANDING_END,
+        slippi_state=360,
+        animation=314,
+    )
+    air_end = action(
+        Action.SPECIAL_AIR_LW_END_AIR,
+        slippi_state=361,
+        animation=316,
+    )
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         if (ctx.resource(self.resource) is None
                 or not ctx.input.just_pressed(Button.B)):
             return False
-        if fighter.action in (self.air, self.air_end):
+        if fighter.action in (
+            self.ground,
+            self.ground_end,
+            self.air,
+            self.air_end,
+            self.landing,
+        ):
             return True
         rules = _special_rules(ctx)
         threshold = getattr(rules, "vertical_threshold", None) if rules is not None else None
-        if threshold is None or ctx.input.stick[1] > -threshold or not ctx.air_open:
+        if (threshold is None or ctx.input.stick[1] > -threshold
+                or not (ctx.ground_open or ctx.air_open)):
             return False
-        fighter.change_action(self.air)
+        # Generic dispatch exposes the two legal surfaces independently.  A
+        # simultaneous opening is grounded by precedence, matching the
+        # native grounded branch; otherwise the aerial motion is selected.
+        fighter.change_action(self.ground if ctx.ground_open else self.air)
         fighter.action_frame = 1
         return True
 
-    @hook.animation_end(air, air_end, landing)
+    @hook.animation_end(ground, ground_end, air, air_end, landing)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        if fighter.action == self.air:
+        if fighter.action == self.ground:
+            fighter.change_action(self.ground_end)
+        elif fighter.action == self.ground_end:
+            fighter.change_action(Action.WAIT)
+        elif fighter.action == self.air:
             fighter.change_action(self.air_end)
         elif fighter.action == self.air_end:
             fighter.change_action(Action.FALL)

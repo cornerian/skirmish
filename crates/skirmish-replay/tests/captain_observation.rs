@@ -25,9 +25,11 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
         (game::Action::SpecialAirS, 352, 306),
         (game::Action::SpecialHi, 353, 307),
         (game::Action::SpecialAirHi, 354, 308),
-        (game::Action::SpecialLwEnd, 360, 314),
+        (game::Action::SpecialLw, 357, 311),
+        (game::Action::SpecialLwGroundEnd, 358, 312),
         (game::Action::SpecialAirLw, 359, 313),
-        (game::Action::SpecialAirLwEnd, 361, 316),
+        (game::Action::SpecialAirLwLandingEnd, 360, 314),
+        (game::Action::SpecialAirLwEndAir, 361, 316),
     ] {
         fighter.action = action;
         assert_eq!(
