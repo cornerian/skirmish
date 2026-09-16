@@ -26,6 +26,7 @@ from skirmish import (
     action,
     hook,
     motion,
+    parameter,
     resource as bind_resource,
     register as fighter,
     validation,
@@ -537,6 +538,18 @@ class FalconKick(SpecialMove):
         Action.SPECIAL_AIR_LW_END_AIR,
         slippi_state=361,
         animation=316,
+        motion=motion.profile(
+            air=(
+                motion.gravity(
+                    acceleration=parameter("movement.gravity"),
+                    terminal_velocity=parameter("movement.terminal_velocity"),
+                    delay=0,
+                ),
+                motion.air_friction(
+                    amount=parameter("movement.aerial_friction"),
+                ),
+            ),
+        ),
     )
     ground_end_air = action(
         Action.SPECIAL_LW_END_AIR,

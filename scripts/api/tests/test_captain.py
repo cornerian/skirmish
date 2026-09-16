@@ -617,6 +617,28 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(exported["actions"]["special.neutral.ground"]["slippi_state"], 347)
         self.assertEqual(exported["actions"]["special.neutral.air"]["slippi_state"], 348)
 
+        kick_end = exported["actions"]["special.down.air_end"]
+        self.assertEqual(
+            kick_end["motion"]["kwargs"]["air"],
+            [
+                {
+                    "callee": "motion.gravity",
+                    "args": [],
+                    "kwargs": {
+                        "acceleration": {"callee": "parameter", "args": ["movement.gravity"], "kwargs": {}},
+                        "terminal_velocity": {"callee": "parameter", "args": ["movement.terminal_velocity"], "kwargs": {}},
+                        "delay": 0,
+                    },
+                },
+                {
+                    "callee": "motion.air_friction",
+                    "args": [],
+                    "kwargs": {"amount": {"callee": "parameter", "args": ["movement.aerial_friction"], "kwargs": {}}},
+                },
+            ],
+        )
+        self.assertNotIn("motion", exported["actions"]["special.down.air"])
+
         expected_animation_by_action = {
             "special.neutral.ground": 301,
             "special.neutral.air": 302,
