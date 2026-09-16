@@ -615,6 +615,11 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
     // the lifecycle transition in every resource-backed match.
     if f.action == Action::Jump && jump_animation_complete(f, data) {
         enter(f, Action::Fall);
+        // The completed Jump motion's callback hands off to Fall after the
+        // native animation tick.  Preserve that externally visible
+        // destination age while keeping the transition itself in this
+        // animation phase (before Fall's normal IASA/physics dispatch).
+        f.action_frame = 1;
         return;
     }
     let Some(p) = data.locomotion.as_ref() else {
