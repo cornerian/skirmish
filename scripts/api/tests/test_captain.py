@@ -320,7 +320,7 @@ class CaptainFalconTests(unittest.TestCase):
     def test_raptor_boost_dispatch_requires_horizontal_b_and_clears_entry_velocity(self):
         captain = _load_captain()
         move = captain.specials.side
-        rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+        rules = SimpleNamespace(specials=SimpleNamespace(side_stick_threshold=0.5))
         resource = SimpleNamespace(attributes=SimpleNamespace(
             specials_miss_landing_lag=20.0,
             specials_hit_landing_lag=30.0,
@@ -463,18 +463,24 @@ class CaptainFalconTests(unittest.TestCase):
     def test_raptor_boost_validation_requires_finite_nonnegative_lags(self):
         captain = _load_captain()
         move = captain.specials.side
-        valid = self.context(resource_value=SimpleNamespace(attributes=SimpleNamespace(
+        resource = SimpleNamespace(attributes=SimpleNamespace(
             specials_miss_landing_lag=0.0,
             specials_hit_landing_lag=18.0,
             specials_grav=0.08,
             specials_terminal_vel=2.4,
-        )))
-        valid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+        ))
+        valid = self.context(resource_value=resource)
+        valid.rules = SimpleNamespace(specials=SimpleNamespace(side_stick_threshold=0.5))
         self.assertTrue(move.validate(valid))
 
-        valid.rules.specials.horizontal_threshold = 0.0
+        valid.rules.specials.side_stick_threshold = 0.0
         self.assertFalse(move.validate(valid))
-        valid.rules.specials.horizontal_threshold = 0.5
+        valid.rules.specials.side_stick_threshold = 0.5
+
+        old_schema = self.context(resource_value=resource)
+        old_schema.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+        self.assertFalse(move.validate(old_schema))
+
         valid.resource_value = None
         valid.resource = lambda path: None
         self.assertTrue(move.validate(valid))
@@ -491,7 +497,7 @@ class CaptainFalconTests(unittest.TestCase):
             ))
             setattr(resource.attributes, field, value)
             invalid = self.context(resource_value=resource)
-            invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+            invalid.rules = SimpleNamespace(specials=SimpleNamespace(side_stick_threshold=0.5))
             self.assertFalse(move.validate(invalid))
 
         for field, value in (
@@ -506,7 +512,7 @@ class CaptainFalconTests(unittest.TestCase):
             ))
             setattr(resource.attributes, field, value)
             invalid = self.context(resource_value=resource)
-            invalid.rules = SimpleNamespace(specials=SimpleNamespace(horizontal_threshold=0.5))
+            invalid.rules = SimpleNamespace(specials=SimpleNamespace(side_stick_threshold=0.5))
             self.assertFalse(move.validate(invalid))
 
     def test_raptor_boost_air_follow_through_binds_source_gravity_profile(self):

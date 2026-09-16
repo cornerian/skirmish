@@ -469,7 +469,7 @@ class RaptorBoost(SpecialMove):
     @classmethod
     def _horizontal_threshold(cls, ctx: MoveContext):
         rules = _special_rules(ctx)
-        threshold = getattr(rules, "horizontal_threshold", None)
+        threshold = getattr(rules, "side_stick_threshold", None)
         if (threshold is None or not validation.number(threshold)
                 or not 0 < threshold <= 1):
             return None
