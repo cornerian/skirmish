@@ -66,12 +66,14 @@ class FalconPunch(SpecialMove):
     ground = action(
         Action.SPECIAL_N_START,
         slippi_state=347,
+        animation=301,
         attack="neutral.ground",
         command_trace="neutral.script.ground",
     )
     air = action(
         Action.SPECIAL_AIR_N_START,
         slippi_state=348,
+        animation=302,
         attack="neutral.air",
         command_trace="neutral.script.air",
     )
@@ -190,8 +192,8 @@ class FalconDive(SpecialMove):
 
     resource = "up"
 
-    ground = action(Action.SPECIAL_HI, slippi_state=353)
-    air = action(Action.SPECIAL_AIR_HI, slippi_state=354)
+    ground = action(Action.SPECIAL_HI, slippi_state=353, animation=307)
+    air = action(Action.SPECIAL_AIR_HI, slippi_state=354, animation=308)
 
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
@@ -298,8 +300,8 @@ class FalconKick(SpecialMove):
 
     resource = "down"
 
-    air = action(Action.SPECIAL_AIR_LW, slippi_state=359)
-    air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361)
+    air = action(Action.SPECIAL_AIR_LW, slippi_state=359, animation=313)
+    air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361, animation=316)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:

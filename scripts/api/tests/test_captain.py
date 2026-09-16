@@ -324,6 +324,17 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(exported["actions"]["special.neutral.ground"]["slippi_state"], 347)
         self.assertEqual(exported["actions"]["special.neutral.air"]["slippi_state"], 348)
 
+        expected_animation_by_action = {
+            "special.neutral.ground": 301,
+            "special.neutral.air": 302,
+            "special.up.ground": 307,
+            "special.up.air": 308,
+            "special.down.air": 313,
+            "special.down.air_end": 316,
+        }
+        for action_name, animation in expected_animation_by_action.items():
+            self.assertEqual(exported["actions"][action_name]["animation"], animation)
+
     def test_inherits_all_standard_groups_without_duplicate_declarations(self):
         captain = _load_captain()
         fighter_base = captain.__mro__[1]
