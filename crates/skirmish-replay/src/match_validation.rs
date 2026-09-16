@@ -68,6 +68,41 @@ pub struct Diagnostic {
     /// validation/source error even when an earlier mismatch is retained as
     /// the report outcome.
     pub error: Option<String>,
+    /// The last complete public observation produced by the native stepper.
+    /// This is intentionally retained even when the next native step fails.
+    pub last_observation: Option<DiagnosticObservation>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DiagnosticObservation {
+    pub fighters: [DiagnosticFighterObservation; 2],
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DiagnosticFighterObservation {
+    pub port: Port,
+    pub action_state: Option<u16>,
+    pub action_age: f32,
+    pub position: [f32; 2],
+    pub percent: f32,
+    pub stocks: u8,
+    pub airborne: bool,
+}
+
+impl From<observation::Observation> for DiagnosticObservation {
+    fn from(value: observation::Observation) -> Self {
+        Self {
+            fighters: value.fighters.map(|fighter| DiagnosticFighterObservation {
+                port: fighter.port,
+                action_state: fighter.action_state,
+                action_age: fighter.action_age,
+                position: fighter.position,
+                percent: fighter.percent,
+                stocks: fighter.stocks,
+                airborne: fighter.airborne,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -137,6 +172,7 @@ struct Stepper<'a> {
     game: &'a mut game::Match,
     ports: [Port; 2],
     characters: [u8; 2],
+    last_observation: Option<observation::Observation>,
 }
 
 impl FrameStepper for Stepper<'_> {
@@ -150,7 +186,9 @@ impl FrameStepper for Stepper<'_> {
     }
     fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
         self.game.step(*input)?;
-        Ok(observation::observe(self.game, self.ports, self.characters))
+        let observed = observation::observe(self.game, self.ports, self.characters);
+        self.last_observation = Some(observed.clone());
+        Ok(observed)
     }
 }
 
@@ -291,6 +329,7 @@ pub fn validate_with_comparison_ports_mode(
         game,
         ports,
         characters,
+        last_observation: None,
     };
     let mut diagnostic = None;
     let outcome = if continue_after_mismatch {
@@ -309,6 +348,7 @@ pub fn validate_with_comparison_ports_mode(
                     simulated_frames: report.simulated_frames,
                     terminal: Terminal::EndOfReplay,
                     error: None,
+                    last_observation: None,
                 });
                 match report.first_mismatch {
                     Some(mismatch) => Outcome::Mismatch {
@@ -329,6 +369,7 @@ pub fn validate_with_comparison_ports_mode(
                     simulated_frames: error.simulated_frames,
                     terminal: Terminal::Error,
                     error: Some(error.error.to_string()),
+                    last_observation: None,
                 });
                 match error.first_mismatch {
                     Some(mismatch) => Outcome::Mismatch {
@@ -387,6 +428,9 @@ pub fn validate_with_comparison_ports_mode(
             }
         }
     };
+    if let Some(diagnostic) = &mut diagnostic {
+        diagnostic.last_observation = stepper.last_observation.take().map(Into::into);
+    }
     Ok(Report {
         replay: replay.summary(timeline)?,
         policy: "fighter-post-v11",
@@ -399,4 +443,77 @@ pub fn validate_with_comparison_ports_mode(
         diagnostic,
         outcome,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_observation_keeps_public_fighter_state() {
+        let observation = observation::Observation {
+            fighters: [
+                observation::FighterObservation {
+                    port: Port::P1,
+                    action_state: Some(66),
+                    action_age: 2.0,
+                    position: [1.25, -3.5],
+                    direction: 1.0,
+                    percent: 42.0,
+                    shield: 0.0,
+                    stocks: 3,
+                    airborne: true,
+                    jumps_remaining: 1,
+                    last_ground_id: u16::MAX,
+                    l_cancel: 0,
+                    character: 0,
+                    last_attack_landed: 0,
+                    combo_count: 0,
+                    last_hit_by: 6,
+                    last_hit_by_instance: None,
+                    instance_id: None,
+                    state_flags: None,
+                    misc_as: None,
+                    hurtbox_state: None,
+                    velocities: None,
+                    hitlag: None,
+                    animation_index: None,
+                },
+                observation::FighterObservation {
+                    port: Port::P4,
+                    action_state: None,
+                    action_age: 0.0,
+                    position: [0.0, 0.0],
+                    direction: -1.0,
+                    percent: 0.0,
+                    shield: 0.0,
+                    stocks: 4,
+                    airborne: false,
+                    jumps_remaining: 2,
+                    last_ground_id: 0,
+                    l_cancel: 0,
+                    character: 2,
+                    last_attack_landed: 0,
+                    combo_count: 0,
+                    last_hit_by: 6,
+                    last_hit_by_instance: None,
+                    instance_id: None,
+                    state_flags: None,
+                    misc_as: None,
+                    hurtbox_state: None,
+                    velocities: None,
+                    hitlag: None,
+                    animation_index: None,
+                },
+            ],
+        };
+        let diagnostic = DiagnosticObservation::from(observation);
+        assert_eq!(diagnostic.fighters[0].action_state, Some(66));
+        assert_eq!(diagnostic.fighters[0].action_age, 2.0);
+        assert_eq!(diagnostic.fighters[0].position, [1.25, -3.5]);
+        assert_eq!(diagnostic.fighters[0].percent, 42.0);
+        assert_eq!(diagnostic.fighters[0].stocks, 3);
+        assert!(diagnostic.fighters[0].airborne);
+        assert_eq!(diagnostic.fighters[1].port, Port::P4);
+    }
 }
