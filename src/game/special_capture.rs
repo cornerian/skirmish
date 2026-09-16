@@ -7,8 +7,7 @@
 //! lifecycle until their resources are upgraded.
 
 use super::{
-    Action, Error, Fighter, MatchData, State as MatchState,
-    data::{HitElement, Hitbox},
+    Action, Error, Fighter, MatchData, State as MatchState, data::Hitbox,
     script::resources::CaptainDiveCapture,
 };
 use serde::Serialize;
@@ -216,6 +215,7 @@ fn release(
 
     if let Some(capture) = resource {
         let hit = capture.throw.hit;
+        let hitbox = release_hitbox(hit)?;
         let staled = crate::game::staling::hit(
             &state.fighters[holder].staling,
             hit.damage,
@@ -225,24 +225,7 @@ fn release(
             data,
             state,
             holder,
-            &Hitbox {
-                clank: false,
-                rebound: false,
-                // The current collision model only distinguishes active
-                // versus inert contacts. Exported element 1 is an active
-                // ordinary hit, so preserve that observable branch.
-                element: HitElement::Normal,
-                group: 0,
-                bone: 0,
-                center: [0.0; 3],
-                radius: 0.0,
-                damage: hit.damage,
-                shield_damage: 0,
-                angle_degrees: hit.angle_raw as f32,
-                growth: hit.growth,
-                fixed: hit.fixed,
-                base: hit.base,
-            },
+            &hitbox,
             staled,
             crate::fighter::damage::HurtHeight::Middle,
             crate::game::hit_resolution::HitDirection::Throw,
@@ -259,6 +242,25 @@ fn release(
 
     release_without_hit(state, holder, victim);
     Ok(())
+}
+
+fn release_hitbox(hit: super::script::resources::CaptainDiveHit) -> Result<Hitbox, Error> {
+    let element = hit.semantic_element().map_err(Error::Data)?;
+    Ok(Hitbox {
+        clank: false,
+        rebound: false,
+        element,
+        group: 0,
+        bone: 0,
+        center: [0.0; 3],
+        radius: 0.0,
+        damage: hit.damage,
+        shield_damage: 0,
+        angle_degrees: hit.angle_raw as f32,
+        growth: hit.growth,
+        fixed: hit.fixed,
+        base: hit.base,
+    })
 }
 
 fn release_without_hit(state: &mut MatchState, holder: usize, victim: usize) {
@@ -350,7 +352,7 @@ pub(crate) fn validate_resource(data: &super::data::FighterData) -> Result<(), E
         || hit.growth > 1000
         || hit.fixed > 1000
         || hit.base > 1000
-        || hit.element > 31
+        || hit.semantic_element().is_err()
     {
         return Err(Error::Data(
             "invalid Captain Falcon Dive release resource".into(),
@@ -361,7 +363,11 @@ pub(crate) fn validate_resource(data: &super::data::FighterData) -> Result<(), E
 
 #[cfg(test)]
 mod tests {
-    use super::{Attachment, State, break_for_player, capture, update_pairs, valid_relationship};
+    use super::{
+        Attachment, State, break_for_player, capture, release_hitbox, update_pairs,
+        valid_relationship,
+    };
+    use crate::game::data::HitElement;
     use crate::game::{Action, Match};
 
     fn fixture() -> (Match, crate::game::data::MatchData) {
@@ -493,6 +499,21 @@ mod tests {
     #[test]
     fn resource_release_applies_the_exported_hit_once_through_damage_resolution() {
         let (match_, data) = resource_fixture();
+        let hit = data.fighters[0]
+            .specials
+            .as_ref()
+            .and_then(|specials| specials.captain_dive_capture())
+            .expect("Captain Dive resource")
+            .throw
+            .hit;
+        let hitbox = release_hitbox(hit).expect("supported release hit element");
+        assert_eq!(hitbox.damage, 12);
+        assert_eq!(hitbox.angle_degrees, 361.0);
+        assert_eq!(hitbox.growth, 82);
+        assert_eq!(hitbox.fixed, 0);
+        assert_eq!(hitbox.base, 40);
+        assert_eq!(hitbox.element, HitElement::Fire);
+
         let mut state = match_.state().clone();
         state.fighters[0].action = Action::SpecialHiCatch;
         state.fighters[1].action = Action::Fall;
@@ -508,6 +529,21 @@ mod tests {
         update_pairs(&data, &mut state).expect("released relation is inert");
         assert_eq!(state.fighters[1].percent, 12.0);
         assert_eq!(state.fighters[1].action, action);
+    }
+
+    #[test]
+    fn release_rejects_unmapped_native_hit_elements() {
+        let (_, data) = resource_fixture();
+        let hit = data.fighters[0]
+            .specials
+            .as_ref()
+            .and_then(|specials| specials.captain_dive_capture())
+            .expect("Captain Dive resource")
+            .throw
+            .hit;
+        let mut unsupported = hit;
+        unsupported.element = 2;
+        assert!(release_hitbox(unsupported).is_err());
     }
 
     #[test]

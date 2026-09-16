@@ -1,6 +1,6 @@
 //! Generic, dotted-path lookup for character resources.
 
-use crate::game::data::Attack;
+use crate::game::data::{Attack, HitElement};
 use crate::game::grab::Attachment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -148,6 +148,20 @@ pub struct CaptainDiveHit {
     pub fixed: u32,
     pub base: u32,
     pub element: u8,
+}
+
+impl CaptainDiveHit {
+    /// Decode the native HitElement field emitted by the throw-hit resource.
+    /// The exported value is the original zero-based enum, not the reduced
+    /// active/inert classification used by the collision resolver.
+    pub(crate) fn semantic_element(self) -> Result<HitElement, String> {
+        match self.element {
+            0 => Ok(HitElement::Normal),
+            1 => Ok(HitElement::Fire),
+            11 => Ok(HitElement::Inert),
+            value => Err(format!("unsupported Captain Dive hit element {value}")),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Specials {

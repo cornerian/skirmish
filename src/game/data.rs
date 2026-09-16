@@ -857,6 +857,7 @@ pub struct AttackFrame {
 pub enum HitElement {
     #[default]
     Normal,
+    Fire,
     Inert,
 }
 
