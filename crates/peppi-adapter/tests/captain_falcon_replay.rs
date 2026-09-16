@@ -78,6 +78,29 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
         assert_eq!(last.post.airborne, Some(1), "airborne at {end}");
     }
 
+    // Each recorded aerial Dive entry includes B plus a distinct snapshot of
+    // Captain's pre-state and stick direction. Positions and facing are
+    // retained as observations of the movement that begins at each entry.
+    for (frame_id, pre_state, stick_x, stick_y, direction, position) in [
+        (522, 27, -0.6625_f32, 0.7375_f32, -1.0_f32, [155.83063_f32, -18.104641_f32]),
+        (2066, 32, -0.65_f32, 0.75_f32, -1.0_f32, [126.28996_f32, -29.326918_f32]),
+        (2397, 32, -0.6375_f32, 0.75_f32, -1.0_f32, [175.08943_f32, -38.935917_f32]),
+        (3929, 27, 0.7_f32, 0.7_f32, 1.0_f32, [-137.69496_f32, 36.903496_f32]),
+    ] {
+        let actor = captain(&replay, (frame_id + 123) as usize);
+        assert_eq!(actor.pre.state, pre_state, "Dive pre-state at {frame_id}");
+        assert_eq!(actor.pre.buttons, 66_048, "Dive B input at {frame_id}");
+        assert_eq!(actor.pre.buttons_physical, 512, "Dive physical B input at {frame_id}");
+        assert_eq!(actor.pre.joystick.x.to_bits(), stick_x.to_bits());
+        assert_eq!(actor.pre.joystick.y.to_bits(), stick_y.to_bits());
+        assert_eq!(actor.post.state, 354, "Dive post-state at {frame_id}");
+        assert_eq!(actor.post.state_age.unwrap().to_bits(), 1.0_f32.to_bits());
+        assert_eq!(actor.post.airborne, Some(1));
+        assert_eq!(actor.post.direction.to_bits(), direction.to_bits(), "Dive facing at {frame_id}");
+        assert_eq!(actor.post.position.x.to_bits(), position[0].to_bits());
+        assert_eq!(actor.post.position.y.to_bits(), position[1].to_bits());
+    }
+
     // The recording also contains an aerial down-special entry at 6594,
     // followed by its state-359 and state-361 aerial phases. These labels are
     // Captain Falcon's aerial down-special states in ftCaptain/forward.h, not
@@ -99,6 +122,18 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
         assert_eq!(actor.post.state, 361, "state-361 segment at {frame_id}");
         assert_eq!(actor.post.airborne, Some(1), "airborne at {frame_id}");
     }
+    let before_end = captain(&replay, (6651 + 123) as usize);
+    assert_eq!(before_end.pre.state, 361);
+    assert_eq!(before_end.post.state, 361);
+    assert_eq!(before_end.post.state_age.unwrap().to_bits(), 28.0_f32.to_bits());
+    let end = captain(&replay, (6652 + 123) as usize);
+    assert_eq!(end.pre.state, 29);
+    assert_eq!(end.post.state, 29);
+    assert_eq!(end.post.state_age.unwrap().to_bits(), 0.0_f32.to_bits());
+    assert_eq!(end.post.airborne, Some(1));
+    assert_eq!(end.post.direction.to_bits(), (-1.0_f32).to_bits());
+    assert_eq!(end.post.position.x.to_bits(), 121.696594_f32.to_bits());
+    assert_eq!(end.post.position.y.to_bits(), 8.720186_f32.to_bits());
     let air = captain(&replay, (6623 + 123) as usize);
     assert_eq!(air.pre.state, 361);
     assert_eq!(air.pre.buttons, 262_144);
