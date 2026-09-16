@@ -540,22 +540,35 @@ class FalconKick(SpecialMove):
 
     resource = "down"
 
-    ground = action(Action.SPECIAL_LW, slippi_state=357, animation=311)
+    ground = action(
+        Action.SPECIAL_LW,
+        slippi_state=357,
+        animation=311,
+        attack="down.ground",
+    )
     ground_end = action(
         Action.SPECIAL_LW_GROUND_END,
         slippi_state=358,
         animation=312,
+        attack="down.ground_end",
     )
-    air = action(Action.SPECIAL_AIR_LW, slippi_state=359, animation=313)
+    air = action(
+        Action.SPECIAL_AIR_LW,
+        slippi_state=359,
+        animation=313,
+        attack="down.air",
+    )
     landing = action(
         Action.SPECIAL_AIR_LW_LANDING_END,
         slippi_state=360,
         animation=314,
+        attack="down.landing",
     )
     air_end = action(
         Action.SPECIAL_AIR_LW_END_AIR,
         slippi_state=361,
         animation=316,
+        attack="down.air_end",
         motion=motion.profile(
             air=(
                 motion.gravity(
@@ -573,6 +586,7 @@ class FalconKick(SpecialMove):
         Action.SPECIAL_LW_END_AIR,
         slippi_state=362,
         animation=315,
+        attack="down.ground_end_air",
     )
 
     @hook.input_pressed(Button.B)

@@ -736,6 +736,17 @@ class CaptainFalconTests(unittest.TestCase):
         for action_name, animation in expected_animation_by_action.items():
             self.assertEqual(exported["actions"][action_name]["animation"], animation)
 
+        expected_kick_attacks = {
+            "special.down.ground": "down.ground",
+            "special.down.ground_end": "down.ground_end",
+            "special.down.air": "down.air",
+            "special.down.landing": "down.landing",
+            "special.down.air_end": "down.air_end",
+            "special.down.ground_end_air": "down.ground_end_air",
+        }
+        for action_name, attack in expected_kick_attacks.items():
+            self.assertEqual(exported["actions"][action_name]["attack"], attack)
+
     def test_inherits_all_standard_groups_without_duplicate_declarations(self):
         captain = _load_captain()
         fighter_base = captain.__mro__[1]
