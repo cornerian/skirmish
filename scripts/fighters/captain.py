@@ -373,21 +373,25 @@ class RaptorBoost(SpecialMove):
         Action.SPECIAL_S_START,
         slippi_state=349,
         animation=303,
+        attack="side.ground_start",
     )
     ground = action(
         Action.SPECIAL_S,
         slippi_state=350,
         animation=304,
+        attack="side.ground",
     )
     air_start = action(
         Action.SPECIAL_AIR_S_START,
         slippi_state=351,
         animation=305,
+        attack="side.air_start",
     )
     air = action(
         Action.SPECIAL_AIR_S,
         slippi_state=352,
         animation=306,
+        attack="side.air",
         motion=air_motion,
     )
 
@@ -400,7 +404,7 @@ class RaptorBoost(SpecialMove):
         if not ctx.input.just_pressed(Button.B):
             return False
         stick_x = ctx.input.stick[0]
-        if abs(stick_x) < threshold:
+        if not stick_axis_reaches_threshold(stick_x, threshold):
             return False
 
         if fighter.action in (self.ground_start, self.ground, self.air_start, self.air):

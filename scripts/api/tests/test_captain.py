@@ -404,6 +404,14 @@ class CaptainFalconTests(unittest.TestCase):
             )
             context.rules = rules
             self.assertFalse(move.input_pressed(self.Fighter(None), context))
+        for stick_x in (-0.5, 0.5):
+            context = self.context(
+                resource_value=resource,
+                input_value=self.Input((Button.B,), (stick_x, 0.0)),
+                ground_open=True,
+            )
+            context.rules = rules
+            self.assertTrue(move.input_pressed(self.Fighter(None), context))
         context = self.context(
             resource_value=None,
             input_value=self.Input((Button.B,), (0.8, 0.0)),
@@ -456,12 +464,16 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(behavior["resource"], "side")
         self.assertEqual(behavior["actions"]["ground_start"]["slippi_state"], 349)
         self.assertEqual(behavior["actions"]["ground_start"]["animation"], 303)
+        self.assertEqual(behavior["actions"]["ground_start"]["attack"], "side.ground_start")
         self.assertEqual(behavior["actions"]["ground"]["slippi_state"], 350)
         self.assertEqual(behavior["actions"]["ground"]["animation"], 304)
+        self.assertEqual(behavior["actions"]["ground"]["attack"], "side.ground")
         self.assertEqual(behavior["actions"]["air_start"]["slippi_state"], 351)
         self.assertEqual(behavior["actions"]["air_start"]["animation"], 305)
+        self.assertEqual(behavior["actions"]["air_start"]["attack"], "side.air_start")
         self.assertEqual(behavior["actions"]["air"]["slippi_state"], 352)
         self.assertEqual(behavior["actions"]["air"]["animation"], 306)
+        self.assertEqual(behavior["actions"]["air"]["attack"], "side.air")
         callbacks = behavior["callbacks"]
         self.assertFalse(any(
             callback["hook"] == "animation_ended"
