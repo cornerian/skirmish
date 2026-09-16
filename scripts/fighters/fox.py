@@ -4,6 +4,7 @@ from skirmish import (
     Action,
     ActionState,
     Button,
+    Fighter,
     HitContext,
     MotionBinding,
     MoveContext,
