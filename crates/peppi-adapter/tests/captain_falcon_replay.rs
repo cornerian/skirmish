@@ -55,4 +55,51 @@ fn captain_fixture_preserves_metadata_inputs_and_action_observations() {
     assert_eq!(actor.post.state_age.unwrap().to_bits(), 1.0_f32.to_bits());
     assert_eq!(actor.post.airborne, Some(1));
     assert_eq!(actor.post.jumps, Some(0));
+
+
+    // Four recorded state-354 windows. The final frame of the second window
+    // transitions to state 252 in Post while still reporting state 354 in
+    // Pre; retaining both sides catches off-by-one handling in future replay
+    // consumers.
+    for (start, end, final_post_state) in [
+        (522, 585, 354),
+        (2066, 2129, 252),
+        (2397, 2460, 354),
+        (3929, 3992, 354),
+    ] {
+        for frame_id in start..end {
+            let actor = captain(&replay, (frame_id + 123) as usize);
+            assert_eq!(actor.post.state, 354, "state-354 window at {frame_id}");
+            assert_eq!(actor.post.airborne, Some(1), "airborne at {frame_id}");
+        }
+        let last = captain(&replay, (end + 123) as usize);
+        assert_eq!(last.pre.state, 354, "state-354 window end pre at {end}");
+        assert_eq!(last.post.state, final_post_state, "window end post at {end}");
+        assert_eq!(last.post.airborne, Some(1), "airborne at {end}");
+    }
+
+    // The recording also contains a down-special entry at 6594, followed by
+    // its state-359 ground/air segment and state-361 continuation.
+    let entry = captain(&replay, (6594 + 123) as usize);
+    assert_eq!(entry.pre.state, 27);
+    assert_eq!(entry.pre.buttons, 131_584);
+    assert_eq!(entry.pre.joystick.x.to_bits(), (-0.6375_f32).to_bits());
+    assert_eq!(entry.pre.joystick.y.to_bits(), (-0.7625_f32).to_bits());
+    assert_eq!(entry.post.state, 359);
+    assert_eq!(entry.post.airborne, Some(1));
+    for frame_id in 6594..=6622 {
+        let actor = captain(&replay, (frame_id + 123) as usize);
+        assert_eq!(actor.post.state, 359, "state-359 segment at {frame_id}");
+        assert_eq!(actor.post.airborne, Some(1), "airborne at {frame_id}");
+    }
+    for frame_id in 6623..=6651 {
+        let actor = captain(&replay, (frame_id + 123) as usize);
+        assert_eq!(actor.post.state, 361, "state-361 segment at {frame_id}");
+        assert_eq!(actor.post.airborne, Some(1), "airborne at {frame_id}");
+    }
+    let air = captain(&replay, (6623 + 123) as usize);
+    assert_eq!(air.pre.state, 361);
+    assert_eq!(air.pre.buttons, 262_144);
+    assert_eq!(air.pre.joystick.x.to_bits(), (-0.9875_f32).to_bits());
+    assert_eq!(air.pre.joystick.y.to_bits(), 0.0_f32.to_bits());
 }
