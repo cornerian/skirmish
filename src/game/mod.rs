@@ -225,6 +225,14 @@ pub enum Action {
     SpecialHi,
     /// Slippi 356. `ftFx_SpecialAirHi_Enter`. Aerial travel/launch.
     SpecialAirHi,
+    /// Captain Falcon's Falcon Dive catch phase (Slippi 355). Entered by
+    /// the special's attacker-side catch callback after it contacts a
+    /// fighter. Victim capture/attachment remains owned by the host grab
+    /// system and is not synthesized by this action alone.
+    SpecialHiCatch,
+    /// Captain Falcon's Falcon Dive throw phase (Slippi 356). The native
+    /// catch animation transitions here before the attacker falls.
+    SpecialHiThrow,
     /// Slippi 357. `ftFx_SpecialHiFall_AirToGround` /
     /// `ftFx_SpecialHiLanding_GroundToAir` (despite the "GroundToAir" name,
     /// this enters the *grounded* landing). Entered at frame 13 from Fall's

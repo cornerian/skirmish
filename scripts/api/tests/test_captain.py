@@ -253,6 +253,24 @@ class CaptainFalconTests(unittest.TestCase):
         )
         self.assertEqual(move.on_ground, {})
 
+    def test_falcon_dive_catch_throw_states_and_attacker_lifecycle(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        self.assertEqual(move.catch.as_dict()["slippi_state"], 355)
+        self.assertEqual(move.catch.as_dict()["animation"], 309)
+        self.assertEqual(move.throw.as_dict()["slippi_state"], 356)
+        self.assertEqual(move.throw.as_dict()["animation"], 310)
+
+        # The before-hit hook models only the attacker's documented state
+        # transition. Victim capture and attachment are host-owned.
+        fighter = self.Fighter(move.air)
+        move.before_hit(fighter, SimpleNamespace())
+        self.assertEqual(fighter.changes, [(move.catch, {})])
+        move.catch_animation_end(fighter, SimpleNamespace())
+        self.assertEqual(fighter.changes[-1], (move.throw, {}))
+        move.throw_animation_end(fighter, SimpleNamespace())
+        self.assertEqual(fighter.changes[-1], (Action.FALL, {}))
+
     def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
         captain = _load_captain()
         move = captain.specials.up
@@ -681,6 +699,8 @@ class CaptainFalconTests(unittest.TestCase):
             "special.neutral.air": 302,
             "special.up.ground": 307,
             "special.up.air": 308,
+            "special.up.catch": 309,
+            "special.up.throw": 310,
             "special.down.ground": 311,
             "special.down.ground_end": 312,
             "special.down.air": 313,

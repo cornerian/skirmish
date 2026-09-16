@@ -206,17 +206,18 @@ class FalconPunch(SpecialMove):
 class FalconDive(SpecialMove):
     """Representable Falcon Dive entry and recovery semantics.
 
-    The upstream catch/throw target interaction, velocity profiles, ledge
-    checks, and animation markers remain native/resource-owned.  This class
-    deliberately models only state selection, command cue state, landing,
-    and the source-confirmed terminal fall-special call when its attributes
-    are available from the host.
+    The upstream victim attachment and throw-hit physics remain native/
+    resource-owned.  The attacker-side catch and throw states are still
+    represented because they are observable in Slippi and their source
+    animation lifecycle is deterministic.
     """
 
     resource = "up"
 
     ground = action(Action.SPECIAL_HI, slippi_state=353, animation=307)
     air = action(Action.SPECIAL_AIR_HI, slippi_state=354, animation=308)
+    catch = action(Action.SPECIAL_HI_CATCH, slippi_state=355, animation=309)
+    throw = action(Action.SPECIAL_HI_THROW, slippi_state=356, animation=310)
 
     # ftCa_SpecialHi_Coll converts grounded SpecialHi to its airborne phase
     # when the move leaves the ground, retaining the native state and frame.
@@ -227,6 +228,28 @@ class FalconDive(SpecialMove):
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
         fighter.action_state.dive_released = False
+
+    @hook.before_hit(actions=(ground, air))
+    def before_hit(self, fighter: Fighter, hit: HitContext) -> None:
+        """Enter Falcon Dive's attacker-side catch state after contact.
+
+        ``ftCa_SpecialLw_800E5128`` is installed by both Dive entry paths and
+        changes the attacker to motion state 355.  The native callback also
+        captures and aligns the victim; the host invokes this hook only for a
+        supported hit, so this callback intentionally changes no victim state.
+        """
+        if fighter.action in (self.ground, self.air):
+            fighter.change_action(self.catch)
+
+    @hook.animation_end(catch)
+    def catch_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Match ``doCatchAnim``'s state-355 to state-356 transition."""
+        fighter.change_action(self.throw)
+
+    @hook.animation_end(throw)
+    def throw_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """The native throw animation ends with ordinary aerial Fall."""
+        fighter.change_action(Action.FALL)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:

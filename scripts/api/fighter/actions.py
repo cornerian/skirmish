@@ -21,6 +21,8 @@ class Action(str, Enum):
     SPECIAL_AIR_S_END = "special_air_s_end"
     SPECIAL_HI = "special_hi"
     SPECIAL_AIR_HI = "special_air_hi"
+    SPECIAL_HI_CATCH = "special_hi_catch"
+    SPECIAL_HI_THROW = "special_hi_throw"
     SPECIAL_HI_HOLD = "special_hi_hold"
     SPECIAL_HI_HOLD_AIR = "special_hi_hold_air"
     SPECIAL_HI_FALL = "special_hi_fall"

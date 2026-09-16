@@ -103,6 +103,8 @@ fn captain_two_player_replay_states_map_to_authored_definition_metadata() {
         (4481, game::Action::SpecialS, 350, 304),
         (1573, game::Action::SpecialAirSStart, 351, 305),
         (1310, game::Action::SpecialAirHi, 354, 308),
+        (8653, game::Action::SpecialHiCatch, 355, 309),
+        (8671, game::Action::SpecialHiThrow, 356, 310),
     ] {
         let actor = captain_at_frame_for_port(&replay, frame_id, peppi_adapter::Port::P1);
         assert_eq!(

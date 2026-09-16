@@ -304,7 +304,7 @@ fn captain_two_player_fixture_records_roster_and_special_entries() {
     for index in 0..summary.selected_frames {
         observed.insert(actor_at_port(&replay, index, Port::P1).post.state);
     }
-    assert!([347, 349, 350, 351, 354]
+    assert!([347, 349, 350, 351, 354, 355, 356]
         .into_iter()
         .all(|state| observed.contains(&state)));
 
