@@ -325,3 +325,34 @@ fn captain_two_player_fixture_records_roster_and_special_entries() {
         assert_eq!(actor.pre.joystick.y.to_bits(), stick.1.to_bits());
     }
 }
+
+#[test]
+fn captain_dive_capture_fixture_preserves_catch_victim_window() {
+    let replay = Replay::read(std::io::Cursor::new(include_bytes!(
+        "../../../tests/fixtures/slippi/11-captain-falcon-marth-final-destination.slp"
+    )))
+    .unwrap();
+    // Source-faithful action-state evidence around the dedicated Captain
+    // capture: the holder enters 355 at 8653, the victim enters common
+    // CaptureCaptain 275 for the whole catch animation, and the holder
+    // changes to 356 exactly when the victim leaves 275.
+    for frame in 8653..=8670 {
+        let captain = actor_at_port(&replay, (frame + 123) as usize, Port::P1);
+        let victim = actor_at_port(&replay, (frame + 123) as usize, Port::P4);
+        assert_eq!(captain.post.state, 355, "Captain catch state at {frame}");
+        assert_eq!(victim.post.state, 275, "CaptureCaptain victim state at {frame}");
+    }
+    let throw = actor_at_port(&replay, (8671 + 123) as usize, Port::P1);
+    let released = actor_at_port(&replay, (8671 + 123) as usize, Port::P4);
+    assert_eq!(throw.post.state, 356);
+    assert_eq!(released.post.state, 88);
+
+    // By the end of the native throw motion Captain has entered ordinary Fall
+    // and the victim is back in ordinary Jump. The exact xDF4[1] release hit
+    // payload is intentionally not asserted here because current resources
+    // do not expose a source-compatible hit definition.
+    let captain_after_throw = actor_at_port(&replay, (8731 + 123) as usize, Port::P1);
+    let victim_after_throw = actor_at_port(&replay, (8731 + 123) as usize, Port::P4);
+    assert_eq!(captain_after_throw.post.state, 29);
+    assert_eq!(victim_after_throw.post.state, 27);
+}

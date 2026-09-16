@@ -58,6 +58,19 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
             "observation animation metadata for {action:?}"
         );
     }
+
+    // CaptureCaptain is the common ftCo state used by Falcon Dive's victim;
+    // it intentionally has no character-definition entry or generic-grab
+    // owner. The observation layer still exposes its native 275/276 pair.
+    fighter.action = game::Action::CaptureCaptain;
+    assert_eq!(
+        observation::action_state(&fighter, Some(CAPTAIN_EXTERNAL_ID)),
+        Some(275)
+    );
+    assert_eq!(
+        observation::animation_index(&fighter, Some(CAPTAIN_EXTERNAL_ID)),
+        Some(276)
+    );
 }
 
 fn captain_at_frame_for_port(

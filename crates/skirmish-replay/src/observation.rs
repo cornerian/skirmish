@@ -810,6 +810,10 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         CaptureWaitLw => 227,
         CaptureDamageLw => 228,
         CaptureCut => 229,
+        // `ftCo_MS_CaptureCaptain` is common state 275, not a character
+        // definition entry. Captain Falcon's dedicated Dive victim relation
+        // keeps this outside the ordinary generic capture scheduler.
+        CaptureCaptain => 275,
         ReboundStop => 237,
         Rebound => 238,
         ThrownF => 239,
@@ -914,6 +918,9 @@ pub fn animation_index(fighter: &game::Fighter, character: Option<u8>) -> Option
         212 | 213 => 242,
         214 | 215 => 243,
         216..=229 => u32::from(state + 28),
+        // `ftCo_SM_CaptureCaptain` follows the generic capture submotions in
+        // ftCommon's motion-state table: common state 275 uses animation 276.
+        275 => 276,
         233 | 234 => u32::from(state - 191),
         235 => 41,
         236 => 44,
