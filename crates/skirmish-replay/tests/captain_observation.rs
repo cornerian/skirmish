@@ -205,3 +205,25 @@ fn actor_selective_observation_reads_captain_from_four_player_frame() {
         "{duplicate}"
     );
 }
+
+#[test]
+fn captain_special_entries_preserve_source_input_evidence() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(REPLAY)).unwrap();
+
+    // These are raw replay observations paired with the resulting Captain
+    // state; they are not a claim that the two-player simulator can reproduce
+    // the full four-player recording.
+    for (frame_id, state, stick_y_sign) in [
+        (522, 354, 1.0_f32),
+        (6594, 359, -1.0_f32),
+    ] {
+        let actor = captain_at_frame(&replay, frame_id);
+        assert_eq!(u32::from(actor.post.state), state, "Captain state at frame {frame_id}");
+        assert_ne!(actor.pre.buttons & u32::from(game::BUTTON_B), 0, "B input at frame {frame_id}");
+        assert!(
+            actor.pre.joystick.y * stick_y_sign > 0.5,
+            "Captain stick y should select the recorded special at frame {frame_id}: {}",
+            actor.pre.joystick.y
+        );
+    }
+}
