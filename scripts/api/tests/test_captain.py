@@ -348,6 +348,10 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(air.action, move.air)
         self.assertEqual(air.velocity, [2.0, 3.0])
 
+        air_without_attributes = self.Fighter(move.air_start)
+        move.before_hit(air_without_attributes, SimpleNamespace(resource=None))
+        self.assertEqual(air_without_attributes.action, move.air)
+
         for multiplier in (None, float("inf")):
             missing = SimpleNamespace(resource=lambda path, value=multiplier:
                                       SimpleNamespace(attributes=SimpleNamespace(
@@ -356,7 +360,7 @@ class CaptainFalconTests(unittest.TestCase):
             move.before_hit(untouched, missing)
             self.assertEqual(untouched.action, move.ground_start)
 
-    def test_raptor_boost_exports_source_action_metadata_without_contact_transition(self):
+    def test_raptor_boost_exports_source_action_metadata(self):
         from fighter.api import export_definition
 
         captain = _load_captain()
