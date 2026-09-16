@@ -595,6 +595,13 @@ impl Definition {
         self.action(action)
             .and_then(|d| Some((d.slippi_state?, d.animation?)))
     }
+
+    /// Resolve the authoring state's Slippi id without requiring an
+    /// animation id.  Some source-authored action states are observable in
+    /// replay even while their animation resource is intentionally absent.
+    pub fn slippi_state(&self, action: Action) -> Option<u32> {
+        self.action(action).and_then(|definition| definition.slippi_state)
+    }
 }
 
 /// Sources available to `load`. No filesystem/module search is
@@ -881,6 +888,18 @@ pub fn builtin_slippi_ids(character: Option<u8>, action: Action) -> Option<(u32,
         .and_then(|definition| definition.slippi_ids(action))
 }
 
+/// Resolve a bundled fighter's Slippi action-state id without requiring an
+/// animation id.  Keep this separate from [`builtin_slippi_ids`], whose pair
+/// contract remains useful to callers that need both replay identifiers.
+pub fn builtin_slippi_state(character: Option<u8>, action: Action) -> Option<u32> {
+    let id = character?;
+    static REGISTRY: OnceLock<Registry> = OnceLock::new();
+    REGISTRY
+        .get_or_init(|| Registry::builtins().expect("bundled fighter definitions must load"))
+        .by_external_id(id)
+        .and_then(|definition| definition.slippi_state(action))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -964,6 +983,33 @@ mod tests {
                 Action::SpecialNStart as usize,
                 Action::SpecialNStart as usize,
             ]
+        );
+    }
+
+    #[test]
+    fn slippi_state_does_not_require_animation_id() {
+        let definition = FighterDefinition {
+            actions: BTreeMap::from([(
+                "SpecialNStart".into(),
+                ActionDefinition {
+                    action: Some("Action.SpecialNStart".into()),
+                    slippi_state: Some(347),
+                    ..ActionDefinition::default()
+                }),
+            ]),
+            ..FighterDefinition::default()
+        };
+        assert_eq!(
+            definition
+                .action(Action::SpecialNStart)
+                .and_then(|action| action.slippi_state),
+            Some(347)
+        );
+        assert_eq!(
+            definition
+                .action(Action::SpecialNStart)
+                .and_then(|action| Some((action.slippi_state?, action.animation?))),
+            None
         );
     }
 }

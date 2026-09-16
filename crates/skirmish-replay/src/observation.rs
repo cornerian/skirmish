@@ -809,9 +809,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
         | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn => {
-            let (state, _animation) =
-                skirmish::game::script::definition::builtin_slippi_ids(character, fighter.action)?;
-            state as u16
+            skirmish::game::script::definition::builtin_slippi_state(character, fighter.action)?
+                as u16
         }
         Eliminated => return None,
     })
