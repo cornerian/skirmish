@@ -1611,7 +1611,15 @@ mod combat_resource_tests {
             character: "captain-falcon".into(),
             resources: Resources::new(BTreeMap::from([(
                 "side".into(),
-                serde_json::json!({"attributes": {"specials_gr_vel_x": 0.75}}),
+                serde_json::json!({
+                    "attributes": {
+                        "specials_gr_vel_x": 0.75,
+                        "specials_grav": 0.1,
+                        "specials_terminal_vel": 2.0,
+                        "specials_miss_landing_lag": 0.0,
+                        "specials_hit_landing_lag": 0.0,
+                    },
+                }),
             )]))
             .expect("resource fixture indexes"),
         });
