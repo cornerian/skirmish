@@ -41,6 +41,8 @@ pub fn data() -> MatchData {
             moves: core::array::from_fn(|index| Move {
                 attack: Attack {
                     move_id: Some(20 + index as u16),
+                    blend_frames: 0,
+                    dynamics_variant: 0,
                     frames: vec![
                         AttackFrame {
                             bones: fighter.bones.clone(),
@@ -60,6 +62,8 @@ pub fn data() -> MatchData {
                 landing_lag: 8.0 + 2.0 * index as f32,
                 landing_animation_end: 9.9,
                 landing_poses: vec![fighter.bones.clone(); 11],
+                landing_poses_blend_frames: 0,
+                landing_poses_dynamics_variant: 0,
             }),
         });
     }
