@@ -609,6 +609,14 @@ fn ground_jump(f: &mut Fighter, data: &FighterData, p: &Parameters) {
 }
 
 pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Controller) {
+    // Jump's animation callback is available even for a pack that only has
+    // movement poses and no ordinary locomotion parameter block.  Keep this
+    // before the optional-parameters guard so the selected motion's end owns
+    // the lifecycle transition in every resource-backed match.
+    if f.action == Action::Jump && jump_animation_complete(f, data) {
+        enter(f, Action::Fall);
+        return;
+    }
     let Some(p) = data.locomotion.as_ref() else {
         return;
     };
@@ -742,6 +750,28 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
         }
         _ => {}
     }
+}
+
+/// The selected ground-jump motion's duration, if its resource is available.
+/// `MovementPoses` is the resource representation of the JumpF/JumpB
+/// figatree, so its sample count is the only duration available to this
+/// runtime. `None` deliberately means "duration unavailable", allowing the
+/// legacy physics fallback to preserve behavior for older packs.
+pub(crate) fn jump_animation_duration(f: &Fighter, data: &FighterData) -> Option<usize> {
+    let Some(poses) = data.movement_poses.as_ref() else {
+        return None;
+    };
+    let frames = if f.locomotion.jump_backward {
+        poses.jump_b.as_ref()
+    } else {
+        poses.jump_f.as_ref()
+    }?;
+    Some(frames.len())
+}
+
+fn jump_animation_complete(f: &Fighter, data: &FighterData) -> bool {
+    jump_animation_duration(f, data)
+        .is_some_and(|duration| f.action_frame as usize >= duration)
 }
 
 /// `ftCo_Run_Enter_Full` (`ftCo_Run.c:66-74`) with `anim_start = 0.0`, the

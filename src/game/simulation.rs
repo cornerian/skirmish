@@ -2279,7 +2279,16 @@ fn move_fighter(
                     movement.drift_air();
                 }
             }
-            if f.action == Action::Jump && movement.self_velocity[1] < 0.0 {
+            // Jump normally changes to Fall from its animation callback once
+            // the selected JumpF/JumpB motion ends.  Keep this source-era
+            // velocity fallback only when that optional motion duration is
+            // absent; otherwise descending through the apex must not end the
+            // Jump animation early (and must not delay Fall's IASA by a
+            // physics-phase transition).
+            if f.action == Action::Jump
+                && crate::fighter::locomotion::jump_animation_duration(f, data).is_none()
+                && movement.self_velocity[1] < 0.0
+            {
                 enter(f, Action::Fall);
             }
         } else {

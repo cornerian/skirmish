@@ -16,9 +16,16 @@
 //! own merits.
 use skirmish::collision::ecb::JointParameters;
 use skirmish::game::{
-    Action, Match,
+    Action, BUTTON_X, Controller, Match,
     data::{Bone, CollisionBox, MatchData, MovementPoses},
 };
+
+const IDLE: [Controller; 2] = [Controller {
+    buttons: 0,
+    stick: [0.0; 2],
+    cstick: [0.0; 2],
+    trigger: 0.0,
+}; 2];
 
 const GRAVITY: f32 = 0.2;
 const TERMINAL_VELOCITY: f32 = 2.0;
@@ -68,6 +75,16 @@ fn root() -> Bone {
         rotation: [0.0, 0.0, 0.0],
         scale: [1.0, 1.0, 1.0],
     }
+}
+
+fn settle_on_floor(game: &mut Match) {
+    for _ in 0..100 {
+        if game.state().fighters[0].action == Action::Wait {
+            return;
+        }
+        game.step(IDLE).unwrap();
+    }
+    panic!("synthetic fighter must settle on the floor");
 }
 
 /// Steps fighter 0 (fighter 1's own idle Wait never interacts) until it
@@ -151,4 +168,76 @@ fn validation_rejects_a_bone_count_that_does_not_match_the_skeleton() {
         ..Default::default()
     });
     assert!(Match::new(invalid, 0).is_err());
+}
+
+#[test]
+fn jump_stays_in_jump_after_apex_until_the_selected_motion_ends() {
+    let mut resource = data();
+    resource.stage.spawns[0] = [-5.0, 0.0];
+    // The synthetic jump reaches a negative vertical velocity well before
+    // this 20-frame JumpF resource ends.  The resource-driven callback must
+    // leave it in Jump through the apex and make Fall available only when the
+    // selected animation has no frame remaining.
+    let jump_frames = 20;
+    resource.fighters[0].movement_poses = Some(MovementPoses {
+        jump_f: Some(vec![vec![root(), bone(1.0)]; jump_frames]),
+        ..Default::default()
+    });
+    let mut game = Match::new(resource, 0).unwrap();
+    settle_on_floor(&mut game);
+    let mut jump = IDLE;
+    jump[0].buttons = BUTTON_X;
+    for _ in 0..3 {
+        game.step(jump).unwrap();
+    }
+    assert_eq!(game.state().fighters[0].action, Action::Jump);
+
+    let mut saw_descending_jump = false;
+    let mut saw_animation_end = false;
+    for _ in 0..jump_frames + 4 {
+        let before = game.state().fighters[0].clone();
+        let state = game.step(IDLE).unwrap();
+        if before.action == Action::Jump
+            && before.action_frame < jump_frames as u32
+            && before.velocity[1] < 0.0
+        {
+            saw_descending_jump = true;
+            assert_eq!(state.fighters[0].action, Action::Jump);
+        }
+        if state.fighters[0].action == Action::Fall {
+            assert_eq!(before.action, Action::Jump);
+            assert_eq!(before.action_frame, jump_frames as u32);
+            saw_animation_end = true;
+            break;
+        }
+    }
+    assert!(saw_descending_jump, "Jump must outlive its apex");
+    assert!(saw_animation_end, "JumpF completion must enter Fall");
+}
+
+#[test]
+fn jump_without_a_selected_motion_keeps_the_legacy_physics_fallback() {
+    let mut resource = data();
+    resource.stage.spawns[0] = [-5.0, 0.0];
+    let mut game = Match::new(resource, 0).unwrap();
+    settle_on_floor(&mut game);
+    let mut jump = IDLE;
+    jump[0].buttons = BUTTON_X;
+    for _ in 0..3 {
+        game.step(jump).unwrap();
+    }
+    assert_eq!(game.state().fighters[0].action, Action::Jump);
+
+    let mut saw_fall = false;
+    for _ in 0..20 {
+        let before = game.state().fighters[0].clone();
+        let state = game.step(IDLE).unwrap();
+        if state.fighters[0].action == Action::Fall {
+            assert_eq!(before.action, Action::Jump);
+            assert!(state.fighters[0].velocity[1] < 0.0);
+            saw_fall = true;
+            break;
+        }
+    }
+    assert!(saw_fall, "resource-free Jump must still use the physics fallback");
 }
