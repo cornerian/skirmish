@@ -55,3 +55,56 @@ fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
         );
     }
 }
+
+fn captain_at_frame(
+    replay: &skirmish_replay::slippi::Replay,
+    frame_id: i32,
+) -> peppi_adapter::Actor {
+    let index = replay
+        .frame_indices(skirmish_replay::slippi::Timeline::LastRecorded)
+        .unwrap()
+        .iter()
+        .copied()
+        .find(|&index| replay.frame(index).unwrap().id == frame_id)
+        .unwrap_or_else(|| panic!("recorded frame {frame_id} is missing"));
+    replay
+        .frame(index)
+        .unwrap()
+        .actors
+        .into_iter()
+        .find(|actor| actor.port == peppi_adapter::Port::P4 && !actor.follower)
+        .unwrap_or_else(|| panic!("Captain Falcon leader missing at frame {frame_id}"))
+}
+
+#[test]
+fn captain_real_slippi_states_match_bundled_definition_metadata() {
+    let replay = skirmish_replay::slippi::Replay::read(std::io::Cursor::new(include_bytes!(
+        "../../../tests/fixtures/slippi/01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp"
+    )))
+    .unwrap();
+
+    for (frame_id, action, state, animation) in [
+        (522, game::Action::SpecialAirHi, 354, 308),
+        (6594, game::Action::SpecialAirLw, 359, 313),
+        (6623, game::Action::SpecialAirLwEndAir, 361, 316),
+    ] {
+        let actor = captain_at_frame(&replay, frame_id);
+        assert_eq!(
+            definition::builtin_slippi_ids(Some(CAPTAIN_EXTERNAL_ID), action),
+            Some((state, animation)),
+            "bundled Captain metadata for frame {frame_id}"
+        );
+        assert_eq!(
+            actor.post.character, 2,
+            "Captain internal ID at frame {frame_id}"
+        );
+        assert_eq!(
+            u32::from(actor.post.state),
+            state,
+            "recorded state at frame {frame_id}"
+        );
+        // This fixture is Slippi 3.9, before post.animation_index was
+        // recorded. The definition assertion above still checks the expected
+        // 308/313/316 animation paired with each raw source state.
+    }
+}
