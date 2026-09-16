@@ -880,11 +880,7 @@ impl Registry {
 /// definitions. The registry is initialized once so observation remains a
 /// cheap read during frame streaming.
 pub fn builtin_slippi_ids(character: Option<u8>, action: Action) -> Option<(u32, u32)> {
-    let id = character?;
-    static REGISTRY: OnceLock<Registry> = OnceLock::new();
-    REGISTRY
-        .get_or_init(|| Registry::builtins().expect("bundled fighter definitions must load"))
-        .by_external_id(id)
+    builtin_definition(character)
         .and_then(|definition| definition.slippi_ids(action))
 }
 
@@ -892,12 +888,15 @@ pub fn builtin_slippi_ids(character: Option<u8>, action: Action) -> Option<(u32,
 /// animation id.  Keep this separate from [`builtin_slippi_ids`], whose pair
 /// contract remains useful to callers that need both replay identifiers.
 pub fn builtin_slippi_state(character: Option<u8>, action: Action) -> Option<u32> {
+    builtin_definition(character).and_then(|definition| definition.slippi_state(action))
+}
+
+fn builtin_definition(character: Option<u8>) -> Option<&'static Definition> {
     let id = character?;
     static REGISTRY: OnceLock<Registry> = OnceLock::new();
     REGISTRY
         .get_or_init(|| Registry::builtins().expect("bundled fighter definitions must load"))
         .by_external_id(id)
-        .and_then(|definition| definition.slippi_state(action))
 }
 
 #[cfg(test)]
