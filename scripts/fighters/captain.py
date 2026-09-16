@@ -30,6 +30,12 @@ from skirmish import (
 from shared.common import FighterBase
 
 
+# The compact authoring enum does not yet expose the engine's ordinary
+# landing action; its canonical wire spelling is still representable as a
+# string descriptor.
+_LANDING_ACTION = "landing"
+
+
 def _special_rules(ctx: MoveContext):
     rules = getattr(ctx, "rules", None)
     return getattr(rules, "specials", None)
@@ -52,6 +58,7 @@ class CaptainFalconActionState(ActionState):
 
     launch_armed: bool = False
     dive_released: bool = False
+    kick_active: bool = False
 
 
 class CaptainFalconParameters(Parameters):
@@ -240,7 +247,7 @@ class FalconDive(SpecialMove):
         if fighter.action != self.air:
             return False
         if not fighter.action_state.dive_released:
-            fighter.change_action(Action.WAIT)
+            fighter.change_action(_LANDING_ACTION)
             return True
         attributes = ctx.resource("up.attributes")
         if attributes is None:
@@ -251,6 +258,57 @@ class FalconDive(SpecialMove):
             return False
         fighter.enter_fall_special(mobility=mobility, landing_lag=landing_lag)
         return True
+
+    @hook.validate
+    def validate(self, ctx: MoveContext) -> bool:
+        rules = _special_rules(ctx)
+        if rules is None:
+            return True
+        threshold = getattr(rules, "vertical_threshold", None)
+        return (threshold is not None and validation.number(threshold)
+                and 0 < threshold <= 1)
+
+
+class FalconKick(SpecialMove):
+    """Observed aerial Falcon Kick entry and finite recovery phase only.
+
+    Ground Kick, rebound, wall interaction, hit effects, and command traces
+    remain deliberately unimplemented because they are not represented by
+    the captured slice or this API contract.
+    """
+
+    resource = "down"
+
+    air = action(Action.SPECIAL_AIR_LW, slippi_state=359)
+    air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361)
+
+    @hook.action_enter(air, air_end)
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        # Source entry clears command variables; no numeric physics is
+        # duplicated here.
+        fighter.action_state.kick_active = fighter.action == self.air
+
+    @hook.input_pressed(Button.B)
+    def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        if (ctx.resource(self.resource) is None
+                or not ctx.input.just_pressed(Button.B)):
+            return False
+        if fighter.action in (self.air, self.air_end):
+            return True
+        rules = _special_rules(ctx)
+        threshold = getattr(rules, "vertical_threshold", None) if rules is not None else None
+        if threshold is None or ctx.input.stick[1] > -threshold or not ctx.air_open:
+            return False
+        fighter.change_action(self.air)
+        fighter.action_frame = 1
+        return True
+
+    @hook.animation_end(air, air_end)
+    def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
+        if fighter.action == self.air:
+            fighter.change_action(self.air_end)
+        elif fighter.action == self.air_end:
+            fighter.change_action(Action.FALL)
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
@@ -273,7 +331,7 @@ class CaptainFalcon(FighterBase):
         FalconPunch(),
         ActionMove(Action.SPECIAL_S),
         FalconDive(),
-        ActionMove(Action.SPECIAL_LW),
+        FalconKick(),
     )
 
 
@@ -283,4 +341,5 @@ __all__ = [
     "CaptainFalconParameters",
     "FalconPunch",
     "FalconDive",
+    "FalconKick",
 ]

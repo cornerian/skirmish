@@ -228,7 +228,7 @@ class CaptainFalconTests(unittest.TestCase):
         air = self.Fighter(move.air)
         move.enter(air, context)
         move.landed(air, context)
-        self.assertEqual(air.changes, [(Action.WAIT, {})])
+        self.assertEqual(air.changes, [("landing", {})])
         air.action = move.air
         move.command_changed(air, SimpleNamespace(event=SimpleNamespace(value=1)))
         move.landed(air, context)
@@ -243,6 +243,34 @@ class CaptainFalconTests(unittest.TestCase):
             rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=1.5)))))
         self.assertTrue(move.validate(SimpleNamespace(
             rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)))))
+
+    def test_falcon_kick_accepts_only_downward_aerial_b_and_reaches_fall(self):
+        captain = _load_captain()
+        move = captain.specials.down
+        rules = SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5,
+                                                          horizontal_threshold=0.5))
+        context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
+                               air_open=True)
+        context.rules = rules
+        fighter = self.Fighter(None)
+        self.assertTrue(move.input_pressed(fighter, context))
+        self.assertEqual(fighter.action, move.air)
+        self.assertEqual(move.air.as_dict()["slippi_state"], 359)
+        self.assertEqual(move.air_end.as_dict()["slippi_state"], 361)
+
+        move.animation_end(fighter, context)
+        self.assertEqual(fighter.action, move.air_end)
+        move.animation_end(fighter, context)
+        self.assertEqual(fighter.changes[-1], (Action.FALL, {}))
+
+        up_context = self.context(input_value=self.Input((Button.B,), (0.0, 0.7)),
+                                  air_open=True)
+        up_context.rules = rules
+        self.assertFalse(move.input_pressed(self.Fighter(None), up_context))
+        neutral_context = self.context(input_value=self.Input((Button.B,), (0.0, 0.0)),
+                                       air_open=True)
+        neutral_context.rules = rules
+        self.assertFalse(move.input_pressed(self.Fighter(None), neutral_context))
 
     def test_exports_identity_and_resource_backed_punch(self):
         from fighter.api import export_definition
