@@ -366,3 +366,35 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
         .iter()
         .any(|(path, value)| path == "fighter.ground_velocity" && *value == NativeValue::F32(0.0)));
 }
+
+#[test]
+fn captain_grounded_down_special_dispatches_falcon_kick() {
+    let program = captain_program();
+    let state = Arc::new(Mutex::new(CaptainState {
+        action: "Action.WAIT".into(),
+        stick: [0.0, -0.8],
+        facing: 1.0,
+        ..CaptainState::default()
+    }));
+    let host = shared_host(CaptainHost {
+        state: Arc::clone(&state),
+    });
+    let fighter = HostRef::new(host, NativeKind::Fighter, "fighter");
+    let kick = callback(&program, "move_3", "input_pressed");
+
+    program.prepare_for_current_thread().unwrap();
+    assert_eq!(
+        program.dispatch(&kick, fighter, &[context()]).unwrap(),
+        NativeValue::Bool(true)
+    );
+
+    let host = state.lock().unwrap();
+    assert!(host.calls.iter().any(|(path, args)| {
+        path == "fighter.change_action"
+            && args.first() == Some(&NativeValue::String("special_lw".into()))
+    }));
+    assert!(host
+        .sets
+        .iter()
+        .any(|(path, value)| path == "fighter.action_frame" && *value == NativeValue::Int(1)));
+}
