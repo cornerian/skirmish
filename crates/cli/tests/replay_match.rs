@@ -379,20 +379,32 @@ impl Recording {
     }
 
     fn compare(&self, bytes: &[u8]) -> Report {
+        self.compare_ports(bytes, &PORTS)
+    }
+
+    fn compare_ports(&self, bytes: &[u8], comparison_ports: &[Port]) -> Report {
+        self.compare_ports_result(bytes, comparison_ports).unwrap()
+    }
+
+    fn compare_ports_result(
+        &self,
+        bytes: &[u8],
+        comparison_ports: &[Port],
+    ) -> anyhow::Result<Report> {
         let replay = load(bytes);
         let mut game = replay_match::initialize(&self.initialization).unwrap();
         let checkpoint = Checkpoint {
             next_frame: FIRST,
             state: game.checkpoint(),
         };
-        replay_match::validate(
+        Ok(replay_match::validate_with_comparison_ports(
             &replay,
             &mut game,
             &checkpoint,
             PORTS,
             Timeline::LastRecorded,
-        )
-        .unwrap()
+            comparison_ports,
+        )?)
     }
 }
 
@@ -456,9 +468,48 @@ fn file_backed_native_run_matches_walking_jump_landing_and_combat_observations()
     matched(&report, FIRST, recording.inputs.len());
     assert_eq!(report.policy, "fighter-post-v11");
     assert_eq!(report.ports, PORTS);
+    assert_eq!(report.comparison_ports, PORTS);
     assert_eq!(report.checkpoint_next_frame, FIRST);
     assert_eq!(report.replay.bytes, bytes.len());
     assert_eq!(report.resources_sha256.len(), 64);
+}
+
+#[test]
+fn comparison_port_selector_skips_only_the_unselected_fighter() {
+    let recording = Recording::new();
+    let p3_changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[1].leader.post.percent.set(31, Some(123.0));
+    });
+    let full = recording.compare(&p3_changed);
+    assert!(matches!(
+        full.outcome,
+        Outcome::Mismatch { frame, checked_frames, difference }
+            if frame == FIRST + 31 && checked_frames == 31 && difference.port == Port::P3
+    ));
+
+    let p1_only = recording.compare_ports(&p3_changed, &[Port::P1]);
+    matched(&p1_only, FIRST, recording.inputs.len());
+    assert_eq!(p1_only.ports, PORTS);
+    assert_eq!(p1_only.comparison_ports, vec![Port::P1]);
+
+    let p1_changed = recording.bytes(support::Fixture::default(), |frames| {
+        frames.ports[0].leader.post.percent.set(31, Some(123.0));
+    });
+    let p1_only = recording.compare_ports(&p1_changed, &[Port::P1]);
+    assert!(matches!(
+        p1_only.outcome,
+        Outcome::Mismatch { frame, checked_frames, difference }
+            if frame == FIRST + 31 && checked_frames == 31 && difference.port == Port::P1
+    ));
+
+    let unchanged = recording.bytes(support::Fixture::default(), |_| {});
+    for comparison_ports in [&[][..], &[Port::P1, Port::P1][..], &[Port::P4][..]] {
+        assert!(
+            recording
+                .compare_ports_result(&unchanged, comparison_ports)
+                .is_err()
+        );
+    }
 }
 
 #[test]

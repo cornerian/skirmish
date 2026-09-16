@@ -54,6 +54,10 @@ enum Commands {
         initialization: PathBuf,
         #[arg(long)]
         finalized_only: bool,
+        /// Compare only this recorded player after simulating the complete
+        /// match pair. Repeat for multiple players; omitted means both.
+        #[arg(long, value_parser = slippi::Port::parse, value_name = "PORT")]
+        compare_port: Option<Vec<slippi::Port>>,
         /// Also write the JSON report (including `initialization_sha256`) here.
         #[arg(long)]
         report: Option<PathBuf>,
@@ -173,6 +177,7 @@ fn main() -> Result<()> {
             path,
             initialization,
             finalized_only,
+            compare_port,
             report,
         } => {
             let replay = slippi::Replay::read(BufReader::new(File::open(path)?))?;
@@ -188,8 +193,23 @@ fn main() -> Result<()> {
             } else {
                 slippi::Timeline::LastRecorded
             };
-            let validated =
-                match_validation::validate(&replay, &mut game, &checkpoint, initial.ports, policy)?;
+            let validated = match compare_port.as_deref() {
+                Some(compare_ports) => match_validation::validate_with_comparison_ports(
+                    &replay,
+                    &mut game,
+                    &checkpoint,
+                    initial.ports,
+                    policy,
+                    compare_ports,
+                )?,
+                None => match_validation::validate(
+                    &replay,
+                    &mut game,
+                    &checkpoint,
+                    initial.ports,
+                    policy,
+                )?,
+            };
             let mut output = serde_json::to_value(&validated)?;
             output["initialization_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
             let text = serde_json::to_string_pretty(&output)?;

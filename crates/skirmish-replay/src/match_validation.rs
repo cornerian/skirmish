@@ -47,6 +47,10 @@ pub struct Report {
     pub fields: Vec<&'static str>,
     pub resources_sha256: String,
     pub ports: [Port; 2],
+    /// Ports whose post-frame observations were compared. `ports` remains the
+    /// complete simulated/input-decoded pair; this field makes an opt-in
+    /// scoped comparison explicit in machine-readable reports.
+    pub comparison_ports: Vec<Port>,
     pub checkpoint_next_frame: i32,
     pub outcome: Outcome,
 }
@@ -107,12 +111,40 @@ pub fn validate(
     ports: [Port; 2],
     timeline: Timeline,
 ) -> Result<Report> {
+    validate_with_comparison_ports(replay, game, checkpoint, ports, timeline, &ports)
+}
+
+/// Compare every simulated player by default, or an explicitly selected
+/// subset of those players. Input decoding and native stepping always retain
+/// the complete `ports` pair; selection affects only post-frame comparison.
+pub fn validate_with_comparison_ports(
+    replay: &Replay,
+    game: &mut game::Match,
+    checkpoint: &Checkpoint<game::Checkpoint>,
+    ports: [Port; 2],
+    timeline: Timeline,
+    comparison_ports: &[Port],
+) -> Result<Report> {
     let settings = &replay.game().start;
     ensure!(ports[0] != ports[1], "duplicate player ports");
     ensure!(
         settings.players.len() == 2 && settings.players.iter().all(|p| ports.contains(&p.port)),
         "port mapping must cover exactly the two recorded players"
     );
+    ensure!(
+        !comparison_ports.is_empty(),
+        "comparison selectors must include at least one port"
+    );
+    for (index, &port) in comparison_ports.iter().enumerate() {
+        ensure!(
+            !comparison_ports[..index].contains(&port),
+            "comparison selector {port} is duplicated"
+        );
+        ensure!(
+            ports.contains(&port),
+            "comparison selector {port} is absent from the simulated player ports"
+        );
+    }
     ensure!(
         settings
             .players
@@ -190,7 +222,10 @@ pub fn validate(
         &mut stepper,
         checkpoint,
         transitions,
-        observation::compare,
+        |expected, actual| {
+            observation::compare_for_ports(expected, actual, comparison_ports)
+                .expect("comparison ports were validated against the complete match pair")
+        },
     );
     let outcome = match result {
         Ok(report) => Outcome::Matched {
@@ -245,6 +280,7 @@ pub fn validate(
         fields: observation::fields(settings.slippi.version),
         resources_sha256,
         ports,
+        comparison_ports: comparison_ports.to_vec(),
         checkpoint_next_frame: checkpoint.next_frame,
         outcome,
     })

@@ -861,7 +861,8 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         SpecialNStart | SpecialNLoop | SpecialNEnd | SpecialAirNStart | SpecialAirNLoop
         | SpecialAirNEnd | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
         | SpecialAirS | SpecialAirSEnd | SpecialHiHold | SpecialHiHoldAir | SpecialHi
-        | SpecialAirHi | SpecialHiLanding | SpecialHiFall | SpecialHiBound | SpecialLwStart
+        | SpecialAirHi | SpecialHiCatch | SpecialHiThrow | SpecialHiLanding | SpecialHiFall
+        | SpecialHiBound | SpecialLwStart
         | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
         | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn
         | SpecialLwGroundEnd
@@ -985,243 +986,301 @@ fn float_difference(
     difference(port, field, expected.to_bits(), actual.to_bits(), 8)
 }
 
-pub fn compare(expected: &Observation, actual: &Observation) -> Option<Difference> {
-    for (expected, actual) in expected.fighters.iter().zip(&actual.fighters) {
-        let port = expected.port;
-        if let Some(difference) =
-            difference(port, "port", expected.port as u32, actual.port as u32, 2)
-        {
+fn compare_fighter(
+    expected: &FighterObservation,
+    actual: &FighterObservation,
+) -> Option<Difference> {
+    let port = expected.port;
+    if let Some(difference) = difference(port, "port", expected.port as u32, actual.port as u32, 2)
+    {
+        return Some(difference);
+    }
+    if let Some(difference) = optional_difference(
+        port,
+        BASE_FIELDS[0],
+        expected.action_state,
+        actual.action_state,
+    ) {
+        return Some(difference);
+    }
+    if let Some(expected) = expected.animation_index {
+        let Some(actual) = actual.animation_index else {
+            return Some(Difference {
+                port,
+                field: ANIMATION_FIELD,
+                expected: format!("0x{expected:08x}"),
+                actual: "unavailable".into(),
+            });
+        };
+        if let Some(difference) = difference(port, ANIMATION_FIELD, expected, actual, 8) {
             return Some(difference);
         }
-        if let Some(difference) = optional_difference(
-            port,
-            BASE_FIELDS[0],
-            expected.action_state,
-            actual.action_state,
-        ) {
+    }
+    for (field, expected, actual) in [
+        (BASE_FIELDS[1], expected.action_age, actual.action_age),
+        (BASE_FIELDS[2], expected.position[0], actual.position[0]),
+        (BASE_FIELDS[3], expected.position[1], actual.position[1]),
+        (BASE_FIELDS[4], expected.direction, actual.direction),
+        (BASE_FIELDS[5], expected.percent, actual.percent),
+        (BASE_FIELDS[6], expected.shield, actual.shield),
+    ] {
+        if let Some(difference) = float_difference(port, field, expected, actual) {
             return Some(difference);
         }
-        if let Some(expected) = expected.animation_index {
-            let Some(actual) = actual.animation_index else {
+    }
+    for (field, expected, actual) in [
+        (
+            INSTANCE_FIELDS[0],
+            expected.last_hit_by_instance,
+            actual.last_hit_by_instance,
+        ),
+        (INSTANCE_FIELDS[1], expected.instance_id, actual.instance_id),
+    ] {
+        if let Some(expected) = expected {
+            let Some(actual) = actual else {
                 return Some(Difference {
-                    port,
-                    field: ANIMATION_FIELD,
-                    expected: format!("0x{expected:08x}"),
-                    actual: "unavailable".into(),
-                });
-            };
-            if let Some(difference) = difference(port, ANIMATION_FIELD, expected, actual, 8) {
-                return Some(difference);
-            }
-        }
-        for (field, expected, actual) in [
-            (BASE_FIELDS[1], expected.action_age, actual.action_age),
-            (BASE_FIELDS[2], expected.position[0], actual.position[0]),
-            (BASE_FIELDS[3], expected.position[1], actual.position[1]),
-            (BASE_FIELDS[4], expected.direction, actual.direction),
-            (BASE_FIELDS[5], expected.percent, actual.percent),
-            (BASE_FIELDS[6], expected.shield, actual.shield),
-        ] {
-            if let Some(difference) = float_difference(port, field, expected, actual) {
-                return Some(difference);
-            }
-        }
-        for (field, expected, actual) in [
-            (
-                INSTANCE_FIELDS[0],
-                expected.last_hit_by_instance,
-                actual.last_hit_by_instance,
-            ),
-            (INSTANCE_FIELDS[1], expected.instance_id, actual.instance_id),
-        ] {
-            if let Some(expected) = expected {
-                let Some(actual) = actual else {
-                    return Some(Difference {
-                        port,
-                        field,
-                        expected: format!("0x{expected:04x}"),
-                        actual: "unavailable".into(),
-                    });
-                };
-                if let Some(difference) =
-                    difference(port, field, u32::from(expected), u32::from(actual), 4)
-                {
-                    return Some(difference);
-                }
-            }
-        }
-        for (field, expected, actual) in [
-            (BASE_FIELDS[7], expected.stocks, actual.stocks),
-            (
-                BASE_FIELDS[8],
-                u8::from(expected.airborne),
-                u8::from(actual.airborne),
-            ),
-            (
-                BASE_FIELDS[9],
-                expected.jumps_remaining,
-                actual.jumps_remaining,
-            ),
-        ] {
-            if let Some(difference) =
-                difference(port, field, u32::from(expected), u32::from(actual), 2)
-            {
-                return Some(difference);
-            }
-        }
-        if let Some(difference) = difference(
-            port,
-            BASE_FIELDS[10],
-            u32::from(expected.last_ground_id),
-            u32::from(actual.last_ground_id),
-            4,
-        ) {
-            return Some(difference);
-        }
-        if let Some(difference) = difference(
-            port,
-            BASE_FIELDS[11],
-            u32::from(expected.l_cancel),
-            u32::from(actual.l_cancel),
-            2,
-        ) {
-            return Some(difference);
-        }
-        for (field, expected, actual) in [
-            (PROVENANCE_FIELDS[0], expected.character, actual.character),
-            (
-                PROVENANCE_FIELDS[1],
-                expected.last_attack_landed,
-                actual.last_attack_landed,
-            ),
-            (
-                PROVENANCE_FIELDS[2],
-                expected.combo_count,
-                actual.combo_count,
-            ),
-            (
-                PROVENANCE_FIELDS[3],
-                expected.last_hit_by,
-                actual.last_hit_by,
-            ),
-        ] {
-            if let Some(difference) =
-                difference(port, field, u32::from(expected), u32::from(actual), 2)
-            {
-                return Some(difference);
-            }
-        }
-        let selected_flags = [
-            (0, 0x10),
-            (1, 0x04),
-            (1, 0x08),
-            (1, 0x20),
-            (2, 0x80),
-            (3, 0x02),
-            (3, 0x04),
-            (3, 0x20),
-            (4, 0x40),
-            (4, 0x10),
-        ];
-        if let Some(expected_flags) = expected.state_flags {
-            let Some(actual_flags) = actual.state_flags else {
-                return Some(Difference {
-                    port,
-                    field: STATE_FLAG_FIELDS[0],
-                    expected: format!("0x{:02x}", expected_flags[1] & 0x04),
-                    actual: "unavailable".into(),
-                });
-            };
-            for (field, (byte, mask)) in STATE_FLAG_FIELDS.iter().copied().zip(selected_flags) {
-                if let Some(difference) = difference(
                     port,
                     field,
-                    u32::from(expected_flags[byte] & mask != 0),
-                    u32::from(actual_flags[byte] & mask != 0),
-                    2,
-                ) {
-                    return Some(difference);
-                }
-            }
-            if expected_flags[3] & 0x02 != 0 {
-                let (Some(expected_misc), Some(actual_misc)) = (expected.misc_as, actual.misc_as)
-                else {
-                    return Some(Difference {
-                        port,
-                        field: MISC_HITSTUN_FIELD,
-                        expected: expected.misc_as.map_or_else(
-                            || "unavailable".into(),
-                            |v| format!("0x{:08x}", v.to_bits()),
-                        ),
-                        actual: actual.misc_as.map_or_else(
-                            || "unavailable".into(),
-                            |v| format!("0x{:08x}", v.to_bits()),
-                        ),
-                    });
-                };
-                if let Some(difference) =
-                    float_difference(port, MISC_HITSTUN_FIELD, expected_misc, actual_misc)
-                {
-                    return Some(difference);
-                }
-            }
-        }
-        if let Some(expected_hurtbox_state) = expected.hurtbox_state {
-            let Some(actual_hurtbox_state) = actual.hurtbox_state else {
-                return Some(Difference {
-                    port,
-                    field: HURTBOX_FIELD,
-                    expected: format!("0x{expected_hurtbox_state:02x}"),
-                    actual: "unavailable".into(),
-                });
-            };
-            if let Some(difference) = difference(
-                port,
-                HURTBOX_FIELD,
-                u32::from(expected_hurtbox_state),
-                u32::from(actual_hurtbox_state),
-                2,
-            ) {
-                return Some(difference);
-            }
-        }
-        if let Some(expected_velocities) = expected.velocities {
-            let Some(actual_velocities) = actual.velocities else {
-                return Some(Difference {
-                    port,
-                    field: VELOCITY_FIELDS[0],
-                    expected: format!("0x{:08x}", expected_velocities[0].to_bits()),
-                    actual: "unavailable".into(),
-                });
-            };
-            for ((field, expected), actual) in VELOCITY_FIELDS
-                .iter()
-                .copied()
-                .zip(expected_velocities)
-                .zip(actual_velocities)
-            {
-                if let Some(difference) = float_difference(port, field, expected, actual) {
-                    return Some(difference);
-                }
-            }
-        }
-        if let Some(expected_hitlag) = expected.hitlag {
-            let Some(actual_hitlag) = actual.hitlag else {
-                return Some(Difference {
-                    port,
-                    field: HITLAG_FIELD,
-                    expected: format!("0x{:08x}", expected_hitlag.to_bits()),
+                    expected: format!("0x{expected:04x}"),
                     actual: "unavailable".into(),
                 });
             };
             if let Some(difference) =
-                float_difference(port, HITLAG_FIELD, expected_hitlag, actual_hitlag)
+                difference(port, field, u32::from(expected), u32::from(actual), 4)
             {
                 return Some(difference);
             }
         }
     }
+    for (field, expected, actual) in [
+        (BASE_FIELDS[7], expected.stocks, actual.stocks),
+        (
+            BASE_FIELDS[8],
+            u8::from(expected.airborne),
+            u8::from(actual.airborne),
+        ),
+        (
+            BASE_FIELDS[9],
+            expected.jumps_remaining,
+            actual.jumps_remaining,
+        ),
+    ] {
+        if let Some(difference) = difference(port, field, u32::from(expected), u32::from(actual), 2)
+        {
+            return Some(difference);
+        }
+    }
+    if let Some(difference) = difference(
+        port,
+        BASE_FIELDS[10],
+        u32::from(expected.last_ground_id),
+        u32::from(actual.last_ground_id),
+        4,
+    ) {
+        return Some(difference);
+    }
+    if let Some(difference) = difference(
+        port,
+        BASE_FIELDS[11],
+        u32::from(expected.l_cancel),
+        u32::from(actual.l_cancel),
+        2,
+    ) {
+        return Some(difference);
+    }
+    for (field, expected, actual) in [
+        (PROVENANCE_FIELDS[0], expected.character, actual.character),
+        (
+            PROVENANCE_FIELDS[1],
+            expected.last_attack_landed,
+            actual.last_attack_landed,
+        ),
+        (
+            PROVENANCE_FIELDS[2],
+            expected.combo_count,
+            actual.combo_count,
+        ),
+        (
+            PROVENANCE_FIELDS[3],
+            expected.last_hit_by,
+            actual.last_hit_by,
+        ),
+    ] {
+        if let Some(difference) = difference(port, field, u32::from(expected), u32::from(actual), 2)
+        {
+            return Some(difference);
+        }
+    }
+    let selected_flags = [
+        (0, 0x10),
+        (1, 0x04),
+        (1, 0x08),
+        (1, 0x20),
+        (2, 0x80),
+        (3, 0x02),
+        (3, 0x04),
+        (3, 0x20),
+        (4, 0x40),
+        (4, 0x10),
+    ];
+    if let Some(expected_flags) = expected.state_flags {
+        let Some(actual_flags) = actual.state_flags else {
+            return Some(Difference {
+                port,
+                field: STATE_FLAG_FIELDS[0],
+                expected: format!("0x{:02x}", expected_flags[1] & 0x04),
+                actual: "unavailable".into(),
+            });
+        };
+        for (field, (byte, mask)) in STATE_FLAG_FIELDS.iter().copied().zip(selected_flags) {
+            if let Some(difference) = difference(
+                port,
+                field,
+                u32::from(expected_flags[byte] & mask != 0),
+                u32::from(actual_flags[byte] & mask != 0),
+                2,
+            ) {
+                return Some(difference);
+            }
+        }
+        if expected_flags[3] & 0x02 != 0 {
+            let (Some(expected_misc), Some(actual_misc)) = (expected.misc_as, actual.misc_as)
+            else {
+                return Some(Difference {
+                    port,
+                    field: MISC_HITSTUN_FIELD,
+                    expected: expected.misc_as.map_or_else(
+                        || "unavailable".into(),
+                        |v| format!("0x{:08x}", v.to_bits()),
+                    ),
+                    actual: actual.misc_as.map_or_else(
+                        || "unavailable".into(),
+                        |v| format!("0x{:08x}", v.to_bits()),
+                    ),
+                });
+            };
+            if let Some(difference) =
+                float_difference(port, MISC_HITSTUN_FIELD, expected_misc, actual_misc)
+            {
+                return Some(difference);
+            }
+        }
+    }
+    if let Some(expected_hurtbox_state) = expected.hurtbox_state {
+        let Some(actual_hurtbox_state) = actual.hurtbox_state else {
+            return Some(Difference {
+                port,
+                field: HURTBOX_FIELD,
+                expected: format!("0x{expected_hurtbox_state:02x}"),
+                actual: "unavailable".into(),
+            });
+        };
+        if let Some(difference) = difference(
+            port,
+            HURTBOX_FIELD,
+            u32::from(expected_hurtbox_state),
+            u32::from(actual_hurtbox_state),
+            2,
+        ) {
+            return Some(difference);
+        }
+    }
+    if let Some(expected_velocities) = expected.velocities {
+        let Some(actual_velocities) = actual.velocities else {
+            return Some(Difference {
+                port,
+                field: VELOCITY_FIELDS[0],
+                expected: format!("0x{:08x}", expected_velocities[0].to_bits()),
+                actual: "unavailable".into(),
+            });
+        };
+        for ((field, expected), actual) in VELOCITY_FIELDS
+            .iter()
+            .copied()
+            .zip(expected_velocities)
+            .zip(actual_velocities)
+        {
+            if let Some(difference) = float_difference(port, field, expected, actual) {
+                return Some(difference);
+            }
+        }
+    }
+    if let Some(expected_hitlag) = expected.hitlag {
+        let Some(actual_hitlag) = actual.hitlag else {
+            return Some(Difference {
+                port,
+                field: HITLAG_FIELD,
+                expected: format!("0x{:08x}", expected_hitlag.to_bits()),
+                actual: "unavailable".into(),
+            });
+        };
+        if let Some(difference) =
+            float_difference(port, HITLAG_FIELD, expected_hitlag, actual_hitlag)
+        {
+            return Some(difference);
+        }
+    }
     None
+}
+
+/// Compare every fighter in the complete two-player observations in their
+/// existing order. This is the default full-pair policy used by replay
+/// validation and intentionally retains the historical zip semantics.
+pub fn compare(expected: &Observation, actual: &Observation) -> Option<Difference> {
+    expected
+        .fighters
+        .iter()
+        .zip(&actual.fighters)
+        .find_map(|(expected, actual)| compare_fighter(expected, actual))
+}
+
+fn fighter_for_port<'a>(
+    observation: &'a Observation,
+    port: Port,
+    side: &str,
+) -> Result<&'a FighterObservation, String> {
+    let mut matches = observation
+        .fighters
+        .iter()
+        .filter(|fighter| fighter.port == port);
+    let Some(fighter) = matches.next() else {
+        return Err(format!("{side} observation is missing {port}"));
+    };
+    if matches.next().is_some() {
+        return Err(format!(
+            "{side} observation has duplicate fighters for {port}"
+        ));
+    }
+    Ok(fighter)
+}
+
+/// Compare only the requested ports while retaining complete observations for
+/// the simulator and input decoder. A selector is valid only when it is
+/// nonempty, distinct, and present exactly once in both observations.
+pub fn compare_for_ports(
+    expected: &Observation,
+    actual: &Observation,
+    ports: &[Port],
+) -> Result<Option<Difference>, String> {
+    if ports.is_empty() {
+        return Err("comparison selectors must include at least one port".into());
+    }
+    for (index, &port) in ports.iter().enumerate() {
+        if ports[..index].contains(&port) {
+            return Err(format!("comparison selector {port} is duplicated"));
+        }
+    }
+
+    let selected = ports.iter().map(|&port| {
+        Ok((
+            fighter_for_port(expected, port, "expected")?,
+            fighter_for_port(actual, port, "actual")?,
+        ))
+    });
+    let selected: Vec<_> = selected.collect::<Result<_, String>>()?;
+    Ok(selected
+        .into_iter()
+        .find_map(|(expected, actual)| compare_fighter(expected, actual)))
 }
 
 #[cfg(test)]
@@ -1466,6 +1525,46 @@ mod tests {
             invalid.actors[0].post.hurtbox_state = hurtbox_state;
             assert!(super::expected(&invalid, PORTS).is_err());
         }
+    }
+
+    #[test]
+    fn comparison_port_selector_scopes_only_post_frame_comparison() {
+        let mut expected = expected(&frame(), PORTS).unwrap();
+        expected.fighters[0].port = Port::P1;
+        expected.fighters[1].port = Port::P4;
+
+        let mut p4_mismatch = expected.clone();
+        p4_mismatch.fighters[1].position[0] = 1.0;
+        assert_eq!(compare(&expected, &p4_mismatch).unwrap().port, Port::P4);
+        assert!(
+            compare_for_ports(&expected, &p4_mismatch, &[Port::P1])
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            compare_for_ports(&expected, &p4_mismatch, &[Port::P4])
+                .unwrap()
+                .unwrap()
+                .port,
+            Port::P4
+        );
+
+        let mut p1_mismatch = expected.clone();
+        p1_mismatch.fighters[0].position[0] = 1.0;
+        assert_eq!(
+            compare_for_ports(&expected, &p1_mismatch, &[Port::P1])
+                .unwrap()
+                .unwrap()
+                .port,
+            Port::P1
+        );
+
+        for ports in [&[][..], &[Port::P1, Port::P1][..], &[Port::P2][..]] {
+            assert!(compare_for_ports(&expected, &expected, ports).is_err());
+        }
+        let mut duplicate = expected.clone();
+        duplicate.fighters[1].port = Port::P1;
+        assert!(compare_for_ports(&duplicate, &expected, &[Port::P1]).is_err());
     }
 
     #[test]
