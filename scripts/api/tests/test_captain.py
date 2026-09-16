@@ -228,7 +228,7 @@ class CaptainFalconTests(unittest.TestCase):
         air = self.Fighter(move.air)
         move.enter(air, context)
         move.landed(air, context)
-        self.assertEqual(air.changes, [("landing", {})])
+        self.assertEqual(air.changes, [(Action.LANDING, {})])
         air.action = move.air
         move.command_changed(air, SimpleNamespace(event=SimpleNamespace(value=1)))
         move.landed(air, context)
@@ -271,6 +271,10 @@ class CaptainFalconTests(unittest.TestCase):
                                        air_open=True)
         neutral_context.rules = rules
         self.assertFalse(move.input_pressed(self.Fighter(None), neutral_context))
+
+    def test_landing_descriptor_uses_canonical_api_action(self):
+        from fighter import action
+        self.assertEqual(action(Action.LANDING).as_dict()["action"], "Action.LANDING")
 
     def test_exports_identity_and_resource_backed_punch(self):
         from fighter.api import export_definition

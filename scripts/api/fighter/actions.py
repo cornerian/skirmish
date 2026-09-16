@@ -36,6 +36,7 @@ class Action(str, Enum):
     SPECIAL_AIR_LW_END = "special_air_lw_end"
     SPECIAL_AIR_LW_TURN = "special_air_lw_turn"
     SPECIAL_AIR_LW_HIT = "special_air_lw_hit"
+    LANDING = "landing"
 
     ATTACK_AIR_N = "attack_air_n"
     ATTACK_AIR_F = "attack_air_f"

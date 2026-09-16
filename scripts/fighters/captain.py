@@ -30,12 +30,6 @@ from skirmish import (
 from shared.common import FighterBase
 
 
-# The compact authoring enum does not yet expose the engine's ordinary
-# landing action; its canonical wire spelling is still representable as a
-# string descriptor.
-_LANDING_ACTION = "landing"
-
-
 def _special_rules(ctx: MoveContext):
     rules = getattr(ctx, "rules", None)
     return getattr(rules, "specials", None)
@@ -58,7 +52,6 @@ class CaptainFalconActionState(ActionState):
 
     launch_armed: bool = False
     dive_released: bool = False
-    kick_active: bool = False
 
 
 class CaptainFalconParameters(Parameters):
@@ -247,7 +240,7 @@ class FalconDive(SpecialMove):
         if fighter.action != self.air:
             return False
         if not fighter.action_state.dive_released:
-            fighter.change_action(_LANDING_ACTION)
+            fighter.change_action(Action.LANDING)
             return True
         attributes = ctx.resource("up.attributes")
         if attributes is None:
@@ -281,12 +274,6 @@ class FalconKick(SpecialMove):
 
     air = action(Action.SPECIAL_AIR_LW, slippi_state=359)
     air_end = action(Action.SPECIAL_AIR_LW_END, slippi_state=361)
-
-    @hook.action_enter(air, air_end)
-    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
-        # Source entry clears command variables; no numeric physics is
-        # duplicated here.
-        fighter.action_state.kick_active = fighter.action == self.air
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
