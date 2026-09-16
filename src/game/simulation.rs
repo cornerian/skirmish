@@ -122,6 +122,7 @@ fn spawn(
         idle: idle::State::default(),
         clank: clank::State::default(),
         grab: grab::State::default(),
+        special_capture: special_capture::State::default(),
         ledge: ledge::State::default(),
         death: death::State::default(),
         entry: entry::State::default(),

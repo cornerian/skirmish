@@ -21,6 +21,7 @@ pub mod nudge;
 pub mod projectile;
 pub mod rebirth;
 pub mod script;
+pub(crate) mod special_capture;
 pub mod simulation;
 pub mod stage_motion;
 pub mod staling;
@@ -168,6 +169,10 @@ pub enum Action {
     CaptureWaitLw,
     CaptureDamageLw,
     CaptureCut,
+    /// Slippi 275, `ftCo_MS_CaptureCaptain`. This is Captain Falcon's
+    /// dedicated Falcon Dive victim state and is intentionally separate from
+    /// the ordinary grab/capture family above.
+    CaptureCaptain,
     ThrownF,
     ThrownB,
     ThrownHi,
@@ -378,6 +383,11 @@ pub struct Fighter {
     pub clank: clank::State,
     /// Paired capture ownership is privileged deterministic physics state.
     pub grab: grab::State,
+    /// Captain Falcon's Falcon Dive capture is not an ordinary grab pair.
+    /// Keeping its relation in the checkpointed fighter state prevents the
+    /// generic grab scanner, escape clock, and throw scheduler from claiming
+    /// this source-specific interaction.
+    pub special_capture: special_capture::State,
     pub ledge: ledge::State,
     pub death: death::State,
     /// `Fighter::mv.co.entry`, shared by Entry/EntryStart/EntryEnd. Read
