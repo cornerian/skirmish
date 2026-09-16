@@ -123,6 +123,11 @@ pub struct Move {
     pub landing_animation_end: f32,
     /// Integer animation-frame physics poses, covering the declared end frame.
     pub landing_poses: Vec<Vec<Bone>>,
+    /// Motion-state entry blend metadata for the landing pose set.
+    #[serde(default)]
+    pub landing_poses_blend_frames: u8,
+    #[serde(default)]
+    pub landing_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

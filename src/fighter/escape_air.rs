@@ -62,10 +62,18 @@ pub struct Rules {
 pub struct Parameters {
     /// One EscapeAir physics sample per action frame.
     pub frames: Vec<AirDodgeFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// `Fighter::x2EC`: end frame of the special-landing animation.
     pub landing_animation_end: f32,
     /// Integer animation-frame LandingFallSpecial poses covering that end.
     pub landing_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub landing_poses_blend_frames: u8,
+    #[serde(default)]
+    pub landing_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

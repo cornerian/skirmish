@@ -304,6 +304,14 @@ pub struct Parameters {
 pub struct CaptureDamage {
     pub high: Vec<Vec<Bone>>,
     pub low: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub high_blend_frames: u8,
+    #[serde(default)]
+    pub high_dynamics_variant: u8,
+    #[serde(default)]
+    pub low_blend_frames: u8,
+    #[serde(default)]
+    pub low_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -311,6 +319,10 @@ pub struct CaptureDamage {
 pub struct Catch {
     /// One complete physics pose and its active catch volumes per frame.
     pub frames: Vec<CatchFrame>,
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     pub pull_frames: u32,
     pub grounded_targets_only: bool,
 }
@@ -339,6 +351,10 @@ pub struct Pummel {
     pub move_id: Option<u16>,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub poses_blend_frames: u8,
+    #[serde(default)]
+    pub poses_dynamics_variant: u8,
     /// The single captured-victim damage callback. Zero is not observable in
     /// this scheduler because input dispatch follows priority-1 callbacks.
     pub hit_frame: u32,
@@ -352,6 +368,14 @@ pub struct Escape {
     pub catch_cut_poses: Vec<Vec<Bone>>,
     /// This fighter's victim-side CaptureCut physics poses.
     pub capture_cut_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub catch_cut_poses_blend_frames: u8,
+    #[serde(default)]
+    pub catch_cut_poses_dynamics_variant: u8,
+    #[serde(default)]
+    pub capture_cut_poses_blend_frames: u8,
+    #[serde(default)]
+    pub capture_cut_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -365,6 +389,10 @@ pub struct Throw {
     pub weight_independent: bool,
     /// One complete holder physics pose per frame.
     pub poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub poses_blend_frames: u8,
+    #[serde(default)]
+    pub poses_dynamics_variant: u8,
     /// Scripted release event. Zero is excluded so entry is observable.
     pub release_frame: u32,
     pub hit: ThrowHit,

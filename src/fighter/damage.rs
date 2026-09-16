@@ -733,6 +733,26 @@ pub struct DamagePoseAttributes {
     pub air: [Vec<Vec<Bone>>; 3],
     /// Fly hurt height low/middle/high.
     pub fly: [Vec<Vec<Bone>>; 3],
+    /// Motion-state entry blend metadata for each sampled damage motion.
+    /// Kept as resource data even though damage reactions currently consume
+    /// the pose samples directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blend: Option<DamagePoseBlend>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamagePoseBlendEntry {
+    pub blend_frames: u8,
+    pub dynamics_variant: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamagePoseBlend {
+    pub ground: [[DamagePoseBlendEntry; 3]; 3],
+    pub air: [DamagePoseBlendEntry; 3],
+    pub fly: [DamagePoseBlendEntry; 3],
 }
 
 impl DamagePoseAttributes {
@@ -877,6 +897,10 @@ pub struct RecoveryInvincibilityRules {
 #[serde(deny_unknown_fields)]
 pub struct KnockdownAttributes {
     pub passive_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_poses_dynamics_variant: u8,
     pub orientation: ProneOrientationRules,
     pub face_up: ProneRecoveryAttributes,
     pub face_down: ProneRecoveryAttributes,
@@ -901,12 +925,24 @@ pub struct ProneOrientationRules {
 #[serde(deny_unknown_fields)]
 pub struct ProneRecoveryAttributes {
     pub bound_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub bound_poses_blend_frames: u8,
+    #[serde(default)]
+    pub bound_poses_dynamics_variant: u8,
     pub wait_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub wait_poses_blend_frames: u8,
+    #[serde(default)]
+    pub wait_poses_dynamics_variant: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_poses: Option<Vec<Vec<Bone>>>,
     pub forward: FloorTechMotion,
     pub backward: FloorTechMotion,
     pub stand_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub stand_poses_blend_frames: u8,
+    #[serde(default)]
+    pub stand_poses_dynamics_variant: u8,
     pub attack: crate::game::data::Attack,
 }
 
@@ -926,6 +962,10 @@ pub struct FloorTechAttributes {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FloorTechMotion {
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// One headless physics/pose sample per action frame.
     pub frames: Vec<FloorTechFrame>,
 }

@@ -111,6 +111,10 @@ pub struct Parameters {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RollMotion {
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     pub frames: Vec<RollFrame>,
 }
 
@@ -128,6 +132,10 @@ pub struct RollFrame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpotDodgeMotion {
+    #[serde(default)]
+    pub blend_frames: u8,
+    #[serde(default)]
+    pub dynamics_variant: u8,
     pub frames: Vec<SpotDodgeFrame>,
 }
 

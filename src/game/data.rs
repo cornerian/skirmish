@@ -5,6 +5,7 @@ use crate::{
     fighter::{Attributes, combat},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -621,6 +622,9 @@ pub struct MovementPoses {
     pub ottotto_wait: Option<Vec<Vec<Bone>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_start: Option<Vec<Vec<Bone>>>,
+    /// Motion-state blend metadata keyed by the pose field name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blend: Option<BTreeMap<String, MotionBlend>>,
 }
 
 impl MovementPoses {
@@ -836,9 +840,27 @@ pub struct Attack {
     /// Native move-table identity. Sentinel1 is exempt from stale-move damage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_id: Option<u16>,
+    /// Motion-state entry blend duration decoded alongside the sampled pose
+    /// set.  It is retained at the resource boundary even when the current
+    /// attack scheduler does not need to cross-fade the pose.
+    #[serde(default)]
+    pub blend_frames: u8,
+    /// Motion-state dynamics variant paired with `blend_frames`.
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// Exactly one physics-pose sample per simulation frame, including recovery.
     /// No implicit interpolation or fallback for missing samples.
     pub frames: Vec<AttackFrame>,
+}
+
+/// Motion-state entry metadata emitted beside sampled pose resources.
+/// Keeping the decoded bytes lets resource consumers reproduce source motion
+/// transitions without requiring the exporter to strip them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MotionBlend {
+    pub blend_frames: u8,
+    pub dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
