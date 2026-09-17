@@ -5,7 +5,7 @@ mod grab_resources;
 
 use skirmish::{
     collision::ecb,
-    fighter::stale::Rules as StaleRules,
+    fighter::state::stale::Rules as StaleRules,
     game::{
         Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, Match, State,
         data::{CollisionBox, MatchData},

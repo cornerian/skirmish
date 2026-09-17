@@ -511,7 +511,7 @@ fn invalid_down_special_resources_are_rejected() {
     // unconditional requirement, `validation.rs`), unrelated to this
     // batch's own change.
     let mut resource = down_special_resources::with_ordinary_clank(data());
-    resource.rules.staling = Some(skirmish::fighter::stale::Rules {
+    resource.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.0; 9],
         debug_bypass: false,
     });

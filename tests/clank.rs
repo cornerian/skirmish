@@ -1,6 +1,6 @@
 //! Explicit synthetic kernel compositions, not an implemented match scheduler.
 use skirmish::{
-    fighter::{combat, stale},
+    fighter::{combat, state::stale},
     game::clank::{self, ClashFighter, Hit, ReboundRules, Response, ResponseRules, Victim, Victims},
 };
 

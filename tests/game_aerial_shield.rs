@@ -4,7 +4,7 @@
 mod support;
 
 use skirmish::{
-    fighter::stale,
+    fighter::state::stale,
     game::{Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match},
 };
 

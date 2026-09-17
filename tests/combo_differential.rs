@@ -3,7 +3,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::combo::{self, Rules, State};
+use skirmish::fighter::state::combo::{self, Rules, State};
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {

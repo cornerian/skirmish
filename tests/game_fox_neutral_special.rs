@@ -208,7 +208,7 @@ fn the_laser_travels_before_hitting_and_despawns_on_contact() {
 fn staling_reduces_repeated_laser_damage() {
     let mut resource = data();
     resource.stage.spawns = [[0.0, 0.0], [15.0, 0.0]];
-    resource.rules.staling = Some(skirmish::fighter::stale::Rules {
+    resource.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.5, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02],
         debug_bypass: false,
     });

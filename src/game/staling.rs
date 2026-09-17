@@ -6,7 +6,7 @@ use super::{
     Action, Error, Fighter,
     data::{AttackFrame, FighterData},
 };
-use crate::fighter::stale::{Entry, InstanceCounter, Queue, Rules};
+use crate::fighter::state::stale::{Entry, InstanceCounter, Queue, Rules};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -50,7 +50,7 @@ pub(crate) enum Transition {
 /// source's prior capacity, so the inline slots remove the allocation
 /// entirely for ordinary frames. `overflow` only allocates past that inline
 /// capacity, so correctness never depends on that "at most two" observation
-/// being exhaustive (`fighter::action_instance::Pending`'s sibling type hit
+/// being exhaustive (`fighter::state::action_instance::Pending`'s sibling type hit
 /// exactly this with an existing test that queued five in a row).
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub(crate) struct Transitions {
@@ -131,9 +131,9 @@ pub(crate) fn flush(
     data: &FighterData,
     rules: Option<&Rules>,
     counter: &mut InstanceCounter,
-    action_counter: &mut crate::fighter::instance::Counter,
+    action_counter: &mut crate::fighter::state::instance::Counter,
 ) -> Result<(), Error> {
-    crate::fighter::action_instance::flush(&mut fighter.action_instance, action_counter);
+    crate::fighter::state::action_instance::flush(&mut fighter.action_instance, action_counter);
     let (inline, inline_len, overflow) = fighter.staling.transitions.take_owned();
     for transition in inline
         .into_iter()

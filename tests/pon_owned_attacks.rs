@@ -154,7 +154,7 @@ fn data(unowned_first: bool) -> skirmish::game::data::MatchData {
     let mut data = aerial::data();
     data.fighters[0].jab.move_id = Some(11);
     data.fighters[1].jab.move_id = Some(11);
-    data.rules.staling = Some(skirmish::fighter::stale::Rules {
+    data.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.0; 9],
         debug_bypass: false,
     });
@@ -184,7 +184,7 @@ fn reversed_data() -> skirmish::game::data::MatchData {
     let mut data = aerial::data();
     data.fighters[0].jab.move_id = Some(11);
     data.fighters[1].jab.move_id = Some(11);
-    data.rules.staling = Some(skirmish::fighter::stale::Rules {
+    data.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.0; 9],
         debug_bypass: false,
     });

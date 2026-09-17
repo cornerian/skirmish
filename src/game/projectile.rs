@@ -98,7 +98,7 @@ pub struct Projectile {
     pub hitboxes: Vec<Hitbox>,
     /// One `staling::Entry` allocated at spawn, matching a fighter's own
     /// attack-instance allocation on first use of a distinct attack.
-    pub staling_identity: crate::fighter::stale::Entry,
+    pub staling_identity: crate::fighter::state::stale::Entry,
 }
 
 impl Projectile {
@@ -129,10 +129,10 @@ pub(crate) fn spawn(
     lifetime: f32,
     hitboxes: Vec<Hitbox>,
     move_id: u16,
-    attack_instances: &mut crate::fighter::stale::InstanceCounter,
+    attack_instances: &mut crate::fighter::state::stale::InstanceCounter,
 ) -> Projectile {
     let [vx, _] = velocity(angle, speed);
-    let mut staling_identity = crate::fighter::stale::Entry::INACTIVE;
+    let mut staling_identity = crate::fighter::state::stale::Entry::INACTIVE;
     staling_identity.change_move(move_id, attack_instances);
     Projectile {
         kind,

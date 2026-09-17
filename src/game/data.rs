@@ -222,7 +222,7 @@ pub struct Floor {
 #[serde(deny_unknown_fields)]
 pub struct Rules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub staling: Option<crate::fighter::stale::Rules>,
+    pub staling: Option<crate::fighter::state::stale::Rules>,
     pub stocks: u8,
     pub countdown_frames: u32,
     pub time_limit_frames: u32,

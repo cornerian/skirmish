@@ -676,7 +676,7 @@ pub struct CombatRules {
     pub special_angle_max: u32,
     pub special_angle_timer: i32,
     pub knockback_replace_window: i32,
-    pub combo: crate::fighter::combo::Rules,
+    pub combo: crate::fighter::state::combo::Rules,
     /// None retains the explicitly incomplete legacy match profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub displacement: Option<HitlagDisplacementRules>,

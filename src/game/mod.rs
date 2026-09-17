@@ -398,9 +398,9 @@ pub struct Fighter {
     pub hitlag: f32,
     pub hitstun: u32,
     /// Current motion-family instance recorded by Slippi 3.16+.
-    pub action_instance: crate::fighter::action_instance::State,
+    pub action_instance: crate::fighter::state::action_instance::State,
     /// Retained hit attribution and raw combo-counter state recorded by Slippi.
-    pub combo: crate::fighter::combo::State,
+    pub combo: crate::fighter::state::combo::State,
     /// Time since the previous damage transition; freezes during hitlag.
     pub damage_elapsed: i32,
     pub damage_angle_flag: u8,
@@ -567,9 +567,9 @@ pub struct State {
     /// checkpoints like every other match-state field.
     pub projectiles: Vec<projectile::Projectile>,
     pub rng_seed: u32,
-    pub attack_instances: crate::fighter::stale::InstanceCounter,
+    pub attack_instances: crate::fighter::state::stale::InstanceCounter,
     /// Independent `plAttack_80037B08` sequence for fighter/item actions.
-    pub action_instances: crate::fighter::instance::Counter,
+    pub action_instances: crate::fighter::state::instance::Counter,
     pub events: Vec<Event>,
 }
 

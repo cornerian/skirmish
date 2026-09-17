@@ -1,6 +1,6 @@
 //! Synthetic resource integration, distinct from the original-C kernel tests.
 use skirmish::{
-    fighter::stale::Rules,
+    fighter::state::stale::Rules,
     game::{Action, BUTTON_A, Controller, Event, Match, State, data::MatchData},
 };
 

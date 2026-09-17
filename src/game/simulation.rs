@@ -13,8 +13,8 @@ use super::round::{death, entry, rebirth, stage_motion};
 pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
     let geometry = stage_motion::geometry(&data.stage, stage_state.frame);
-    let mut action_instances = crate::fighter::instance::Counter::default();
-    let mut attack_instances = crate::fighter::stale::InstanceCounter::default();
+    let mut action_instances = crate::fighter::state::instance::Counter::default();
+    let mut attack_instances = crate::fighter::state::stale::InstanceCounter::default();
     Ok(State {
         next_frame: 0,
         remaining_frames: data.rules.time_limit_frames,
@@ -71,8 +71,8 @@ fn spawn(
     // respawn uses the unrelated, already-implemented Rebirth platform,
     // not `ftCo_MS_Entry`).
     is_match_start: bool,
-    action_instances: &mut crate::fighter::instance::Counter,
-    attack_instances: &mut crate::fighter::stale::InstanceCounter,
+    action_instances: &mut crate::fighter::state::instance::Counter,
+    attack_instances: &mut crate::fighter::state::stale::InstanceCounter,
 ) -> Result<Fighter, Error> {
     let position = data.stage.spawns[player];
     let mut fighter = Fighter {
@@ -133,8 +133,8 @@ fn spawn(
         stocks,
         hitlag: 0.0,
         hitstun: 0,
-        action_instance: crate::fighter::action_instance::State::default(),
-        combo: crate::fighter::combo::State::default(),
+        action_instance: crate::fighter::state::action_instance::State::default(),
+        combo: crate::fighter::state::combo::State::default(),
         damage_elapsed: -1,
         damage_angle_flag: 0,
         damage_angle_timer: 0,
@@ -185,9 +185,9 @@ fn spawn(
         )?;
     } else {
         let identity =
-            crate::fighter::action_instance::motion_identity(fighter.action, None, false);
-        crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
-        crate::fighter::action_instance::flush(&mut fighter.action_instance, action_instances);
+            crate::fighter::state::action_instance::motion_identity(fighter.action, None, false);
+        crate::fighter::state::action_instance::queue(&mut fighter.action_instance, identity);
+        crate::fighter::state::action_instance::flush(&mut fighter.action_instance, action_instances);
     }
     Ok(fighter)
 }
@@ -207,18 +207,18 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         return;
     }
     let identity =
-        crate::fighter::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
+        crate::fighter::state::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
     let leaving_down_tilt = fighter.action == Action::AttackLw3;
     if leaving_down_tilt {
         // The down tilt's deferred x21EC callback (ft_800892A0 then
         // ft_80089824) allocates twice with identity 0 before the ordinary
         // motion-change accounting.
-        crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
-        crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
+        crate::fighter::state::action_instance::queue(&mut fighter.action_instance, 0);
+        crate::fighter::state::action_instance::queue(&mut fighter.action_instance, 0);
     }
     if !matches!(action, Action::AttackLw3 | Action::Attack100Loop) {
         // ftCo_AttackLw3 and Attack100Loop enter with Ft_MF_SkipAttackCount.
-        crate::fighter::action_instance::queue(&mut fighter.action_instance, identity);
+        crate::fighter::state::action_instance::queue(&mut fighter.action_instance, identity);
     }
     clank::transition(fighter, action);
     fighter.aerial = aerial::State::default();
@@ -1257,7 +1257,7 @@ pub(crate) fn advance(
                     fighter.action_frame = fighter.action_frame.saturating_add(1);
                 }
                 if fighter.hitstun == 1 {
-                    crate::fighter::combo::finish_hitstun(
+                    crate::fighter::state::combo::finish_hitstun(
                         &mut fighter.combo,
                         &data.rules.damage.combo,
                     );
@@ -1698,8 +1698,8 @@ fn lose_stock(
     fighter.ground_knockback = 0.0;
     fighter.hitlag = 0.0;
     fighter.hitstun = 0;
-    fighter.action_instance = crate::fighter::action_instance::State::default();
-    fighter.combo = crate::fighter::combo::State::default();
+    fighter.action_instance = crate::fighter::state::action_instance::State::default();
+    fighter.combo = crate::fighter::state::combo::State::default();
     fighter.di_pending = false;
     fighter.ledge = ledge::State::default();
     if preserve_death {

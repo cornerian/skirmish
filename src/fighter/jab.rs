@@ -565,8 +565,8 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
         if fighter.action_frame == 0 {
             fighter.jab.loop_started = true;
             fighter.hit_groups = 0;
-            crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
-            crate::fighter::action_instance::queue(&mut fighter.action_instance, 0);
+            crate::fighter::state::action_instance::queue(&mut fighter.action_instance, 0);
+            crate::fighter::state::action_instance::queue(&mut fighter.action_instance, 0);
             crate::game::staling::restart_identity(fighter);
         }
     } else if fighter.action_frame as usize >= frames {

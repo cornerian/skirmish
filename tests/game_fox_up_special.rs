@@ -625,7 +625,7 @@ fn invalid_up_special_resources_are_rejected() {
     // jab/aerial/tilt/smash/neutral-special chain's own unconditional
     // requirement, `validation.rs`), unrelated to this batch's own change.
     let mut resource = up_special_resources::with_ordinary_clank(data());
-    resource.rules.staling = Some(skirmish::fighter::stale::Rules {
+    resource.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.0; 9],
         debug_bypass: false,
     });

@@ -2,7 +2,7 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 use proptest::prelude::*;
-use skirmish::fighter::stale::{Entry, InstanceCounter, Queue, Rules};
+use skirmish::fighter::state::stale::{Entry, InstanceCounter, Queue, Rules};
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {

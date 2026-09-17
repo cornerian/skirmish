@@ -578,7 +578,7 @@ fn exact_zero_damage_health_does_not_break_but_negative_health_does() {
 fn shield_contacts_use_existing_staling_but_do_not_record_a_new_queue_entry() {
     let mut d = data();
     d.rules.knockback_speed = 0.0;
-    d.rules.staling = Some(skirmish::fighter::stale::Rules {
+    d.rules.staling = Some(skirmish::fighter::state::stale::Rules {
         penalties: [0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         debug_bypass: false,
     });

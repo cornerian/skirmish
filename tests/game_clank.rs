@@ -4,7 +4,7 @@
 mod aerial_fixture;
 
 use skirmish::{
-    fighter::{clank as math, stale},
+    fighter::{clank as math, state::stale},
     game::{
         Action, BUTTON_A, Controller, Event, Match, State, clank,
         data::{AttackFrame, MatchData},

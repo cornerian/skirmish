@@ -3,7 +3,7 @@ use replay_validation::{
     Checkpoint, FrameStepper, Transition, ValidationError, branch_from, validate,
 };
 use serde_json::Value;
-use skirmish::fighter::stale::Rules as StaleRules;
+use skirmish::fighter::state::stale::Rules as StaleRules;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_X, Controller, Error, Event, FinishReason, Match, Phase, State,
     data::{MatchData, Profile},

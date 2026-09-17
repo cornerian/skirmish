@@ -1,7 +1,7 @@
 //! Scheduler bridge for fighter-owned hit attribution and combo state.
 
 use super::{Fighter, State};
-use crate::fighter::combo;
+use crate::fighter::state::combo;
 
 pub(crate) fn update(fighters: &mut [Fighter; 2], active: [bool; 2]) {
     for attacker in 0..2 {
