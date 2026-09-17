@@ -1821,7 +1821,7 @@ mod tests {
 
     #[test]
     fn build_links_projectile_descriptor_with_typed_metadata() {
-        let fixture = include_str!("../../../tests/fixtures/game/integration-match.json");
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
         let base: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
         let mut data = base.fighters[0].clone();
         data.specials = Some(crate::game::script::resources::Specials {
@@ -1857,7 +1857,7 @@ mod tests {
 
     #[test]
     fn build_rejects_malformed_projectile_descriptor_atomically() {
-        let fixture = include_str!("../../../tests/fixtures/game/integration-match.json");
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
         let base: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
         let mut data = base.fighters[0].clone();
         data.specials = Some(crate::game::script::resources::Specials {
@@ -1994,7 +1994,7 @@ mod tests {
 
     #[test]
     fn command_trace_build_links_actual_resources_and_keeps_owner_isolation() {
-        let fixture = include_str!("../../../tests/fixtures/game/integration-match.json");
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
         let native_match: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
         let base = crate::game::Match::new(native_match, 0).unwrap();
         let mut data = base.data().fighters[0].clone();
@@ -2247,7 +2247,7 @@ mod tests {
 
     #[test]
     fn attack_consumer_keeps_missing_special_owner_from_borrowing_other_owner() {
-        let resource_json = include_str!("../../../tests/fixtures/game/integration-match.json");
+        let resource_json = include_str!("../../../../tests/fixtures/game/integration-match.json");
         let match_data: crate::game::data::MatchData =
             serde_json::from_str(resource_json).expect("integration match fixture");
         let native_match = crate::game::Match::new(match_data, 0).expect("native fixture");

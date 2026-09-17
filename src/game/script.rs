@@ -17,19 +17,27 @@ pub(crate) mod builtins;
 pub(crate) mod callback_routing;
 pub mod events;
 pub mod lifecycle;
+#[path = "script/lifecycle/host.rs"]
 pub(crate) mod lifecycle_host;
+#[path = "script/lifecycle/movement.rs"]
 pub(crate) mod lifecycle_movement;
+#[path = "script/lifecycle/resources.rs"]
 pub mod lifecycle_resources;
+#[path = "script/lifecycle/state.rs"]
 pub(crate) mod lifecycle_state;
 pub mod motion;
+#[path = "script/motion/resources.rs"]
 pub mod motion_resources;
 pub(crate) mod native_math;
 pub mod scheduler;
 
 pub mod definition;
 pub(crate) mod identity;
+#[path = "script/move/registry.rs"]
 pub mod move_registry;
+#[path = "script/move/selection.rs"]
 pub mod move_selection;
+#[path = "script/move/validation.rs"]
 pub(crate) mod move_validation;
 pub mod resources;
 pub use skirmish_script_runtime as starlark;
