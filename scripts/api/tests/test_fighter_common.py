@@ -34,6 +34,33 @@ def _load_common():
 
 
 class FighterCommonTests(unittest.TestCase):
+    def test_directional_b_input_gates_fresh_input_and_preserves_boundary(self):
+        common = _load_common()
+        rules = SimpleNamespace(specials=SimpleNamespace(side_stick_threshold=0.5))
+
+        def context(stick=(0.0, 0.0), pressed=True, resource_value=object()):
+            return SimpleNamespace(
+                rules=rules,
+                input=SimpleNamespace(
+                    stick=stick,
+                    just_pressed=lambda button: pressed,
+                ),
+                resource=lambda path: resource_value,
+            )
+
+        self.assertIsNone(common.directional_b_input(
+            context(pressed=False), "side", 0, "side_stick_threshold"
+        ))
+        self.assertFalse(common.directional_b_input(
+            context((0.5 - 1e-6, 0.0)), "side", 0, "side_stick_threshold"
+        ))
+        self.assertTrue(common.directional_b_input(
+            context((-0.5, 0.0)), "side", 0, "side_stick_threshold"
+        ))
+        self.assertTrue(common.directional_b_input(
+            context((0.0, 0.5)), "side", 1, "side_stick_threshold", direction=1
+        ))
+
     def test_stick_axis_threshold_is_inclusive_and_uses_magnitude(self):
         common = _load_common()
         self.assertFalse(common.stick_axis_reaches_threshold(0.49, 0.5))

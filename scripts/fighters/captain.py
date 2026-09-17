@@ -32,6 +32,7 @@ from skirmish import (
     validation,
 )
 from shared.common import (
+    directional_b_input,
     FighterBase,
     fresh_special_input,
     resource_attributes,
@@ -264,11 +265,9 @@ class FalconDive(SpecialMove):
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         if not fresh_special_input(ctx, self.resource):
             return False
-        rules = special_rules(ctx)
-        if rules is None:
-            return False
-        threshold = getattr(rules, "vertical_threshold", None)
-        if threshold is None or ctx.input.stick[1] < threshold:
+        if directional_b_input(
+            ctx, self.resource, 1, "vertical_threshold", direction=1
+        ) is not True:
             return False
         if fighter.action in (self.ground, self.air):
             return True
@@ -397,13 +396,9 @@ class RaptorBoost(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if not fresh_special_input(ctx, self.resource):
-            return False
-        threshold = self._horizontal_threshold(ctx)
-        if threshold is None:
-            return False
-        stick_x = ctx.input.stick[0]
-        if not stick_axis_reaches_threshold(stick_x, threshold):
+        if directional_b_input(
+            ctx, self.resource, 0, "side_stick_threshold"
+        ) is not True:
             return False
 
         if fighter.action in (self.ground_start, self.ground, self.air_start, self.air):

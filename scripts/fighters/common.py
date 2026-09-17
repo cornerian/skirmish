@@ -84,6 +84,26 @@ def fresh_special_input(ctx, resource):
             and ctx.input.just_pressed(Button.B))
 
 
+def directional_b_input(ctx, resource, axis, threshold_attr, *, direction=None):
+    """Return a directional B threshold result, or ``None`` if unavailable.
+
+    ``direction`` may be supplied for a one-sided input (for example, ``1``
+    for up); when omitted, the axis magnitude is tested.  Returning
+    ``None`` keeps missing optional dispatch data distinct from an available
+    input that is inside its threshold.
+    """
+    if not fresh_special_input(ctx, resource):
+        return None
+    rules = special_rules(ctx)
+    threshold = getattr(rules, threshold_attr, None) if rules is not None else None
+    if threshold is None:
+        return None
+    value = ctx.input.stick[axis]
+    if direction is not None:
+        value *= direction
+    return stick_axis_reaches_threshold(value, threshold)
+
+
 def start_open_special(fighter, ctx, ground_action, air_action):
     """Start a special on the currently open ground or aerial surface."""
     if not (ctx.ground_open or ctx.air_open):
@@ -94,6 +114,7 @@ def start_open_special(fighter, ctx, ground_action, air_action):
 
 __all__ = [
     "FighterBase",
+    "directional_b_input",
     "fresh_special_input",
     "resource_attributes",
     "special_rules",

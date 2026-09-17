@@ -24,6 +24,7 @@ from skirmish import (
     validation,
 )
 from shared.common import (
+    directional_b_input,
     FighterBase,
     fresh_special_input,
     resource_attributes,
@@ -393,7 +394,6 @@ class Illusion(SpecialMove):
         rules = special_rules(ctx)
         if resource is None or rules is None or not ctx.input.just_pressed(Button.B):
             return False
-
         if fighter.action in (self.ground_dash, self.air_dash):
             self._enter_end(fighter, resource)
             return True
@@ -408,9 +408,13 @@ class Illusion(SpecialMove):
             return False
 
         horizontal = ctx.input.stick[0]
-        if abs(horizontal) < rules.side_stick_threshold:
+        if directional_b_input(
+            ctx, self.resource, 0, "side_stick_threshold"
+        ) is not False:
             return False
-        if ctx.air_open and abs(ctx.input.stick[1]) >= rules.vertical_threshold:
+        if ctx.air_open and directional_b_input(
+            ctx, self.resource, 1, "vertical_threshold"
+        ) is not False:
             return False
         if ctx.ground_open and fighter.locomotion.side_special_b_age != 0:
             return False
