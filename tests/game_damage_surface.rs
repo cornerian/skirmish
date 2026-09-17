@@ -265,6 +265,7 @@ fn long_damage_data() -> MatchData {
             ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
             air: core::array::from_fn(|_| motion.clone()),
             fly: core::array::from_fn(|_| motion.clone()),
+            blend: None,
         });
         fighter.surface_response = None;
         fighter.surface_tech = None;

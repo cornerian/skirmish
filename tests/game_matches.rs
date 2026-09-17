@@ -518,10 +518,10 @@ fn final_invincible_frame_blocks_contact_and_zero_hitlag_preserves_damage_entry(
     no_lag.step(IDLE).unwrap();
     assert_eq!(no_lag.state().fighters[1].hitlag, 0.0);
     assert_eq!(no_lag.state().fighters[1].hitstun, 1);
-    assert_eq!(no_lag.state().fighters[1].action_frame, 0);
+    assert_eq!(no_lag.state().fighters[1].action_frame, 1);
     no_lag.step(IDLE).unwrap();
     assert_eq!(no_lag.state().fighters[1].hitstun, 0);
-    assert_eq!(no_lag.state().fighters[1].action_frame, 1);
+    assert_eq!(no_lag.state().fighters[1].action_frame, 2);
 }
 
 #[test]

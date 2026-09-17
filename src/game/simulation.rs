@@ -245,7 +245,14 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // unchanged; storing that entry advance here makes native and
     // script-selected entries expose the same visible age without an
     // observation-layer exception.
-    fighter.action_frame = if crate::fighter::aerial::attack_index(action).is_some()
+    // Damage entry (`ftCo_8008DCE0`) and the native DownDamage wrapper both
+    // call `ftAnim_8006EBA4` immediately after changing motion state.  The
+    // generic end-of-frame clock intentionally does not advance a fighter
+    // marked newly-hit, so retain that entry advance here instead of letting
+    // the first visible damage pose remain at age zero.  DamageFall has its
+    // own motion-state entry and is deliberately not included.
+    fighter.action_frame = if matches!(action, Action::Damage | Action::DownDamage)
+        || crate::fighter::aerial::attack_index(action).is_some()
         || crate::fighter::tilt::owns_action(action)
     {
         1
@@ -2623,5 +2630,21 @@ mod tests {
             crate::fighter::tilt::sample(fighter.action, fighter.action_frame),
             1
         );
+    }
+
+    #[test]
+    fn damage_entries_report_native_age_one_but_damage_fall_does_not() {
+        let mut data = fixture();
+        data.rules.countdown_frames = 0;
+        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
+
+        for action in [Action::Damage, Action::DownDamage] {
+            enter(&mut fighter, action);
+            assert_eq!(fighter.action, action);
+            assert_eq!(fighter.action_frame, 1);
+        }
+
+        enter(&mut fighter, Action::DamageFall);
+        assert_eq!(fighter.action_frame, 0);
     }
 }

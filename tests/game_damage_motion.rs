@@ -39,6 +39,7 @@ fn poses(base: &[Bone], height: HurtHeight, frames: usize, x: f32) -> DamagePose
         ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
         air: core::array::from_fn(|_| motion.clone()),
         fly: core::array::from_fn(|_| motion.clone()),
+        blend: None,
     }
 }
 
@@ -297,6 +298,33 @@ fn damage_waits_for_both_animation_and_hitstun_and_holds_the_final_pose() {
     assert!(long_hitstun.state().fighters[1].hitstun > 0);
     long_hitstun.restore_checkpoint(&checkpoint).unwrap();
     assert_eq!(serde_json::to_vec(long_hitstun.state()).unwrap(), saved);
+}
+
+#[test]
+fn damage_entry_advances_once_but_hitlag_keeps_that_age_frozen() {
+    let mut data = profile([50.0, 60.0, 70.0], HurtHeight::Middle, 4, 0.0);
+    data.stage.spawns = [[0.0, 0.0], [0.0, 0.0]];
+    // Keep this regression independent of the fixture's directional pose
+    // geometry: the contact only exists to observe native damage timing.
+    for frame in &mut data.fighters[0].jab.frames {
+        for hitbox in &mut frame.hitboxes {
+            hitbox.radius = 100.0;
+        }
+    }
+    let mut game = hit(data, false);
+    assert_eq!(game.state().fighters[1].action, Action::Damage);
+    assert_eq!(game.state().fighters[1].action_frame, 1);
+    assert!(game.state().fighters[1].hitlag > 0.0);
+
+    while game.state().fighters[1].hitlag > 0.0 {
+        game.step(IDLE).unwrap();
+        assert_eq!(game.state().fighters[1].action, Action::Damage);
+        assert_eq!(game.state().fighters[1].action_frame, 1);
+    }
+
+    game.step(IDLE).unwrap();
+    assert_eq!(game.state().fighters[1].action, Action::Damage);
+    assert_eq!(game.state().fighters[1].action_frame, 2);
 }
 
 #[test]

@@ -58,6 +58,8 @@ fn data() -> skirmish::game::data::MatchData {
 
 fn roll_motion(bones: &[Bone], roots: &[f32], extension: f32) -> FloorTechMotion {
     FloorTechMotion {
+        blend_frames: 0,
+        dynamics_variant: 0,
         frames: roots
             .iter()
             .enumerate()
@@ -131,6 +133,8 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         hit.damage = 5;
         let attack = Attack {
             move_id: fighter.jab.move_id,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..4)
                 .map(|frame| AttackFrame {
                     bones: fighter.bones.clone(),
@@ -149,11 +153,17 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         stand_poses[0][1].translation[0] = 7.0;
         let face_up = ProneRecoveryAttributes {
             bound_poses,
+            bound_poses_blend_frames: 0,
+            bound_poses_dynamics_variant: 0,
             wait_poses,
+            wait_poses_blend_frames: 0,
+            wait_poses_dynamics_variant: 0,
             damage_poses: None,
             forward: roll_motion(&fighter.bones, &[0.0, 0.6, 0.9, 0.3], 6.0),
             backward: roll_motion(&fighter.bones, &[0.0, -0.4, -0.7, -0.2, -0.1], -6.0),
             stand_poses,
+            stand_poses_blend_frames: 0,
+            stand_poses_dynamics_variant: 0,
             attack,
         };
         let mut face_down = face_up.clone();
@@ -172,6 +182,8 @@ fn knockdown_data() -> skirmish::game::data::MatchData {
         }
         fighter.knockdown = Some(KnockdownAttributes {
             passive_poses,
+            passive_poses_blend_frames: 0,
+            passive_poses_dynamics_variant: 0,
             orientation: ProneOrientationRules {
                 hip_bone: 1,
                 use_z_axis: false,
@@ -314,6 +326,7 @@ fn grounded_launch_down_damage_data() -> skirmish::game::data::MatchData {
             ground: core::array::from_fn(|_| core::array::from_fn(|_| motion.clone())),
             air: core::array::from_fn(|_| motion.clone()),
             fly: core::array::from_fn(|_| motion.clone()),
+            blend: None,
         });
     }
     resource
@@ -753,7 +766,7 @@ fn prone_low_damage_uses_oriented_poses_and_preserves_checkpointed_recovery() {
         assert_eq!(game.state().fighters[0].action, Action::Wait);
         let entered = hit_prone(&mut game);
         assert_eq!(entered.fighters[1].action, Action::DownDamage);
-        assert_eq!(entered.fighters[1].action_frame, 0);
+        assert_eq!(entered.fighters[1].action_frame, 1);
         assert_eq!(entered.fighters[1].prone, Some(orientation));
         assert_eq!(entered.fighters[1].down_timer, entered.fighters[1].hitstun);
         assert!(!entered.fighters[1].grounded);
