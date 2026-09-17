@@ -268,6 +268,10 @@ pub(crate) fn resolve(
         ));
     }
     f.position = previous_position;
+    // mpColl_80043754 clears x34_flags.b5 for every collision pass before
+    // entering its substep loop.  A floor snap below sets it again, causing
+    // the native loop to stop before another planned substep can run.
+    f.ecb.stop = false;
     f.contacts = [None; 4];
     f.edge_contact = None;
     let mut responded = false;
@@ -485,7 +489,7 @@ pub(crate) fn resolve(
         } else {
             None
         };
-        if let Some(contact) = contact {
+        let landed = if let Some(contact) = contact {
             // mpColl_80046904's `ecb_unlocked = coll->ecb.bottom.y > 0.0F`,
             // forwarded as `mpColl_80044838_Floor`'s `ignore_bottom`: a raw
             // (unanchored, airborne-flags) ECB bottom that samples *above*
@@ -522,11 +526,21 @@ pub(crate) fn resolve(
                 f.floor_normal = contact.normal;
             }
             land(f, rules, data, input, events, player, geometry)?;
+            true
         } else if let Some(projection) = moved_floor {
             f.position[1] += projection.delta;
             f.ground_line = Some(projection.line_id);
             f.floor_normal = projection.normal;
             land(f, rules, data, input, events, player, geometry)?;
+            true
+        } else {
+            false
+        };
+        if landed {
+            // mpColl_80046904 sets x34_flags.b5 after the floor snap and its
+            // connected-wall handling.  The optional ceiling squeeze below
+            // may clear it, just as mpCollSqueezeVertical does natively.
+            f.ecb.stop = true;
         }
         if f.grounded
             && let Some(after_ceiling) = ceiling_position
@@ -601,6 +615,9 @@ pub(crate) fn resolve(
                 responded = true;
                 break;
             }
+        }
+        if f.ecb.stop {
+            break;
         }
     }
     if f.grounded
@@ -909,4 +926,64 @@ fn add(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
 }
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::Controller;
+
+    fn line(start: [f32; 2], end: [f32; 2], kind: u32) -> stage::Line {
+        stage::Line {
+            start,
+            end,
+            flags: stage::ENABLED | kind,
+            ..stage::Line::default()
+        }
+    }
+
+    #[test]
+    fn landing_stops_remaining_collision_substeps() {
+        let mut data: MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        data.stage.spawns = [[-0.05, 10.0], [10.0, 10.0]];
+        data.stage.geometry = Some(StageGeometry {
+            lines: vec![line([-0.3, 0.0], [0.3, 0.0], stage::FLOOR)],
+            joints: vec![stage::Joint {
+                id: 0,
+                flags: stage::ENABLED,
+                bounds_min: [-1.0, -20.0],
+                bounds_max: [1.0, 20.0],
+                floor: 0..1,
+                ..stage::Joint::default()
+            }],
+        });
+
+        let mut state = simulation::initial_state(&data, 0, [0, 1]).unwrap();
+        let geometry = data.stage.geometry.as_ref().unwrap();
+        let stage = stage::Stage::new(&geometry.lines, &geometry.joints).unwrap();
+        let fighter = &mut state.fighters[0];
+        let previous_position = fighter.position;
+        // A 16-unit downward displacement creates three native substeps. The
+        // second substep crosses the short floor at x ~= 0.217; without the
+        // native stop flag, the third substep walks back off its right edge.
+        fighter.position = [0.35, -6.0];
+        let mut events = Vec::new();
+        resolve(
+            fighter,
+            previous_position,
+            (&stage, geometry, geometry),
+            0,
+            &mut events,
+            (&data.fighters[0], &data.rules, Controller::default()),
+        )
+        .unwrap();
+
+        assert!(fighter.grounded);
+        assert_eq!(fighter.ground_line, Some(0));
+        assert_eq!(events, vec![Event::Landed { player: 0 }]);
+        assert!((fighter.position[0] - 0.216_666_67).abs() < 0.0001);
+    }
 }
