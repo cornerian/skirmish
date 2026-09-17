@@ -397,11 +397,10 @@ class RaptorBoost(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        resource = ctx.resource(self.resource)
-        threshold = self._horizontal_threshold(ctx)
-        if resource is None or threshold is None:
+        if not fresh_special_input(ctx, self.resource):
             return False
-        if not ctx.input.just_pressed(Button.B):
+        threshold = self._horizontal_threshold(ctx)
+        if threshold is None:
             return False
         stick_x = ctx.input.stick[0]
         if not stick_axis_reaches_threshold(stick_x, threshold):
@@ -595,8 +594,7 @@ class FalconKick(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if (ctx.resource(self.resource) is None
-                or not ctx.input.just_pressed(Button.B)):
+        if not fresh_special_input(ctx, self.resource):
             return False
         if fighter.action in (
             self.ground,

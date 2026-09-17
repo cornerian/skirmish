@@ -691,6 +691,16 @@ class CaptainFalconTests(unittest.TestCase):
         kick = captain.specials.down
         self.assertTrue(kick.input_pressed(self.Fighter(None), context((0.0, -0.5))))
 
+        self.assertFalse(kick.input_pressed(
+            self.Fighter(None),
+            context((0.0, -0.8), resource_value=None),
+        ))
+        self.assertFalse(kick.input_pressed(
+            self.Fighter(None),
+            self.context(resource_value=object(), input_value=self.Input(),
+                         ground_open=True),
+        ))
+
     def test_landing_descriptor_uses_canonical_api_action(self):
         from fighter import action
         self.assertEqual(action(Action.LANDING).as_dict()["action"], "Action.LANDING")
