@@ -502,7 +502,7 @@ fn action_age_with_offset(
         // holds at 10, an 11-frame figatree); when `fighter_data.
         // entry` is absent, the age is left uncapped (today's
         // approximation).
-        let age = fighter.action_frame - 1;
+        let age = fighter.action_frame.saturating_sub(1);
         match fighter_data.entry {
             Some(animation) => age.min(animation.start_frames - 1) as f32,
             None => age as f32,
@@ -1731,7 +1731,11 @@ mod tests {
             fighter.action_frame = 40;
             for recorded in [0.0_f32, 3.01, 6.02, 9.03] {
                 fighter.aerial.landing_elapsed = recorded;
-                assert_eq!(action_age(&fighter, &fighter_data), recorded, "{action:?}");
+                assert_eq!(
+                    action_age_with_offset(&fighter, &fighter_data, 0.0),
+                    recorded,
+                    "{action:?}"
+                );
             }
         }
     }
@@ -1769,13 +1773,17 @@ mod tests {
             // were not taken first, so a passing assertion here cannot be a
             // coincidence of the two formulas agreeing.
             fighter.action_frame = 40;
-            assert_eq!(action_age(&fighter, &fighter_data), -1.0, "{action:?}");
+            assert_eq!(
+                action_age_with_offset(&fighter, &fighter_data, 0.0),
+                -1.0,
+                "{action:?}"
+            );
         }
         // GuardSetOff (`Ft_MF_None`, no `SkipAnim`) is unaffected: it keeps
         // the ordinary general rule.
         fighter.action = game::Action::GuardSetOff;
         fighter.action_frame = 1;
-        assert_eq!(action_age(&fighter, &fighter_data), 0.0);
+        assert_eq!(action_age_with_offset(&fighter, &fighter_data, 0.0), 0.0);
     }
 
     #[test]
@@ -1793,7 +1801,7 @@ mod tests {
             for action_frame in [1, 7] {
                 fighter.action_frame = action_frame;
                 assert_eq!(
-                    action_age(&fighter, &fighter_data),
+                    action_age_with_offset(&fighter, &fighter_data, 0.0),
                     action_frame as f32,
                     "{action:?} at action frame {action_frame}"
                 );
