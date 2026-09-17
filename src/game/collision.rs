@@ -986,4 +986,55 @@ mod tests {
         assert_eq!(events, vec![Event::Landed { player: 0 }]);
         assert!((fighter.position[0] - 0.216_666_67).abs() < 0.0001);
     }
+
+    #[test]
+    fn profile_free_damage_uses_native_ordinary_landing() {
+        let mut data: MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        data.rules.countdown_frames = 0;
+        data.stage.spawns = [[0.0, 3.0], [10.0, 3.0]];
+        data.stage.geometry = Some(StageGeometry {
+            lines: vec![line([-10.0, 0.0], [10.0, 0.0], stage::FLOOR)],
+            joints: vec![stage::Joint {
+                id: 0,
+                flags: stage::ENABLED,
+                bounds_min: [-20.0, -20.0],
+                bounds_max: [20.0, 20.0],
+                floor: 0..1,
+                ..stage::Joint::default()
+            }],
+        });
+        assert!(data.rules.damage.floor_response.is_none());
+
+        let mut state = simulation::initial_state(&data, 0, [0, 1]).unwrap();
+        let geometry = data.stage.geometry.as_ref().unwrap();
+        let stage = stage::Stage::new(&geometry.lines, &geometry.joints).unwrap();
+        let fighter = &mut state.fighters[0];
+        simulation::enter(fighter, Action::Damage);
+        fighter.position = [0.0, -1.0];
+        fighter.velocity = [0.0, -2.0];
+        fighter.grounded = false;
+        fighter.ground_line = None;
+        sample(
+            fighter,
+            &data.fighters[0],
+            &simulation::pose(fighter, &data.fighters[0]).unwrap(),
+        )
+        .unwrap();
+
+        resolve(
+            fighter,
+            [0.0, 3.0],
+            (&stage, geometry, geometry),
+            0,
+            &mut state.events,
+            (&data.fighters[0], &data.rules, Controller::default()),
+        )
+        .unwrap();
+
+        assert!(fighter.grounded);
+        assert_eq!(fighter.action, Action::Landing);
+    }
 }

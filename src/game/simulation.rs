@@ -522,45 +522,45 @@ where
         }
         sample_input_history(fighter, &data.fighters[player], &data.rules, input);
         if fighter.hitlag > 0.0 {
-            let previous_position = fighter.position;
             fighter.hitlag = (fighter.hitlag - 1.0).max(0.0);
             combat_history::push(fighter, &data.rules.damage.combo);
             shield::hitlag(fighter, input, &data.rules, fighter.hitlag == 0.0);
             if fighter.hitlag == 0.0 {
                 damage::exit_hitlag(fighter, input, &data.rules.damage)?;
             } else {
+                let previous_position = fighter.position;
                 damage::during_hitlag(fighter, input.stick, &data.rules.damage)?;
-            }
-            stage_motion::carry(&data.stage, &state.stage, fighter)?;
-            advance_ecb_lock(fighter);
-            collision::sample(
-                fighter,
-                &data.fighters[player],
-                &pose(fighter, &data.fighters[player])?,
-            )?;
-            if stage_moved
-                || fighter.position != previous_position
-                || fighter.ecb.current != fighter.ecb.desired
-            {
-                collision::resolve(
+                stage_motion::carry(&data.stage, &state.stage, fighter)?;
+                advance_ecb_lock(fighter);
+                collision::sample(
                     fighter,
-                    previous_position,
-                    (&stage, &geometry, &previous_geometry),
-                    player,
-                    &mut state.events,
-                    (&data.fighters[player], &data.rules, input),
+                    &data.fighters[player],
+                    &pose(fighter, &data.fighters[player])?,
                 )?;
+                if stage_moved
+                    || fighter.position != previous_position
+                    || fighter.ecb.current != fighter.ecb.desired
+                {
+                    collision::resolve(
+                        fighter,
+                        previous_position,
+                        (&stage, &geometry, &previous_geometry),
+                        player,
+                        &mut state.events,
+                        (&data.fighters[player], &data.rules, input),
+                    )?;
+                }
+                staling::flush(
+                    fighter,
+                    &data.fighters[player],
+                    data.rules.staling.as_ref(),
+                    &mut state.attack_instances,
+                    &mut state.action_instances,
+                )?;
+                fighter.previous_input = raw_inputs[player];
+                frozen[player] = true;
+                continue;
             }
-            staling::flush(
-                fighter,
-                &data.fighters[player],
-                data.rules.staling.as_ref(),
-                &mut state.attack_instances,
-                &mut state.action_instances,
-            )?;
-            fighter.previous_input = raw_inputs[player];
-            frozen[player] = true;
-            continue;
         }
         active[player] = true;
     }

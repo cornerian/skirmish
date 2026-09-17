@@ -1975,8 +1975,14 @@ pub(crate) fn reflect(
     );
 }
 
-/// Damage-floor callback shared by Damage and DamageFall. False leaves a
-/// non-tumbling or profile-free damage action under its existing policy.
+/// Damage-floor callback shared by Damage and DamageFall. The optional
+/// `floor_response` profile owns the tumble/tech graph; ordinary Damage still
+/// takes the native low-knockback landing path when that graph is not loaded.
+/// In the retail callback this is the `x1E4 <= |kb| < x1E0` branch of
+/// `ftCo_Damage_Coll`, which enters ordinary Landing rather than leaving the
+/// fighter in Damage. The profile-free slice does not have the recovery
+/// resources needed to represent the higher-knockback DownBound branch, so it
+/// deliberately only supplies this non-tumbling landing transition.
 pub(crate) fn land(
     fighter: &mut Fighter,
     data: &FighterData,
@@ -1991,6 +1997,10 @@ pub(crate) fn land(
         return Ok(true);
     }
     let Some(profile) = &rules.floor_response else {
+        if fighter.action == Action::Damage {
+            crate::game::simulation::enter(fighter, Action::Landing);
+            return Ok(true);
+        }
         return Ok(false);
     };
     if !fighter.tumbling {
