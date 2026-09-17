@@ -2565,4 +2565,42 @@ mod tests {
             serde_json::json!(2.0)
         );
     }
+
+    #[test]
+    fn model_scaling_scales_pose_derived_ecb_samples() {
+        const SELECTED_JOINT_Y: f32 = 3.880_897_5;
+        const MODEL_SCALING: f32 = 1.15;
+
+        fn ecb_for(model_scaling: f32) -> ecb::State {
+            let mut data = fixture();
+            data.rules.countdown_frames = 0;
+            let fighter = &mut data.fighters[0];
+            fighter.model_scaling = model_scaling;
+            fighter.bones[1].translation[1] = SELECTED_JOINT_Y;
+            fighter.collision_box = CollisionBox::Bones {
+                indices: [1; 6],
+                parameters: ecb::JointParameters {
+                    side_y_offset: 0.0,
+                    height_threshold: 0.0,
+                    width_threshold: 0.0,
+                },
+                flags: 6,
+            };
+
+            initial_state(&data, 0, [0, 1]).unwrap().fighters[0].ecb
+        }
+
+        let unit = ecb_for(1.0);
+        let scaled = ecb_for(MODEL_SCALING);
+        let expected_unit = SELECTED_JOINT_Y;
+        let expected_scaled = SELECTED_JOINT_Y * MODEL_SCALING;
+
+        for shape in [unit.current, unit.desired] {
+            assert!((shape.bottom[1] - expected_unit).abs() < 1e-6);
+        }
+        for shape in [scaled.current, scaled.desired] {
+            assert!((shape.bottom[1] - expected_scaled).abs() < 1e-6);
+        }
+        assert!((scaled.current.bottom[1] - unit.current.bottom[1] * MODEL_SCALING).abs() < 1e-6);
+    }
 }
