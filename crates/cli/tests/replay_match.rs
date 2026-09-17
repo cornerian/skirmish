@@ -3529,7 +3529,7 @@ fn entry_replay_data() -> MatchData {
     data.stage.floor.right = 200.0;
     data.stage.blast = [-300.0, 300.0, -300.0, 300.0];
     data.stage.spawns = [[-60.0, 10.0], [20.0, 10.0]];
-    data.rules.entry = Some(skirmish::game::round::entry::EntryRules {
+    data.rules.entry = Some(skirmish::game::flow::entry::EntryRules {
         start_frames: 30,
         end_frames: 30,
         scale_y: 0.0,
