@@ -2416,6 +2416,7 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     // is already the world-facing axis and loses the native quarter-turn.
     if let Some(root) = bones.first_mut() {
         root.local.rotation[1] = core::f32::consts::FRAC_PI_2 * fighter.facing;
+        root.local.scale = root.local.scale.map(|axis| axis * data.model_scaling);
     }
     if fighter.action == Action::JumpAerial
         && data
@@ -2517,4 +2518,51 @@ pub(crate) fn hurtbox_state(
 
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> MatchData {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn model_scaling_is_backward_compatible_and_scales_the_pose_root() {
+        let mut data = fixture();
+        assert_eq!(data.fighters[0].model_scaling, 1.0);
+        assert!(
+            serde_json::to_value(&data.fighters[0])
+                .unwrap()
+                .get("model_scaling")
+                .is_none()
+        );
+
+        data.rules.countdown_frames = 0;
+        let state = initial_state(&data, 0, [0, 1]).unwrap();
+        let unit_pose = pose(&state.fighters[0], &data.fighters[0]).unwrap();
+        let unit_root = *unit_pose.world_matrix(0).unwrap();
+
+        let mut serialized = serde_json::to_value(&data).unwrap();
+        serialized["fighters"][0]["model_scaling"] = serde_json::json!(2.0);
+        data = serde_json::from_value(serialized).unwrap();
+        assert_eq!(data.fighters[0].model_scaling, 2.0);
+        let scaled_pose = pose(&state.fighters[0], &data.fighters[0]).unwrap();
+        let scaled_root = *scaled_pose.world_matrix(0).unwrap();
+
+        for row in 0..3 {
+            for column in 0..3 {
+                assert!((scaled_root[row][column] - unit_root[row][column] * 2.0).abs() < 1e-6);
+            }
+            assert_eq!(scaled_root[row][3], unit_root[row][3]);
+        }
+        assert_eq!(
+            serde_json::to_value(&data.fighters[0]).unwrap()["model_scaling"],
+            serde_json::json!(2.0)
+        );
+    }
 }

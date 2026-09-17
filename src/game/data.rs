@@ -40,6 +40,14 @@ fn default_handicap() -> u8 {
     9
 }
 
+fn default_model_scaling() -> f32 {
+    1.0
+}
+
+fn is_default_model_scaling(value: &f32) -> bool {
+    *value == 1.0
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Profile {
@@ -342,6 +350,15 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebound: Option<super::clank::Animation>,
     pub name: String,
+    /// `co_attrs.model_scaling` (`ft/types.h:722`, `ftCo_DatAttrs` +0x8C).
+    /// The native fighter update writes this multiplier to the root model
+    /// joint, so every pose-derived collision endpoint inherits it. Older
+    /// resources omit the field and retain the historical unit scale.
+    #[serde(
+        default = "default_model_scaling",
+        skip_serializing_if = "is_default_model_scaling"
+    )]
+    pub model_scaling: f32,
     pub movement: MovementData,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locomotion: Option<crate::fighter::locomotion::Parameters>,
