@@ -252,6 +252,7 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertTrue(move.input_pressed(ground, context))
         self.assertEqual(ground.action, move.ground)
         self.assertEqual(move.ground.as_dict()["slippi_state"], 353)
+        self.assertEqual(move.ground.as_dict()["attack"], "up.ground")
 
         air = self.Fighter(None)
         context = self.context(input_value=self.Input((Button.B,), (-0.6625, 0.7375)),
@@ -260,6 +261,7 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertTrue(move.input_pressed(air, context))
         self.assertEqual(air.action, move.air)
         self.assertEqual(move.air.as_dict()["slippi_state"], 354)
+        self.assertEqual(move.air.as_dict()["attack"], "up.air")
 
         punch = captain.specials.neutral
         context = self.context(input_value=self.Input((Button.B,), (-0.6625, 0.7375)),
@@ -767,6 +769,13 @@ class CaptainFalconTests(unittest.TestCase):
             "special.down.ground_end_air": "down.ground_end_air",
         }
         for action_name, attack in expected_kick_attacks.items():
+            self.assertEqual(exported["actions"][action_name]["attack"], attack)
+
+        expected_dive_attacks = {
+            "special.up.ground": "up.ground",
+            "special.up.air": "up.air",
+        }
+        for action_name, attack in expected_dive_attacks.items():
             self.assertEqual(exported["actions"][action_name]["attack"], attack)
 
     def test_inherits_all_standard_groups_without_duplicate_declarations(self):

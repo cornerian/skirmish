@@ -272,6 +272,19 @@ fn captain_definition_exports_resource_backed_callbacks_and_slippi_states() {
         assert_eq!(action["slippi_state"], NativeValue::Int(state));
     }
 
+    for (action_name, animation, attack) in [
+        ("special.up.ground", 307, "up.ground"),
+        ("special.up.air", 308, "up.air"),
+    ] {
+        let action = action_record(&root, action_name);
+        assert_eq!(action["animation"], NativeValue::Int(animation));
+        assert_eq!(
+            action["attack"],
+            NativeValue::String(attack.into()),
+            "Captain Dive entry must retain its source attack resource"
+        );
+    }
+
     for move_id in ["move_0", "move_2", "move_3"] {
         for event in ["input_pressed", "animation_end"] {
             if program

@@ -224,8 +224,18 @@ class FalconDive(SpecialMove):
 
     resource = "up"
 
-    ground = action(Action.SPECIAL_HI, slippi_state=353, animation=307)
-    air = action(Action.SPECIAL_AIR_HI, slippi_state=354, animation=308)
+    ground = action(
+        Action.SPECIAL_HI,
+        slippi_state=353,
+        animation=307,
+        attack="up.ground",
+    )
+    air = action(
+        Action.SPECIAL_AIR_HI,
+        slippi_state=354,
+        animation=308,
+        attack="up.air",
+    )
     catch = action(Action.SPECIAL_HI_CATCH, slippi_state=355, animation=309)
     throw = action(Action.SPECIAL_HI_THROW, slippi_state=356, animation=310)
 
