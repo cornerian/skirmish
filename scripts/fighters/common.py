@@ -48,6 +48,15 @@ def stick_axis_reaches_threshold(value, threshold):
     return abs(value) >= threshold
 
 
+def any_stick_axis_reaches_thresholds(stick, axis_thresholds):
+    """Return whether any configured stick axis reaches its threshold."""
+    return any(
+        stick_axis_reaches_threshold(stick[axis], threshold)
+        for axis, threshold in axis_thresholds
+        if threshold is not None
+    )
+
+
 def resource_attributes(ctx, resource=None):
     """Resolve a resource's attributes from a callback context.
 
@@ -118,6 +127,7 @@ __all__ = [
     "fresh_special_input",
     "resource_attributes",
     "special_rules",
+    "any_stick_axis_reaches_thresholds",
     "stick_axis_reaches_threshold",
     "start_action",
     "start_open_special",

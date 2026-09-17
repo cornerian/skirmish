@@ -35,6 +35,7 @@ from shared.common import (
     directional_b_input,
     FighterBase,
     fresh_special_input,
+    any_stick_axis_reaches_thresholds,
     resource_attributes,
     special_rules,
     start_action,
@@ -51,10 +52,10 @@ def _directional_b(ctx: MoveContext) -> bool:
     stick = getattr(ctx.input, "stick", (0.0, 0.0))
     vertical = getattr(rules, "vertical_threshold", None)
     horizontal = getattr(rules, "horizontal_threshold", None)
-    return ((vertical is not None
-             and stick_axis_reaches_threshold(stick[1], vertical))
-            or (horizontal is not None
-                and stick_axis_reaches_threshold(stick[0], horizontal)))
+    return any_stick_axis_reaches_thresholds(
+        stick,
+        ((1, vertical), (0, horizontal)),
+    )
 
 
 class CaptainFalconActionState(ActionState):
