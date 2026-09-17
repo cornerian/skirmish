@@ -292,6 +292,10 @@ impl Recording {
                         // branch: these landings play at `aerial.
                         // landing_rate`, not 1.0.
                         fighter.aerial.landing_elapsed
+                    } else if matches!(fighter.action, Action::Damage | Action::DownDamage) {
+                        // Native damage entry advances the animation explicitly, so
+                        // action_frame already matches Slippi's state_age.
+                        fighter.action_frame as f32
                     } else {
                         fighter.action_frame.saturating_sub(1) as f32
                     };
