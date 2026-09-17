@@ -2469,10 +2469,10 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .attack_for(fighter)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames;
-    // AttackAir/EscapeAir and ordinary tilts perform an explicit animation
-    // advance in their entry callback. Their authored pose samples remain
-    // zero-based, so each action's one-based clock is translated before the
-    // resource lookup.
+    // AttackAir/EscapeAir perform an explicit animation advance in their
+    // entry callback, while ordinary tilt resources are authored directly in
+    // the native action-age domain. Only aerials therefore translate their
+    // one-based action clock into zero-based pose storage here.
     let action_frame = if crate::fighter::aerial::attack_index(fighter.action).is_some() {
         fighter.action_frame.saturating_sub(1)
     } else {
@@ -2628,7 +2628,7 @@ mod tests {
         assert_eq!(fighter.action_frame, 1);
         assert_eq!(
             crate::fighter::tilt::sample(fighter.action, fighter.action_frame),
-            0
+            1
         );
     }
 

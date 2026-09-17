@@ -265,15 +265,14 @@ pub(crate) fn owns_action(action: Action) -> bool {
     )
 }
 
-/// Grounded tilt resources are zero-based, while every ordinary tilt entry
-/// calls `ftAnim_8006EBA4` immediately after changing motion. The native
-/// action clock therefore reports age one for resource sample zero.
-pub(crate) fn sample(action: Action, action_frame: u32) -> u32 {
-    if owns_action(action) {
-        action_frame.saturating_sub(1)
-    } else {
-        action_frame
-    }
+/// Grounded tilt resources use the native action age as their authored frame
+/// number. Every ordinary tilt entry calls `ftAnim_8006EBA4` immediately
+/// after changing motion, so the action clock starts at one and the first
+/// authored resource frame is also one. The resource vectors retain their
+/// zero-based storage representation; their frame zero is the pre-entry
+/// sample and is not selected by an ordinary tilt action.
+pub(crate) fn sample(_action: Action, action_frame: u32) -> u32 {
+    action_frame
 }
 
 /// Every supplied tilt attack, for validation and staling identity checks.
@@ -696,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn native_tilt_action_age_selects_the_zero_based_authored_frame() {
+    fn native_tilt_action_age_selects_the_authored_frame() {
         for action in [
             Action::AttackS3S,
             Action::AttackS3Hi,
@@ -706,10 +705,10 @@ mod tests {
             Action::AttackHi3,
             Action::AttackLw3,
         ] {
-            for (action_frame, authored_frame) in [(1, 0), (6, 5), (7, 6)] {
+            for action_frame in [1, 6, 7] {
                 assert_eq!(
                     sample(action, action_frame),
-                    authored_frame,
+                    action_frame,
                     "action frame {action_frame} for {action:?}"
                 );
             }
@@ -718,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn native_tilt_frame_six_is_not_active_before_action_frame_seven() {
+    fn native_tilt_frame_six_selects_authored_frame_six() {
         let mut data = tilt_data();
         let bones = data.fighters[0].bones.clone();
         let mut up = attack(&bones, false);
@@ -741,13 +740,11 @@ mod tests {
         let attack =
             ground_attack(data.fighters[0].tilts.as_ref().unwrap(), Action::AttackHi3).unwrap();
 
-        assert!(
-            attack.attack.frames[sample(Action::AttackHi3, 6) as usize]
-                .hitboxes
-                .is_empty()
-        );
+        assert!(attack.attack.frames[sample(Action::AttackHi3, 5) as usize]
+            .hitboxes
+            .is_empty());
         assert_eq!(
-            attack.attack.frames[sample(Action::AttackHi3, 7) as usize]
+            attack.attack.frames[sample(Action::AttackHi3, 6) as usize]
                 .hitboxes
                 .len(),
             1
@@ -777,15 +774,11 @@ mod tests {
             }
 
             fighter.action_frame = 7;
-            assert!(
-                flags(fighter, &data.fighters[0])
-                    .expect("native tilt frame 7 flags")
-                    .allow_interrupt
-            );
+            assert!(flags(fighter, &data.fighters[0]).is_none());
         }
 
         fighter.action = Action::AttackHi3;
-        fighter.action_frame = 8;
+        fighter.action_frame = 7;
         update_animation(fighter, &data.fighters[0]).unwrap();
         assert_eq!(fighter.action, Action::Wait);
     }
