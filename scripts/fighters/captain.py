@@ -165,12 +165,10 @@ class FalconPunch(SpecialMove):
         """
         return None
 
-    @hook.animation_end(ground, air)
-    def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        if fighter.action == self.ground:
-            fighter.change_action(Action.WAIT)
-        else:
-            fighter.change_action(Action.FALL)
+    on_end = {
+        ground: Transition(Action.WAIT),
+        air: Transition(Action.FALL),
+    }
 
     # The source callbacks convert these same two motion states in either
     # direction while preserving animation/state; the host applies the
@@ -252,15 +250,10 @@ class FalconDive(SpecialMove):
         if fighter.action in (self.ground, self.air):
             fighter.change_action(self.catch)
 
-    @hook.animation_end(catch)
-    def catch_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        """Match ``doCatchAnim``'s state-355 to state-356 transition."""
-        fighter.change_action(self.throw)
-
-    @hook.animation_end(throw)
-    def throw_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        """The native throw animation ends with ordinary aerial Fall."""
-        fighter.change_action(Action.FALL)
+    on_end = {
+        catch: Transition(throw),
+        throw: Transition(Action.FALL),
+    }
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:

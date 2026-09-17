@@ -140,11 +140,15 @@ class CaptainFalconTests(unittest.TestCase):
         captain = _load_captain()
         move = captain.specials.neutral
         ground = self.Fighter(move.ground)
-        move.animation_end(ground, self.context())
-        self.assertEqual(ground.changes, [(Action.WAIT, {})])
+        move._transition_animation_end(ground, self.context())
+        self.assertEqual(ground.changes, [(
+            Action.WAIT, {"preserve_state": False, "keep_frame": False}
+        )])
         air = self.Fighter(move.air)
-        move.animation_end(air, self.context())
-        self.assertEqual(air.changes, [(Action.FALL, {})])
+        move._transition_animation_end(air, self.context())
+        self.assertEqual(air.changes, [(
+            Action.FALL, {"preserve_state": False, "keep_frame": False}
+        )])
 
     def test_surface_transitions_preserve_state_and_frame(self):
         captain = _load_captain()
@@ -321,10 +325,17 @@ class CaptainFalconTests(unittest.TestCase):
         fighter = self.Fighter(move.air)
         move.before_hit(fighter, SimpleNamespace())
         self.assertEqual(fighter.changes, [(move.catch, {})])
-        move.catch_animation_end(fighter, SimpleNamespace())
-        self.assertEqual(fighter.changes[-1], (move.throw, {}))
-        move.throw_animation_end(fighter, SimpleNamespace())
-        self.assertEqual(fighter.changes[-1], (Action.FALL, {}))
+        move._transition_animation_end(fighter, SimpleNamespace())
+        self.assertEqual(
+            fighter.changes[-1],
+            (Action.SPECIAL_HI_THROW,
+             {"preserve_state": False, "keep_frame": False}),
+        )
+        move._transition_animation_end(fighter, SimpleNamespace())
+        self.assertEqual(
+            fighter.changes[-1],
+            (Action.FALL, {"preserve_state": False, "keep_frame": False}),
+        )
 
     def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
         captain = _load_captain()
