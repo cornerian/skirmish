@@ -549,7 +549,7 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
 pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
-            let fighter = &game.state().fighters[index];
+            let fighter = game.observed_fighter(index);
             let fighter_data = &game.data().fighters[index];
             let max_jumps = fighter_data
                 .locomotion

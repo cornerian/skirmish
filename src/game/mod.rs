@@ -586,6 +586,7 @@ pub struct Match {
     resource_id: [u8; 32],
     state: State,
     initial: State,
+    observation_fighters: [Option<Fighter>; 2],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -665,6 +666,7 @@ impl Match {
             resource_id,
             initial: state.clone(),
             state,
+            observation_fighters: [None, None],
         })
     }
 
@@ -673,6 +675,16 @@ impl Match {
     }
     pub fn state(&self) -> &State {
         &self.state
+    }
+
+    /// Fighter view at the native replay observation boundary for the most
+    /// recent step. The authoritative gameplay state remains [`Self::state`];
+    /// this one-step projection only retains victims at their post-physics,
+    /// pre-damage state when that step contained a body hit.
+    pub fn observed_fighter(&self, index: usize) -> &Fighter {
+        self.observation_fighters[index]
+            .as_ref()
+            .unwrap_or(&self.state.fighters[index])
     }
     pub fn resource_id(&self) -> [u8; 32] {
         self.resource_id
@@ -691,6 +703,7 @@ impl Match {
     pub fn reset(&mut self, seed: u32) -> &State {
         self.state = self.initial.clone();
         self.state.rng_seed = seed;
+        self.observation_fighters = [None, None];
         &self.state
     }
 
@@ -724,9 +737,10 @@ impl Match {
         let mut next = self.state.clone();
         next.events.clear();
         next.next_frame = next.next_frame.checked_add(1).ok_or(Error::FrameOverflow)?;
-        simulation::advance(&self.data, &mut next, input)?;
+        let capture = simulation::advance(&self.data, &mut next, input)?;
         validation::state(&next)?;
         self.state = next;
+        self.observation_fighters = capture.fighters;
         Ok(&self.state)
     }
 
@@ -735,6 +749,36 @@ impl Match {
             return Err(Error::Resources);
         }
         self.state = checkpoint.state.clone();
+        self.observation_fighters = [None, None];
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> MatchData {
+        serde_json::from_str(include_str!("../../tests/fixtures/game/integration-match.json"))
+            .unwrap()
+    }
+
+    #[test]
+    fn observed_fighter_exposes_capture_until_reset_or_restore() {
+        let mut game = Match::new(fixture(), 0).unwrap();
+        let checkpoint = game.checkpoint();
+        let mut captured = game.state.fighters[0].clone();
+        captured.percent = 42.0;
+        game.observation_fighters[0] = Some(captured);
+
+        assert_eq!(game.observed_fighter(0).percent, 42.0);
+        game.reset(7);
+        assert_eq!(game.observed_fighter(0).percent, game.state.fighters[0].percent);
+
+        let mut captured = game.state.fighters[0].clone();
+        captured.percent = 84.0;
+        game.observation_fighters[0] = Some(captured);
+        game.restore_checkpoint(&checkpoint).unwrap();
+        assert_eq!(game.observed_fighter(0).percent, game.state.fighters[0].percent);
     }
 }

@@ -343,11 +343,16 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.wall_jump.vertical_exponent = 0;
 }
 
+#[derive(Default)]
+pub(crate) struct StepCapture {
+    pub(crate) fighters: [Option<Fighter>; 2],
+}
+
 pub(crate) fn advance(
     data: &MatchData,
     state: &mut State,
     inputs: [Controller; 2],
-) -> Result<(), Error> {
+) -> Result<StepCapture, Error> {
     // `docs/input-lock.md`: with `rules.entry` present, the match simulates
     // every frame fully from the first frame (no `Phase::Countdown` freeze);
     // Phase/`Event::Started` still land on `rules.countdown_frames`, exactly
@@ -391,7 +396,7 @@ pub(crate) fn advance(
                 }
                 fighter.previous_input = input;
             }
-            return Ok(());
+            return Ok(StepCapture::default());
         }
     }
 
@@ -922,6 +927,9 @@ pub(crate) fn advance(
             clank::sample(&mut fighter.clank, frame);
         }
     }
+    // Capture the complete fighter pair at the native collision boundary;
+    // publish it only when a body contact is found below.
+    let collision_snapshot = state.fighters.clone();
     clank::scan(data, state, &swept)?;
     #[derive(Clone, Copy)]
     enum HitContact {
@@ -1037,6 +1045,20 @@ pub(crate) fn advance(
     for (fighter, touched) in state.fighters.iter_mut().zip(shield_touches) {
         fighter.shield.touched = touched;
     }
+    let mut capture = StepCapture::default();
+    if hits.iter().any(|hit| {
+        hit.as_ref()
+            .is_some_and(|(_, _, contact)| matches!(contact, HitContact::Fighter { .. }))
+    }) {
+        capture.fighters = collision_snapshot
+            .each_ref()
+            .map(|fighter| Some(fighter.clone()));
+    }
+    // Native replay observations are taken at the collision boundary: a
+    // victim still reports its post-physics, pre-damage state on the contact
+    // frame, while the privileged simulator state below proceeds immediately
+    // into Damage. Keep this projection outside Fighter/State so checkpoints
+    // remain authoritative gameplay state rather than replay presentation.
     let scripted_hits = data.fighters.iter().any(|fighter| fighter.script.is_some());
     // Run each fighter contact's pre hooks once, before any Damage transition.
     // Preparation commits script locals/commands to this transactional State;
@@ -1308,7 +1330,7 @@ pub(crate) fn advance(
     {
         return Err(Error::Data(error.into()));
     }
-    Ok(())
+    Ok(capture)
 }
 
 /// Deliver action transition notifications after native action entry and
@@ -2469,14 +2491,14 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .attack_for(fighter)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames;
-    // AttackAir/EscapeAir and ordinary tilts perform an explicit animation
-    // advance in their entry callback. Their authored pose samples remain
-    // zero-based, so each action's one-based clock is translated before the
-    // resource lookup; other actions keep their direct action-frame sample.
+    // AttackAir/EscapeAir authored samples are zero-based while their entry
+    // callback advances the native animation clock immediately. Grounded
+    // tilt resources, by contrast, are indexed by the authored native clock
+    // directly (the contact boundary is projected separately for replay).
     let action_frame = if crate::fighter::aerial::attack_index(fighter.action).is_some() {
         fighter.action_frame.saturating_sub(1)
     } else {
-        crate::fighter::tilt::sample(fighter.action, fighter.action_frame)
+        fighter.action_frame
     };
     let frame = if crate::fighter::specials::animation_loop_for_owner(fighter, data) {
         // Looping is a registration-time declaration for this action. Keep
@@ -2630,6 +2652,50 @@ mod tests {
             crate::fighter::tilt::sample(fighter.action, fighter.action_frame),
             0
         );
+    }
+
+    #[test]
+    fn grounded_tilt_action_frame_selects_the_same_authored_attack_frame() {
+        let mut data = fixture();
+        let mut attack = data.fighters[0].jab.clone();
+        while attack.frames.len() < 7 {
+            attack.frames.push(attack.frames.last().unwrap().clone());
+        }
+        attack.frames[6].hitboxes.push(Hitbox {
+            clank: false,
+            rebound: false,
+            element: Default::default(),
+            group: 0,
+            bone: 1,
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            damage: 1,
+            shield_damage: 0,
+            angle_degrees: 0.0,
+            growth: 0,
+            fixed: 0,
+            base: 0,
+        });
+        let up = crate::fighter::tilt::GroundAttack {
+            attack,
+            flags: vec![Default::default(); 7],
+        };
+        data.fighters[0].tilts = Some(crate::fighter::tilt::Parameters {
+            forward: crate::fighter::tilt::ForwardTilts {
+                high: Some(up.clone()),
+                high_slight: Some(up.clone()),
+                straight: up.clone(),
+                low_slight: Some(up.clone()),
+                low: Some(up.clone()),
+            },
+            up: up.clone(),
+            down: up,
+        });
+        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
+        fighter.action = Action::AttackHi3;
+        fighter.action_frame = 6;
+
+        assert_eq!(attack_frame(&fighter, &data.fighters[0]).unwrap().hitboxes.len(), 1);
     }
 
     #[test]

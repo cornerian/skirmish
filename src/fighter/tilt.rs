@@ -718,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn native_tilt_frame_six_is_not_active_before_action_frame_seven() {
+    fn native_tilt_action_frame_six_uses_authored_frame_six() {
         let mut data = tilt_data();
         let bones = data.fighters[0].bones.clone();
         let mut up = attack(&bones, false);
@@ -741,15 +741,8 @@ mod tests {
         let attack =
             ground_attack(data.fighters[0].tilts.as_ref().unwrap(), Action::AttackHi3).unwrap();
 
-        assert!(attack.attack.frames[sample(Action::AttackHi3, 6) as usize]
-            .hitboxes
-            .is_empty());
-        assert_eq!(
-            attack.attack.frames[sample(Action::AttackHi3, 7) as usize]
-                .hitboxes
-                .len(),
-            1
-        );
+        assert_eq!(attack.attack.frames[6].hitboxes.len(), 1);
+        assert!(attack.attack.frames[5].hitboxes.is_empty());
     }
 
     #[test]
