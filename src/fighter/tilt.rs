@@ -265,16 +265,14 @@ pub(crate) fn owns_action(action: Action) -> bool {
     )
 }
 
-/// The authored attack resources are zero-based, while every ordinary tilt
-/// entry calls `ftAnim_8006EBA4` immediately after changing motion.  The
-/// native action clock therefore reports age one for the entry pose, which
-/// is still resource sample zero.
-pub(crate) fn sample(action: Action, action_frame: u32) -> u32 {
-    if owns_action(action) {
-        action_frame.saturating_sub(1)
-    } else {
-        action_frame
-    }
+/// Grounded tilt resources use the native action age as their authored frame
+/// number. Every ordinary tilt entry calls `ftAnim_8006EBA4` immediately
+/// after changing motion, so the action clock starts at one and the first
+/// authored resource frame is also one. The resource vectors retain their
+/// zero-based storage representation; their frame zero is the pre-entry
+/// sample and is not selected by an ordinary tilt action.
+pub(crate) fn sample(_action: Action, action_frame: u32) -> u32 {
+    action_frame
 }
 
 /// Every supplied tilt attack, for validation and staling identity checks.
@@ -582,6 +580,53 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
 mod tests {
     use super::*;
 
+    fn fixture() -> crate::game::data::MatchData {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap()
+    }
+
+    fn attack(bones: &[crate::game::data::Bone], repeat: bool) -> GroundAttack {
+        GroundAttack {
+            attack: Attack {
+                move_id: Some(1),
+                blend_frames: 0,
+                dynamics_variant: 0,
+                frames: (0..7)
+                    .map(|_| crate::game::data::AttackFrame {
+                        bones: bones.to_vec(),
+                        hitboxes: vec![],
+                        hurtbox_states: vec![],
+                    })
+                    .collect(),
+            },
+            flags: (0..7)
+                .map(|frame| GroundFrameFlags {
+                    allow_interrupt: matches!(frame, 5 | 6),
+                    repeat_ready: repeat && matches!(frame, 5 | 6),
+                })
+                .collect(),
+        }
+    }
+
+    fn tilt_data() -> crate::game::data::MatchData {
+        let mut data = fixture();
+        let bones = data.fighters[0].bones.clone();
+        data.fighters[0].tilts = Some(Parameters {
+            forward: ForwardTilts {
+                high: Some(attack(&bones, false)),
+                high_slight: Some(attack(&bones, false)),
+                straight: attack(&bones, false),
+                low_slight: Some(attack(&bones, false)),
+                low: Some(attack(&bones, false)),
+            },
+            up: attack(&bones, false),
+            down: attack(&bones, true),
+        });
+        data
+    }
+
     #[test]
     fn forward_tilt_uses_inclusive_stick_and_strict_angle_bounds() {
         assert!(forward_tilt(true, 0.5, 1.0, 0.49, 0.5, 0.5));
@@ -649,16 +694,60 @@ mod tests {
     }
 
     #[test]
-    fn native_tilt_entry_age_one_uses_authored_sample_zero() {
+    fn native_tilt_action_age_selects_the_same_authored_frame() {
         for action in [
             Action::AttackS3S,
             Action::AttackS3Hi,
+            Action::AttackS3HiS,
+            Action::AttackS3LwS,
+            Action::AttackS3Lw,
             Action::AttackHi3,
             Action::AttackLw3,
         ] {
-            assert_eq!(sample(action, 1), 0, "entry sample for {action:?}");
-            assert_eq!(sample(action, 2), 1, "second sample for {action:?}");
+            for frame in [1, 5, 6] {
+                assert_eq!(
+                    sample(action, frame),
+                    frame,
+                    "sample {frame} for {action:?}"
+                );
+            }
         }
         assert_eq!(sample(Action::Wait, 1), 1);
+    }
+
+    #[test]
+    fn native_age_drives_tilt_flags_and_action_end_without_a_hidden_offset() {
+        let data = tilt_data();
+        let mut state = crate::game::simulation::initial_state(&data, 0, [0, 1]).unwrap();
+        let fighter = &mut state.fighters[0];
+
+        for action in [Action::AttackS3S, Action::AttackHi3, Action::AttackLw3] {
+            fighter.action = action;
+            fighter.action_frame = 5;
+            assert!(
+                flags(fighter, &data.fighters[0])
+                    .expect("native tilt frame 5 flags")
+                    .allow_interrupt
+            );
+            if action == Action::AttackLw3 {
+                assert!(
+                    flags(fighter, &data.fighters[0])
+                        .expect("native down tilt frame 5 flags")
+                        .repeat_ready
+                );
+            }
+
+            fighter.action_frame = 6;
+            assert!(
+                flags(fighter, &data.fighters[0])
+                    .expect("native tilt frame 6 flags")
+                    .allow_interrupt
+            );
+        }
+
+        fighter.action = Action::AttackHi3;
+        fighter.action_frame = 7;
+        update_animation(fighter, &data.fighters[0]).unwrap();
+        assert_eq!(fighter.action, Action::Wait);
     }
 }
