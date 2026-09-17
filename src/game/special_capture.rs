@@ -15,15 +15,15 @@ use serde::Serialize;
 /// Which native side of the relation owns the supported attachment behavior.
 ///
 /// Grounded Dive contact calls the native XRotN-to-TransN2 helper for the
-/// holder/victim pair. Airborne contact follows a distinct no-attachment path
-/// in the supported model; the missing pose resource is never approximated by
-/// a guessed bone index or offset.
+/// holder/victim pair. Airborne contact uses the authored holder/victim
+/// anchors to keep the victim attached to the Captain.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Attachment {
     #[default]
     None,
     GroundedHolderToVictim,
+    AirborneVictimToHolder,
 }
 
 /// Checkpointed Captain Falcon Dive relation state.
@@ -78,7 +78,7 @@ pub(crate) fn capture(
     let attachment = if victim_was_grounded {
         Attachment::GroundedHolderToVictim
     } else {
-        Attachment::None
+        Attachment::AirborneVictimToHolder
     };
     state.fighters[holder].special_capture = State {
         victim: Some(victim),
@@ -184,13 +184,27 @@ pub(crate) fn attach_all(data: &MatchData, state: &mut MatchState) -> Result<(),
         let Some(victim) = state.fighters[holder].special_capture.victim else {
             continue;
         };
-        if state.fighters[holder].special_capture.attachment != Attachment::GroundedHolderToVictim {
-            continue;
-        }
         let Some(capture) = captain_dive_capture(data, holder) else {
             continue;
         };
-        crate::game::grab::attach_points(data, state, holder, victim, capture.attachment, false)?;
+        match state.fighters[holder].special_capture.attachment {
+            Attachment::GroundedHolderToVictim => crate::game::grab::attach_holder_points(
+                data,
+                state,
+                holder,
+                victim,
+                capture.attachment,
+            )?,
+            Attachment::AirborneVictimToHolder => crate::game::grab::attach_points(
+                data,
+                state,
+                holder,
+                victim,
+                capture.attachment,
+                false,
+            )?,
+            Attachment::None => {}
+        }
     }
     Ok(())
 }
@@ -425,11 +439,11 @@ mod tests {
         let airborne = State {
             victim: Some(1),
             captor: None,
-            attachment: Attachment::None,
+            attachment: Attachment::AirborneVictimToHolder,
         };
         assert_ne!(grounded, airborne);
         assert_eq!(grounded.victim, Some(1));
-        assert_eq!(airborne.attachment, Attachment::None);
+        assert_eq!(airborne.attachment, Attachment::AirborneVictimToHolder);
     }
 
     #[test]
@@ -476,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn airborne_capture_records_the_no_attachment_mode() {
+    fn airborne_capture_records_the_anchor_attachment_mode() {
         let (match_, data) = fixture();
         let mut state = match_.state().clone();
         state.fighters[0].action = Action::SpecialHiCatch;
@@ -486,14 +500,50 @@ mod tests {
         capture(&data, &mut state, 0, 1, false).expect("airborne Dive capture");
         assert_eq!(
             state.fighters[0].special_capture.attachment,
-            Attachment::None
+            Attachment::AirborneVictimToHolder
         );
         assert_eq!(
             state.fighters[1].special_capture.attachment,
-            Attachment::None
+            Attachment::AirborneVictimToHolder
         );
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
+    }
+
+    #[test]
+    fn grounded_capture_moves_the_holder_with_the_victim_root() {
+        let (match_, data) = resource_fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = true;
+        state.fighters[0].position = [-4.0, 0.0];
+        state.fighters[1].position = [3.0, 0.0];
+        capture(&data, &mut state, 0, 1, true).expect("grounded Dive capture");
+        let victim_position = state.fighters[1].position;
+
+        super::attach_all(&data, &mut state).expect("grounded Dive attachment");
+
+        assert_eq!(state.fighters[0].position, victim_position);
+        assert_eq!(state.fighters[1].position, victim_position);
+        assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
+    }
+
+    #[test]
+    fn airborne_capture_moves_the_victim_with_the_holder_anchors() {
+        let (match_, data) = resource_fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = false;
+        state.fighters[0].position = [-4.0, 0.0];
+        state.fighters[1].position = [3.0, 0.0];
+        capture(&data, &mut state, 0, 1, false).expect("airborne Dive capture");
+
+        super::attach_all(&data, &mut state).expect("airborne Dive attachment");
+
+        assert_eq!(state.fighters[1].position, state.fighters[0].position);
+        assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
     }
 
     #[test]

@@ -1570,6 +1570,40 @@ pub(crate) fn attach_points(
     Ok(())
 }
 
+/// Apply a bone attachment while moving the holder instead of the captured
+/// fighter.  Falcon Dive's grounded branch is the inverse of an ordinary
+/// grab: the Captain's root tracks the captured fighter's root, while the
+/// authored holder/victim anchors still describe the relative pose.
+pub(crate) fn attach_holder_points(
+    data: &MatchData,
+    state: &mut MatchState,
+    holder: usize,
+    victim: usize,
+    attachment: Attachment,
+) -> Result<(), Error> {
+    let holder_pose = simulation::pose(&state.fighters[holder], &data.fighters[holder])?;
+    let holder_anchor = BoneCapsule::sphere(attachment.holder_bone, attachment.holder_point, 0.0)
+        .transform(&holder_pose, 1.0)
+        .map_err(physics)?
+        .start;
+    let victim_pose = simulation::pose(&state.fighters[victim], &data.fighters[victim])?;
+    let victim_anchor = BoneCapsule::sphere(attachment.victim_bone, attachment.victim_point, 0.0)
+        .transform(&victim_pose, 1.0)
+        .map_err(physics)?
+        .start;
+    let mut position = [
+        state.fighters[holder].position[0],
+        state.fighters[holder].position[1],
+        state.fighters[holder].depth,
+    ];
+    position[0] += victim_anchor[0] - holder_anchor[0];
+    position[1] += victim_anchor[1] - holder_anchor[1];
+    position[2] += victim_anchor[2] - holder_anchor[2];
+    state.fighters[holder].position = [position[0], position[1]];
+    state.fighters[holder].depth = position[2];
+    Ok(())
+}
+
 fn detach(state: &mut MatchState, holder: usize, victim: usize) {
     state.fighters[holder].grab = State::default();
     state.fighters[victim].grab = State::default();
