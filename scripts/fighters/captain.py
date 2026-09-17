@@ -33,12 +33,13 @@ from skirmish import (
 )
 from shared.common import (
     directional_b_input,
+    directional_b_reserved,
     FighterBase,
     fresh_special_input,
-    any_stick_axis_reaches_thresholds,
     resource_attributes,
     special_rules,
     start_action,
+    start_fresh_open_special,
     start_open_special,
     stick_axis_reaches_threshold,
 )
@@ -46,16 +47,7 @@ from shared.common import (
 
 def _directional_b(ctx: MoveContext) -> bool:
     """Use host-provided dispatch thresholds when the host exposes them."""
-    rules = special_rules(ctx)
-    if rules is None:
-        return False
-    stick = getattr(ctx.input, "stick", (0.0, 0.0))
-    vertical = getattr(rules, "vertical_threshold", None)
-    horizontal = getattr(rules, "horizontal_threshold", None)
-    return any_stick_axis_reaches_thresholds(
-        stick,
-        ((1, vertical), (0, horizontal)),
-    )
+    return directional_b_reserved(ctx)
 
 
 class CaptainFalconActionState(ActionState):
@@ -110,16 +102,14 @@ class FalconPunch(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if not fresh_special_input(ctx, self.resource):
-            return False
         # Generic dispatch reserves directional B inputs for the directional
         # specials.  If no dispatch rules are supplied, preserve the API's
         # permissive authoring behavior for standalone move tests/hosts.
         if _directional_b(ctx):
             return False
-        if fighter.action in (self.ground, self.air):
-            return True
-        if not start_open_special(fighter, ctx, self.ground, self.air):
+        if not start_fresh_open_special(
+                fighter, ctx, self.resource, self.ground, self.air,
+                active_actions=(self.ground, self.air)):
             return False
         return True
 
@@ -274,15 +264,13 @@ class FalconDive(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        if not fresh_special_input(ctx, self.resource):
-            return False
         if directional_b_input(
             ctx, self.resource, 1, "vertical_threshold", direction=1
         ) is not True:
             return False
-        if fighter.action in (self.ground, self.air):
-            return True
-        if not start_open_special(fighter, ctx, self.ground, self.air):
+        if not start_fresh_open_special(
+                fighter, ctx, self.resource, self.ground, self.air,
+                active_actions=(self.ground, self.air)):
             return False
         return True
 

@@ -171,6 +171,50 @@ class FighterCommonTests(unittest.TestCase):
         context.air_open = False
         self.assertFalse(common.start_open_special(fighter, context, ground, air))
 
+    def test_directional_b_reserved_uses_configured_inclusive_axes(self):
+        common = _load_common()
+        context = SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(
+                vertical_threshold=0.5,
+                horizontal_threshold=0.6,
+            )),
+            input=SimpleNamespace(stick=(0.0, 0.0)),
+        )
+        self.assertFalse(common.directional_b_reserved(context))
+        context.input.stick = (0.6, 0.0)
+        self.assertTrue(common.directional_b_reserved(context))
+        context.input.stick = (0.0, -0.5)
+        self.assertTrue(common.directional_b_reserved(context))
+
+    def test_start_fresh_open_special_requires_resource_and_b(self):
+        common = _load_common()
+        class Fighter:
+            action_frame = 0
+            action = None
+            def change_action(self, action):
+                self.action = action
+        context = SimpleNamespace(
+            ground_open=True,
+            air_open=False,
+            input=SimpleNamespace(
+                just_pressed=lambda button: button.name == "B",
+            ),
+            resource=lambda path: object(),
+        )
+        fighter = Fighter()
+        action = object()
+        self.assertTrue(common.start_fresh_open_special(
+            fighter, context, "neutral", action, object()))
+        self.assertIs(fighter.action, action)
+        self.assertEqual(fighter.action_frame, 1)
+        self.assertTrue(common.start_fresh_open_special(
+            fighter, context, "neutral", action, object(),
+            active_actions=(action,)))
+        context.input.just_pressed = lambda button: False
+        self.assertFalse(common.start_fresh_open_special(
+            fighter, context, "neutral", action, object(),
+            active_actions=(action,)))
+
 
 if __name__ == "__main__":
     unittest.main()

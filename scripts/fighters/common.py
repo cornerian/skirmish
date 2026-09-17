@@ -113,6 +113,36 @@ def directional_b_input(ctx, resource, axis, threshold_attr, *, direction=None):
     return stick_axis_reaches_threshold(value, threshold)
 
 
+def directional_b_reserved(ctx, *, vertical="vertical_threshold",
+                           horizontal="horizontal_threshold"):
+    """Return whether a fresh B input belongs to a directional special.
+
+    Captain's neutral special must decline any directional B input so the
+    host can dispatch it to the matching special.  Missing rules remain
+    permissive for standalone authoring contexts, while a configured rule
+    uses the same inclusive threshold as :func:`directional_b_input`.
+    """
+    rules = special_rules(ctx)
+    if rules is None:
+        return False
+    stick = ctx.input.stick
+    threshold = getattr(rules, vertical, None)
+    if threshold is not None and stick_axis_reaches_threshold(stick[1], threshold):
+        return True
+    threshold = getattr(rules, horizontal, None)
+    return threshold is not None and stick_axis_reaches_threshold(stick[0], threshold)
+
+
+def start_fresh_open_special(fighter, ctx, resource, ground_action, air_action,
+                             *, active_actions=()):
+    """Accept fresh B and enter or continue a ground/aerial special."""
+    if not fresh_special_input(ctx, resource):
+        return False
+    if fighter.action in active_actions:
+        return True
+    return start_open_special(fighter, ctx, ground_action, air_action)
+
+
 def start_open_special(fighter, ctx, ground_action, air_action):
     """Start a special on the currently open ground or aerial surface."""
     if not (ctx.ground_open or ctx.air_open):
@@ -124,11 +154,13 @@ def start_open_special(fighter, ctx, ground_action, air_action):
 __all__ = [
     "FighterBase",
     "directional_b_input",
+    "directional_b_reserved",
     "fresh_special_input",
     "resource_attributes",
     "special_rules",
     "any_stick_axis_reaches_thresholds",
     "stick_axis_reaches_threshold",
     "start_action",
+    "start_fresh_open_special",
     "start_open_special",
 ]
