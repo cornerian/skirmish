@@ -6,7 +6,7 @@
 //! dependency on the parser or on a particular game stepper.
 #![forbid(unsafe_code)]
 
-use std::{convert::Infallible, error::Error, fmt};
+use std::{cell::Cell, convert::Infallible, error::Error, fmt};
 
 /// State immediately before advancing the input whose observation is labeled
 /// `next_frame`. Signed indices retain pre-game replay frames without rebasing.
@@ -223,6 +223,44 @@ where
     F: FnMut(&S::Observation, &S::Observation) -> Option<D>,
     R: Error + 'static,
 {
+    // Preserve the original compatibility behavior: once the first
+    // mismatch is found, this wrapper keeps simulating but no longer invokes
+    // the comparator. Callers that need the complete mismatch stream use
+    // `validate_fallible_continue_with` below.
+    let compare_after_mismatch = Cell::new(true);
+    validate_fallible_continue_with(
+        stepper,
+        checkpoint,
+        transitions,
+        |expected, actual| {
+            compare_after_mismatch
+                .get()
+                .then(|| compare(expected, actual))
+                .flatten()
+        },
+        |_| compare_after_mismatch.set(false),
+    )
+}
+
+/// Validate a streaming sequence to its end while retaining the first
+/// mismatch and notifying the caller about every mismatch. The callback is
+/// invoked in frame order after each successful native step whose comparison
+/// differs. The callback borrows the mismatch, so the validation result still
+/// owns the first difference without requiring `D: Clone`.
+pub fn validate_fallible_continue_with<S, T, F, D, R, M>(
+    stepper: &mut S,
+    checkpoint: &Checkpoint<S::Checkpoint>,
+    transitions: T,
+    mut compare: F,
+    mut on_mismatch: M,
+) -> Result<ContinuedValidationReport<D>, ContinuedValidationError<S::Error, D, R>>
+where
+    S: FrameStepper,
+    T: IntoIterator<Item = Result<Transition<S::Input, S::Observation>, R>>,
+    F: FnMut(&S::Observation, &S::Observation) -> Option<D>,
+    R: Error + 'static,
+    M: FnMut(&FirstMismatch<D>),
+{
     let mut transitions = transitions.into_iter();
     let first = match transitions.next() {
         None => {
@@ -324,13 +362,15 @@ where
         };
         simulated_frames += 1;
         last_simulated_frame = Some(transition.frame);
-        if first_mismatch.is_none() {
-            if let Some(difference) = compare(&transition.expected, &actual) {
-                first_mismatch = Some(FirstMismatch {
-                    frame: transition.frame,
-                    checked_frames,
-                    difference,
-                });
+        if let Some(difference) = compare(&transition.expected, &actual) {
+            let mismatch = FirstMismatch {
+                frame: transition.frame,
+                checked_frames,
+                difference,
+            };
+            on_mismatch(&mismatch);
+            if first_mismatch.is_none() {
+                first_mismatch = Some(mismatch);
             }
         }
         if first_mismatch.is_none() {
@@ -487,5 +527,39 @@ mod tests {
                 difference: (99, 1),
             })
         );
+    }
+
+    #[test]
+    fn diagnostic_continuation_compares_and_reports_separated_mismatches() {
+        let mut stepper = Stepper {
+            value: -1,
+            advances: 0,
+        };
+        let mut records = transitions();
+        records[2].expected = 8;
+        let mut mismatches = Vec::new();
+        let report = validate_fallible_continue_with(
+            &mut stepper,
+            &Checkpoint {
+                next_frame: 10,
+                state: 0,
+            },
+            records.into_iter().map(Ok::<_, std::io::Error>),
+            |expected, actual| (*expected != *actual).then_some((*expected, *actual)),
+            |mismatch| mismatches.push((mismatch.frame, mismatch.difference)),
+        )
+        .unwrap();
+
+        assert_eq!(stepper.advances, 3);
+        assert_eq!(report.checked_frames, 0);
+        assert_eq!(
+            report.first_mismatch,
+            Some(FirstMismatch {
+                frame: 10,
+                checked_frames: 0,
+                difference: (99, 1),
+            })
+        );
+        assert_eq!(mismatches, [(10, (99, 1)), (12, (8, 3))]);
     }
 }

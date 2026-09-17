@@ -2572,9 +2572,11 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
 
     // Diagnostic mode keeps the first difference but continues native
     // stepping, allowing later Captain/Fox behavior to be measured in the
-    // same run.
+    // same run. It also compares every successfully simulated frame and
+    // retains separated mismatches in frame order.
     let bytes = recording.bytes(support::Fixture::default(), |frames| {
         frames.ports[0].leader.post.percent.set(31, Some(123.0));
+        frames.ports[0].leader.post.percent.set(33, Some(125.0));
     });
     fs::write(&replay_path, bytes).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_skirmish"))
@@ -2590,6 +2592,12 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
     assert_eq!(report["outcome"]["status"], "mismatch");
     assert_eq!(report["outcome"]["frame"], FIRST + 31);
     assert_eq!(report["outcome"]["checked_frames"], 31);
+    let mismatches = report["diagnostic"]["mismatches"].as_array().unwrap();
+    assert_eq!(mismatches.len(), 2);
+    assert_eq!(mismatches[0]["frame"], FIRST + 31);
+    assert_eq!(mismatches[1]["frame"], FIRST + 33);
+    assert_eq!(mismatches[0]["difference"]["field"], "percent");
+    assert_eq!(mismatches[1]["difference"]["field"], "percent");
     assert_eq!(
         report["diagnostic"]["last_simulated_frame"],
         FIRST + recording.inputs.len() as i32 - 1

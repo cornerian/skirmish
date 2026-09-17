@@ -63,6 +63,9 @@ pub struct Diagnostic {
     pub last_simulated_frame: Option<i32>,
     pub simulated_frames: u64,
     pub terminal: Terminal,
+    /// Every compared mismatch in frame order. The first entry is also
+    /// retained in `Report::outcome` for compatibility with normal reports.
+    pub mismatches: Vec<DiagnosticMismatch>,
     /// Present when diagnostic stepping stopped because the transition stream
     /// or native stepper returned an error. This preserves the underlying
     /// validation/source error even when an earlier mismatch is retained as
@@ -71,6 +74,12 @@ pub struct Diagnostic {
     /// The last complete public observation produced by the native stepper.
     /// This is intentionally retained even when the next native step fails.
     pub last_observation: Option<DiagnosticObservation>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DiagnosticMismatch {
+    pub frame: i32,
+    pub difference: observation::Difference,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -333,7 +342,8 @@ pub fn validate_with_comparison_ports_mode(
     };
     let mut diagnostic = None;
     let outcome = if continue_after_mismatch {
-        match replay_validation::validate_fallible_continue(
+        let mut mismatches = Vec::new();
+        match replay_validation::validate_fallible_continue_with(
             &mut stepper,
             checkpoint,
             transitions,
@@ -341,12 +351,19 @@ pub fn validate_with_comparison_ports_mode(
                 observation::compare_for_ports(expected, actual, comparison_ports)
                     .expect("comparison ports were validated against the complete match pair")
             },
+            |mismatch| {
+                mismatches.push(DiagnosticMismatch {
+                    frame: mismatch.frame,
+                    difference: mismatch.difference.clone(),
+                })
+            },
         ) {
             Ok(report) => {
                 diagnostic = Some(Diagnostic {
                     last_simulated_frame: Some(report.last_frame),
                     simulated_frames: report.simulated_frames,
                     terminal: Terminal::EndOfReplay,
+                    mismatches,
                     error: None,
                     last_observation: None,
                 });
@@ -368,6 +385,7 @@ pub fn validate_with_comparison_ports_mode(
                     last_simulated_frame: error.last_simulated_frame,
                     simulated_frames: error.simulated_frames,
                     terminal: Terminal::Error,
+                    mismatches,
                     error: Some(error.error.to_string()),
                     last_observation: None,
                 });
