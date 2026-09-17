@@ -240,6 +240,34 @@ class CaptainFalconTests(unittest.TestCase):
             "kwargs": {},
         })
 
+    def test_punch_entries_bind_real_ground_and_air_attack_resources(self):
+        captain = _load_captain()
+        move = captain.specials.neutral
+
+        self.assertEqual(
+            move.ground.as_dict(),
+            {
+                "action": "Action.SPECIAL_N_START",
+                "slippi_state": 347,
+                "animation": 301,
+                "animation_loop": False,
+                "attack": "neutral.ground",
+                "command_trace": "neutral.script.ground",
+            },
+        )
+        self.assertEqual(
+            move.air.as_dict(),
+            {
+                "action": "Action.SPECIAL_AIR_N_START",
+                "slippi_state": 348,
+                "animation": 302,
+                "animation_loop": False,
+                "attack": "neutral.air",
+                "command_trace": "neutral.script.air",
+                "motion": move.air.as_dict()["motion"],
+            },
+        )
+
     def test_falcon_dive_uses_upward_dispatch_and_353_354_states(self):
         captain = _load_captain()
         move = captain.specials.up
@@ -683,6 +711,14 @@ class CaptainFalconTests(unittest.TestCase):
         punch = captain.specials.neutral
         self.assertFalse(punch.input_pressed(self.Fighter(None), context((0.5, 0.0))))
         self.assertFalse(punch.input_pressed(self.Fighter(None), context((0.0, -0.5))))
+
+        partial_rules = SimpleNamespace(specials=SimpleNamespace(
+            vertical_threshold=0.5,
+            horizontal_threshold=None,
+        ))
+        partial = context((0.0, 0.0))
+        partial.rules = partial_rules
+        self.assertTrue(punch.input_pressed(self.Fighter(None), partial))
 
         side = captain.specials.side
         self.assertTrue(side.input_pressed(self.Fighter(None), context((0.5, 0.0))))
