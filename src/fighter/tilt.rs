@@ -564,7 +564,7 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
         start(fighter, Action::AttackLw3);
         return Ok(());
     }
-    if sample(fighter.action, fighter.action_frame) as usize >= attack.attack.frames.len() {
+    if fighter.action_frame as usize >= attack.attack.frames.len() {
         let next = if !fighter.grounded {
             Action::Fall
         } else if fighter.action == Action::AttackLw3 {
@@ -776,7 +776,7 @@ mod tests {
         }
 
         fighter.action = Action::AttackHi3;
-        fighter.action_frame = 8;
+        fighter.action_frame = 7;
         update_animation(fighter, &data.fighters[0]).unwrap();
         assert_eq!(fighter.action, Action::Wait);
     }
