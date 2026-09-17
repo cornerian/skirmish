@@ -353,8 +353,8 @@ pub(crate) fn advance<T, F>(
     data: &MatchData,
     state: &mut State,
     inputs: [Controller; 2],
-    capture: F,
-) -> Result<T, Error>
+    capture: &mut Option<F>,
+) -> Result<Option<T>, Error>
 where
     F: FnOnce(super::ObservationBoundary<'_>) -> T,
 {
@@ -401,11 +401,7 @@ where
                 }
                 fighter.previous_input = input;
             }
-            return Ok(capture(super::ObservationBoundary {
-                state,
-                data,
-                action_age_offsets: [0.0; 2],
-            }));
+            return Ok(None);
         }
     }
 
@@ -1064,11 +1060,15 @@ where
             action_age_offsets[1 - attacker] = 1.0;
         }
     }
-    let captured = capture(super::ObservationBoundary {
-        state,
-        data,
-        action_age_offsets,
-    });
+    let captured = if action_age_offsets != [0.0; 2] {
+        capture.take().map(|capture| capture(super::ObservationBoundary {
+            state,
+            data,
+            action_age_offsets,
+        }))
+    } else {
+        None
+    };
     // Native replay observations are taken at the collision boundary: a
     // victim still reports its post-physics, pre-damage state on the contact
     // frame, while the privileged simulator state below proceeds immediately

@@ -751,10 +751,19 @@ impl Match {
         let mut next = self.state.clone();
         next.events.clear();
         next.next_frame = next.next_frame.checked_add(1).ok_or(Error::FrameOverflow)?;
-        let captured = simulation::advance(&self.data, &mut next, input, capture)?;
+        let mut capture = Some(capture);
+        let captured = simulation::advance(&self.data, &mut next, input, &mut capture)?;
         validation::state(&next)?;
         self.state = next;
-        Ok(captured)
+        if let Some(capture) = capture {
+            Ok(capture(ObservationBoundary {
+                state: &self.state,
+                data: &self.data,
+                action_age_offsets: [0.0; 2],
+            }))
+        } else {
+            Ok(captured.expect("body contact capture must be invoked"))
+        }
     }
 
     pub fn restore_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), Error> {
