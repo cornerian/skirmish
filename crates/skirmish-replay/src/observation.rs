@@ -395,7 +395,11 @@ fn looping_movement_pose_frames(
 
 /// Slippi's `state_age`: usually `fp->cur_anim_frame`, but not the same
 /// float for every action (see the per-branch comments below).
-fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -> f32 {
+fn action_age_with_offset(
+    fighter: &game::Fighter,
+    fighter_data: &game::data::FighterData,
+    offset: f32,
+) -> f32 {
     // Slippi's state_age for Walk/Run is fp->cur_anim_frame, a float
     // animation frame (Walk's restarts on each Slow/Middle/Fast
     // retype, Run's wraps at the Run figatree's length); without
@@ -431,12 +435,15 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // frame, then `3.01`, `6.02`, `9.03` on -3, -2 and -1 -- a
         // constant per-frame rate of `3.01`, not `1.0`.
         fighter.aerial.landing_elapsed
-    } else if matches!(fighter.action, game::Action::Damage | game::Action::DownDamage) {
+    } else if matches!(
+        fighter.action,
+        game::Action::Damage | game::Action::DownDamage
+    ) {
         // Native damage entry explicitly advances the animation after changing
         // motion state, and `simulation::enter` records that advance directly
         // in `action_frame = 1`. Unlike the generic action clock, this value
         // already matches Slippi's state_age and must not be decremented.
-        fighter.action_frame as f32
+        fighter.action_frame as f32 + offset
     } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
         // These sub-motions persist indefinitely (Fall/FallAerial,
         // FallSpecial, SquatWait, OttottoWait), so their own figatree
@@ -449,7 +456,7 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // `movement_poses` (or an absent field) keeps the general
         // rule below, unbounded, matching pre-batch behavior.
         let age = fighter.action_frame.saturating_sub(1);
-        (age % skirmish::fighter::movement::loop_period(frames) as u32) as f32
+        (age % skirmish::fighter::movement::loop_period(frames) as u32) as f32 + offset
     } else if matches!(fighter.action, game::Action::Entry | game::Action::EntryEnd) {
         // Both are animation-less (`ftCo_SM_None`); Melee's own
         // state_age stays -1 for the whole state, unlike EntryStart,
@@ -542,15 +549,21 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // dash-dance recording re-enters Turn at -30 and -25 and
         // Dash at -29 and -24, all likewise already 1.0) without
         // needing its own branch here.
-        fighter.action_frame.saturating_sub(1) as f32
+        fighter.action_frame.saturating_sub(1) as f32 + offset
     }
 }
 
-pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
+pub fn observe_state(
+    state: &game::State,
+    data: &game::data::MatchData,
+    ports: [Port; 2],
+    characters: [u8; 2],
+    action_age_offsets: [f32; 2],
+) -> Observation {
     Observation {
         fighters: std::array::from_fn(|index| {
-            let fighter = game.observed_fighter(index);
-            let fighter_data = &game.data().fighters[index];
+            let fighter = &state.fighters[index];
+            let fighter_data = &data.fighters[index];
             let max_jumps = fighter_data
                 .locomotion
                 .as_ref()
@@ -558,7 +571,11 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
             FighterObservation {
                 port: ports[index],
                 action_state: action_state(fighter, Some(characters[index])),
-                action_age: action_age(fighter, fighter_data),
+                action_age: action_age_with_offset(
+                    fighter,
+                    fighter_data,
+                    action_age_offsets[index],
+                ),
                 position: fighter.position,
                 direction: fighter.facing,
                 percent: fighter.percent,
@@ -595,6 +612,24 @@ pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Obs
             }
         }),
     }
+}
+
+pub fn observe(game: &game::Match, ports: [Port; 2], characters: [u8; 2]) -> Observation {
+    observe_state(game.state(), game.data(), ports, characters, [0.0; 2])
+}
+
+pub fn observe_boundary(
+    boundary: game::ObservationBoundary<'_>,
+    ports: [Port; 2],
+    characters: [u8; 2],
+) -> Observation {
+    observe_state(
+        boundary.state,
+        boundary.data,
+        ports,
+        characters,
+        boundary.action_age_offsets,
+    )
 }
 
 /// Player data uses external CSS IDs; post-frame records internal fighter IDs.
@@ -868,13 +903,37 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
         // character id; `None` there (an unregistered character, or a
         // special this build has no id table for) falls through to the
         // same "unresolved" result `Eliminated` reports below.
-        SpecialNStart | SpecialNLoop | SpecialNEnd | SpecialAirNStart | SpecialAirNLoop
-        | SpecialAirNEnd | SpecialSStart | SpecialS | SpecialSEnd | SpecialAirSStart
-        | SpecialAirS | SpecialAirSEnd | SpecialHiHold | SpecialHiHoldAir | SpecialHi
-        | SpecialAirHi | SpecialHiCatch | SpecialHiThrow | SpecialHiLanding | SpecialHiFall
-        | SpecialHiBound | SpecialLwStart
-        | SpecialLw | SpecialLwHit | SpecialLwEnd | SpecialLwTurn | SpecialAirLwStart
-        | SpecialAirLw | SpecialAirLwHit | SpecialAirLwEnd | SpecialAirLwTurn
+        SpecialNStart
+        | SpecialNLoop
+        | SpecialNEnd
+        | SpecialAirNStart
+        | SpecialAirNLoop
+        | SpecialAirNEnd
+        | SpecialSStart
+        | SpecialS
+        | SpecialSEnd
+        | SpecialAirSStart
+        | SpecialAirS
+        | SpecialAirSEnd
+        | SpecialHiHold
+        | SpecialHiHoldAir
+        | SpecialHi
+        | SpecialAirHi
+        | SpecialHiCatch
+        | SpecialHiThrow
+        | SpecialHiLanding
+        | SpecialHiFall
+        | SpecialHiBound
+        | SpecialLwStart
+        | SpecialLw
+        | SpecialLwHit
+        | SpecialLwEnd
+        | SpecialLwTurn
+        | SpecialAirLwStart
+        | SpecialAirLw
+        | SpecialAirLwHit
+        | SpecialAirLwEnd
+        | SpecialAirLwTurn
         | SpecialLwGroundEnd
         | SpecialAirLwLandingEnd
         | SpecialAirLwEndAir

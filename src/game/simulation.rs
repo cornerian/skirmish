@@ -1,6 +1,7 @@
 //! Experimental scheduler. Exact helper arithmetic does not certify this order
 //! against Melee's complete GObj/action pipeline. Unsupported rules are listed
 //! in docs/match.md, and every input resource carries an experimental profile.
+use super::flow::{death, entry, rebirth, stage_motion};
 use super::{data::*, *};
 use crate::{
     collision::{bones, ecb, shield as body_collision, stage},
@@ -8,7 +9,6 @@ use crate::{
     fighter::{Movement, combat, damage as damage_math, locomotion as movement_math},
     game::nudge as push,
 };
-use super::flow::{death, entry, rebirth, stage_motion};
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
@@ -187,7 +187,10 @@ fn spawn(
         let identity =
             crate::fighter::state::action_instance::motion_identity(fighter.action, None, false);
         crate::fighter::state::action_instance::queue(&mut fighter.action_instance, identity);
-        crate::fighter::state::action_instance::flush(&mut fighter.action_instance, action_instances);
+        crate::fighter::state::action_instance::flush(
+            &mut fighter.action_instance,
+            action_instances,
+        );
     }
     Ok(fighter)
 }
@@ -206,8 +209,11 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         // be staged.
         return;
     }
-    let identity =
-        crate::fighter::state::action_instance::motion_identity(action, fighter.prone, fighter.ledge.slow);
+    let identity = crate::fighter::state::action_instance::motion_identity(
+        action,
+        fighter.prone,
+        fighter.ledge.slow,
+    );
     let leaving_down_tilt = fighter.action == Action::AttackLw3;
     if leaving_down_tilt {
         // The down tilt's deferred x21EC callback (ft_800892A0 then
@@ -343,16 +349,15 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     fighter.wall_jump.vertical_exponent = 0;
 }
 
-#[derive(Default)]
-pub(crate) struct StepCapture {
-    pub(crate) fighters: [Option<Fighter>; 2],
-}
-
-pub(crate) fn advance(
+pub(crate) fn advance<T, F>(
     data: &MatchData,
     state: &mut State,
     inputs: [Controller; 2],
-) -> Result<StepCapture, Error> {
+    capture: F,
+) -> Result<T, Error>
+where
+    F: FnOnce(super::ObservationBoundary<'_>) -> T,
+{
     // `docs/input-lock.md`: with `rules.entry` present, the match simulates
     // every frame fully from the first frame (no `Phase::Countdown` freeze);
     // Phase/`Event::Started` still land on `rules.countdown_frames`, exactly
@@ -396,7 +401,11 @@ pub(crate) fn advance(
                 }
                 fighter.previous_input = input;
             }
-            return Ok(StepCapture::default());
+            return Ok(capture(super::ObservationBoundary {
+                state,
+                data,
+                action_age_offsets: [0.0; 2],
+            }));
         }
     }
 
@@ -927,9 +936,6 @@ pub(crate) fn advance(
             clank::sample(&mut fighter.clank, frame);
         }
     }
-    // Capture the complete fighter pair at the native collision boundary;
-    // publish it only when a body contact is found below.
-    let collision_snapshot = state.fighters.clone();
     clank::scan(data, state, &swept)?;
     #[derive(Clone, Copy)]
     enum HitContact {
@@ -1045,15 +1051,24 @@ pub(crate) fn advance(
     for (fighter, touched) in state.fighters.iter_mut().zip(shield_touches) {
         fighter.shield.touched = touched;
     }
-    let mut capture = StepCapture::default();
-    if hits.iter().any(|hit| {
-        hit.as_ref()
+    let mut action_age_offsets = [0.0; 2];
+    for (attacker, hit) in hits.iter().enumerate() {
+        if hit
+            .as_ref()
             .is_some_and(|(_, _, contact)| matches!(contact, HitContact::Fighter { .. }))
-    }) {
-        capture.fighters = collision_snapshot
-            .each_ref()
-            .map(|fighter| Some(fighter.clone()));
+        {
+            // A same-frame body contact skips the victim's ordinary tail
+            // animation increment before Damage entry. The native replay
+            // boundary still exposes that pre-damage state with the age it
+            // would have had after the increment.
+            action_age_offsets[1 - attacker] = 1.0;
+        }
     }
+    let captured = capture(super::ObservationBoundary {
+        state,
+        data,
+        action_age_offsets,
+    });
     // Native replay observations are taken at the collision boundary: a
     // victim still reports its post-physics, pre-damage state on the contact
     // frame, while the privileged simulator state below proceeds immediately
@@ -1330,7 +1345,7 @@ pub(crate) fn advance(
     {
         return Err(Error::Data(error.into()));
     }
-    Ok(capture)
+    Ok(captured)
 }
 
 /// Deliver action transition notifications after native action entry and
@@ -1813,8 +1828,7 @@ fn update_nudge(
                 || special_capture::is_captured(fighter)
                 || special_capture::holds_victim(fighter)
                 || ledge::attached(fighter),
-            holds_victim: fighter.grab.victim.is_some()
-                || special_capture::holds_victim(fighter),
+            holds_victim: fighter.grab.victim.is_some() || special_capture::holds_victim(fighter),
             nudge_disabled: attributes.nudge_disabled,
             hitlag: fighter.hitlag > 0.0,
             // ftCo_80099314 and ftCo_800998EC set x221D_b5 for the escape.
@@ -2695,7 +2709,13 @@ mod tests {
         fighter.action = Action::AttackHi3;
         fighter.action_frame = 6;
 
-        assert_eq!(attack_frame(&fighter, &data.fighters[0]).unwrap().hitboxes.len(), 1);
+        assert_eq!(
+            attack_frame(&fighter, &data.fighters[0])
+                .unwrap()
+                .hitboxes
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -2713,5 +2733,4 @@ mod tests {
         enter(&mut fighter, Action::DamageFall);
         assert_eq!(fighter.action_frame, 0);
     }
-
 }

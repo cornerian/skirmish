@@ -194,8 +194,9 @@ impl FrameStepper for Stepper<'_> {
         self.game.restore_checkpoint(checkpoint)
     }
     fn advance(&mut self, input: &Self::Input) -> Result<Self::Observation, Self::Error> {
-        self.game.step(*input)?;
-        let observed = observation::observe(self.game, self.ports, self.characters);
+        let observed = self.game.step_with_capture(*input, |boundary| {
+            observation::observe_boundary(boundary, self.ports, self.characters)
+        })?;
         self.last_observation = Some(observed.clone());
         Ok(observed)
     }
@@ -396,10 +397,8 @@ pub fn validate_with_comparison_ports_mode(
                         difference: mismatch.difference,
                     },
                     None => {
-                        let (frame, checked_frames) = validation_error_location(
-                            &error.error,
-                            checkpoint.next_frame,
-                        );
+                        let (frame, checked_frames) =
+                            validation_error_location(&error.error, checkpoint.next_frame);
                         Outcome::Error {
                             frame,
                             checked_frames,
@@ -434,10 +433,8 @@ pub fn validate_with_comparison_ports_mode(
                 difference,
             },
             Err(error) => {
-                let (frame, checked_frames) = validation_error_location(
-                    &error,
-                    checkpoint.next_frame,
-                );
+                let (frame, checked_frames) =
+                    validation_error_location(&error, checkpoint.next_frame);
                 Outcome::Error {
                     frame,
                     checked_frames,

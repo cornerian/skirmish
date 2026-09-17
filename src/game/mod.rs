@@ -10,15 +10,15 @@ pub mod clank;
 pub mod collision;
 pub(crate) mod combat_history;
 pub mod data;
+pub mod flow;
 pub mod grab;
 pub(crate) mod hit_resolution;
 pub mod hitboxes;
-pub mod flow;
 pub mod nudge;
 pub mod projectile;
 pub mod script;
-pub(crate) mod special_capture;
 pub mod simulation;
+pub(crate) mod special_capture;
 pub mod staling;
 pub mod validation;
 pub mod wall_jump;
@@ -26,12 +26,12 @@ pub mod wall_jump;
 #[cfg(all(test, feature = "experimental-continuations"))]
 mod move_exhaustion_tests;
 
+use self::flow::{death, entry, stage_motion};
 use crate::collision::ecb;
 use crate::fighter::{
     aerial, damage, dash, edge, escape, escape_air, idle, jab, ledge, locomotion, movement, shield,
     smash, taunt, tilt,
 };
-use self::flow::{death, entry, stage_motion};
 use data::MatchData;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -573,6 +573,18 @@ pub struct State {
     pub events: Vec<Event>,
 }
 
+/// Borrowed state at the native post-physics, pre-contact-resolution boundary.
+///
+/// The projection is intentionally ephemeral: it is never stored in the
+/// authoritative match or checkpoint. `action_age_offsets` accounts for the
+/// animation tail increment that native skips when a body contact immediately
+/// transitions the victim into damage.
+pub struct ObservationBoundary<'a> {
+    pub state: &'a State,
+    pub data: &'a MatchData,
+    pub action_age_offsets: [f32; 2],
+}
+
 /// Opaque in-memory checkpoint includes the resource identity and all state.
 #[derive(Clone, Debug)]
 pub struct Checkpoint {
@@ -586,7 +598,6 @@ pub struct Match {
     resource_id: [u8; 32],
     state: State,
     initial: State,
-    observation_fighters: [Option<Fighter>; 2],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -666,7 +677,6 @@ impl Match {
             resource_id,
             initial: state.clone(),
             state,
-            observation_fighters: [None, None],
         })
     }
 
@@ -677,15 +687,6 @@ impl Match {
         &self.state
     }
 
-    /// Fighter view at the native replay observation boundary for the most
-    /// recent step. The authoritative gameplay state remains [`Self::state`];
-    /// this one-step projection only retains victims at their post-physics,
-    /// pre-damage state when that step contained a body hit.
-    pub fn observed_fighter(&self, index: usize) -> &Fighter {
-        self.observation_fighters[index]
-            .as_ref()
-            .unwrap_or(&self.state.fighters[index])
-    }
     pub fn resource_id(&self) -> [u8; 32] {
         self.resource_id
     }
@@ -703,7 +704,6 @@ impl Match {
     pub fn reset(&mut self, seed: u32) -> &State {
         self.state = self.initial.clone();
         self.state.rng_seed = seed;
-        self.observation_fighters = [None, None];
         &self.state
     }
 
@@ -730,6 +730,20 @@ impl Match {
 
     /// Errors leave the match untouched. Clones share only immutable resources.
     pub fn step(&mut self, input: [Controller; 2]) -> Result<&State, Error> {
+        self.step_with_capture(input, |_| ())?;
+        Ok(&self.state)
+    }
+
+    /// Advance one frame and expose the native observation boundary without
+    /// cloning fighters or retaining presentation state in the match.
+    pub fn step_with_capture<T, F>(
+        &mut self,
+        input: [Controller; 2],
+        capture: F,
+    ) -> Result<T, Error>
+    where
+        F: FnOnce(ObservationBoundary<'_>) -> T,
+    {
         if matches!(self.state.phase, Phase::Finished { .. }) {
             return Err(Error::Finished);
         }
@@ -737,11 +751,10 @@ impl Match {
         let mut next = self.state.clone();
         next.events.clear();
         next.next_frame = next.next_frame.checked_add(1).ok_or(Error::FrameOverflow)?;
-        let capture = simulation::advance(&self.data, &mut next, input)?;
+        let captured = simulation::advance(&self.data, &mut next, input, capture)?;
         validation::state(&next)?;
         self.state = next;
-        self.observation_fighters = capture.fighters;
-        Ok(&self.state)
+        Ok(captured)
     }
 
     pub fn restore_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), Error> {
@@ -749,7 +762,6 @@ impl Match {
             return Err(Error::Resources);
         }
         self.state = checkpoint.state.clone();
-        self.observation_fighters = [None, None];
         Ok(())
     }
 }
@@ -759,26 +771,9 @@ mod tests {
     use super::*;
 
     fn fixture() -> MatchData {
-        serde_json::from_str(include_str!("../../tests/fixtures/game/integration-match.json"))
-            .unwrap()
-    }
-
-    #[test]
-    fn observed_fighter_exposes_capture_until_reset_or_restore() {
-        let mut game = Match::new(fixture(), 0).unwrap();
-        let checkpoint = game.checkpoint();
-        let mut captured = game.state.fighters[0].clone();
-        captured.percent = 42.0;
-        game.observation_fighters[0] = Some(captured);
-
-        assert_eq!(game.observed_fighter(0).percent, 42.0);
-        game.reset(7);
-        assert_eq!(game.observed_fighter(0).percent, game.state.fighters[0].percent);
-
-        let mut captured = game.state.fighters[0].clone();
-        captured.percent = 84.0;
-        game.observation_fighters[0] = Some(captured);
-        game.restore_checkpoint(&checkpoint).unwrap();
-        assert_eq!(game.observed_fighter(0).percent, game.state.fighters[0].percent);
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap()
     }
 }
