@@ -64,7 +64,7 @@ pub struct Stage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<StageGeometry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub motion: Option<super::round::stage_motion::Rules>,
+    pub motion: Option<super::flow::stage_motion::Rules>,
     /// Left, right, bottom, top. Top eligibility is configured in `Rules`.
     pub blast: [f32; 4],
     pub spawns: [[f32; 2]; 2],
@@ -229,12 +229,12 @@ pub struct Rules {
     pub respawn_frames: u32,
     pub respawn_invincibility_frames: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rebirth: Option<super::round::rebirth::Rules>,
+    pub rebirth: Option<super::flow::rebirth::Rules>,
     /// The match-start warp-in (Entry/EntryStart/EntryEnd, `docs/
     /// match-start.md`). `None` keeps every fighter spawning directly into
     /// `Action::Fall`, unchanged from before this resource existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<super::round::entry::EntryRules>,
+    pub entry: Option<super::flow::entry::EntryRules>,
     pub friction_above_walk: f32,
     pub walk_accel_taper_gain: f32,
     pub fast_fall_threshold: f32,
@@ -254,7 +254,7 @@ pub struct Rules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_ko_min_knockback: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub death: Option<super::round::death::Rules>,
+    pub death: Option<super::flow::death::Rules>,
     pub knockback: KnockbackData,
     pub hitlag: HitlagData,
     pub damage: crate::fighter::damage::CombatRules,
@@ -383,7 +383,7 @@ pub struct FighterData {
     /// The EntryStart figatree's own frame count, distinct from
     /// `rules.entry`'s action-duration timers (`docs/match-start.md`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<super::round::entry::EntryAnimation>,
+    pub entry: Option<super::flow::entry::EntryAnimation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_poses: Option<crate::fighter::damage::DamagePoseAttributes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

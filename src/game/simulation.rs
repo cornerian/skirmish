@@ -8,7 +8,7 @@ use crate::{
     fighter::{Movement, combat, damage as damage_math, locomotion as movement_math},
     game::nudge as push,
 };
-use super::round::{death, entry, rebirth, stage_motion};
+use super::flow::{death, entry, rebirth, stage_motion};
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
@@ -95,7 +95,7 @@ fn spawn(
         // plain `player == 0` hardcode is kept as the default so every such
         // fixture is unaffected; `docs/match-start.md` records this scoping.
         facing: if data.rules.entry.is_some() {
-            crate::game::round::entry::spawn_facing(data.stage.spawns, player)
+            crate::game::flow::entry::spawn_facing(data.stage.spawns, player)
         } else if player == 0 {
             1.0
         } else {
@@ -1137,8 +1137,8 @@ pub(crate) fn advance(
         let mut rng = crate::compat::math::random::HsdRng::new(state.rng_seed);
         for player in 0..2 {
             let fighter = &state.fighters[player];
-            blast_deaths[player] = crate::game::round::death::select(
-                crate::game::round::death::Query {
+            blast_deaths[player] = crate::game::flow::death::select(
+                crate::game::flow::death::Query {
                     excluded: [
                         death::owns_action(fighter.action),
                         fighter.action == Action::Respawn,
@@ -1221,10 +1221,10 @@ pub(crate) fn advance(
                 });
                 if !matches!(
                     kind,
-                    crate::game::round::death::Kind::UpStar
-                        | crate::game::round::death::Kind::UpStarIce
-                        | crate::game::round::death::Kind::UpScreen
-                        | crate::game::round::death::Kind::UpScreenIce
+                    crate::game::flow::death::Kind::UpStar
+                        | crate::game::flow::death::Kind::UpStarIce
+                        | crate::game::flow::death::Kind::UpScreen
+                        | crate::game::flow::death::Kind::UpScreenIce
                 ) {
                     lose_stock(data, state, player, true)?;
                 } else {

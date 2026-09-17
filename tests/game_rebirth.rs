@@ -98,7 +98,7 @@ fn travel_uses_remaining_frame_velocity_and_arrives_exactly_at_the_platform() {
     let mut game = reborn(resource, 0);
     let mut current = rules.entry_positions[0];
     for remaining in (1..=rules.travel_frames).rev() {
-        let expected_velocity = skirmish::game::round::rebirth::approach_velocity(
+        let expected_velocity = skirmish::game::flow::rebirth::approach_velocity(
             current,
             rules.platform_positions[0],
             remaining,

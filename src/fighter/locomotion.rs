@@ -995,7 +995,7 @@ pub(crate) fn update_actions(
             // `cur_anim_frame < frame_speed_mul + normal_landing_lag`; past
             // it the chain still reaches Turn and Walk below.
             let landing_squat_ready =
-                f.action != Action::Landing || crate::game::round::landing::squat_window(f, data);
+                f.action != Action::Landing || crate::game::flow::landing::squat_window(f, data);
             if landing_squat_ready && input.stick[1] < -p.crouch_enter_threshold {
                 f.locomotion.pass_delay = None;
                 if f.action == Action::Landing {
