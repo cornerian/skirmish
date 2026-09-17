@@ -55,7 +55,7 @@ impl State {
 /// `before_hit` hook changed `SpecialHi`/`SpecialAirHi` to `SpecialHiCatch`.
 /// This is intentionally not exposed to generic grab scanning or pair logic.
 pub(crate) fn capture(
-    _data: &MatchData,
+    data: &MatchData,
     state: &mut MatchState,
     holder: usize,
     victim: usize,
@@ -74,6 +74,21 @@ pub(crate) fn capture(
             "Captain capture requires an unpaired SpecialHiCatch holder".into(),
         ));
     }
+
+    // The capture callback can carry a percent-only damage payload. Resolve
+    // its stale value before mutating the relation so malformed rules cannot
+    // leave a half-entered pair behind. Unlike an ordinary hit, this event
+    // deliberately does not touch hitlag, knockback, or the victim action.
+    let capture_damage = captain_dive_capture(data, holder)
+        .and_then(|capture| capture.damage)
+        .map(|damage| {
+            crate::game::staling::hit(
+                &state.fighters[holder].staling,
+                damage,
+                data.rules.staling.as_ref(),
+            )
+        })
+        .transpose()?;
 
     let attachment = if victim_was_grounded {
         Attachment::GroundedHolderToVictim
@@ -104,6 +119,16 @@ pub(crate) fn capture(
     }
     state.fighters[victim].facing = -state.fighters[holder].facing;
     crate::game::simulation::enter(&mut state.fighters[victim], Action::CaptureCaptain);
+    if let Some(staled) = capture_damage {
+        state.fighters[victim].percent =
+            (state.fighters[victim].percent + staled.damage).min(999.0);
+        if data.rules.staling.is_some() {
+            state.fighters[holder]
+                .staling
+                .queue
+                .record(staled.identity, false);
+        }
+    }
     Ok(())
 }
 
@@ -361,6 +386,7 @@ pub(crate) fn validate_resource(data: &super::data::FighterData) -> Result<(), E
     }
     let hit = capture.throw.hit;
     if capture.throw.release_frame >= 1_000_000
+        || capture.damage.is_some_and(|damage| damage > 999)
         || hit.damage > 999
         || hit.angle_raw > 511
         || hit.growth > 1000
@@ -394,33 +420,45 @@ mod tests {
     }
 
     fn resource_fixture() -> (Match, crate::game::data::MatchData) {
+        resource_fixture_with_damage(None)
+    }
+
+    fn capture_damage_fixture() -> (Match, crate::game::data::MatchData) {
+        resource_fixture_with_damage(Some(5))
+    }
+
+    fn resource_fixture_with_damage(damage: Option<u32>) -> (Match, crate::game::data::MatchData) {
         let mut data: crate::game::data::MatchData = serde_json::from_str(include_str!(
             "../../tests/fixtures/game/integration-match.json"
         ))
         .expect("integration game fixture");
+        let mut capture = serde_json::json!({
+            "attachment": {
+                "holder_bone": 0,
+                "holder_point": [0.0, 0.0, 0.0],
+                "victim_bone": 0,
+                "victim_point": [0.0, 0.0, 0.0]
+            },
+            "throw": {
+                "release_frame": 0,
+                "hit": {
+                    "damage": 12,
+                    "angle_raw": 361,
+                    "growth": 82,
+                    "fixed": 0,
+                    "base": 40,
+                    "element": 1
+                }
+            }
+        });
+        if let Some(damage) = damage {
+            capture["damage"] = serde_json::json!(damage);
+        }
         data.fighters[0].specials = Some(
             serde_json::from_value(serde_json::json!({
                 "character": "synthetic",
                 "up": {
-                    "capture": {
-                        "attachment": {
-                            "holder_bone": 0,
-                            "holder_point": [0.0, 0.0, 0.0],
-                            "victim_bone": 0,
-                            "victim_point": [0.0, 0.0, 0.0]
-                        },
-                        "throw": {
-                            "release_frame": 0,
-                            "hit": {
-                                "damage": 12,
-                                "angle_raw": 361,
-                                "growth": 82,
-                                "fixed": 0,
-                                "base": 40,
-                                "element": 1
-                            }
-                        }
-                    }
+                    "capture": capture
                 }
             }))
             .expect("Captain Dive resource"),
@@ -487,6 +525,27 @@ mod tests {
         assert_eq!(state.fighters[1].action_frame, released);
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
+    }
+
+    #[test]
+    fn capture_damage_adds_percent_without_leaving_capture_captain() {
+        let (match_, data) = capture_damage_fixture();
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].percent = 17.0;
+        state.fighters[1].grounded = false;
+        state.fighters[0].hitlag = 0.0;
+        state.fighters[1].hitlag = 0.0;
+
+        capture(&data, &mut state, 0, 1, false).expect("Dive capture");
+
+        assert_eq!(state.fighters[1].percent, 22.0);
+        assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
+        assert_eq!(state.fighters[0].hitlag, 0.0);
+        assert_eq!(state.fighters[1].hitlag, 0.0);
+        assert_eq!(state.fighters[0].knockback, [0.0; 2]);
+        assert_eq!(state.fighters[1].knockback, [0.0; 2]);
     }
 
     #[test]

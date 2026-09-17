@@ -129,6 +129,10 @@ pub struct Specials {
 #[serde(deny_unknown_fields)]
 pub struct CaptainDiveCapture {
     pub attachment: Attachment,
+    /// Optional percent applied by the native capture callback. Older
+    /// exports omit this field and retain the relation-only lifecycle.
+    #[serde(default)]
+    pub damage: Option<u32>,
     pub throw: CaptainDiveThrow,
 }
 
