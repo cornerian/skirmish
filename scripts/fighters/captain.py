@@ -282,11 +282,7 @@ class FalconDive(SpecialMove):
             return False
         if fighter.action in (self.ground, self.air):
             return True
-        if ctx.ground_open:
-            start_action(fighter, self.ground)
-        elif ctx.air_open:
-            start_action(fighter, self.air)
-        else:
+        if not start_open_special(fighter, ctx, self.ground, self.air):
             return False
         return True
 
