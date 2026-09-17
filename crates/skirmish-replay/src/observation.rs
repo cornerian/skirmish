@@ -431,6 +431,12 @@ fn action_age(fighter: &game::Fighter, fighter_data: &game::data::FighterData) -
         // frame, then `3.01`, `6.02`, `9.03` on -3, -2 and -1 -- a
         // constant per-frame rate of `3.01`, not `1.0`.
         fighter.aerial.landing_elapsed
+    } else if matches!(fighter.action, game::Action::Damage | game::Action::DownDamage) {
+        // Native damage entry explicitly advances the animation after changing
+        // motion state, and `simulation::enter` records that advance directly
+        // in `action_frame = 1`. Unlike the generic action clock, this value
+        // already matches Slippi's state_age and must not be decremented.
+        fighter.action_frame as f32
     } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
         // These sub-motions persist indefinitely (Fall/FallAerial,
         // FallSpecial, SquatWait, OttottoWait), so their own figatree
@@ -1711,6 +1717,29 @@ mod tests {
         fighter.action = game::Action::GuardSetOff;
         fighter.action_frame = 1;
         assert_eq!(action_age(&fighter, &fighter_data), 0.0);
+    }
+
+    #[test]
+    fn damage_actions_report_the_native_entry_animation_age() {
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let fighter_data = game.data().fighters[0].clone();
+
+        for action in [game::Action::Damage, game::Action::DownDamage] {
+            fighter.action = action;
+            for action_frame in [1, 7] {
+                fighter.action_frame = action_frame;
+                assert_eq!(
+                    action_age(&fighter, &fighter_data),
+                    action_frame as f32,
+                    "{action:?} at action frame {action_frame}"
+                );
+            }
+        }
     }
 
     #[test]
