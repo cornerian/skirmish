@@ -1,6 +1,6 @@
 //! Headless rebirth-platform travel, wait and release lifecycle.
 
-use super::{Action, Controller, Error, Fighter, simulation};
+use crate::game::{Action, Controller, Error, Fighter, simulation};
 use serde::{Deserialize, Serialize};
 
 pub fn approach_velocity(current: [f32; 2], target: [f32; 2], remaining: u32) -> [f32; 2] {

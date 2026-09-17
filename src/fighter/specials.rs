@@ -389,7 +389,7 @@ fn grounded_chain_open(f: &Fighter, data: &FighterData) -> bool {
         ) || matches!(
             tilt::interrupt_chain(f, data),
             Some(tilt::Chain::Wait) | Some(tilt::Chain::Taunt)
-        ) || game::landing::interruptible(f, data))
+        ) || game::round::landing::interruptible(f, data))
 }
 fn aerial_chain_open(f: &Fighter) -> bool {
     !f.grounded

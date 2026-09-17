@@ -1,7 +1,7 @@
 //! `ftCo_Landing_IASA`'s complete dispatch order and the entry family's
 //! motion/allow/rate arithmetic, checked against the pinned C bodies. This is
 //! a Rust mirror of the exact per-call protocol `oracle_landing_iasa` drives
-//! (see `tests/oracle/landing.c`), independent of `skirmish::game::landing`
+//! (see `tests/oracle/landing.c`), independent of `skirmish::game::round::landing`
 //! (which only implements the two frame gates the Rust port actually needs;
 //! this file checks the complete chain, including every attack/movement
 //! callee this batch does not otherwise exercise).

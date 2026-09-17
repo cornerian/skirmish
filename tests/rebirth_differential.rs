@@ -2,7 +2,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::game::rebirth::{approach_velocity, wait_approach_velocity};
+use skirmish::game::round::rebirth::{approach_velocity, wait_approach_velocity};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

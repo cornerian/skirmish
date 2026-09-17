@@ -1,7 +1,7 @@
 //! Resource-driven stage collision transforms and grounded-line carry.
 
-use super::{Error, Fighter, data};
 use crate::collision::stage::{self, Line, Point};
+use crate::game::{Error, Fighter, data};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, ops::Range};
 
@@ -100,7 +100,7 @@ pub(crate) fn validate(stage_data: &data::Stage) -> Result<(), Error> {
 /// checkpointed stage frame.
 pub(crate) fn geometry(stage_data: &data::Stage, frame: u32) -> Cow<'_, data::StageGeometry> {
     let Some(rules) = &stage_data.motion else {
-        return super::collision::geometry(stage_data);
+        return crate::game::collision::geometry(stage_data);
     };
     let mut geometry = stage_data
         .geometry

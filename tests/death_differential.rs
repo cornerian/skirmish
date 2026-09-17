@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 use skirmish::{
     compat::math::random::HsdRng,
-    game::death::{Kind, Query, select},
+    game::round::death::{Kind, Query, select},
 };
 
 unsafe extern "C" {

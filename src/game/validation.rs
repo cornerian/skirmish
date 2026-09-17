@@ -31,7 +31,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     require(data.schema == 1, "unsupported schema")?;
     require(!data.provenance.trim().is_empty(), "provenance is required")?;
     let stage = &data.stage;
-    super::stage_motion::validate(stage)?;
+    super::round::stage_motion::validate(stage)?;
     if let Some(geometry) = &stage.geometry {
         require(
             !geometry.lines.is_empty()
@@ -115,7 +115,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         )?;
     }
     if let Some(rebirth) = &rules.rebirth {
-        super::rebirth::validate(rebirth, rules.respawn_invincibility_frames)?;
+        super::round::rebirth::validate(rebirth, rules.respawn_invincibility_frames)?;
     }
     if let Some(entry) = &rules.entry {
         require(
@@ -130,7 +130,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         )?;
     }
     if let Some(death) = &rules.death {
-        super::death::validate(death)?;
+        super::round::death::validate(death)?;
         require(
             rules.top_ko_min_knockback.is_some(),
             "blast-death rules require an explicit top KO threshold",

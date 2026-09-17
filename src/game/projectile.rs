@@ -442,8 +442,8 @@ fn step(
             target.action,
             super::Action::Respawn | super::Action::Eliminated
         )
-        && !super::rebirth::invulnerable(target.action)
-        && !super::death::owns_action(target.action)
+        && !super::round::rebirth::invulnerable(target.action)
+        && !super::round::death::owns_action(target.action)
     {
         let facing = state.projectiles[index].facing;
         let position = state.projectiles[index].position;

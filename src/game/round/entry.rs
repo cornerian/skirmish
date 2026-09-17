@@ -21,7 +21,7 @@
 //! `ftCommonData.x6C4`), the spawned effect and the sound cue are visual
 //! and are not ported; `EntryRules::scale_y` is kept only so the resource
 //! shape has a place for `x6C4` if a future renderer wants it.
-use super::{Action, Error, Fighter, data::FighterData, simulation};
+use crate::game::{Action, Error, Fighter, data::FighterData, simulation};
 use serde::{Deserialize, Serialize};
 
 pub const DELAY_STEP: u32 = 5;

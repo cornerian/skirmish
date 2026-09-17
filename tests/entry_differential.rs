@@ -6,7 +6,7 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::game::entry::{amplitude, end_progress, start_progress};
+use skirmish::game::round::entry::{amplitude, end_progress, start_progress};
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
@@ -91,7 +91,7 @@ fn same_float(a: f32, b: f32) {
 proptest! {
     /// `ftCo_800C6408`'s amplitude formula, scoped to `scale_y == 1.0`
     /// (Skirmish keeps no separate uniform fighter scale, matching
-    /// `game::entry::enter_start`'s own assumption).
+    /// `game::round::entry::enter_start`'s own assumption).
     #[test]
     fn entry_start_enter_amplitude_matches_the_1_497345_literal(
         trophy_scale in prop::num::f32::ANY,
@@ -252,7 +252,7 @@ proptest! {
     /// The Entry -> EntryStart transition frame itself: `ftCo_Entry_Anim`'s
     /// transition (setting `x20`/timer fresh) followed, in the very same
     /// call, by `ftCo_EntryStart_Phys` using that fresh state -- exactly
-    /// `game::entry::update_animation`'s `Action::Entry` arm calling
+    /// `game::round::entry::update_animation`'s `Action::Entry` arm calling
     /// `enter_start` and then falling through to `move_fighter`'s
     /// `Action::EntryStart` arm within the same simulated frame. Pinned
     /// against the real-replay parity loop's own finding (docs/parity.md):

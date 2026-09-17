@@ -10,20 +10,15 @@ pub mod clank;
 pub mod collision;
 pub(crate) mod combat_history;
 pub mod data;
-pub mod death;
-pub mod effects;
-pub mod entry;
 pub mod grab;
 pub(crate) mod hit_resolution;
 pub mod hitboxes;
-pub mod landing;
+pub mod round;
 pub mod nudge;
 pub mod projectile;
-pub mod rebirth;
 pub mod script;
 pub(crate) mod special_capture;
 pub mod simulation;
-pub mod stage_motion;
 pub mod staling;
 pub mod validation;
 pub mod wall_jump;
@@ -36,6 +31,7 @@ use crate::fighter::{
     aerial, damage, dash, edge, escape, escape_air, idle, jab, ledge, locomotion, movement, shield,
     smash, taunt, tilt,
 };
+use self::round::{death, entry, stage_motion};
 use data::MatchData;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -455,7 +451,7 @@ pub struct Fighter {
     pub(crate) pending_projectiles: Vec<projectile::PendingProjectile>,
     /// Effects parented to this fighter, included in checkpoints and cleared
     /// together according to the native fighter ownership boundary.
-    pub effects: crate::game::effects::EffectState,
+    pub effects: crate::game::round::effects::EffectState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -617,7 +613,7 @@ impl Match {
 
     /// `slots` is each player's 0-indexed port (P1=0..P4=3), used only when
     /// `data.rules.entry` is `Some` (the per-port entry delay,
-    /// `crate::fighter::entry::entry_delay`); every other resource profile
+    /// `crate::game::round::entry::entry_delay`); every other resource profile
     /// ignores it. Callers that know a replay's real ports (`make-
     /// initialization`) should supply them; every other caller keeps using
     /// `new`, which defaults to `[0, 1]` (today's two-player convention).

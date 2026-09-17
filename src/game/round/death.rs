@@ -1,7 +1,7 @@
 //! Headless blast death actions, including delayed star and screen stock loss.
 
-use super::{Action, Error, Fighter, simulation};
 use crate::compat::math::random::HsdRng;
+use crate::game::{Action, Error, Fighter, simulation};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

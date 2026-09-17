@@ -307,7 +307,7 @@ fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {
 pub(crate) fn interrupt_chain(fighter: &Fighter, data: &FighterData) -> Option<Chain> {
     if crate::fighter::smash::interruptible(fighter, data)
         || crate::fighter::dash::interruptible(fighter, data)
-        || crate::game::landing::interruptible(fighter, data)
+        || crate::game::round::landing::interruptible(fighter, data)
     {
         return Some(Chain::Wait);
     }

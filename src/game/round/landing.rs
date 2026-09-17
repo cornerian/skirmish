@@ -3,7 +3,7 @@
 //! currently always-locked-out state (`allow_interrupt = false`) and is not
 //! touched here; this module owns only the plain animation-length Landing
 //! entered from `collision.rs`.
-use super::{Action, Fighter, data::FighterData};
+use crate::game::{Action, Fighter, data::FighterData};
 
 pub(crate) fn owns_action(action: Action) -> bool {
     action == Action::Landing

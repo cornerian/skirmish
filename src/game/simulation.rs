@@ -8,6 +8,7 @@ use crate::{
     fighter::{Movement, combat, damage as damage_math, locomotion as movement_math},
     game::nudge as push,
 };
+use super::round::{death, entry, rebirth, stage_motion};
 
 pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Result<State, Error> {
     let stage_state = stage_motion::State::default();
@@ -94,7 +95,7 @@ fn spawn(
         // plain `player == 0` hardcode is kept as the default so every such
         // fixture is unaffected; `docs/match-start.md` records this scoping.
         facing: if data.rules.entry.is_some() {
-            crate::game::entry::spawn_facing(data.stage.spawns, player)
+            crate::game::round::entry::spawn_facing(data.stage.spawns, player)
         } else if player == 0 {
             1.0
         } else {
@@ -1136,8 +1137,8 @@ pub(crate) fn advance(
         let mut rng = crate::compat::math::random::HsdRng::new(state.rng_seed);
         for player in 0..2 {
             let fighter = &state.fighters[player];
-            blast_deaths[player] = crate::game::death::select(
-                crate::game::death::Query {
+            blast_deaths[player] = crate::game::round::death::select(
+                crate::game::round::death::Query {
                     excluded: [
                         death::owns_action(fighter.action),
                         fighter.action == Action::Respawn,
@@ -1220,10 +1221,10 @@ pub(crate) fn advance(
                 });
                 if !matches!(
                     kind,
-                    crate::game::death::Kind::UpStar
-                        | crate::game::death::Kind::UpStarIce
-                        | crate::game::death::Kind::UpScreen
-                        | crate::game::death::Kind::UpScreenIce
+                    crate::game::round::death::Kind::UpStar
+                        | crate::game::round::death::Kind::UpStarIce
+                        | crate::game::round::death::Kind::UpScreen
+                        | crate::game::round::death::Kind::UpScreenIce
                 ) {
                     lose_stock(data, state, player, true)?;
                 } else {
