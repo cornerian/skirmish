@@ -265,6 +265,18 @@ pub(crate) fn owns_action(action: Action) -> bool {
     )
 }
 
+/// The authored attack resources are zero-based, while every ordinary tilt
+/// entry calls `ftAnim_8006EBA4` immediately after changing motion.  The
+/// native action clock therefore reports age one for the entry pose, which
+/// is still resource sample zero.
+pub(crate) fn sample(action: Action, action_frame: u32) -> u32 {
+    if owns_action(action) {
+        action_frame.saturating_sub(1)
+    } else {
+        action_frame
+    }
+}
+
 /// Every supplied tilt attack, for validation and staling identity checks.
 pub(crate) fn ground_attack(parameters: &Parameters, action: Action) -> Option<&GroundAttack> {
     let forward = &parameters.forward;
@@ -287,7 +299,7 @@ pub(crate) fn attack(parameters: &Parameters, action: Action) -> Option<&Attack>
 fn flags(fighter: &Fighter, data: &FighterData) -> Option<GroundFrameFlags> {
     ground_attack(data.tilts.as_ref()?, fighter.action)?
         .flags
-        .get(fighter.action_frame as usize)
+        .get(sample(fighter.action, fighter.action_frame) as usize)
         .copied()
 }
 
@@ -547,13 +559,13 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
         && fighter.tilt.repeat_buffered
         && attack
             .flags
-            .get(fighter.action_frame as usize)
+            .get(sample(fighter.action, fighter.action_frame) as usize)
             .is_some_and(|flags| flags.repeat_ready)
     {
         start(fighter, Action::AttackLw3);
         return Ok(());
     }
-    if fighter.action_frame as usize >= attack.attack.frames.len() {
+    if sample(fighter.action, fighter.action_frame) as usize >= attack.attack.frames.len() {
         let next = if !fighter.grounded {
             Action::Fall
         } else if fighter.action == Action::AttackLw3 {
@@ -634,5 +646,19 @@ mod tests {
         assert!(!down_tilt_repeat(true, false, &mut buffer));
         assert!(buffer);
         assert!(down_tilt_repeat(true, true, &mut buffer));
+    }
+
+    #[test]
+    fn native_tilt_entry_age_one_uses_authored_sample_zero() {
+        for action in [
+            Action::AttackS3S,
+            Action::AttackS3Hi,
+            Action::AttackHi3,
+            Action::AttackLw3,
+        ] {
+            assert_eq!(sample(action, 1), 0, "entry sample for {action:?}");
+            assert_eq!(sample(action, 2), 1, "second sample for {action:?}");
+        }
+        assert_eq!(sample(Action::Wait, 1), 1);
     }
 }

@@ -237,13 +237,16 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
         staling::restart_identity(fighter);
     }
     fighter.action = action;
-    // `ftCo_AttackAir_EnterFromMsid` calls `ftAnim_8006EBA4` immediately
-    // after `Fighter_ChangeMotionState`, advancing the selected aerial's
-    // animation to frame one on its entry frame.  Keep the engine's shared
-    // post-frame increment unchanged; storing that entry advance here makes
-    // both native and script-selected aerials expose the same visible age
-    // without an observation-layer exception.
-    fighter.action_frame = if crate::fighter::aerial::attack_index(action).is_some() {
+    // `ftCo_AttackAir_EnterFromMsid` and the ordinary grounded-tilt entry
+    // helpers call `ftAnim_8006EBA4` immediately after
+    // `Fighter_ChangeMotionState`, advancing the selected motion to frame one
+    // on its entry frame. Keep the engine's shared post-frame increment
+    // unchanged; storing that entry advance here makes native and
+    // script-selected entries expose the same visible age without an
+    // observation-layer exception.
+    fighter.action_frame = if crate::fighter::aerial::attack_index(action).is_some()
+        || crate::fighter::tilt::owns_action(action)
+    {
         1
     } else {
         0
@@ -2458,13 +2461,13 @@ fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a Atta
         .attack_for(fighter)
         .ok_or_else(|| Error::Data("missing attack resources".into()))?
         .frames;
-    // AttackAir and EscapeAir both perform an explicit animation advance in
-    // their entry callback.  Their authored pose samples remain zero-based,
-    // so the entry clock's extra unit is not a second sample.
+    // AttackAir/EscapeAir and ordinary tilts perform an explicit animation
+    // advance in their entry callback. Their authored pose samples remain
+    // zero-based, so the entry clock's extra unit is not a second sample.
     let action_frame = if crate::fighter::aerial::attack_index(fighter.action).is_some() {
         fighter.action_frame.saturating_sub(1)
     } else {
-        fighter.action_frame
+        crate::fighter::tilt::sample(fighter.action, fighter.action_frame)
     };
     let frame = if crate::fighter::specials::animation_loop_for_owner(fighter, data) {
         // Looping is a registration-time declaration for this action. Keep
@@ -2602,5 +2605,18 @@ mod tests {
             assert!((shape.bottom[1] - expected_scaled).abs() < 1e-6);
         }
         assert!((scaled.current.bottom[1] - unit.current.bottom[1] * MODEL_SCALING).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ordinary_tilt_entry_reports_native_age_and_first_authored_sample() {
+        let mut data = fixture();
+        data.rules.countdown_frames = 0;
+        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
+
+        enter(&mut fighter, Action::AttackHi3);
+
+        assert_eq!(fighter.action, Action::AttackHi3);
+        assert_eq!(fighter.action_frame, 1);
+        assert_eq!(crate::fighter::tilt::sample(fighter.action, fighter.action_frame), 0);
     }
 }
