@@ -83,6 +83,21 @@ struct CaptainState {
     velocity: [f32; 2],
     ground_velocity: f32,
     fighter_resource_available: bool,
+    button_b_down: bool,
+    button_b_just_pressed: bool,
+}
+
+impl CaptainState {
+    fn press_b(&mut self) {
+        if !self.button_b_down {
+            self.button_b_just_pressed = true;
+        }
+        self.button_b_down = true;
+    }
+
+    fn release_b(&mut self) {
+        self.button_b_down = false;
+    }
 }
 
 struct CaptainHost {
@@ -104,6 +119,7 @@ impl NativeHost for CaptainHost {
             "context.rules.specials" => object(NativeKind::Context, "context.rules.specials"),
             "context.rules.specials.vertical_threshold" => NativeValue::F32(0.5),
             "context.rules.specials.horizontal_threshold" => NativeValue::F32(0.5),
+            "context.rules.specials.side_stick_threshold" => NativeValue::F32(0.5),
             "context.ground_open" => NativeValue::Bool(true),
             "context.air_open" => NativeValue::Bool(true),
             "context.event" => object(NativeKind::Context, "context.event"),
@@ -162,7 +178,12 @@ impl NativeHost for CaptainHost {
             .calls
             .push((path.to_owned(), args.to_vec()));
         match path {
-            "context.input.just_pressed" => Ok(NativeValue::Bool(true)),
+            "context.input.just_pressed" => {
+                let mut state = self.state.lock().unwrap();
+                let just_pressed = state.button_b_just_pressed;
+                state.button_b_just_pressed = false;
+                Ok(NativeValue::Bool(just_pressed))
+            }
             "context.resource" => {
                 let Some(NativeValue::String(resource)) = args.first() else {
                     return Err(Error::Host("Captain resource path is not a string".into()));
@@ -295,6 +316,7 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     // Neutral B is intentionally dispatched with a neutral stick.  The host
     // action starts as WAIT and the callback must choose ground Falcon Punch.
     state.lock().unwrap().stick = [0.0, 0.0];
+    state.lock().unwrap().press_b();
     assert_eq!(
         program
             .dispatch(&punch, fighter.clone(), &[context_value.clone()])
@@ -305,6 +327,11 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     // Side-B from WAIT selects the ground Raptor Boost start and mirrors the
     // native entry callback's atomic velocity and ground-velocity reset.
     state.lock().unwrap().stick = [0.6, 0.0];
+    {
+        let mut state = state.lock().unwrap();
+        state.release_b();
+        state.press_b();
+    }
     assert_eq!(
         program
             .dispatch(&raptor_boost, fighter.clone(), &[context_value.clone()])
@@ -312,12 +339,22 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
         NativeValue::Bool(true)
     );
     state.lock().unwrap().stick = [-0.6625, 0.7375];
+    {
+        let mut state = state.lock().unwrap();
+        state.release_b();
+        state.press_b();
+    }
     assert_eq!(
         program
             .dispatch(&dive, fighter.clone(), &[context_value.clone()])
             .unwrap(),
         NativeValue::Bool(true)
     );
+    {
+        let mut state = state.lock().unwrap();
+        state.release_b();
+        state.press_b();
+    }
     assert_eq!(
         program
             .dispatch(&kick, fighter.clone(), &[context_value])
@@ -421,6 +458,7 @@ fn captain_grounded_down_special_dispatches_falcon_kick() {
     let kick = callback(&program, "move_3", "input_pressed");
 
     program.prepare_for_current_thread().unwrap();
+    state.lock().unwrap().press_b();
     assert_eq!(
         program.dispatch(&kick, fighter, &[context()]).unwrap(),
         NativeValue::Bool(true)
