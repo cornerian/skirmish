@@ -421,15 +421,6 @@ pub(crate) fn advance(
         _ => inputs,
     };
 
-    // Animation and input callbacks may advance the action clock before the
-    // priority-4/6 physics pass.  Keep the pair that was visible on entry so
-    // collision geometry can project one clock tick only when the action did
-    // not actually change during this frame.
-    let collision_clock = state
-        .fighters
-        .each_ref()
-        .map(|fighter| (fighter.action, fighter.script_events.action_generation));
-
     // Slippi's recorder clears these transient fields before their producer
     // callbacks. Contacts and landings later in the frame replace them.
     for fighter in &mut state.fighters {
@@ -855,30 +846,16 @@ pub(crate) fn advance(
 
     // Contact decisions are collected from the same post-movement state. Apply
     // damage afterward so a lower port cannot suppress a simultaneous trade.
-    let live_poses = [
+    let poses = [
         pose(&state.fighters[0], &data.fighters[0])?,
         pose(&state.fighters[1], &data.fighters[1])?,
-    ];
-    let collision_poses = [
-        collision_pose(
-            &state.fighters[0],
-            &data.fighters[0],
-            collision_clock[0],
-            live_poses[0].clone(),
-        )?,
-        collision_pose(
-            &state.fighters[1],
-            &data.fighters[1],
-            collision_clock[1],
-            live_poses[1].clone(),
-        )?,
     ];
     // Item logic runs after fighters, at its own GObj priority: any pending
     // shot from this frame's own fighter dispatch spawns now, then every active
     // spawned one included, matching the source's own same-frame item
     // Anim/Phys/Coll run) advances once.
     specials::emit_projectiles(data, state)?;
-    projectile::advance(data, state, &live_poses, &stage)?;
+    projectile::advance(data, state, &poses, &stage)?;
     ledge::scan(
         data,
         state,
@@ -925,8 +902,7 @@ pub(crate) fn advance(
         // `hitboxes::refreshed_groups`'s own citation. Read before
         // `update_tracks` overwrites `fighter.hitboxes` for this frame.
         fighter.hit_groups &= !hitboxes::refreshed_groups(&fighter.hitboxes, frame);
-        swept[player] =
-            hitboxes::update_tracks(&mut fighter.hitboxes, frame, &collision_poses[player])?;
+        swept[player] = hitboxes::update_tracks(&mut fighter.hitboxes, frame, &poses[player])?;
         let charge = fighter.smash;
         staling::sample(
             &mut fighter.staling,
@@ -997,7 +973,7 @@ pub(crate) fn advance(
                 && let Some(rules) = &data.rules.shield
             {
                 let (center, matrix) =
-                    shield::geometry(target, &data.fighters[victim], rules, &live_poses[victim])?;
+                    shield::geometry(target, &data.fighters[victim], rules, &poses[victim])?;
                 if crate::collision::shield::shield_contact(attack, center, &matrix, 1.0, 20.0)
                     .map_err(physics)?
                     .is_some()
@@ -1020,14 +996,14 @@ pub(crate) fn advance(
                 }
                 let hurt = hurtbox
                     .physics()
-                    .transform(&collision_poses[victim], 1.0)
+                    .transform(&poses[victim], 1.0)
                     .map_err(physics)?;
                 let capsule = combat::Capsule {
                     start: hurt.start,
                     end: hurt.end,
                     radius: hurt.radius,
                 };
-                let matrix = collision_poses[victim]
+                let matrix = poses[victim]
                     .world_matrix(hurtbox.bone)
                     .map_err(|error| Error::Physics(error.to_string()))?;
                 let mut contact = body_collision::Contact::default();
@@ -2488,29 +2464,6 @@ pub(crate) fn pose(fighter: &Fighter, data: &FighterData) -> Result<bones::Pose,
     result
 }
 
-fn collision_pose(
-    fighter: &Fighter,
-    data: &FighterData,
-    entry_clock: (Action, crate::game::script::scheduler::ActionGeneration),
-    live_pose: bones::Pose,
-) -> Result<bones::Pose, Error> {
-    if collision_projection_frame(entry_clock, fighter).is_some() {
-        let mut projected = fighter.clone();
-        projected.action_frame = projected.action_frame.saturating_add(1);
-        pose(&projected, data)
-    } else {
-        Ok(live_pose)
-    }
-}
-
-fn collision_projection_frame(
-    entry_clock: (Action, crate::game::script::scheduler::ActionGeneration),
-    fighter: &Fighter,
-) -> Option<u32> {
-    (entry_clock == (fighter.action, fighter.script_events.action_generation))
-        .then(|| fighter.action_frame.saturating_add(1))
-}
-
 fn attack_frame<'a>(fighter: &Fighter, data: &'a FighterData) -> Result<&'a AttackFrame, Error> {
     let attack = &data
         .attack_for(fighter)
@@ -2695,38 +2648,4 @@ mod tests {
         assert_eq!(fighter.action_frame, 0);
     }
 
-    #[test]
-    fn collision_pose_projects_continuing_action_without_advancing_attack_selection() {
-        let mut data = fixture();
-        data.rules.countdown_frames = 0;
-        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
-        enter(&mut fighter, Action::AttackHi3);
-        let entry_clock = (fighter.action, fighter.script_events.action_generation);
-        let live = pose(&fighter, &data.fighters[0]).unwrap();
-        let live_attack = data.fighters[0].attack_for(&fighter).is_some();
-        let projected = collision_pose(&fighter, &data.fighters[0], entry_clock, live.clone())
-            .unwrap();
-
-        assert_eq!(collision_projection_frame(entry_clock, &fighter), Some(2));
-        assert_eq!(projected, live);
-        assert_eq!(fighter.action_frame, 1);
-        assert_eq!(data.fighters[0].attack_for(&fighter).is_some(), live_attack);
-    }
-
-    #[test]
-    fn collision_pose_does_not_project_after_action_change() {
-        let mut data = fixture();
-        data.rules.countdown_frames = 0;
-        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
-        let entry_clock = (fighter.action, fighter.script_events.action_generation);
-        enter(&mut fighter, Action::AttackHi3);
-        let live = pose(&fighter, &data.fighters[0]).unwrap();
-        let live_attack = data.fighters[0].attack_for(&fighter).is_some();
-        let collision = collision_pose(&fighter, &data.fighters[0], entry_clock, live.clone())
-            .unwrap();
-
-        assert_eq!(collision_projection_frame(entry_clock, &fighter), None);
-        assert_eq!(collision, live);
-        assert_eq!(data.fighters[0].attack_for(&fighter).is_some(), live_attack);
-    }
 }
