@@ -290,6 +290,37 @@ impl SchedulerState {
         })
     }
 
+    /// Restart the action-relative clock for a genuine same-action animation
+    /// loop. This advances the scheduler generation and cancels all deadlines
+    /// from the previous cycle, while keeping the action identity intact.
+    pub fn restart_action_clock(
+        &mut self,
+        owner: OwnerId,
+        action: Action,
+    ) -> Result<ActionScope, ScheduleError> {
+        let mut candidate = self.clone();
+        candidate.cancel_action_timers(owner);
+        let generation = ActionGeneration(candidate.next_generation);
+        candidate.next_generation = candidate
+            .next_generation
+            .checked_add(1)
+            .ok_or(ScheduleError::GenerationExhausted)?;
+        candidate.actions.insert(
+            owner,
+            ActiveAction {
+                action,
+                generation,
+                last_frame: 0,
+            },
+        );
+        *self = candidate;
+        Ok(ActionScope {
+            owner,
+            action,
+            generation,
+        })
+    }
+
     /// Native host operation: leaving an action invalidates its records before
     /// clearing the scope.
     pub fn exit_action(&mut self, owner: OwnerId) {
@@ -529,6 +560,42 @@ mod tests {
             .unwrap();
         scheduler.enter_action(owner, Action::Wait).unwrap();
         assert!(scheduler.advance_action(owner, 2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn same_action_clock_restart_allows_loop_wrap_without_redelivering_old_timers() {
+        let owner = OwnerId::new(5);
+        let mut scheduler = SchedulerState::new();
+        let first = scheduler
+            .enter_action(owner, Action::Attack100Loop)
+            .unwrap();
+        scheduler
+            .schedule(
+                owner,
+                TimerSpec::AtActionFrame {
+                    action: Action::Attack100Loop,
+                    frame: 1,
+                },
+                101,
+            )
+            .unwrap();
+        assert_eq!(scheduler.advance_action(owner, 1).unwrap().len(), 1);
+        scheduler
+            .schedule(
+                owner,
+                TimerSpec::AtActionFrame {
+                    action: Action::Attack100Loop,
+                    frame: 3,
+                },
+                103,
+            )
+            .unwrap();
+        let second = scheduler
+            .restart_action_clock(owner, Action::Attack100Loop)
+            .unwrap();
+        assert!(second.generation.get() > first.generation.get());
+        assert!(scheduler.advance_action(owner, 0).unwrap().is_empty());
+        assert!(scheduler.advance_action(owner, 3).unwrap().is_empty());
     }
 
     #[test]

@@ -607,6 +607,11 @@ where
             inputs[player],
             &mut idle_rng,
         )?;
+        restart_script_action_clock_if_requested(
+            &mut state.fighters[player],
+            &data.fighters[player],
+            player,
+        )?;
         if let Some(error) = state.fighters[player].script_events.native_error.as_deref() {
             return Err(Error::Data(error.into()));
         }
@@ -1346,6 +1351,34 @@ where
         return Err(Error::Data(error.into()));
     }
     Ok(captured)
+}
+
+fn restart_script_action_clock_if_requested(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    player: usize,
+) -> Result<(), Error> {
+    if !fighter.script_events.pending_action_clock_restart {
+        return Ok(());
+    }
+    fighter.script_events.pending_action_clock_restart = false;
+    let owner = crate::game::script::scheduler::OwnerId::new(player as u32);
+    let mut scheduler = fighter.script_events.scheduler.clone();
+    scheduler
+        .restart_action_clock(owner, fighter.action)
+        .map_err(|error| Error::Data(error.to_string()))?;
+    if let Some(cache) = data.script_resources.get() {
+        cache
+            .action_events()
+            .schedule_action_markers(&mut scheduler, owner, fighter.action)
+            .map_err(|error| Error::Data(error.to_string()))?;
+        cache
+            .action_events()
+            .schedule_action_frames(&mut scheduler, owner, fighter.action)
+            .map_err(|error| Error::Data(error.to_string()))?;
+    }
+    fighter.script_events.scheduler = scheduler;
+    Ok(())
 }
 
 /// Deliver action transition notifications after native action entry and

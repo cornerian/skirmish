@@ -559,8 +559,10 @@ pub(crate) fn update_animation(fighter: &mut Fighter, data: &FighterData) -> Res
     if fighter.action == Action::Attack100Loop {
         // The loop figatree wraps; frame zero re-creates its hitboxes and
         // runs ft_800892A0 and ft_80089824.
-        if fighter.action_frame as usize >= frames {
+        let wrapped = fighter.action_frame as usize >= frames;
+        if wrapped {
             fighter.action_frame = 0;
+            fighter.script_events.pending_action_clock_restart = true;
         }
         if fighter.action_frame == 0 {
             fighter.jab.loop_started = true;

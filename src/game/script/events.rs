@@ -118,6 +118,10 @@ pub struct NativeEventState {
     /// cascades finite and rollback-safe.
     #[serde(default)]
     pub pending_transitions: Vec<PendingActionTransition>,
+    /// Native animation requested a same-action scheduler clock restart at a
+    /// genuine looping-animation wrap. Consumed by the simulation event phase.
+    #[serde(default)]
+    pub pending_action_clock_restart: bool,
     /// Delivered deadline events retain the scheduler timer that produced
     /// them. Legacy script countdowns use `None`; scheduled timers use
     /// `Some(timer)`, so identical tokens cannot steal one another.
