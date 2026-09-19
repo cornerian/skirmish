@@ -1215,22 +1215,17 @@ pub(crate) fn validate_knockdown_attributes(
     ] {
         validate_ground_motion(&variant.forward, fighter)?;
         validate_ground_motion(&variant.backward, fighter)?;
-        for (poses, frames) in [
-            (
-                &variant.bound_poses,
-                profile.down_bound_frames_for(Some(orientation)),
-            ),
-            (
-                &variant.wait_poses,
-                profile.down_wait_frames_for(Some(orientation)),
-            ),
-            (
-                &variant.stand_poses,
-                profile.down_stand_frames_for(Some(orientation)),
-            ),
-        ] {
-            validate_poses(poses, frames, fighter)?;
-        }
+        validate_poses(
+            &variant.bound_poses,
+            profile.down_bound_frames_for(Some(orientation)),
+            fighter,
+        )?;
+        validate_wait_poses(&variant.wait_poses, fighter)?;
+        validate_poses(
+            &variant.stand_poses,
+            profile.down_stand_frames_for(Some(orientation)),
+            fighter,
+        )?;
         match (&profile.down_damage, &variant.damage_poses) {
             (Some(rules), Some(poses)) => validate_poses(poses, rules.frames, fighter)?,
             (Some(_), None) => {
@@ -1262,6 +1257,18 @@ fn validate_poses(poses: &[Vec<Bone>], frames: u32, fighter: &FighterData) -> Re
     if poses.len() != frames as usize {
         return Err(Error::Data(
             "floor-recovery poses must match the configured duration".into(),
+        ));
+    }
+    for pose in poses {
+        crate::game::validation::validate_animation_pose(pose, fighter)?;
+    }
+    Ok(())
+}
+
+fn validate_wait_poses(poses: &[Vec<Bone>], fighter: &FighterData) -> Result<(), Error> {
+    if poses.is_empty() || poses.len() > 4096 {
+        return Err(Error::Data(
+            "floor-recovery wait poses require 1..4096 samples".into(),
         ));
     }
     for pose in poses {
@@ -2106,7 +2113,12 @@ pub(crate) fn ground_recovery_pose<'a>(
             _ => None,
         };
         if let Some(poses) = poses {
-            return poses.get(fighter.action_frame as usize).map(Vec::as_slice);
+            let frame = if fighter.action == Action::DownWait {
+                (fighter.action_frame as usize).min(poses.len() - 1)
+            } else {
+                fighter.action_frame as usize
+            };
+            return poses.get(frame).map(Vec::as_slice);
         }
     }
     ground_motion(fighter, data)?

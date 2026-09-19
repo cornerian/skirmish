@@ -18,6 +18,7 @@ const IDLE: [Controller; 2] = [Controller {
 fn profile() -> skirmish::fighter::damage::FloorResponseRules {
     skirmish::fighter::damage::FloorResponseRules {
         tumble_knockback_threshold: 20.0,
+        landing_knockback_threshold: None,
         tech_window: 20.0,
         tech_repeat_lockout: 40,
         tech_roll: None,
@@ -265,6 +266,42 @@ fn oriented_frame_data(face_down: bool) -> skirmish::game::data::MatchData {
         knockdown.face_down.bound_poses.resize(6, bones.clone());
         knockdown.face_down.wait_poses.resize(7, bones.clone());
         knockdown.face_down.stand_poses.resize(5, bones);
+    }
+    resource
+}
+
+fn wait_pose_length_data(
+    logical_frames: u32,
+    pose_frames: usize,
+) -> skirmish::game::data::MatchData {
+    let mut resource = knockdown_data();
+    resource
+        .rules
+        .damage
+        .floor_response
+        .as_mut()
+        .unwrap()
+        .down_wait_frames = logical_frames;
+    for fighter in &mut resource.fighters {
+        let bones = fighter.bones.clone();
+        let poses = (0..pose_frames)
+            .map(|frame| {
+                let mut pose = bones.clone();
+                pose[1].translation[0] = 20.0 + frame as f32;
+                pose
+            })
+            .collect::<Vec<_>>();
+        let knockdown = fighter.knockdown.as_mut().unwrap();
+        knockdown.face_up.wait_poses = poses.clone();
+        knockdown.face_down.wait_poses = poses;
+    }
+    for hit in resource.fighters[0]
+        .jab
+        .frames
+        .iter_mut()
+        .flat_map(|frame| &mut frame.hitboxes)
+    {
+        hit.radius = 100.0;
     }
     resource
 }
@@ -685,6 +722,31 @@ fn neutral_tech_bound_and_wait_sample_their_supplied_physics_poses() {
     let state = step(&mut missed, IDLE);
     assert_eq!(state.fighters[1].action, Action::DownWait);
     assert!((state.fighters[1].ecb.current.left[0] + 10.0).abs() < 1e-5);
+}
+
+#[test]
+fn down_wait_clamps_short_pose_sequences_to_the_final_sample() {
+    let mut game = down_wait(wait_pose_length_data(4, 1));
+    let initial = game.state().fighters[1].ecb.current.left[0];
+    let mut sampled_after_first = false;
+    while game.state().fighters[1].action == Action::DownWait {
+        let state = step(&mut game, IDLE);
+        if state.fighters[1].action_frame > 0 {
+            sampled_after_first = true;
+            assert_eq!(state.fighters[1].ecb.current.left[0].to_bits(), initial.to_bits());
+        }
+    }
+    assert!(sampled_after_first);
+}
+
+#[test]
+fn down_wait_accepts_pose_sequences_longer_than_logical_duration() {
+    let mut game = down_wait(wait_pose_length_data(2, 4));
+    let first = step(&mut game, IDLE);
+    assert_eq!(first.fighters[1].action, Action::DownWait);
+    assert!(first.fighters[1].action_frame > 0);
+    let second = step(&mut game, IDLE);
+    assert_eq!(second.fighters[1].action, Action::DownStand);
 }
 
 #[test]
