@@ -40,6 +40,13 @@ pub struct Parameters {
     pub attachment: Attachment,
     pub catch: Motion,
     pub wait: Frame,
+    /// Motion-state entry blend duration retained for the indefinitely held
+    /// ledge-wait pose. The scheduler consumes the pose directly today.
+    #[serde(default)]
+    pub wait_blend_frames: u8,
+    /// Motion-state dynamics variant paired with `wait_blend_frames`.
+    #[serde(default)]
+    pub wait_dynamics_variant: u8,
     pub climb: Motion,
     pub jump: Jump,
     pub attack: AttackMotion,
@@ -1126,6 +1133,61 @@ mod tests {
             encoded["phase2_dynamics_variant"],
             7,
         );
+    }
+
+    #[test]
+    fn old_parameters_json_defaults_wait_metadata() {
+        let parameters: Parameters = serde_json::from_str(
+            r#"{
+                "attachment": {"bone": 0, "point": [0.0, 0.0, 0.0]},
+                "catch": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                "wait": {"bones": [], "anchor_offset": [0.0, 0.0, 0.0]},
+                "climb": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                "jump": {
+                    "motion": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                    "release_frame": 0,
+                    "launch_velocity": [0.0, 0.0]
+                },
+                "attack": {
+                    "attack": {"move_id": null, "blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                    "anchor_offsets": []
+                },
+                "escape": {"blend_frames": 0, "dynamics_variant": 0, "frames": []}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(parameters.wait_blend_frames, 0);
+        assert_eq!(parameters.wait_dynamics_variant, 0);
+    }
+
+    #[test]
+    fn parameters_json_round_trip_preserves_wait_metadata() {
+        let parameters: Parameters = serde_json::from_str(
+            r#"{
+                "attachment": {"bone": 0, "point": [0.0, 0.0, 0.0]},
+                "catch": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                "wait": {"bones": [], "anchor_offset": [0.0, 0.0, 0.0]},
+                "wait_blend_frames": 3,
+                "wait_dynamics_variant": 4,
+                "climb": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                "jump": {
+                    "motion": {"blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                    "release_frame": 0,
+                    "launch_velocity": [0.0, 0.0]
+                },
+                "attack": {
+                    "attack": {"move_id": null, "blend_frames": 0, "dynamics_variant": 0, "frames": []},
+                    "anchor_offsets": []
+                },
+                "escape": {"blend_frames": 0, "dynamics_variant": 0, "frames": []}
+            }"#,
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&parameters).unwrap();
+
+        assert_eq!(encoded["wait_blend_frames"], 3);
+        assert_eq!(encoded["wait_dynamics_variant"], 4);
     }
 
     #[test]

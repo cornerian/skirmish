@@ -33,6 +33,18 @@ pub struct Rules {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Teeter {
+    /// Ottotto entry blend duration retained from the exported start motion.
+    #[serde(default)]
+    pub start_blend_frames: u8,
+    /// Dynamics variant paired with `start_blend_frames`.
+    #[serde(default)]
+    pub start_dynamics_variant: u8,
+    /// OttottoWait entry blend duration retained from the exported wait motion.
+    #[serde(default)]
+    pub wait_blend_frames: u8,
+    /// Dynamics variant paired with `wait_blend_frames`.
+    #[serde(default)]
+    pub wait_dynamics_variant: u8,
     /// One sample per Ottotto frame (`animation 210`); the last is used on
     /// the frame `action_frame` reaches it, immediately before OttottoWait.
     pub start: Vec<TeeterFrame>,
@@ -384,5 +396,42 @@ mod tests {
         assert!(exit_distance_exceeded(10.0, 0.0, 5.0, 4.0));
         assert!(!exit_distance_exceeded(9.0, 0.0, 5.0, 4.0));
         assert!(exit_distance_exceeded(9.01, 0.0, 5.0, 4.0));
+    }
+
+    #[test]
+    fn old_teeter_json_defaults_motion_metadata() {
+        let teeter: Teeter = serde_json::from_str(
+            r#"{
+                "start": [{"bones": [], "hurtbox_states": []}],
+                "wait": {"bones": [], "hurtbox_states": []}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(teeter.start_blend_frames, 0);
+        assert_eq!(teeter.start_dynamics_variant, 0);
+        assert_eq!(teeter.wait_blend_frames, 0);
+        assert_eq!(teeter.wait_dynamics_variant, 0);
+    }
+
+    #[test]
+    fn teeter_json_round_trip_preserves_motion_metadata() {
+        let teeter: Teeter = serde_json::from_str(
+            r#"{
+                "start_blend_frames": 1,
+                "start_dynamics_variant": 2,
+                "wait_blend_frames": 3,
+                "wait_dynamics_variant": 4,
+                "start": [{"bones": [], "hurtbox_states": []}],
+                "wait": {"bones": [], "hurtbox_states": []}
+            }"#,
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&teeter).unwrap();
+
+        assert_eq!(encoded["start_blend_frames"], 1);
+        assert_eq!(encoded["start_dynamics_variant"], 2);
+        assert_eq!(encoded["wait_blend_frames"], 3);
+        assert_eq!(encoded["wait_dynamics_variant"], 4);
     }
 }
