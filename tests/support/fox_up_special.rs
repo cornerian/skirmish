@@ -91,6 +91,8 @@ pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
                     pose
                 })
                 .collect(),
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
         });
     }
     data

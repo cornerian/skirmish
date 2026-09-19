@@ -277,6 +277,10 @@ pub struct Rules {
 pub struct Animation {
     pub animation_length: f32,
     pub poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub poses_blend_frames: u8,
+    #[serde(default)]
+    pub poses_dynamics_variant: u8,
 }
 
 pub(crate) fn validate(r: &Rules, fighter: &FighterData) -> Result<(), Error> {
@@ -587,4 +591,31 @@ pub(crate) fn pose<'a>(f: &'a Fighter, data: &'a FighterData) -> Option<&'a Vec<
 
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Animation;
+
+    #[test]
+    fn animation_metadata_defaults_for_older_json() {
+        let animation: Animation =
+            serde_json::from_str(r#"{"animation_length":3.5,"poses":[]}"#).unwrap();
+        assert_eq!(animation.poses_blend_frames, 0);
+        assert_eq!(animation.poses_dynamics_variant, 0);
+    }
+
+    #[test]
+    fn animation_metadata_round_trips() {
+        let animation = Animation {
+            animation_length: 3.5,
+            poses: vec![],
+            poses_blend_frames: 7,
+            poses_dynamics_variant: 9,
+        };
+        let json = serde_json::to_value(&animation).unwrap();
+        assert_eq!(json["poses_blend_frames"], 7);
+        assert_eq!(json["poses_dynamics_variant"], 9);
+        assert_eq!(serde_json::from_value::<Animation>(json).unwrap(), animation);
+    }
 }

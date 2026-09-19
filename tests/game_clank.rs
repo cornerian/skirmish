@@ -64,6 +64,8 @@ fn data(damage: [u32; 2]) -> MatchData {
                     pose
                 })
                 .collect(),
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
         });
     }
     data
