@@ -1028,6 +1028,10 @@ pub struct SurfaceResponseAttributes {
     pub wall_poses: Vec<Vec<Bone>>,
     /// Complete fighter-specific FlyReflectCeiling physics poses.
     pub ceiling_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub ceiling_poses_blend_frames: u8,
+    #[serde(default)]
+    pub ceiling_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1050,10 +1054,22 @@ pub struct SurfaceTechAttributes {
     pub passive_ceiling_velocity: f32,
     /// Complete fighter-specific PassiveWall physics poses.
     pub passive_wall_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_wall_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_wall_poses_dynamics_variant: u8,
     /// Complete fighter-specific damage-tech PassiveWallJump physics poses.
     pub passive_wall_jump_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_wall_jump_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_wall_jump_poses_dynamics_variant: u8,
     /// Complete fighter-specific PassiveCeiling physics poses.
     pub passive_ceiling_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub passive_ceiling_poses_blend_frames: u8,
+    #[serde(default)]
+    pub passive_ceiling_poses_dynamics_variant: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -2316,6 +2332,90 @@ fn physics(error: impl core::fmt::Display) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_surface_attribute_json_defaults_pose_metadata() {
+        let response: SurfaceResponseAttributes = serde_json::from_str(
+            r#"{
+                "wall_poses": [],
+                "ceiling_poses": []
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(response.ceiling_poses_blend_frames, 0);
+        assert_eq!(response.ceiling_poses_dynamics_variant, 0);
+
+        let tech: SurfaceTechAttributes = serde_json::from_str(
+            r#"{
+                "passive_wall_velocity": 0.0,
+                "wall_jump_horizontal_velocity": 0.0,
+                "wall_jump_vertical_velocity": 0.0,
+                "passive_ceiling_velocity": 0.0,
+                "passive_wall_poses": [],
+                "passive_wall_jump_poses": [],
+                "passive_ceiling_poses": []
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(tech.passive_wall_poses_blend_frames, 0);
+        assert_eq!(tech.passive_wall_poses_dynamics_variant, 0);
+        assert_eq!(tech.passive_wall_jump_poses_blend_frames, 0);
+        assert_eq!(tech.passive_wall_jump_poses_dynamics_variant, 0);
+        assert_eq!(tech.passive_ceiling_poses_blend_frames, 0);
+        assert_eq!(tech.passive_ceiling_poses_dynamics_variant, 0);
+    }
+
+    #[test]
+    fn surface_attribute_json_round_trip_preserves_pose_metadata() {
+        let response: SurfaceResponseAttributes = serde_json::from_str(
+            r#"{
+                "wall_poses": [],
+                "ceiling_poses": [],
+                "ceiling_poses_blend_frames": 3,
+                "ceiling_poses_dynamics_variant": 5
+            }"#,
+        )
+        .unwrap();
+        let response_encoded = serde_json::to_value(&response).unwrap();
+        let response_decoded: SurfaceResponseAttributes =
+            serde_json::from_value(response_encoded.clone()).unwrap();
+        assert_eq!(response_decoded, response);
+        assert_eq!(response_encoded["ceiling_poses_blend_frames"], 3);
+        assert_eq!(response_encoded["ceiling_poses_dynamics_variant"], 5);
+
+        let tech: SurfaceTechAttributes = serde_json::from_str(
+            r#"{
+                "passive_wall_velocity": 1.0,
+                "wall_jump_horizontal_velocity": 2.0,
+                "wall_jump_vertical_velocity": 3.0,
+                "passive_ceiling_velocity": 4.0,
+                "passive_wall_poses": [],
+                "passive_wall_poses_blend_frames": 7,
+                "passive_wall_poses_dynamics_variant": 8,
+                "passive_wall_jump_poses": [],
+                "passive_wall_jump_poses_blend_frames": 9,
+                "passive_wall_jump_poses_dynamics_variant": 10,
+                "passive_ceiling_poses": [],
+                "passive_ceiling_poses_blend_frames": 11,
+                "passive_ceiling_poses_dynamics_variant": 12
+            }"#,
+        )
+        .unwrap();
+        let tech_encoded = serde_json::to_value(&tech).unwrap();
+        let tech_decoded: SurfaceTechAttributes =
+            serde_json::from_value(tech_encoded.clone()).unwrap();
+        assert_eq!(tech_decoded, tech);
+        for (field, expected) in [
+            ("passive_wall_poses_blend_frames", 7),
+            ("passive_wall_poses_dynamics_variant", 8),
+            ("passive_wall_jump_poses_blend_frames", 9),
+            ("passive_wall_jump_poses_dynamics_variant", 10),
+            ("passive_ceiling_poses_blend_frames", 11),
+            ("passive_ceiling_poses_dynamics_variant", 12),
+        ] {
+            assert_eq!(tech_encoded[field], expected);
+        }
+    }
 
     #[test]
     fn merge_threshold_opposite_signs_and_equal_magnitudes() {
