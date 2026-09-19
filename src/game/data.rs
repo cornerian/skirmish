@@ -360,6 +360,10 @@ pub struct FighterData {
     )]
     pub model_scaling: f32,
     pub movement: MovementData,
+    /// Native action-state metadata.  The exporter may omit this for legacy
+    /// resources and for fighters whose motion tables have not been imported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_states: Option<Vec<MotionStateProfile>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locomotion: Option<crate::fighter::locomotion::Parameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -427,6 +431,18 @@ pub struct FighterData {
     pub teeter: Option<crate::fighter::edge::Teeter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taunt: Option<crate::fighter::taunt::Taunt>,
+}
+
+impl FighterData {
+    /// Resolve a native action-state profile in logarithmic time.  Exported
+    /// profiles are sorted by their numeric native state id during validation.
+    pub fn motion_state(&self, state_id: u32) -> Option<&MotionStateProfile> {
+        let profiles = self.motion_states.as_deref()?;
+        profiles
+            .binary_search_by_key(&state_id, |profile| profile.state_id)
+            .ok()
+            .map(|index| &profiles[index])
+    }
 }
 
 impl FighterData {
@@ -870,6 +886,19 @@ pub struct Attack {
     pub frames: Vec<AttackFrame>,
 }
 
+/// Native action-state metadata from `ftData_MotionStateList` and the
+/// fighter-kind motion-state table.  This is deliberately separate from the
+/// fighter archive's subaction/animation slots: a native state may point at
+/// an animation id outside that table (for example Donkey Kong state 381).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MotionStateProfile {
+    pub state_id: u32,
+    pub animation_id: i32,
+    pub move_id: u8,
+    pub flags: u32,
+}
+
 /// Motion-state entry metadata emitted beside sampled pose resources.
 /// Keeping the decoded bytes lets resource consumers reproduce source motion
 /// transitions without requiring the exporter to strip them.
@@ -931,12 +960,36 @@ pub struct Hitbox {
 
 #[cfg(test)]
 mod tests {
-    use super::HurtboxState;
+    use super::{HurtboxState, MotionStateProfile};
 
     #[test]
     fn ordinary_contact_accepts_only_the_source_enabled_state() {
         assert!(HurtboxState::Enabled.accepts_contact());
         assert!(!HurtboxState::Disabled.accepts_contact());
         assert!(!HurtboxState::Intangible.accepts_contact());
+    }
+
+    #[test]
+    fn motion_state_profile_deserializes_numeric_native_ids() {
+        let profile: MotionStateProfile = serde_json::from_value(serde_json::json!({
+            "state_id": 381,
+            "animation_id": 331,
+            "move_id": 20,
+            "flags": 3_408_401,
+        }))
+        .expect("motion state profile");
+        assert_eq!(profile.state_id, 381);
+        assert_eq!(profile.animation_id, 331);
+        assert_eq!(profile.move_id, 20);
+        assert_eq!(profile.flags, 3_408_401);
+        assert_eq!(
+            serde_json::to_value(profile).expect("serialize motion state profile"),
+            serde_json::json!({
+                "state_id": 381,
+                "animation_id": 331,
+                "move_id": 20,
+                "flags": 3_408_401,
+            })
+        );
     }
 }
