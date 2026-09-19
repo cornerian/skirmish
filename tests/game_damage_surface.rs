@@ -82,6 +82,8 @@ fn response_attributes(
 ) -> SurfaceResponseAttributes {
     SurfaceResponseAttributes {
         wall_poses: pose_track(bones, profile.wall_frames, [7.0, 0.0]),
+        wall_poses_blend_frames: 0,
+        wall_poses_dynamics_variant: 0,
         ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 10.0]),
     }
 }

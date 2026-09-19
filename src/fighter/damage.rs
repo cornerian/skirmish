@@ -1026,6 +1026,10 @@ pub struct SurfaceResponseRules {
 pub struct SurfaceResponseAttributes {
     /// Complete fighter-specific FlyReflectWall physics poses.
     pub wall_poses: Vec<Vec<Bone>>,
+    #[serde(default)]
+    pub wall_poses_blend_frames: u8,
+    #[serde(default)]
+    pub wall_poses_dynamics_variant: u8,
     /// Complete fighter-specific FlyReflectCeiling physics poses.
     pub ceiling_poses: Vec<Vec<Bone>>,
     #[serde(default)]
@@ -2342,6 +2346,8 @@ mod tests {
             }"#,
         )
         .unwrap();
+        assert_eq!(response.wall_poses_blend_frames, 0);
+        assert_eq!(response.wall_poses_dynamics_variant, 0);
         assert_eq!(response.ceiling_poses_blend_frames, 0);
         assert_eq!(response.ceiling_poses_dynamics_variant, 0);
 
@@ -2370,6 +2376,8 @@ mod tests {
         let response: SurfaceResponseAttributes = serde_json::from_str(
             r#"{
                 "wall_poses": [],
+                "wall_poses_blend_frames": 1,
+                "wall_poses_dynamics_variant": 2,
                 "ceiling_poses": [],
                 "ceiling_poses_blend_frames": 3,
                 "ceiling_poses_dynamics_variant": 5
@@ -2380,6 +2388,8 @@ mod tests {
         let response_decoded: SurfaceResponseAttributes =
             serde_json::from_value(response_encoded.clone()).unwrap();
         assert_eq!(response_decoded, response);
+        assert_eq!(response_encoded["wall_poses_blend_frames"], 1);
+        assert_eq!(response_encoded["wall_poses_dynamics_variant"], 2);
         assert_eq!(response_encoded["ceiling_poses_blend_frames"], 3);
         assert_eq!(response_encoded["ceiling_poses_dynamics_variant"], 5);
 
