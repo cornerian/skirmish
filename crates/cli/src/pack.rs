@@ -177,6 +177,7 @@ pub fn discover_match_data(pairing_dir: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn fixture() -> MatchData {
         serde_json::from_str(include_str!(
@@ -185,12 +186,71 @@ mod tests {
         .unwrap()
     }
 
+    fn fixture_with_full_ledge_jump_metadata() -> MatchData {
+        let mut value = serde_json::to_value(fixture()).unwrap();
+        let frame = json!({
+            "bones": [],
+            "anchor_offset": [0.0, 0.0, 0.0]
+        });
+        let motion = json!({
+            "blend_frames": 1,
+            "dynamics_variant": 2,
+            "frames": [frame.clone()]
+        });
+        let jump_motion = json!({
+            "blend_frames": 3,
+            "dynamics_variant": 4,
+            "phase2_blend_frames": 5,
+            "phase2_dynamics_variant": 6,
+            "frames": [frame.clone()]
+        });
+        value["fighters"][0]["ledge"] = json!({
+            "attachment": {"bone": 0, "point": [0.0, 0.0, 0.0]},
+            "catch": motion.clone(),
+            "wait": frame,
+            "climb": motion.clone(),
+            "jump": {
+                "motion": jump_motion,
+                "release_frame": 1,
+                "launch_velocity": [1.0, 2.0]
+            },
+            "attack": {
+                "attack": {
+                    "move_id": null,
+                    "blend_frames": 0,
+                    "dynamics_variant": 0,
+                    "frames": []
+                },
+                "anchor_offsets": []
+            },
+            "escape": motion
+        });
+        serde_json::from_value(value).unwrap()
+    }
+
     #[test]
     fn round_trips_the_integration_fixture_bit_exactly() {
         let data = fixture();
         let bytes = encode(&data).unwrap();
         assert_eq!(&bytes[0..4], MAGIC);
         let decoded = decode(&bytes).unwrap();
+        assert_eq!(data, decoded);
+    }
+
+    #[test]
+    fn cbor_round_trip_preserves_full_ledge_jump_metadata() {
+        let data = fixture_with_full_ledge_jump_metadata();
+        let bytes = encode(&data).unwrap();
+        let decoded = decode(&bytes).unwrap();
+        let jump = &decoded.fighters[0]
+            .ledge
+            .as_ref()
+            .unwrap()
+            .jump
+            .motion;
+
+        assert_eq!(jump.phase2_blend_frames, 5);
+        assert_eq!(jump.phase2_dynamics_variant, 6);
         assert_eq!(data, decoded);
     }
 

@@ -101,6 +101,15 @@ pub struct Motion {
     /// Motion-state dynamics variant paired with `blend_frames`.
     #[serde(default)]
     pub dynamics_variant: u8,
+    /// Motion-state entry blend duration for the second sub-motion of a
+    /// concatenated ledge jump. This is emitted only for `Jump::motion`, but
+    /// lives here so the exported motion shape remains flat and all ledge
+    /// motions retain the same typed representation.
+    #[serde(default)]
+    pub phase2_blend_frames: u8,
+    /// Motion-state dynamics variant paired with `phase2_blend_frames`.
+    #[serde(default)]
+    pub phase2_dynamics_variant: u8,
     pub frames: Vec<Frame>,
 }
 
@@ -1078,6 +1087,45 @@ mod tests {
         assert_eq!(motion.blend_frames, 3);
         assert_eq!(motion.dynamics_variant, 2);
         assert_eq!(serde_json::to_value(motion).unwrap()["blend_frames"], 3);
+    }
+
+    #[test]
+    fn old_motion_json_defaults_phase2_metadata() {
+        let motion: Motion = serde_json::from_str(
+            r#"{
+                "blend_frames": 3,
+                "dynamics_variant": 2,
+                "frames": []
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(motion.phase2_blend_frames, 0);
+        assert_eq!(motion.phase2_dynamics_variant, 0);
+    }
+
+    #[test]
+    fn full_motion_json_round_trip_preserves_phase2_metadata() {
+        let motion: Motion = serde_json::from_str(
+            r#"{
+                "blend_frames": 3,
+                "dynamics_variant": 2,
+                "phase2_blend_frames": 5,
+                "phase2_dynamics_variant": 7,
+                "frames": []
+            }"#,
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&motion).unwrap();
+        let decoded: Motion = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(decoded, motion);
+        let encoded = serde_json::to_value(&motion).unwrap();
+        assert_eq!(encoded["phase2_blend_frames"], 5);
+        assert_eq!(
+            encoded["phase2_dynamics_variant"],
+            7,
+        );
     }
 
     #[test]
