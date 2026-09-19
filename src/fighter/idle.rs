@@ -149,6 +149,12 @@ fn current_length(idle: &IdleAnimations, animation: u32) -> f32 {
 fn restart(f: &mut Fighter) {
     f.idle.frame = 0.0;
     f.action_frame = 0;
+    // Idle animation cycling is a genuine same-action animation wrap, just
+    // like Attack100Loop.  The simulation consumes this marker after the
+    // animation phase to restart the action-relative script clock, canceling
+    // deadlines from the completed idle cycle before they can be redelivered
+    // against the reset action frame.
+    f.script_events.pending_action_clock_restart = true;
 }
 
 // Pure fighter arithmetic and predicates.
