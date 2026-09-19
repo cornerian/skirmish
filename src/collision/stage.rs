@@ -88,12 +88,19 @@ pub struct Line {
     pub next: [Option<usize>; 2],
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Joint {
     /// Stable original array index; joints are supplied in linked-list order.
     pub id: usize,
     pub flags: u32,
+    /// Whether the native stage loader leaves this joint enabled at match
+    /// start.  The collision loader enables every joint by default, so this
+    /// defaults to `true` for geometry produced before this field existed.
+    /// Stage-specific initialization (notably Pokemon Stadium) can mark a
+    /// full-export joint `false` without dropping its original line range.
+    #[serde(default = "default_enabled_at_start")]
+    pub enabled_at_start: bool,
     pub bounds_min: Point,
     pub bounds_max: Point,
     pub floor: Range<usize>,
@@ -101,6 +108,27 @@ pub struct Joint {
     pub left_wall: Range<usize>,
     pub right_wall: Range<usize>,
     pub dynamic: Range<usize>,
+}
+
+fn default_enabled_at_start() -> bool {
+    true
+}
+
+impl Default for Joint {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            flags: 0,
+            enabled_at_start: true,
+            bounds_min: [0.0; 2],
+            bounds_max: [0.0; 2],
+            floor: Range::default(),
+            ceiling: Range::default(),
+            left_wall: Range::default(),
+            right_wall: Range::default(),
+            dynamic: Range::default(),
+        }
+    }
 }
 
 impl Joint {
@@ -114,6 +142,9 @@ impl Joint {
     }
 
     fn in_range(&self, query: Query) -> bool {
+        if !self.enabled_at_start {
+            return false;
+        }
         if query.bounding == Bounding::Prechecked {
             return self.flags & JOINT_TOO_FAR == 0;
         }
@@ -754,5 +785,60 @@ mod tests {
             ),
             Err(StageError::JointRange(0))
         ));
+    }
+
+    #[test]
+    fn joint_enable_state_defaults_on_legacy_data_and_round_trips_full_field() {
+        let legacy = serde_json::json!({
+            "id": 7,
+            "flags": ENABLED,
+            "bounds_min": [-1.0, -1.0],
+            "bounds_max": [1.0, 1.0],
+            "floor": {"start": 0, "end": 0},
+            "ceiling": {"start": 0, "end": 0},
+            "left_wall": {"start": 0, "end": 0},
+            "right_wall": {"start": 0, "end": 0},
+            "dynamic": {"start": 0, "end": 0}
+        });
+        let joint: Joint = serde_json::from_value(legacy).unwrap();
+        assert!(joint.enabled_at_start);
+
+        let mut disabled = joint;
+        disabled.enabled_at_start = false;
+        let encoded = serde_json::to_value(&disabled).unwrap();
+        assert_eq!(encoded["enabled_at_start"], false);
+        assert_eq!(serde_json::from_value::<Joint>(encoded).unwrap(), disabled);
+    }
+
+    #[test]
+    fn disabled_startup_joint_is_not_a_collision_candidate() {
+        let lines = [Line {
+            start: [-2.0, 0.0],
+            end: [2.0, 0.0],
+            flags: FLOOR | ENABLED,
+            ..Line::default()
+        }];
+        let joints = [Joint {
+            flags: ENABLED,
+            enabled_at_start: false,
+            bounds_min: [-2.0, -1.0],
+            bounds_max: [2.0, 1.0],
+            floor: 0..1,
+            ..Joint::default()
+        }];
+        let stage = Stage::new(&lines, &joints).unwrap();
+        assert!(
+            stage
+                .sweep(
+                    Surface::Floor,
+                    Query {
+                        from: [0.0, 1.0],
+                        to: [0.0, -1.0],
+                        ..Query::default()
+                    }
+                )
+                .unwrap()
+                .is_none()
+        );
     }
 }
