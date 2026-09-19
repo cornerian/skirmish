@@ -85,6 +85,8 @@ fn data() -> MatchData {
             minimum_approach_speed: 0.2,
             horizontal_velocity: 3.0,
             vertical_velocity: 4.0,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames,
         });
     }

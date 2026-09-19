@@ -35,6 +35,16 @@ pub struct Attributes {
     pub minimum_approach_speed: f32,
     pub horizontal_velocity: f32,
     pub vertical_velocity: f32,
+    /// Motion-table blend duration for full exports. Runtime scheduling is
+    /// currently handled by the native transition path, so this metadata is
+    /// retained for round-tripping only.
+    #[serde(default)]
+    pub blend_frames: u8,
+    /// Motion-table dynamics variant for full exports. Runtime scheduling is
+    /// currently handled by the native transition path, so this metadata is
+    /// retained for round-tripping only.
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// Complete fighter-specific PassiveWallJump physics poses.
     pub frames: Vec<Vec<Bone>>,
 }
@@ -242,6 +252,40 @@ pub(crate) fn validate_attributes(attributes: &Attributes) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serde_defaults_motion_metadata_for_legacy_resources() {
+        let attributes: Attributes = serde_json::from_str(
+            r#"{
+                "can_walljump": true,
+                "minimum_approach_speed": 0.2,
+                "horizontal_velocity": 3.0,
+                "vertical_velocity": 4.0,
+                "frames": []
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(attributes.blend_frames, 0);
+        assert_eq!(attributes.dynamics_variant, 0);
+    }
+
+    #[test]
+    fn serde_roundtrips_full_motion_metadata() {
+        let attributes = Attributes {
+            can_walljump: true,
+            minimum_approach_speed: 0.2,
+            horizontal_velocity: 3.0,
+            vertical_velocity: 4.0,
+            blend_frames: 7,
+            dynamics_variant: 9,
+            frames: Vec::new(),
+        };
+        let encoded = serde_json::to_string(&attributes).unwrap();
+        let decoded: Attributes = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, attributes);
+        assert!(encoded.contains("\"blend_frames\":7"));
+        assert!(encoded.contains("\"dynamics_variant\":9"));
+    }
 
     fn rules() -> Rules {
         Rules {
