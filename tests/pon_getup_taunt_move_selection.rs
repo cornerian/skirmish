@@ -58,6 +58,8 @@ class TestFighter(Fighter):
 
 fn taunt_resource(bones: &[Bone]) -> Taunt {
     let animation = TauntAnimation {
+        blend_frames: 0,
+        dynamics_variant: 0,
         frames: vec![TauntFrame {
             bones: bones.to_vec(),
             body_state: BodyState::default(),

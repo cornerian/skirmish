@@ -56,6 +56,12 @@ pub struct Taunt {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TauntAnimation {
+    /// Motion-state blend duration exported with the taunt animation.
+    #[serde(default)]
+    pub blend_frames: u8,
+    /// Motion-state dynamics variant exported with the taunt animation.
+    #[serde(default)]
+    pub dynamics_variant: u8,
     /// One physics/collision sample per pose. Frame 0's `body_state` is the
     /// entry frame's state (`Fighter_ChangeMotionState` resets `x1988`, and
     /// `ftAnim_8006EBA4` immediately runs the first script frame).
@@ -260,5 +266,38 @@ mod tests {
         assert_eq!(select_side(1.0, true), Side::Right);
         assert_eq!(select_side(-0.5, true), Side::Right);
         assert_eq!(select_side(f32::NAN, true), Side::Right);
+    }
+
+    #[test]
+    fn old_taunt_animation_json_defaults_motion_metadata() {
+        let animation: TauntAnimation = serde_json::from_str(
+            r#"{
+                "frames": [],
+                "flags": []
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(animation.blend_frames, 0);
+        assert_eq!(animation.dynamics_variant, 0);
+    }
+
+    #[test]
+    fn taunt_animation_json_round_trip_preserves_motion_metadata() {
+        let animation: TauntAnimation = serde_json::from_str(
+            r#"{
+                "blend_frames": 3,
+                "dynamics_variant": 2,
+                "frames": [],
+                "flags": []
+            }"#,
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&animation).unwrap();
+        let decoded: TauntAnimation = serde_json::from_value(encoded.clone()).unwrap();
+
+        assert_eq!(decoded, animation);
+        assert_eq!(encoded["blend_frames"], 3);
+        assert_eq!(encoded["dynamics_variant"], 2);
     }
 }
