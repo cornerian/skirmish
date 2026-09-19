@@ -784,6 +784,10 @@ fn land(
     player: usize,
     geometry: &StageGeometry,
 ) -> Result<(), Error> {
+    // `ftCo_Damage_Coll` reads x8c_kb_vel before the generic floor callback
+    // clears the launch vector. Keep the scalar only for this contact; it is
+    // not persistent fighter state and therefore adds no per-frame cost.
+    let floor_knockback = f.knockback[0].hypot(f.knockback[1]);
     // Captured before this ordinary landing bookkeeping runs: a move's own
     // `land()` hook (Fox's up special's shallow-floor-angle graze) can
     // restore this snapshot wholesale to decline the landing and continue
@@ -828,7 +832,7 @@ fn land(
                 | Action::FlyReflectCeiling
         ) {
             let pose = simulation::pose(f, data)?;
-            crate::fighter::damage::land(f, data, &pose, &rules.damage, input)?;
+            crate::fighter::damage::land(f, data, &pose, &rules.damage, input, floor_knockback)?;
         } else if !crate::fighter::specials::transfer_ground_air(f, data, rules)?
             && !crate::fighter::specials::land(
                 f,
@@ -988,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_free_damage_uses_native_ordinary_landing() {
+    fn profile_free_damage_keeps_native_low_knockback_damage_state() {
         let mut data: MatchData = serde_json::from_str(include_str!(
             "../../tests/fixtures/game/integration-match.json"
         ))
@@ -1035,6 +1039,6 @@ mod tests {
         .unwrap();
 
         assert!(fighter.grounded);
-        assert_eq!(fighter.action, Action::Landing);
+        assert_eq!(fighter.action, Action::Damage);
     }
 }

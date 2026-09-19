@@ -771,6 +771,11 @@ impl DamagePoseAttributes {
 #[serde(deny_unknown_fields)]
 pub struct FloorResponseRules {
     pub tumble_knockback_threshold: f32,
+    /// Inclusive lower bound for an ordinary Damage landing. `None` keeps
+    /// the legacy profile behavior, where a non-tumbling Damage contact
+    /// remains in Damage and only the existing tumble graph is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing_knockback_threshold: Option<f32>,
     pub tech_window: f32,
     pub tech_repeat_lockout: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -817,6 +822,34 @@ pub struct FloorResponseRules {
     /// Face-down override for `down_stand_frames` (DownStandD).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub down_stand_frames_face_down: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FloorContactAction {
+    KeepDamage,
+    Landing,
+    Tumble,
+}
+
+/// Native `ftCo_Damage_Coll`'s inclusive floor-knockback split. `forced`
+/// carries the already-established tumble/forced-damage state; the caller
+/// supplies the knockback magnitude before ordinary collision bookkeeping
+/// clears the fighter's vector.
+fn floor_contact_action(
+    magnitude: f32,
+    forced: bool,
+    profile: &FloorResponseRules,
+) -> FloorContactAction {
+    if forced || magnitude >= profile.tumble_knockback_threshold {
+        FloorContactAction::Tumble
+    } else if profile
+        .landing_knockback_threshold
+        .is_some_and(|threshold| magnitude >= threshold)
+    {
+        FloorContactAction::Landing
+    } else {
+        FloorContactAction::KeepDamage
+    }
 }
 
 impl FloorResponseRules {
@@ -1382,6 +1415,11 @@ pub(crate) fn validate_rules(rules: &CombatRules) -> Result<(), Error> {
         && (![profile.tumble_knockback_threshold, profile.tech_window]
             .into_iter()
             .all(|value| value.is_finite() && (0.0..=1_000_000.0).contains(&value))
+            || profile.landing_knockback_threshold.is_some_and(|value| {
+                !value.is_finite()
+                    || !(0.0..=1_000_000.0).contains(&value)
+                    || value > profile.tumble_knockback_threshold
+            })
             || profile.tech_window > 255.0
             || !(0..=255).contains(&profile.tech_repeat_lockout)
             || [
@@ -1976,19 +2014,16 @@ pub(crate) fn reflect(
 }
 
 /// Damage-floor callback shared by Damage and DamageFall. The optional
-/// `floor_response` profile owns the tumble/tech graph; ordinary Damage still
-/// takes the native low-knockback landing path when that graph is not loaded.
-/// In the retail callback this is the `x1E4 <= |kb| < x1E0` branch of
-/// `ftCo_Damage_Coll`, which enters ordinary Landing rather than leaving the
-/// fighter in Damage. The profile-free slice does not have the recovery
-/// resources needed to represent the higher-knockback DownBound branch, so it
-/// deliberately only supplies this non-tumbling landing transition.
+/// `floor_response` profile owns the tumble/tech graph and the data-driven
+/// low-knockback landing threshold. The knockback magnitude is captured by
+/// collision before the generic floor bookkeeping clears the vector.
 pub(crate) fn land(
     fighter: &mut Fighter,
     data: &FighterData,
     pose: &crate::collision::bones::Pose,
     rules: &CombatRules,
     input: crate::game::Controller,
+    floor_knockback: f32,
 ) -> Result<bool, Error> {
     if fighter.action == Action::DownDamage {
         // DownDamage's airborne collision callback converts to ground without
@@ -1997,14 +2032,15 @@ pub(crate) fn land(
         return Ok(true);
     }
     let Some(profile) = &rules.floor_response else {
-        if fighter.action == Action::Damage {
+        return Ok(false);
+    };
+    match floor_contact_action(floor_knockback, fighter.tumbling, profile) {
+        FloorContactAction::KeepDamage => return Ok(false),
+        FloorContactAction::Landing => {
             crate::game::simulation::enter(fighter, Action::Landing);
             return Ok(true);
         }
-        return Ok(false);
-    };
-    if !fighter.tumbling {
-        return Ok(false);
+        FloorContactAction::Tumble => fighter.tumbling = true,
     }
     let action = if self::can_tech(
         false,
@@ -2632,5 +2668,77 @@ mod tests {
         assert!(!launch.airborne);
         assert_eq!(launch.knockback, [4.0, 3.0]);
         assert_eq!(launch.ground_knockback, 5.0);
+    }
+
+    #[test]
+    fn floor_contact_thresholds_are_inclusive_and_profile_driven() {
+        let profile = FloorResponseRules {
+            tumble_knockback_threshold: 5.0,
+            landing_knockback_threshold: Some(0.5),
+            tech_window: 0.0,
+            tech_repeat_lockout: 0,
+            tech_roll: None,
+            knockdown_options: None,
+            recovery_invincibility: None,
+            down_damage: None,
+            passive_frames: 1,
+            down_bound_frames: 1,
+            down_bound_frames_face_up: None,
+            down_bound_frames_face_down: None,
+            down_wait_frames: 1,
+            down_wait_frames_face_up: None,
+            down_wait_frames_face_down: None,
+            down_stand_frames: 1,
+            down_stand_frames_face_up: None,
+            down_stand_frames_face_down: None,
+        };
+        assert_eq!(
+            floor_contact_action(f32::from_bits(0x3eff_ffff), false, &profile),
+            FloorContactAction::KeepDamage
+        );
+        assert_eq!(
+            floor_contact_action(0.5, false, &profile),
+            FloorContactAction::Landing
+        );
+        assert_eq!(
+            floor_contact_action(f32::from_bits(0x409f_ffff), false, &profile),
+            FloorContactAction::Landing
+        );
+        assert_eq!(
+            floor_contact_action(5.0, false, &profile),
+            FloorContactAction::Tumble
+        );
+        assert_eq!(
+            floor_contact_action(0.0, true, &profile),
+            FloorContactAction::Tumble
+        );
+    }
+
+    #[test]
+    fn absent_landing_threshold_keeps_non_tumbling_damage_grounded() {
+        let profile = FloorResponseRules {
+            tumble_knockback_threshold: 5.0,
+            landing_knockback_threshold: None,
+            tech_window: 0.0,
+            tech_repeat_lockout: 0,
+            tech_roll: None,
+            knockdown_options: None,
+            recovery_invincibility: None,
+            down_damage: None,
+            passive_frames: 1,
+            down_bound_frames: 1,
+            down_bound_frames_face_up: None,
+            down_bound_frames_face_down: None,
+            down_wait_frames: 1,
+            down_wait_frames_face_up: None,
+            down_wait_frames_face_down: None,
+            down_stand_frames: 1,
+            down_stand_frames_face_up: None,
+            down_stand_frames_face_down: None,
+        };
+        assert_eq!(
+            floor_contact_action(4.0, false, &profile),
+            FloorContactAction::KeepDamage
+        );
     }
 }
