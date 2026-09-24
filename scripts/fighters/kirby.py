@@ -23,6 +23,7 @@ from skirmish import (
     fresh_special_input,
     frame_preserving_surface_pairs,
     hook,
+    motion,
     special_attribute,
     source_phase,
     start_action,
@@ -292,8 +293,14 @@ class Stone(DownSpecial, _KirbySpecial):
     ground_end = source_phase(395)
     air_start = source_phase(396)
     # ftKb_SpecialAirLw_Phys writes ``self_vel.y = -gravity`` every frame;
-    # motion.gravity would accumulate that value and is therefore incorrect.
-    air_hold = source_phase(397, animation_loop=True)
+    # use the native direct-write operation rather than accumulated gravity.
+    air_hold = source_phase(
+        397,
+        animation_loop=True,
+        motion=motion.profile(air=(motion.vertical_gravity(
+            gravity=special_attribute(KirbyAttribute.STONE_GRAVITY),
+        ),)),
+    )
     air_end = source_phase(398)
     ground, air = ground_start, air_start
     _ACTIVE = (ground_start, ground_hold, ground_end, air_start, air_hold, air_end)

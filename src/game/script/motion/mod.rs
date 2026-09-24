@@ -12,7 +12,7 @@
 //! needed for transitions which preserve a frame, re-enter an action, or
 //! transfer between ground and air during the same simulation frame.
 
-use crate::fighter::{Movement, helpers};
+use crate::fighter::{helpers, Movement};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -383,6 +383,10 @@ pub enum AirOperation {
     Friction {
         amount: f32,
     },
+    /// Write `-gravity` to vertical self velocity instead of accumulating it.
+    VerticalGravity {
+        gravity: f32,
+    },
     VelocityTrack(VelocityTrack),
     /// After `starts_at`, write the source's direct reverse-direction delta:
     /// `-(binding.facing * (magnitude * binding.cosine) - current_velocity)`
@@ -419,6 +423,10 @@ impl AirOperation {
 
     pub const fn friction(amount: f32) -> Self {
         Self::Friction { amount }
+    }
+
+    pub const fn vertical_gravity(gravity: f32) -> Self {
+        Self::VerticalGravity { gravity }
     }
 
     pub const fn gravity_multiplier(index: usize, value: u32, multiplier: f32) -> Self {
@@ -710,6 +718,9 @@ fn validate_air_operation(operation: &AirOperation) -> Result<(), MotionProfileE
         }
         AirOperation::StickSteering(value) => validate_steering(value)?,
         AirOperation::Friction { amount } => finite_nonnegative(*amount, "air friction")?,
+        AirOperation::VerticalGravity { gravity } => {
+            finite_nonnegative(*gravity, "vertical gravity")?
+        }
         AirOperation::VelocityTrack(track) => validate_velocity_track(track)?,
         AirOperation::DirectionalAcceleration {
             starts_at,
@@ -834,6 +845,10 @@ fn apply_air(
         }
         AirOperation::Friction { amount } => {
             movement.friction_air(*amount);
+            true
+        }
+        AirOperation::VerticalGravity { gravity } => {
+            movement.self_velocity[1] = -*gravity;
             true
         }
         AirOperation::VelocityTrack(track) => {
@@ -1098,6 +1113,21 @@ mod tests {
         assert_eq!(value.self_velocity[1].to_bits(), 2.0_f32.to_bits());
         profile.apply(&mut state, &mut value, false);
         assert_eq!(value.self_velocity[1].to_bits(), 1.75_f32.to_bits());
+    }
+
+    #[test]
+    fn vertical_gravity_writes_source_constant_each_tick() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::vertical_gravity(0.75)],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::at_phase(0.0);
+        let mut value = movement();
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.self_velocity, [1.0, -0.75, 0.0]);
+        value.self_velocity[1] = -4.0;
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.self_velocity, [1.0, -0.75, 0.0]);
     }
 
     #[test]

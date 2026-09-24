@@ -14,9 +14,9 @@
 
 use super::lifecycle_resources::ResourceCache;
 use super::motion::{
-    AirOperation, COMMAND_SLOTS, CommandBranch, GravityMultiplier, GroundOperation,
-    MAX_COMMAND_VALUE, MotionProfile, ScalarTrack, StickSteering, TrackEnd, TrackTransform,
-    VelocitySample, VelocityTrack,
+    AirOperation, CommandBranch, GravityMultiplier, GroundOperation, MotionProfile, ScalarTrack,
+    StickSteering, TrackEnd, TrackTransform, VelocitySample, VelocityTrack, COMMAND_SLOTS,
+    MAX_COMMAND_VALUE,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -126,6 +126,10 @@ impl AirOperationDescriptor {
 
     pub fn friction(amount: ScalarRef) -> Self {
         Self::Friction { amount }
+    }
+
+    pub fn vertical_gravity(gravity: ScalarRef) -> Self {
+        Self::VerticalGravity { gravity }
     }
 
     pub fn gravity_multiplier(index: usize, value: u32, multiplier: ScalarRef) -> Self {
@@ -315,6 +319,9 @@ pub enum AirOperationDescriptor {
     },
     Friction {
         amount: ScalarRef,
+    },
+    VerticalGravity {
+        gravity: ScalarRef,
     },
     StickSteering {
         threshold: ScalarRef,
@@ -551,6 +558,12 @@ fn parse_air_operation(value: &Value) -> Result<AirOperationDescriptor, MotionLi
             reject_unknown(&constructor, &keywords, &["amount", "path"])?;
             let amount = scalar_keyword_or_path(&keywords, &constructor, "amount", "path")?;
             Ok(AirOperationDescriptor::friction(amount))
+        }
+        "motion.vertical_gravity" => {
+            reject_unknown(&constructor, &keywords, &["value", "path"])?;
+            Ok(AirOperationDescriptor::vertical_gravity(
+                scalar_keyword_or_path(&keywords, &constructor, "value", "path")?,
+            ))
         }
         "motion.stick_steering" => {
             reject_unknown(
@@ -1157,6 +1170,9 @@ fn link_air<R: MotionResourceSource, P: MotionParameterSource>(
         )),
         AirOperationDescriptor::Friction { amount } => AirOperation::Friction {
             amount: resolve(amount, resources, parameters)?,
+        },
+        AirOperationDescriptor::VerticalGravity { gravity } => AirOperation::VerticalGravity {
+            gravity: resolve(gravity, resources, parameters)?,
         },
         AirOperationDescriptor::StickSteering {
             threshold,
