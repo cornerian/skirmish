@@ -11,6 +11,7 @@ from skirmish import (
     Fighter,
     action,
     motion,
+    on,
     parameter,
     source_phase,
 )
@@ -51,6 +52,18 @@ class FalconDive(CaptainUpSpecial):
     # retaining this source phase keeps the native motion identity available
     # for the collision callback when that host event is surfaced.
     throw_rebound = source_phase(363, animation=317)
+
+    @on.animation_end(throw_rebound)
+    def throw_rebound_animation_end(self, fighter, ctx):
+        """Leave the wall-rebound continuation through ordinary fall.
+
+        ``ftCa_SpecialHiThrow1_Anim`` has no fighter-specific branch: once
+        state 363's animation is exhausted it enters common fall.  The
+        collision and throw side effects remain native host responsibilities,
+        but this terminal transition is deterministic and can be represented
+        in the authoring layer.
+        """
+        fighter.change_action(Action.FALL)
 
 
 class RaptorBoost(CaptainSideSpecial):

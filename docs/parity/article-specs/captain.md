@@ -113,12 +113,15 @@ That covers ownership, facing, velocity reset, attachment selection, release,
 and relation cleanup.  Its resource-backed release path consumes the Captain
 Dive capture/throw payload and can apply capture damage and the release hit.
 
-The remaining gap is the native callback graph.  The host has no direct
+The authoring layer now exposes the deterministic terminal callback for
+motion 363: `ftCa_SpecialHiThrow1_Anim` transitions the holder to ordinary
+fall when the rebound animation ends.  The remaining gap is the native
+callback graph.  The host has no direct
 `accessory1_cb`/`accessory4_cb`, `HSD_GObj` pointer, command-variable, or
 effect-object lifecycle.  It uses resource-driven attachment helpers instead;
 missing XRotN/TransN2 pose data therefore prevents an exact pose snap.  Native
 special-hi physics, victim throw knockback/hitlag, visual effects, and the
-full `ftCo_AirCatchHit_Coll` wall-rebound behavior still require their host
-event/resource contracts before they can claim exact parity.  Older fixtures
+full `ftCo_AirCatchHit_Coll` wall-rebound collision behavior still require
+their host event/resource contracts before they can claim exact parity.  Older fixtures
 without the optional Captain resource tree can prove relation lifecycle but
 must not be reported as proving release-hit behavior.

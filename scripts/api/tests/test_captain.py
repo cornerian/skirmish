@@ -359,6 +359,30 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(rebound["slippi_state"], 363)
         self.assertEqual(rebound["animation"], 317)
 
+    def test_falcon_dive_wall_rebound_animation_enters_fall(self):
+        captain = _load_captain()
+        move = captain.specials.up
+        fighter = self.Fighter(move.throw_rebound)
+
+        move.throw_rebound_animation_end(fighter, SimpleNamespace())
+
+        self.assertEqual(
+            fighter.changes,
+            [(Action.FALL, {})],
+        )
+
+        exported = export_definition(captain).as_dict()
+        behavior = next(
+            item for item in exported["behaviors"]
+            if item["id"] == exported["movesets"]["specials"]["up"]
+        )
+        rebound_callback = next(
+            callback for callback in behavior["callbacks"]
+            if callback["callback"].endswith("throw_rebound_animation_end")
+        )
+        self.assertEqual(rebound_callback["hook"], "animation_ended")
+        self.assertEqual(rebound_callback["actions"], ["Source.0:363"])
+
     def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
         captain = _load_captain()
         move = captain.specials.up
