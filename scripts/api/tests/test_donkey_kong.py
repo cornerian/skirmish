@@ -207,7 +207,7 @@ class DonkeyKongTests(unittest.TestCase):
         self.assertTrue(self.move.input_pressed(fighter, context))
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
-    def test_entry_requires_the_complete_special_attribute_block(self):
+    def test_air_entry_requires_the_complete_special_attribute_block(self):
         fighter = _Fighter()
         original = fighter.special_attribute
         fighter.special_attribute = lambda attribute: (
@@ -222,6 +222,23 @@ class DonkeyKongTests(unittest.TestCase):
             rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)),
         )
         self.assertFalse(self.move.input_pressed(fighter, context))
+
+    def test_ground_entry_only_requires_grounded_special_attributes(self):
+        fighter = _Fighter()
+        original = fighter.special_attribute
+        fighter.special_attribute = lambda attribute: (
+            None
+            if attribute == DonkeyKongAttribute.SPECIAL_HI_AERIAL_GRAVITY
+            else original(attribute)
+        )
+        context = SimpleNamespace(
+            input=_Input(),
+            ground_open=True,
+            air_open=False,
+            rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)),
+        )
+        self.assertTrue(self.move.input_pressed(fighter, context))
+        self.assertEqual(fighter.changes[0][0], self.move.ground)
 
     def test_entry_requires_declared_special_resource_when_host_resolves_resources(self):
         fighter = _Fighter()

@@ -270,22 +270,27 @@ class SpinningKong(UpSpecial):
     ground = _GROUND
     air = _AIR
     _ACTIVE = (ground, air)
-    # ftDk_SpecialHi_Enter and both physics callbacks read the complete
-    # native SpecialHi block.  Rejecting a partial table keeps a generic
-    # resource pack from entering a state that would later dereference a
-    # missing field.
-    _ENTRY_ATTRIBUTES = tuple(DonkeyKongAttribute)
+    # The native grounded entry and physics callbacks only read x54/x5C.
+    # Keep that path usable with a resource pack that has not populated the
+    # aerial fields yet; the aerial path still fails closed because its
+    # gravity, steering, and landing callbacks dereference the full block.
+    _GROUND_ENTRY_ATTRIBUTES = (
+        DonkeyKongAttribute.SPECIAL_HI_GROUNDED_HORIZONTAL_VELOCITY,
+        DonkeyKongAttribute.SPECIAL_HI_GROUNDED_MOBILITY,
+    )
+    _AIR_ENTRY_ATTRIBUTES = tuple(DonkeyKongAttribute)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         lookup = getattr(ctx, "resource", None)
         if lookup is not None and lookup(self.resource) is None:
             return False
-        if any(fighter.special_attribute(attribute) is None for attribute in self._ENTRY_ATTRIBUTES):
+        grounded = bool(ctx.ground_open)
+        required = self._GROUND_ENTRY_ATTRIBUTES if grounded else self._AIR_ENTRY_ATTRIBUTES
+        if any(fighter.special_attribute(attribute) is None for attribute in required):
             return False
         if fighter.action in self._ACTIVE:
             return True
-        grounded = bool(ctx.ground_open)
         started = start_complete_special(
             fighter,
             ctx,

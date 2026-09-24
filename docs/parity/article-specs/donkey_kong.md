@@ -80,6 +80,13 @@ it enters end state 385. State 385 returns to Wait when complete, while state
 and hitbox callbacks remain native-owned until the script API exposes the
 effect and collision resources.
 
+Spinning Kong's grounded entry only reads the grounded horizontal velocity and
+grounded mobility fields (`SpecialHi.x54` and `x5C`). The aerial gravity,
+vertical launch, aerial steering, and landing-lag fields are read by the
+aerial entry/physics path. The script therefore validates those attribute sets
+per surface, so an incomplete aerial block does not disable a source-valid
+grounded move.
+
 ## Cargo and grab object dependencies
 
 Donkey Kong's cargo hold, walk, turn, jump, landing, and throw states are
