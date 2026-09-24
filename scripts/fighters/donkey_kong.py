@@ -109,6 +109,31 @@ class GiantPunch(NeutralSpecial):
     )
     _CHARGE = (ground_loop, air_loop)
 
+    @staticmethod
+    def _landing_lag(fighter: Fighter, ctx: MoveContext):
+        """Read ftDonkeyAttributes::SpecialN.x38 when the host exposes it."""
+
+        candidates = [
+            getattr(fighter, "special_n_landing_lag", None),
+            getattr(fighter, "specialn_landing_lag", None),
+        ]
+        lookup = getattr(ctx, "resource", None)
+        if callable(lookup):
+            resource = lookup("specials.special_attributes")
+            candidates.extend((
+                getattr(resource, "special_n_landing_lag", None),
+                getattr(resource, "specialn_landing_lag", None),
+            ))
+            if isinstance(resource, dict):
+                candidates.extend((
+                    resource.get("special_n_landing_lag"),
+                    resource.get("specialn_landing_lag"),
+                ))
+        for value in candidates:
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+                return value
+        return None
+
     @hook.action_enter(
         ground_start, ground_loop, ground_cancel, ground_punch, ground_full,
         air_start, air_loop, air_cancel, air_punch, air_full,
@@ -148,8 +173,8 @@ class GiantPunch(NeutralSpecial):
         ground_punch: Transition(Action.WAIT),
         ground_full: Transition(Action.WAIT),
         air_cancel: Transition(Action.FALL),
-        air_punch: Transition(Action.FALL),
-        air_full: Transition(Action.FALL),
+        # Air release phases use the source callback below so their own
+        # SpecialN landing lag reaches FallSpecial instead of being dropped.
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
@@ -200,6 +225,18 @@ class GiantPunch(NeutralSpecial):
             lambda grounded, _: self._entry(fighter, ctx, grounded),
             active_actions=self._ACTIVE,
         )
+
+    @hook.animation_end(air_punch, air_full)
+    def finish_air_release(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Match ftDk_SpecialAirN_Anim and _Full_Anim landing exits."""
+
+        landing_lag = self._landing_lag(fighter, ctx)
+        if landing_lag is not None and landing_lag != 0:
+            enter = getattr(fighter, "enter_fall_special", None)
+            if callable(enter):
+                enter(mobility=1, landing_lag=landing_lag)
+                return
+        fighter.change_action(Action.FALL)
 
     def cancel_charge(self, fighter: Fighter, ctx: MoveContext) -> bool:
         fighter.change_action(

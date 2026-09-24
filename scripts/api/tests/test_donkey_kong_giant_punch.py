@@ -37,6 +37,7 @@ class _Fighter:
     def __init__(self):
         self.action = None
         self.changes = []
+        self.fall_special = []
 
     def has_complete_animation(self, state):
         return state in (369, 373, 374, 378)
@@ -44,6 +45,9 @@ class _Fighter:
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
         self.action = action
+
+    def enter_fall_special(self, **kwargs):
+        self.fall_special.append(kwargs)
 
 
 class GiantPunchTests(unittest.TestCase):
@@ -108,6 +112,30 @@ class GiantPunchTests(unittest.TestCase):
         self.assertEqual(fighter.action, self.move.ground_punch)
         self.assertEqual(fighter.action_state.release_swings, 3)
         self.assertEqual(fighter.action_state.arm_swings, 0)
+
+    def test_air_release_uses_neutral_landing_lag_for_fall_special(self):
+        fighter = _Fighter()
+        fighter.action = self.move.air_punch
+        context = SimpleNamespace(
+            resource=lambda path: {"special_n_landing_lag": 7.0},
+        )
+
+        self.move.finish_air_release(fighter, context)
+
+        self.assertEqual(fighter.fall_special, [{"mobility": 1, "landing_lag": 7.0}])
+        self.assertEqual(fighter.changes, [])
+
+    def test_air_release_with_zero_landing_lag_falls_normally(self):
+        fighter = _Fighter()
+        fighter.action = self.move.air_full
+        context = SimpleNamespace(
+            resource=lambda path: {"specialn_landing_lag": 0.0},
+        )
+
+        self.move.finish_air_release(fighter, context)
+
+        self.assertEqual(fighter.changes, [(Action.FALL, {})])
+        self.assertEqual(fighter.fall_special, [])
 
 
 if __name__ == "__main__":
