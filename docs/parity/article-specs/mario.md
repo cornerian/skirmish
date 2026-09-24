@@ -81,6 +81,17 @@ B0 animation event:
 
 The current declaration exports fighter states 343–350, the Mario fire
 article ID, B0 launch, Cape reflection gate, and Tornado command consumption.
-The host still owns `It_Kind_Mario_Cape`, fireball item attributes and
-collision, `efSync_Spawn(0x47C)`, hitlag effect pause/resume, Tornado physics,
-and all native article/effect cleanup callbacks.
+The native resource boundary now exposes `kind: "mario_fireball"` for article
+48. Its launch, lifetime, gravity, terrain stop threshold, hitbox, and contact
+values must be supplied by an authored resource export; the port does not
+invent values that are absent from the pinned source or a verified data pack.
+The immutable cache links that descriptor to the native projectile step and
+the B0 queue drains it after fighter callbacks.
+
+The source callback coverage still has explicit limits. `DmgDealt`,
+`Clanked`, `HitShield`, and `Absorbed` retain the shared projectile result
+path; `Reflected` transfers ownership and `ShieldBounced` mirrors velocity.
+The source event callback's effect and object reference bookkeeping are not
+yet exposed as independent host events. Cape remains native-host owned, as do
+`efSync_Spawn(0x47C)`, hitlag effect pause/resume, Tornado physics, and all
+native article/effect cleanup callbacks.

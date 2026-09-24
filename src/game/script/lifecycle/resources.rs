@@ -1809,6 +1809,14 @@ fn link_article_resources(
         let mut linked = BTreeMap::new();
         for (id, resource) in articles {
             let path = format!("article {}", id.0);
+            let mario_fireball = matches!(resource, ArticleResource::MarioFireball { .. });
+            if mario_fireball && *id != ArticleId::MARIO_FIRE {
+                return Err(Error::Invalid(format!(
+                    "Mario fireball resource must use article id {}, got {}",
+                    ArticleId::MARIO_FIRE.0,
+                    id.0
+                )));
+            }
             let behavior = match resource {
                 ArticleResource::Ray {
                     lifetime,
@@ -1833,6 +1841,19 @@ fn link_article_resources(
                     }
                 }
                 ArticleResource::GravityProjectile {
+                    speed,
+                    angle,
+                    lifetime,
+                    half_life,
+                    gravity,
+                    terminal_velocity,
+                    surface_multiplier,
+                    terrain_stop_speed,
+                    hitboxes,
+                    move_id,
+                    contact,
+                }
+                | ArticleResource::MarioFireball {
                     speed,
                     angle,
                     lifetime,
@@ -1870,19 +1891,36 @@ fn link_article_resources(
                         hitboxes,
                         move_id: *move_id,
                     })?;
-                    ArticleBehavior::Gravity {
-                        speed: *speed,
-                        angle: *angle,
-                        lifetime: *lifetime,
-                        half_life: *half_life,
-                        gravity: *gravity,
-                        terminal_velocity: *terminal_velocity,
-                        surface_multiplier: *surface_multiplier,
-                        terrain_stop_speed: *terrain_stop_speed,
-                        hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
-                        move_id: *move_id,
-                        contact: *contact,
-                    }
+                    let behavior = if mario_fireball {
+                        ArticleBehavior::MarioFireball {
+                            speed: *speed,
+                            angle: *angle,
+                            lifetime: *lifetime,
+                            half_life: *half_life,
+                            gravity: *gravity,
+                            terminal_velocity: *terminal_velocity,
+                            surface_multiplier: *surface_multiplier,
+                            terrain_stop_speed: *terrain_stop_speed,
+                            hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                            move_id: *move_id,
+                            contact: *contact,
+                        }
+                    } else {
+                        ArticleBehavior::Gravity {
+                            speed: *speed,
+                            angle: *angle,
+                            lifetime: *lifetime,
+                            half_life: *half_life,
+                            gravity: *gravity,
+                            terminal_velocity: *terminal_velocity,
+                            surface_multiplier: *surface_multiplier,
+                            terrain_stop_speed: *terrain_stop_speed,
+                            hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                            move_id: *move_id,
+                            contact: *contact,
+                        }
+                    };
+                    behavior
                 }
             };
             linked.insert(*id, ArticleMeta { behavior });

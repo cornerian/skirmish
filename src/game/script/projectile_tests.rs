@@ -148,7 +148,7 @@ fn typed_gravity_article_match() -> Match {
             "character": "mario",
             "articles": {
                 "48": {
-                    "kind": "gravity_projectile",
+                    "kind": "mario_fireball",
                     "speed": 1.5,
                     "angle": 0.4,
                     "lifetime": 60.0,
@@ -405,7 +405,7 @@ fn typed_article_spawn_rejects_string_ids_without_staging() {
 }
 
 #[test]
-fn compact_gravity_article_spawn_uses_article_owned_launch() {
+fn mario_fireball_spawn_uses_article_owned_launch() {
     let m = typed_gravity_article_match();
     let mut host = host_for(&m);
     host.call(
