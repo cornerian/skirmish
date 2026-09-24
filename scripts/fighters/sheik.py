@@ -125,7 +125,10 @@ class Needles(NeutralSpecial, DirectionalSpecial):
             getattr(attributes, "x10", None),
         )
         if landing_lag is None:
-            return False
+            # Keep the prior declarative terminal behavior when this optional
+            # attribute resource is unavailable to a lightweight host.
+            fighter.change_action(Action.FALL)
+            return True
         if landing_lag == 0:
             fighter.change_action(Action.FALL)
             return True

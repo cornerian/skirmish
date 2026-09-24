@@ -137,6 +137,13 @@ class SheikTests(unittest.TestCase):
                 [{"mobility": 1, "landing_lag": 12.0}],
             )
 
+    def test_needles_air_terminal_falls_without_optional_attributes(self):
+        """Missing x10 preserves the prior ordinary Fall fallback."""
+        move = Needles()
+        fighter = _Fighter(move.air_end)
+        self.assertTrue(move.enter_air_fall(fighter, _context(ground=False)))
+        self.assertIs(fighter.action, Action.FALL)
+
     def test_needles_loop_shoulder_input_cancels_charge(self):
         move = Needles()
         for source, target in (
