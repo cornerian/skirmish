@@ -6,7 +6,15 @@ source-family bases supply only those callback lifecycles; every action and
 resource path below remains Ganon-specific.
 """
 
-from skirmish import Action, Fighter, on, source_phase
+from skirmish import (
+    Action,
+    CommonParameter,
+    Fighter,
+    motion,
+    on,
+    parameter,
+    source_phase,
+)
 from fighter.captain_family import (
     CaptainFamilyActionState,
     CaptainDownSpecial,
@@ -77,7 +85,25 @@ class WizardFoot(CaptainDownSpecial):
     ground_end = source_phase(358, animation=312, attack="down.ground_end")
     air = source_phase(359, animation=313, attack="down.air")
     landing = source_phase(360, animation=314, attack="down.landing")
-    air_end = source_phase(361, animation=316, attack="down.air_end")
+    # ftCa_MS_SpecialAirLwEndAir (state 361) uses
+    # ftCa_SpecialAirLwEndAir_Phys: ordinary air physics plus aerial
+    # friction.  ftganon.c points this row at the same callback as Falcon's
+    # table, so retain that source motion profile on Ganon's concrete phase.
+    air_end = source_phase(
+        361,
+        animation=316,
+        attack="down.air_end",
+        motion=motion.profile(
+            air=(
+                motion.gravity(
+                    acceleration=parameter(CommonParameter.GRAVITY),
+                    terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
+                    delay=0,
+                ),
+                motion.air_friction(amount=parameter(CommonParameter.AERIAL_FRICTION)),
+            ),
+        ),
+    )
     ground_end_air = source_phase(362, animation=315, attack="down.ground_end_air")
 
     @on.action_enter()

@@ -277,6 +277,51 @@ class GanondorfTests(unittest.TestCase):
             [{"mobility": 0.8, "landing_lag": 20}],
         )
 
+    def test_wizards_foot_air_end_preserves_source_air_physics(self):
+        # ftganon.c state 361 uses ftCa_SpecialAirLwEndAir_Phys, which applies
+        # ordinary air physics and aerial friction every frame.
+        exported = export_definition(Ganondorf).as_dict()
+        phase = exported["actions"]["special.down.air_end"]
+        self.assertEqual(
+            phase["motion"],
+            {
+                "callee": "motion.profile",
+                "args": [],
+                "kwargs": {
+                    "air": [
+                        {
+                            "callee": "motion.gravity",
+                            "args": [],
+                            "kwargs": {
+                                "acceleration": {
+                                    "callee": "parameter",
+                                    "args": ["movement.gravity"],
+                                    "kwargs": {},
+                                },
+                                "terminal_velocity": {
+                                    "callee": "parameter",
+                                    "args": ["movement.terminal_velocity"],
+                                    "kwargs": {},
+                                },
+                                "delay": 0,
+                            },
+                        },
+                        {
+                            "callee": "motion.air_friction",
+                            "args": [],
+                            "kwargs": {
+                                "amount": {
+                                    "callee": "parameter",
+                                    "args": ["movement.aerial_friction"],
+                                    "kwargs": {},
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        )
+
     def test_wizard_foot_wall_rebound_requires_source_command_cue(self):
         move = Ganondorf.specials.down
         fighter = _Fighter(move.ground)
