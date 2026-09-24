@@ -94,8 +94,11 @@ through `ftZd_SpecialLw_8013ADB4` and `ftZd_SpecialLw_8013AE30`
 (`ftzeldaspeciallw.c:1-49`).  When the transformation animation ends,
 `ftZd_SpecialLw_8013AEAC` (`:52-67`) calls
 `ftCommon_8007EFC8(gobj, ftSk_SpecialLw_80114758)`, which performs the native
-Zelda-to-Sheik replacement.  The Python `Transform` phase graph can preserve
-states 355–358 and surface transitions, but cannot own this replacement.
+Zelda-to-Sheik replacement.  The Python `Transform` phase graph preserves
+states 355–358, surface transitions, and the source command-0 reset.  Its
+`native_completion` contract returns the typed `TransformOutcome.UNSUPPORTED`
+result until the host exposes fighter identity and resource swapping; it does
+not claim that Zelda has become Sheik.
 
 ## Exact deterministic test vector
 
@@ -136,3 +139,14 @@ needs:
 
 These are native article/effect and fighter replacement seams; fabricating them
 inside the declarative fighter phase graph would lose owner and contact parity.
+
+## Transform lifecycle contract
+
+The source transform entry clears command slot 0 in
+`ftZelda_SpecialLw_StartAction_Helper`.  The Python entry callback mirrors that
+reset.  Completion remains an explicit unsupported outcome because the current
+host has no operation equivalent to `ftCommon_8007EFC8` that atomically swaps
+fighter identity, resources, and native callbacks.  A future native host may
+consume `TransformOutcome.UNSUPPORTED` only after adding that identity swap
+seam; the declarative script must not substitute `Action.WAIT` or `Action.FALL`
+for the replacement itself.

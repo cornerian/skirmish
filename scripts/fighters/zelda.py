@@ -7,6 +7,8 @@ Transformation likewise exposes no cross-character replacement policy.
 
 from __future__ import annotations
 
+from enum import Enum
+
 from skirmish import (
     Action, ArticleId, Button, DirectionalSpecial, DownSpecial, Fighter,
     NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
@@ -152,6 +154,12 @@ class Farore(UpSpecial, DirectionalSpecial):
     }
 
 
+class TransformOutcome(str, Enum):
+    """Result of the native Zelda-to-Sheik completion seam."""
+
+    UNSUPPORTED = "unsupported"
+
+
 class Transform(DownSpecial, DirectionalSpecial):
     """Transformation phases; character replacement is deliberately native."""
 
@@ -160,6 +168,25 @@ class Transform(DownSpecial, DirectionalSpecial):
     air = source_phase(357)
     air_end = source_phase(358)
     _ACTIVE = (ground, ground_end, air, air_end)
+
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx: object) -> None:
+        """Reset command 0 as ``ftZelda_SpecialLw_StartAction_Helper`` does."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and command:
+            state.command = (0, *command[1:])
+
+    def native_completion(self, fighter: Fighter, ctx: object) -> TransformOutcome:
+        """Report the replacement seam until the host owns identity swapping.
+
+        The pinned callback invokes ``ftCommon_8007EFC8`` to replace Zelda with
+        Sheik.  The Python host has no fighter identity/resource swap API, so
+        silently ending the move as a completed transformation would be
+        observably wrong.  A native runtime may consume this typed outcome and
+        perform the replacement once that seam exists.
+        """
+        return TransformOutcome.UNSUPPORTED
 
     on_end = {
         ground: Transition(ground_end), ground_end: Transition(Action.WAIT),
@@ -181,4 +208,4 @@ class Zelda(Fighter):
     )
 
 
-__all__ = ["Zelda", "Nayru", "Din", "Farore", "Transform"]
+__all__ = ["Zelda", "Nayru", "Din", "Farore", "Transform", "TransformOutcome"]

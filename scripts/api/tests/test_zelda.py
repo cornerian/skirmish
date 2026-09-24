@@ -18,7 +18,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action, Button, export_definition  # noqa: E402
-from fighters.zelda import Zelda  # noqa: E402
+from fighters.zelda import TransformOutcome, Zelda  # noqa: E402
 
 
 class _Input:
@@ -162,6 +162,16 @@ class ZeldaSpecialTests(unittest.TestCase):
 
         self.assertEqual(fighter.spawned, [])
         self.assertEqual(fighter.action_state.command, (7, 2, 3, 4))
+
+    def test_transform_entry_resets_command_and_completion_is_typed_unsupported(self):
+        move = Zelda.specials.down
+        fighter = _Fighter(move.ground)
+
+        move.enter(fighter, SimpleNamespace())
+
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertIs(move.native_completion(fighter, SimpleNamespace()),
+                      TransformOutcome.UNSUPPORTED)
 
 
 if __name__ == "__main__":
