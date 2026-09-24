@@ -187,8 +187,9 @@ class Roll(NeutralSpecial):
         if hasattr(fighter, "ground_velocity"):
             fighter.ground_velocity = -fighter.ground_velocity * scale
         state = getattr(fighter, "action_state", None)
-        if state is not None:
-            state.charge *= scale
+        charge = getattr(state, "charge", None)
+        if charge is not None:
+            state.charge = charge * scale
         return True
 
     @hook.animation_end(hit)

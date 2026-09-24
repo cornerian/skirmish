@@ -10,7 +10,7 @@ and native collision callbacks remain host work unless the row says otherwise.
 | Fighter | Authored motion and command coverage | Major native only gaps | Pinned source anchors |
 | --- | --- | --- | --- |
 | Captain Falcon | Special action descriptors, command traces, family entry/rebound callbacks | Falcon Dive victim capture, throw/capture object lifecycle, native hit geometry | `ftCaptain/ftcaptainspecials.c`, `ftCaptain/ftcaptainspecialhi.c` |
-| Donkey Kong | Spinning Kong ground/air motion profiles, typed attributes, entry and surface callbacks | Giant Punch charge/release and hand hitbox callbacks, cargo/grab state | `ftDonkey/ftdonkeyspecialhi.c`, `ftDonkey/ftdonkeyspecialn.c` |
+| Donkey Kong | Spinning Kong ground/air motion profiles, typed attributes, entry and surface callbacks; Giant Punch charge/release state | Giant Punch hand hitbox callback, cargo/grab state | `ftDonkey/ftdonkeyspecialhi.c`, `ftDonkey/ftdonkeyspecialn.c` |
 | Fox | Blaster, Illusion, Fire Fox, Shine phases; command state, launch, steering, landing, article emission | Reflector/item handoff details, full item archive effects and native collision/absorption/clank paths | `ftFox/ftfoxspecialn.c`, `ftfoxspecials.c`, `ftfoxspecialhi.c`, `ftfoxspeciallw.c`; `itFoxLaser/itfoxlaser.c` |
 | Game & Watch | Chef, Judge, Fire, Oil Panic source phases and optional Judge data routing | Chef food, Judge article/effect selection, Fire parachute, Oil Panic bucket/reflection storage | `ftGameWatch/ftgw*.c`, `itGameWatch*.c` |
 | Kirby | Four source special phase graphs and directional input gates | Copy capture/ability replacement, spit/star and copied-special dispatch, article ownership | `ftKirby/ftkirbyspecial*.c` |
@@ -36,15 +36,25 @@ and native collision callbacks remain host work unless the row says otherwise.
 | Pichu | Pikachu-family electric special graph plus Pichu identity/wall-jump metadata | Pichu electric articles, self-damage/effects, native collision and item callbacks | `ftPichu/ftpichuspecial*.c`, shared `ftPikachu/ftpikachuspecial*.c`, `itPichu*.c` |
 | Ganondorf | Captain-family Warlock Punch, Gerudo Dragon, Wizard's Foot, Dark Dive phases with Ganon data | Dark Dive victim capture/throw, flame/effect and native hitbox callbacks | `ftGanon/ftganonspecial*.c`, shared `ftCaptain/ftcaptainspecial*.c` |
 
-## Evidence boundary
+## Current evidence boundary
 
-The current Python suite has 337 tests. Those tests establish declaration
+At main commit `24ad570`, the Python suite had 409 tests. The current
+follow-up branch has 413 tests after the corrected Rollout and Stone
+scaffolds. The merged
+source-backed callbacks cover additional command resets, release gates,
+ground/air and terminal transitions, charge state, counter routing, and
+article emission seams across the roster. The tests establish declaration
 shape, source-state identity, callback registration, selected transition
-branches, resource validation, and a limited set of native-host seams. They do
-not establish whole-match behavioral parity, frame-by-frame equivalence to the
-decomp, article archive equivalence, or replay equivalence for every fighter.
-The matrix must therefore remain a worklist and coverage inventory; no row is
-complete merely because its source module exports or its focused tests pass.
+branches, resource validation, and a limited set of native-host seams.
+
+The remaining parity work is concentrated in native and article behavior:
+article archives and ownership, capture and companion-object lifecycles,
+hitbox and collision geometry, reflection and clank rules, effects, and
+fighter-specific movement or steering. The suite does not establish
+whole-match behavioral parity, frame-by-frame equivalence to the decomp,
+article archive equivalence, or replay equivalence for every fighter. The
+matrix remains a worklist and coverage inventory; no row is complete merely
+because its source module exports or its focused tests pass.
 
 The pinned source revision is recorded in `upstream.lock.json`; from this
 repository, the checkout is at `../../../External/melee` (or can be located

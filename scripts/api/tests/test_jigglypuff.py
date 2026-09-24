@@ -165,6 +165,21 @@ class JigglypuffTests(unittest.TestCase):
         self.assertEqual(fighter.ground_velocity, -3.0)
         self.assertEqual(fighter.facing, -1.0)
 
+    def test_roll_wall_callback_is_exported_and_tolerates_unmodeled_charge(self):
+        roll = Roll()
+        exported = export_definition(Jigglypuff).as_dict()
+        neutral = next(item for item in exported["behaviors"] if item["resource"] == "neutral")
+        wall = next(item for item in neutral["callbacks"] if item["callback"].endswith("wall_bounce"))
+        self.assertEqual(wall["hook"], "surface_contact")
+        fighter = _Fighter(Roll.ground_release)
+        fighter.velocity = (2.0, 0.0)
+        fighter.ground_velocity = 2.0
+        fighter.action_state = SimpleNamespace()
+        fighter.set_velocity = lambda x, y: setattr(fighter, "velocity", (x, y))
+        self.assertTrue(roll.wall_bounce(fighter, SimpleNamespace(wall=object())))
+        self.assertEqual(fighter.velocity, (-2.0, 0.0))
+        self.assertFalse(hasattr(fighter.action_state, "charge"))
+
         landed = _Fighter(Roll.hit)
         self.assertTrue(roll.hit_landed(landed, SimpleNamespace(grounded=True)))
         self.assertEqual(landed.action, Action.FALL)
