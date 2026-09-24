@@ -162,14 +162,19 @@ class YoungLinkSideSpecial(_FamilySideSpecial):
         # provides the corresponding rules.
         specials = getattr(getattr(ctx, "rules", None), "specials", None)
         threshold = getattr(specials, "dash_smash_stick_threshold", None)
-        if threshold is not None:
-            stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
-            if abs(stick[0]) < threshold:
-                return
         window = getattr(specials, "dash_smash_window", None)
+        early_frames = getattr(specials, "early_frames", None)
+        # ``on21EC`` also adds common-data x44 to the dash-smash window.  The
+        # portable host must provide both values; without them, preserve the
+        # source gate by failing closed instead of guessing an effective end.
+        if threshold is None or window is None or early_frames is None:
+            return
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        if abs(stick[0]) < threshold:
+            return
         # Native on21EC accepts the dash-smash command only while x673 is
         # strictly below the configured window (plus the common offset).
-        if window is not None and getattr(fighter, "action_frame", 0) >= window:
+        if getattr(fighter, "action_frame", 0) >= window + early_frames:
             return
         update = getattr(fighter, "update_boomerang_trajectory", None)
         if callable(update):

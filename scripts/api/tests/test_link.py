@@ -139,7 +139,15 @@ class LinkTests(unittest.TestCase):
         move = Link.specials.side
         fighter = _Fighter()
         fighter.action = move.ground
-        context = SimpleNamespace(event=SimpleNamespace(value=True))
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=True),
+            input=SimpleNamespace(stick=(1.0, 0.0)),
+            rules=SimpleNamespace(specials=SimpleNamespace(
+                dash_smash_stick_threshold=0.5,
+                dash_smash_window=3,
+                early_frames=2,
+            )),
+        )
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [context])
         move.boomerang_release(fighter, SimpleNamespace(event=SimpleNamespace(value=False)))
@@ -153,17 +161,31 @@ class LinkTests(unittest.TestCase):
             input=SimpleNamespace(stick=(0.25, 0.0)),
             rules=SimpleNamespace(specials=SimpleNamespace(
                 dash_smash_stick_threshold=0.5, dash_smash_window=3,
+                early_frames=2,
             )),
         )
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [])
         context.input.stick = (1.0, 0.0)
-        fighter.action_frame = 3
+        fighter.action_frame = 5
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [])
-        fighter.action_frame = 2
+        fighter.action_frame = 4
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [context])
+
+    def test_boomerang_release_fails_closed_without_common_window_data(self):
+        move = Link.specials.side
+        fighter = _Fighter()
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=True),
+            input=SimpleNamespace(stick=(1.0, 0.0)),
+            rules=SimpleNamespace(specials=SimpleNamespace(
+                dash_smash_stick_threshold=0.5, dash_smash_window=3,
+            )),
+        )
+        move.boomerang_release(fighter, context)
+        self.assertEqual(fighter.trajectory_events, [])
 
     def test_down_entry_forwards_held_bomb_branch_to_article_host(self):
         move = Link.specials.down

@@ -190,7 +190,15 @@ class YoungLinkTests(unittest.TestCase):
         fighter.update_boomerang_trajectory = updates.append
         move.boomerang_release(
             fighter,
-            SimpleNamespace(event=SimpleNamespace(value=True)),
+            SimpleNamespace(
+                event=SimpleNamespace(value=True),
+                input=SimpleNamespace(stick=(1.0, 0.0)),
+                rules=SimpleNamespace(specials=SimpleNamespace(
+                    dash_smash_stick_threshold=0.5,
+                    dash_smash_window=3,
+                    early_frames=2,
+                )),
+            ),
         )
         self.assertEqual(len(updates), 1)
 
@@ -203,6 +211,7 @@ class YoungLinkTests(unittest.TestCase):
             specials=SimpleNamespace(
                 dash_smash_stick_threshold=0.5,
                 dash_smash_window=3,
+                early_frames=2,
             )
         )
         event = SimpleNamespace(value=True)
@@ -211,24 +220,42 @@ class YoungLinkTests(unittest.TestCase):
             SimpleNamespace(event=event, input=SimpleNamespace(stick=(0.25, 0.0)), rules=rules),
         )
         self.assertEqual(updates, [])
+        fighter.action_frame = 6
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
+        )
+        self.assertEqual(updates, [])
+        fighter.action_frame = 5
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
+        )
+        self.assertEqual(updates, [])
         fighter.action_frame = 4
         move.boomerang_release(
             fighter,
             SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
         )
-        self.assertEqual(updates, [])
-        fighter.action_frame = 3
-        move.boomerang_release(
-            fighter,
-            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
-        )
-        self.assertEqual(updates, [])
-        fighter.action_frame = 2
-        move.boomerang_release(
-            fighter,
-            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
-        )
         self.assertEqual(len(updates), 1)
+
+    def test_boomerang_release_fails_closed_without_common_window_data(self):
+        move = YoungLinkSideSpecial()
+        fighter = _Fighter(move.ground)
+        updates = []
+        fighter.update_boomerang_trajectory = updates.append
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(
+                event=SimpleNamespace(value=True),
+                input=SimpleNamespace(stick=(1.0, 0.0)),
+                rules=SimpleNamespace(specials=SimpleNamespace(
+                    dash_smash_stick_threshold=0.5,
+                    dash_smash_window=3,
+                )),
+            ),
+        )
+        self.assertEqual(updates, [])
 
     def test_aerial_spin_attack_uses_fall_special_recovery(self):
         move = YoungLinkUpSpecial()

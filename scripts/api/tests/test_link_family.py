@@ -115,7 +115,15 @@ class LinkFamilyTests(unittest.TestCase):
 
         fighter = _Fighter()
         fighter.used_boomerang = True
-        side.boomerang_release(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        side.boomerang_release(fighter, SimpleNamespace(
+            event=SimpleNamespace(value=1),
+            input=SimpleNamespace(stick=(1.0, 0.0)),
+            rules=SimpleNamespace(specials=SimpleNamespace(
+                dash_smash_stick_threshold=0.5,
+                dash_smash_window=3,
+                early_frames=2,
+            )),
+        ))
         self.assertEqual(fighter.trajectory_updates, 1)
 
     def test_source_transitions_cover_charge_terminal_and_surface_states(self):
