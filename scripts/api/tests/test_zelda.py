@@ -37,6 +37,7 @@ class _Fighter:
         self.action = action
         self.changes = []
         self.action_state = SimpleNamespace(command=(7, 2, 3, 4))
+        self.flags = SimpleNamespace(reflecting=False)
         self.position = (1.0, 2.0, 0.0)
         self.facing = -1.0
         self.spawned = []
@@ -102,6 +103,32 @@ class ZeldaSpecialTests(unittest.TestCase):
             _Fighter(), _context(stick=(0.0, -1.0))))
         self.assertFalse(Zelda.specials.down.input_pressed(
             _Fighter(), _context(stick=(0.0, 1.0))))
+
+    def test_nayru_command_cue_controls_native_reflection_latch(self):
+        move = Zelda.specials.neutral
+        fighter = _Fighter(move.ground)
+
+        move.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertFalse(fighter.flags.reflecting)
+
+        ctx = SimpleNamespace(event=SimpleNamespace(value=1))
+        move.reflect_command(fighter, ctx)
+        self.assertTrue(fighter.flags.reflecting)
+
+        ctx.event.value = 0
+        move.reflect_command(fighter, ctx)
+        self.assertFalse(fighter.flags.reflecting)
+
+        behavior_id = self.definition["movesets"]["specials"]["neutral"]
+        behavior = next(item for item in self.definition["behaviors"]
+                        if item["id"] == behavior_id)
+        self.assertTrue(any(
+            callback["hook"] == "command_trace_changed"
+            and callback["command_index"] == 0
+            and callback["actions"] == ["Source.18:341", "Source.18:342"]
+            for callback in behavior["callbacks"]
+        ))
 
     def test_decomp_terminal_and_surface_transitions(self):
         cases = (

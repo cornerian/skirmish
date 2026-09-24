@@ -18,11 +18,39 @@ from fighter.helpers import resource_attributes
 
 
 class Nayru(NeutralSpecial, DirectionalSpecial):
-    """Nayru's Love ground and aerial phases."""
+    """Nayru's Love phases and native command reflection window."""
 
     ground = source_phase(341)
     air = source_phase(342)
     _ACTIVE = (ground, air)
+
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx: object) -> None:
+        """Clear the source command slot and stale reflection latch."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and command:
+            state.command = (0, *command[1:])
+        flags = getattr(fighter, "flags", None)
+        if flags is not None and hasattr(flags, "reflecting"):
+            flags.reflecting = False
+
+    @on.command_changed(0, actions=(ground, air))
+    def reflect_command(self, fighter: Fighter, ctx: object) -> None:
+        """Mirror ``ftZd_SpecialN_Anim``'s command-0 reflect latch.
+
+        The native callback creates the reflect volume at command value 1 and
+        clears the fighter's reflecting state when command 0 is observed. The
+        volume and hit routing remain native host responsibilities.
+        """
+        flags = getattr(fighter, "flags", None)
+        if flags is None or not hasattr(flags, "reflecting"):
+            return
+        value = getattr(getattr(ctx, "event", None), "value", 0)
+        if value == 1:
+            flags.reflecting = True
+        elif value == 0:
+            flags.reflecting = False
 
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
