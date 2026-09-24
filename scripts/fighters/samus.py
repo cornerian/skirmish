@@ -162,8 +162,11 @@ class ScrewAttack(UpSpecial):
         command = getattr(state, "command", None)
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, 0)
+        # ``ftSs_SpecialAirHi_Enter`` exhausts the aerial jump budget via
+        # ``ftCommon_8007D60C``.  The grounded entry instead uses
+        # ``ftCommon_8007D7FC`` and must leave the budget untouched.
         max_jumps = getattr(fighter, "max_jumps", None)
-        if callable(max_jumps):
+        if fighter.action == self.air and callable(max_jumps):
             max_jumps()
 
     @hook.input_pressed(Button.B)

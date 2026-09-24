@@ -18,9 +18,13 @@ class _Fighter:
     def __init__(self):
         self.action = Action.WAIT
         self.action_state = SimpleNamespace(command=(7, 6, 5, 4))
+        self.max_jumps_calls = 0
 
     def change_action(self, action, **kwargs):
         self.action = action
+
+    def max_jumps(self):
+        self.max_jumps_calls += 1
 
 
 class SamusChargeEntryTests(unittest.TestCase):
@@ -36,6 +40,22 @@ class SamusChargeEntryTests(unittest.TestCase):
         move = ChargeShot()
         fighter = SimpleNamespace(action=move.ground_start)
         move.enter_start(fighter, SimpleNamespace())
+
+
+class SamusScrewAttackEntryTests(unittest.TestCase):
+    def test_only_aerial_source_entry_exhausts_jump_budget(self):
+        from fighters.samus import ScrewAttack
+
+        move = ScrewAttack()
+        grounded = _Fighter()
+        grounded.action = move.ground
+        move.action_enter(grounded, SimpleNamespace())
+        self.assertEqual(grounded.max_jumps_calls, 0)
+
+        aerial = _Fighter()
+        aerial.action = move.air
+        move.action_enter(aerial, SimpleNamespace())
+        self.assertEqual(aerial.max_jumps_calls, 1)
 
 
 if __name__ == "__main__":
