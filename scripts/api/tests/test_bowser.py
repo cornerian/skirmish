@@ -155,6 +155,15 @@ class BowserTests(unittest.TestCase):
         self.assertEqual(fighter.action, down.air)
         self.assertEqual(fighter.action_frame, 30)
 
+    def test_bowser_bomb_aerial_end_waits_for_landing_collision(self):
+        down = Bowser.specials.down
+        fighter = _Fighter(down.air)
+        down._transition_animation_end(fighter, SimpleNamespace(grounded=False))
+        # ftKp_SpecialAirLw_Anim arms the collision callback at animation end;
+        # it does not enter fall until the landing callback runs.
+        self.assertEqual(fighter.action, down.air)
+        self.assertEqual(fighter.changes, [])
+
     def test_item_and_capture_effects_are_not_fabricated(self):
         for name, action in self.definition["actions"].items():
             if name.startswith("special."):

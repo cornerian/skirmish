@@ -315,6 +315,12 @@ class Bomb(DownSpecial, _KoopaSpecial):
             fighter.change_action(self.air)
             fighter.action_frame = 30
             return
+        if fighter.action == self.air:
+            # ftKp_SpecialAirLw_Anim sets its landing command flag when the
+            # aerial motion ends, but deliberately stays in motion 362.  The
+            # collision callback consumes that flag on a later ground check;
+            # falling here would skip the native landing phase entirely.
+            return
         super()._transition_animation_end(fighter, ctx)
 
 
