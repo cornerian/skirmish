@@ -65,6 +65,27 @@ class Cape(SideSpecial, _SourcePair):
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
+        # ``changeAction`` also clears the fighter-level reflect latch.  Keep
+        # this defensive so small authoring fixtures without ``flags`` remain
+        # valid while native hosts get the same entry invariant.
+        flags = getattr(fighter, "flags", None)
+        if flags is not None and hasattr(flags, "reflecting"):
+            flags.reflecting = False
+
+    @hook.command_changed(1, actions=(ground, air))
+    def reflect_command(self, fighter: Fighter, ctx) -> None:
+        """Expose the source animation's command-1 reflect window.
+
+        ``ftMr_SpecialS_Phys`` raises its internal reflect state when command
+        variable 1 becomes one and clears it when the command returns to zero.
+        The host's projectile callback consumes the fighter-level latch, so
+        mirror that transition at the same native command boundary.
+        """
+        flags = getattr(fighter, "flags", None)
+        if flags is None or not hasattr(flags, "reflecting"):
+            return
+        event = getattr(ctx, "event", None)
+        flags.reflecting = bool(getattr(event, "value", 0))
 
     @hook.projectile_contact
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
