@@ -206,6 +206,12 @@ class MarioNeutralTests(unittest.TestCase):
         move.enter(fighter, _context())
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
 
+    def test_super_jump_punch_entry_clears_only_native_command_latch(self):
+        move = SuperJumpPunch()
+        fighter = _Fighter()
+        move.enter(fighter, _context())
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+
     def test_tornado_aerial_tap_consumes_native_command_cue(self):
         move = MarioTornado()
         fighter = _Fighter()

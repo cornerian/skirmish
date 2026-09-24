@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 
 from skirmish import (
     Action,
+    ActionState,
     Button,
     DownSpecial,
     Fighter,
@@ -25,6 +26,46 @@ from skirmish import (
     source_phase,
     start_action,
 )
+
+
+class GameAndWatchActionState(ActionState):
+    """Portable mirrors of the fighter-local special callback variables."""
+
+    chef_loop_disabled: bool = False
+    judge_current: int = -1
+    judge_previous: int = -1
+    panic_charge: int = 0
+    panic_damage: float = 0.0
+    panic_release_damage: float = 0.0
+
+
+def _fighter_state(fighter: Any) -> GameAndWatchActionState:
+    state = getattr(fighter, "action_state", None)
+    if state is None:
+        state = GameAndWatchActionState()
+        fighter.action_state = state
+    return state
+
+
+def _resource_attributes(ctx: Any, path: str) -> Any:
+    lookup = getattr(ctx, "resource", None)
+    resource = lookup(path) if callable(lookup) else None
+    return getattr(resource, "attributes", resource)
+
+
+def _button_held(ctx: Any, button: Button) -> bool:
+    value = getattr(ctx, "chef_b_held", None)
+    if value is not None:
+        return bool(value)
+    held_buttons = getattr(getattr(ctx, "input", None), "held_buttons", None)
+    if held_buttons is None:
+        return True
+    if isinstance(held_buttons, (tuple, list, set, frozenset)):
+        return button in held_buttons
+    # Hosts may expose the source pad mask instead of an iterable.  A
+    # boolean mask is intentionally left to the host because Button values
+    # are not required to be bit positions in the authoring API.
+    return bool(held_buttons)
 
 
 def _judge_phase(ctx: Any) -> int:
@@ -97,15 +138,25 @@ class Chef(NeutralSpecial, _SourcePairSpecial):
     ground = source_phase(353)
     air = source_phase(354)
 
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Any, ctx: Any) -> None:
+        _fighter_state(fighter).chef_loop_disabled = False
+
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         """Restart Chef's source motion when its command frame allows a loop."""
         if fighter.action in self._ACTIVE:
+            state = _fighter_state(fighter)
+            held = _button_held(ctx, Button.B)
+            if not held:
+                state.chef_loop_disabled = True
             if (
                 bool(getattr(ctx, "chef_loop_open", False))
                 and isinstance(getattr(ctx, "chef_sausages", None), int)
                 and isinstance(getattr(ctx, "chef_maximum", None), int)
                 and ctx.chef_sausages < ctx.chef_maximum
+                and not state.chef_loop_disabled
+                and held
             ):
                 start_action(fighter, fighter.action)
             return True
@@ -117,6 +168,13 @@ class Chef(NeutralSpecial, _SourcePairSpecial):
             return False
         start_action(fighter, self.ground if ctx.ground_open else self.air)
         return True
+
+    @on.release(Button.B)
+    def release(self, fighter: Any, ctx: Any) -> bool:
+        if fighter.action in self._ACTIVE:
+            _fighter_state(fighter).chef_loop_disabled = True
+            return True
+        return False
 
 
 class Judge(SideSpecial):
@@ -182,6 +240,9 @@ class Judge(SideSpecial):
             return False
 
         phase_number = _judge_phase(ctx)
+        state = _fighter_state(fighter)
+        state.judge_previous = state.judge_current
+        state.judge_current = phase_number - 1
         phases = self._SURFACE_PAIRS[phase_number - 1]
         phase = phases[0 if ctx.ground_open else 1]
         start_action(fighter, phase)
@@ -241,6 +302,11 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
         air_shoot: Transition(Action.FALL),
     }
 
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Any, ctx: Any) -> None:
+        state = _fighter_state(fighter)
+        state.panic_release_damage = 0.0
+
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         """Release a full bucket immediately, as SpecialLw_Enter does."""
@@ -255,6 +321,16 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
         ground = bool(ctx.ground_open)
         charge = getattr(ctx, "panic_charge", None)
         if isinstance(charge, int) and not isinstance(charge, bool) and charge >= 3:
+            state = _fighter_state(fighter)
+            accumulated = getattr(ctx, "panic_damage", state.panic_damage)
+            attrs = _resource_attributes(ctx, "down.attributes")
+            multiplier = getattr(attrs, "panic_damage_mul", None)
+            addition = getattr(attrs, "panic_damage_add", None)
+            if all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                   for value in (accumulated, multiplier, addition)):
+                state.panic_release_damage = accumulated * multiplier + addition
+                state.panic_charge = 0
+                state.panic_damage = 0.0
             start_action(fighter, self.ground_shoot if ground else self.air_shoot)
         else:
             start_action(fighter, self.ground if ground else self.air)
@@ -262,9 +338,10 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
 
 
 class GameAndWatch(Fighter):
+    action_state = GameAndWatchActionState
     specials = Fighter.specials.replace(
         neutral=Chef(), side=Judge(), up=Fire(), down=OilPanic()
     )
 
 
-__all__ = ["GameAndWatch", "Chef", "Judge", "Fire", "OilPanic"]
+__all__ = ["GameAndWatch", "GameAndWatchActionState", "Chef", "Judge", "Fire", "OilPanic"]

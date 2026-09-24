@@ -88,14 +88,17 @@ class SheikTests(unittest.TestCase):
     def test_needles_release_ends_each_charge_phase(self):
         move = Needles()
         for source, target in (
-            (move.ground_start, move.ground_end),
             (move.ground_loop, move.ground_end),
-            (move.air_start, move.air_end),
             (move.air_loop, move.air_end),
         ):
             fighter = _Fighter(source)
             self.assertTrue(move.release(fighter, _context()))
             self.assertIs(fighter.action, target)
+
+        for source in (move.ground_start, move.air_start):
+            fighter = _Fighter(source)
+            self.assertFalse(move.release(fighter, _context()))
+            self.assertIs(fighter.action, source)
 
         fighter = _Fighter(Chain.ground_start)
         self.assertFalse(move.release(fighter, _context()))

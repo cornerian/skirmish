@@ -173,6 +173,24 @@ class LuigiNeutralTests(unittest.TestCase):
         self.assertFalse(move.input_pressed(fighter, _context(stick=(0.0, 0.5), directional=True)))
         self.assertEqual(fighter.action, Action.WAIT)
 
+    def test_fireball_waits_for_spawn_command_before_terminal_transition(self):
+        move = Fireball()
+        fighter = _Fighter()
+        fighter.action = move.ground
+        fighter.action_state.command = (0, 0, 0, 0)
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.ground)
+
+        fighter.action_state.command = (1, 0, 0, 0)
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, Action.WAIT)
+
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 0, 0, 0)
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, move.air)
+
 
 if __name__ == "__main__":
     unittest.main()

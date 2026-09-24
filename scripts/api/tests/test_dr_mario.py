@@ -103,14 +103,25 @@ class DrMarioSpecialTests(unittest.TestCase):
             [(ArticleId.DR_MARIO_VITAMIN, (FighterPart.L1ST_NB, 1.0, 2.0), -1.0)],
         )
 
+    def test_vitamin_entry_clears_command_zero_and_throw_flags(self):
+        fighter = _Fighter()
+        fighter.throw_flags = 7
+        move = DrMario.specials.neutral
+        fighter.action = move.ground
+        move.enter(fighter, object())
+        self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
     def test_cape_entry_resets_commands_and_reflects_eligible_projectiles(self):
         move = DrMario.specials.side
         fighter = _Fighter()
         fighter.action = move.ground
         move.enter(fighter, object())
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+        self.assertFalse(fighter.flags.reflecting)
 
         hit = HitContext(projectile=True, damage=3.0, max_damage=4.0, reflect=False)
+        fighter.flags.reflecting = True
         move.projectile_contact(fighter, hit)
         self.assertTrue(hit.reflect)
 

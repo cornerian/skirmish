@@ -312,6 +312,12 @@ class JigglypuffTests(unittest.TestCase):
             self.assertEqual(fighter.action, expected)
             self.assertEqual(fighter.action_frame, 1)
 
+    def test_rest_entry_clears_native_command_slot_zero(self):
+        fighter = _Fighter(facing=-1.0, complete=(369,))
+        fighter.action_state = SimpleNamespace(command=(7, 8, 9, 10))
+        self.assertTrue(Rest().input_pressed(fighter, _context()))
+        self.assertEqual(fighter.action_state.command, (0, 8, 9, 10))
+
     def test_rest_ground_air_and_terminal_callbacks_reach_native_destinations(self):
         rest = Rest()
 
@@ -379,6 +385,21 @@ class JigglypuffTests(unittest.TestCase):
         context.input.stick = (0.0, -1.0)
         fighter = _Fighter(complete=(365,))
         self.assertFalse(sing.input_pressed(fighter, context))
+
+    def test_sing_entry_clears_native_command_slot_zero(self):
+        fighter = _Fighter(facing=-1.0, complete=(365,))
+        fighter.action_state = SimpleNamespace(command=(7, 8, 9, 10))
+        context = SimpleNamespace(
+            ground_open=True,
+            air_open=False,
+            input=SimpleNamespace(
+                stick=(0.0, 1.0),
+                just_pressed=lambda button: button is Button.B,
+            ),
+            rules=SimpleNamespace(specials=SimpleNamespace(vertical_threshold=0.5)),
+        )
+        self.assertTrue(Sing().input_pressed(fighter, context))
+        self.assertEqual(fighter.action_state.command, (0, 8, 9, 10))
 
     def test_sing_ground_air_and_terminal_callbacks_match_source(self):
         sing = Sing()

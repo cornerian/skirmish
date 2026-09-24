@@ -450,6 +450,28 @@ class Illusion(SideSpecial):
                 landing_lag=attributes.landing_lag,
             )
 
+    @hook.command_changed(2, actions=_DASH_PHASES)
+    def command_changed(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Create the visual-only Illusion/Phantasm at the source cue.
+
+        ``ftFx_SpecialS_Anim`` calls ``ftFx_SpecialS_CreateGhostItem`` every
+        dash frame.  The item routine consumes ``cmd_vars[2] == 1`` and then
+        clears the register, so routing the command trace here preserves the
+        same one-shot behavior while keeping article creation at the native
+        fighter/article boundary.
+        """
+        if ctx.event.value != 1:
+            return
+
+        article_id = (
+            ArticleId.FALCO_PHANTASM
+            if ctx.parameters.article_id == ArticleId.FALCO_LASER
+            else ArticleId.FOX_ILLUSION
+        )
+        fighter.spawn_article(article_id, fighter.position, fighter.facing)
+        command = fighter.action_state.command
+        fighter.action_state.command = (command[0], command[1], 0, command[3])
+
     @hook.landed(air_end)
     def landed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         resource = ctx.resource(self.resource)

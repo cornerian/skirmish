@@ -163,6 +163,48 @@ class YoungLinkTests(unittest.TestCase):
         )
         self.assertEqual(len(updates), 1)
 
+    def test_boomerang_release_preserves_native_direction_and_window_gates(self):
+        move = YoungLinkSideSpecial()
+        fighter = _Fighter(move.ground)
+        updates = []
+        fighter.update_boomerang_trajectory = updates.append
+        rules = SimpleNamespace(
+            specials=SimpleNamespace(
+                dash_smash_stick_threshold=0.5,
+                dash_smash_window=3,
+            )
+        )
+        event = SimpleNamespace(value=True)
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(0.25, 0.0)), rules=rules),
+        )
+        self.assertEqual(updates, [])
+        fighter.action_frame = 4
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
+        )
+        self.assertEqual(updates, [])
+        fighter.action_frame = 2
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
+        )
+        self.assertEqual(len(updates), 1)
+
+    def test_aerial_spin_attack_uses_fall_special_recovery(self):
+        move = YoungLinkUpSpecial()
+        fighter = _Fighter(move.air, grounded=False)
+        calls = []
+        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
+        self.assertTrue(move.enter_fall_special(fighter, SimpleNamespace()))
+        self.assertEqual(calls, [{"mobility": 1}])
+
+        missing = _Fighter(move.air, grounded=False)
+        self.assertTrue(move.enter_fall_special(missing, SimpleNamespace()))
+        self.assertEqual(missing.action, Action.FALL)
+
     def test_held_bomb_branch_is_optional_and_reports_airborne_state(self):
         move = YoungLinkDownSpecial()
         fighter = _Fighter(move.air, grounded=False)

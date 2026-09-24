@@ -35,6 +35,7 @@ class _Fighter:
         self.trajectory_events = []
         self.bomb_reuse = []
         self.fall_special = []
+        self.arrow_releases = []
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -48,6 +49,9 @@ class _Fighter:
 
     def enter_fall_special(self, **kwargs):
         self.fall_special.append(kwargs)
+
+    def release_arrow(self, ctx):
+        self.arrow_releases.append(ctx)
 
 
 def _context(*, ground=True, resource=True, stick=(0.0, 0.0)):
@@ -95,6 +99,28 @@ class LinkTests(unittest.TestCase):
             fighter, _context(resource=False, stick=(1.0, 0.0)),
         ))
         self.assertIsNone(fighter.action)
+
+    def test_neutral_release_forwards_arrow_launch_and_enters_end_phase(self):
+        move = Link.specials.neutral
+        fighter = _Fighter()
+        fighter.action = move.ground_loop
+        context = SimpleNamespace()
+
+        self.assertTrue(move.release(fighter, context))
+        self.assertEqual(fighter.arrow_releases, [context])
+        self.assertIs(fighter.action, move.ground_end)
+
+        fighter.action = move.air_start
+        self.assertTrue(move.release(fighter, context))
+        self.assertEqual(fighter.arrow_releases, [context, context])
+        self.assertIs(fighter.action, move.air_end)
+
+    def test_neutral_release_ignores_non_charge_actions(self):
+        move = Link.specials.neutral
+        fighter = _Fighter()
+        fighter.action = Action.WAIT
+        self.assertFalse(move.release(fighter, SimpleNamespace()))
+        self.assertEqual(fighter.arrow_releases, [])
 
     def test_side_command_forwards_boomerang_release_to_article_host(self):
         move = Link.specials.side

@@ -59,6 +59,29 @@ class FalcoSourceTests(unittest.TestCase):
             Action.SPECIAL_N_LOOP, Action.SPECIAL_AIR_N_LOOP,
         ])
 
+    def test_shared_illusion_callback_selects_falco_article_once(self):
+        move = Falco.specials.side
+        spawned = []
+        fighter = SimpleNamespace(
+            action=move.ground_dash,
+            action_state=SimpleNamespace(command=(4, 5, 1, 7)),
+            position=(12.0, 4.0, 0.0),
+            facing=-1,
+            spawn_article=lambda *args: spawned.append(args),
+        )
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=1),
+            parameters=FalcoParameters(),
+        )
+
+        move.command_changed(fighter, context)
+
+        self.assertEqual(
+            spawned,
+            [(ArticleId.FALCO_PHANTASM, (12.0, 4.0, 0.0), -1)],
+        )
+        self.assertEqual(fighter.action_state.command, (4, 5, 0, 7))
+
     def test_shared_blaster_dispatches_falco_laser_article(self):
         move = Blaster()
         spawned = []

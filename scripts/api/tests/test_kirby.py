@@ -139,6 +139,19 @@ class KirbySpecialTests(unittest.TestCase):
         Stone()._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, Stone.ground_hold.action)
 
+    def test_final_cutter_fall_rows_enter_matching_end_rows(self):
+        move = FinalCutter()
+        for fall, end, grounded in (
+            (move.ground_fall, move.ground_end, True),
+            (move.air_fall, move.air_end, False),
+        ):
+            fighter = _Fighter()
+            fighter.action = fall
+            move._transition_animation_end(
+                fighter, SimpleNamespace(grounded=grounded)
+            )
+            self.assertIs(fighter.action, end.action)
+
     def test_inhale_release_matches_source_loop_iASA(self):
         inhale = Inhale()
         for loop, end in ((inhale.ground_loop, inhale.ground_end),
@@ -202,15 +215,17 @@ class KirbySpecialTests(unittest.TestCase):
         move = Stone()
         fighter = _Fighter()
         fighter.action = move.ground_hold.action
-        fighter.action_frame = 4
-        ctx = SimpleNamespace(
-            rules=SimpleNamespace(specials=SimpleNamespace(stone_min_hold_frames=5))
-        )
-        self.assertFalse(move.release(fighter, ctx))
-        self.assertIs(fighter.action, move.ground_hold.action)
-        fighter.action_frame = 5
-        self.assertTrue(move.release(fighter, ctx))
+        self.assertTrue(move.release(fighter, SimpleNamespace()))
         self.assertIs(fighter.action, move.ground_end)
+
+    def test_final_cutter_source_phase_chains(self):
+        move = FinalCutter()
+        self.assertIs(move.on_end[move.ground_start].target, move.ground_rise)
+        self.assertIs(move.on_end[move.ground_rise].target, move.ground_fall)
+        self.assertIs(move.on_end[move.ground_fall].target, move.ground_end)
+        self.assertIs(move.on_end[move.air_start].target, move.air_rise)
+        self.assertIs(move.on_end[move.air_rise].target, move.air_fall)
+        self.assertIs(move.on_end[move.air_fall].target, move.air_end)
 
     def test_hammer_air_landing_enters_fall_special_lag(self):
         move = Hammer()

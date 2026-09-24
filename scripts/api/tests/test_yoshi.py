@@ -88,6 +88,9 @@ class YoshiSpecialTests(unittest.TestCase):
             self.assertTrue(move.input_pressed(fighter, _context(stick=stick)))
             self.assertIs(fighter.action, move.ground)
 
+        self.assertEqual(Yoshi.specials.side.ground, "Source.17:356")
+        self.assertEqual(Yoshi.specials.side.air, "Source.17:360")
+
     def test_directional_specials_reject_wrong_axis(self):
         for move, stick in (
             (Yoshi.specials.side, (0.0, 1.0)),

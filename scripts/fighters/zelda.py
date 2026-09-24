@@ -8,8 +8,8 @@ Transformation likewise exposes no cross-character replacement policy.
 from __future__ import annotations
 
 from skirmish import (
-    Action, Button, DirectionalSpecial, DownSpecial, Fighter, NeutralSpecial,
-    SideSpecial, Transition, UpSpecial, on, source_phase,
+    Action, ArticleId, Button, DirectionalSpecial, DownSpecial, Fighter,
+    NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
 )
 
 
@@ -56,6 +56,41 @@ class Din(SideSpecial, DirectionalSpecial):
             return False
         fighter.change_action(destination)
         return True
+
+    @on.command_changed(0, actions=(ground_start, ground_loop, air_start, air_loop))
+    def spawn(self, fighter: Fighter, ctx: object) -> None:
+        """Forward the source command cue that creates Din Fire.
+
+        ``ftZd_Special*S*_Anim`` consumes command variable 0 and creates the
+        article once per cue.  The native article host may provide an exact
+        joint position through ``din_fire_spawn_position``; the position
+        fallback keeps this callback useful for lightweight hosts that expose
+        only the fighter root.  Article motion, ownership, and contact
+        callbacks remain native responsibilities.
+        """
+        event = getattr(ctx, "event", None)
+        if not getattr(event, "value", False):
+            return
+
+        spawn = getattr(fighter, "spawn_article", None)
+        if not callable(spawn):
+            return
+        position_provider = getattr(fighter, "din_fire_spawn_position", None)
+        position = position_provider() if callable(position_provider) else None
+        if position is None:
+            position = getattr(fighter, "position", None)
+        if position is None:
+            return
+
+        spawn(
+            ArticleId.ZELDA_DIN_FIRE,
+            position,
+            getattr(fighter, "facing", 1.0),
+        )
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, command[1], command[2], command[3])
 
     on_end = {
         ground_start: Transition(ground_loop), ground_end: Transition(Action.WAIT),

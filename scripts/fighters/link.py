@@ -35,6 +35,30 @@ class LinkNeutralSpecial(_FamilyNeutralSpecial):
         ground_start: Transition(ground_loop), air_start: Transition(air_loop),
         ground_end: Transition(Action.WAIT), air_end: Transition(Action.FALL),
     }
+
+    @on.release(Button.B)
+    def release(self, fighter: Any, ctx: Any) -> bool:
+        """Release the drawn arrow when the source charge loop sees B up.
+
+        ``ftLk_SpecialNStart_IASA`` and ``ftLk_SpecialNLoop_IASA`` both
+        enter the matching ``End`` motion on the first frame without B.  The
+        item callback that copies charge and launch angle into the arrow is
+        owned by the article host, so forward the edge through the optional
+        ``release_arrow`` method after selecting the native end phase.
+        """
+        destination = {
+            self.ground_start: self.ground_end,
+            self.ground_loop: self.ground_end,
+            self.air_start: self.air_end,
+            self.air_loop: self.air_end,
+        }.get(fighter.action)
+        if destination is None:
+            return False
+        release = getattr(fighter, "release_arrow", None)
+        if callable(release):
+            release(ctx)
+        fighter.change_action(destination)
+        return True
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),

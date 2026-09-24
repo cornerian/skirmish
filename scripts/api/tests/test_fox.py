@@ -204,6 +204,51 @@ class FoxShineTests(unittest.TestCase):
 
             self.assertEqual(fighter.action_state.command, (1, 2, 0, 4))
 
+    def test_illusion_command_trace_spawns_the_source_article_once(self):
+        move = Fox.specials.side
+        spawned = []
+        fighter = SimpleNamespace(
+            action=move.ground_dash,
+            action_state=SimpleNamespace(command=(1, 2, 1, 4)),
+            position=(10.0, 20.0, 0.0),
+            facing=-1.0,
+            spawn_article=lambda *args: spawned.append(args),
+        )
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=1),
+            parameters=Fox.parameters(),
+        )
+
+        move.command_changed(fighter, context)
+
+        self.assertEqual(
+            spawned,
+            [(ArticleId.FOX_ILLUSION, (10.0, 20.0, 0.0), -1.0)],
+        )
+        self.assertEqual(fighter.action_state.command, (1, 2, 0, 4))
+
+    def test_illusion_command_trace_uses_falco_phantasm_identity(self):
+        move = Fox.specials.side
+        spawned = []
+        fighter = SimpleNamespace(
+            action=move.air_dash,
+            action_state=SimpleNamespace(command=(0, 0, 0, 0)),
+            position=(1.0, 2.0, 3.0),
+            facing=1.0,
+            spawn_article=lambda *args: spawned.append(args),
+        )
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=1),
+            parameters=Falco.parameters(),
+        )
+
+        move.command_changed(fighter, context)
+
+        self.assertEqual(
+            spawned,
+            [(ArticleId.FALCO_PHANTASM, (1.0, 2.0, 3.0), 1.0)],
+        )
+
     def test_reflector_projectile_contact_enters_hit_phase(self):
         move = Fox.specials.down
         fighter = SimpleNamespace(

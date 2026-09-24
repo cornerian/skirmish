@@ -7,6 +7,7 @@ the native animation resource still gates entry through its complete state.
 from fighter import DonkeyKongAttribute
 from skirmish import (
     Action,
+    ActionState,
     Button,
     Fighter,
     MoveContext,
@@ -19,6 +20,55 @@ from skirmish import (
     source_phase,
     start_complete_special,
 )
+
+
+class DonkeyKongActionState(ActionState):
+    """Portable mirror of the Giant Punch counters owned by ``ftDk``.
+
+    The native fighter stores the charge count in ``u.dk.x222C`` and copies it
+    to ``specialn.xC`` when B releases the loop.  Keeping those values in the
+    action state lets a script host preserve the transition decision without
+    making the move depend on a Python global.
+    """
+
+    command: tuple[int, int, int, int] = (0, 0, 0, 0)
+    arm_swings: int = 0
+    release_swings: int = 0
+
+
+def _dk_state(fighter: Fighter) -> DonkeyKongActionState:
+    state = getattr(fighter, "action_state", None)
+    if state is None:
+        state = DonkeyKongActionState()
+        fighter.action_state = state
+    return state
+
+
+def _max_arm_swings(fighter: Fighter, ctx: MoveContext) -> int | None:
+    """Read the source SpecialN cap when the host exposes the typed value.
+
+    Older standalone fixtures do not provide Donkey Kong's full attribute
+    block; returning ``None`` keeps their existing start/loop behavior while a
+    native resource host can expose the source field under either spelling.
+    """
+
+    candidates = [getattr(fighter, "special_n_max_arm_swings", None)]
+    lookup = getattr(ctx, "resource", None)
+    if callable(lookup):
+        resource = lookup("specials.special_attributes")
+        candidates.extend((
+            getattr(resource, "max_arm_swings", None),
+            getattr(resource, "special_n_max_arm_swings", None),
+        ))
+        if isinstance(resource, dict):
+            candidates.extend((
+                resource.get("max_arm_swings"),
+                resource.get("special_n_max_arm_swings"),
+            ))
+    for value in candidates:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
 
 
 class GiantPunch(NeutralSpecial):
@@ -48,6 +98,37 @@ class GiantPunch(NeutralSpecial):
         air_start, air_loop, air_cancel, air_punch, air_full,
     )
     _CHARGE = (ground_loop, air_loop)
+
+    @hook.action_enter(
+        ground_start, ground_loop, ground_cancel, ground_punch, ground_full,
+        air_start, air_loop, air_cancel, air_punch, air_full,
+    )
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Reset command slots and preserve the source release count."""
+
+        state = _dk_state(fighter)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
+        if fighter.action in (self.ground_start, self.air_start):
+            state.release_swings = 0
+
+    def _entry(self, fighter: Fighter, ctx: MoveContext, grounded: bool):
+        state = _dk_state(fighter)
+        cap = _max_arm_swings(fighter, ctx)
+        if cap is not None and state.arm_swings == cap:
+            state.release_swings = state.arm_swings
+            state.arm_swings = 0
+            return (self.ground_full, 373) if grounded else (self.air_full, 378)
+        return (self.ground_start, 369) if grounded else (self.air_start, 374)
+
+    def _release(self, fighter: Fighter) -> None:
+        state = _dk_state(fighter)
+        state.release_swings = state.arm_swings
+        state.arm_swings = 0
+        fighter.change_action(
+            self.ground_punch if fighter.action == self.ground_loop else self.air_punch
+        )
 
     on_end = {
         ground_start: Transition(ground_loop),
@@ -82,18 +163,14 @@ class GiantPunch(NeutralSpecial):
                 if input_state.just_pressed(Button.L) or input_state.just_pressed(Button.R):
                     self.cancel_charge(fighter, ctx)
                     return True
-            fighter.change_action(
-                self.ground_punch if fighter.action == self.ground_loop else self.air_punch
-            )
+            self._release(fighter)
             return True
         if fighter.action in self._ACTIVE:
             return True
         return start_complete_special(
             fighter,
             ctx,
-            lambda grounded, _: (self.ground_start, 369)
-            if grounded
-            else (self.air_start, 374),
+            lambda grounded, _: self._entry(fighter, ctx, grounded),
             active_actions=self._ACTIVE,
         )
 
@@ -256,6 +333,7 @@ class SpinningKong(UpSpecial):
 
 
 class DonkeyKong(Fighter):
+    action_state = DonkeyKongActionState
     specials = Fighter.specials.replace(neutral=GiantPunch(), up=SpinningKong())
 
 

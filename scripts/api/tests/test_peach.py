@@ -148,6 +148,13 @@ class PeachSpecialTests(unittest.TestCase):
 
         up = Peach.specials.up
         fighter = _Fighter()
+        fighter.action = up.ground
+        up._transition_animation_end(fighter, _context())
+        # ftPe_SpecialHiStart_Anim (361) enters common FallSpecial directly;
+        # state 362 is reached by the landing collision callback instead.
+        self.assertIs(fighter.action, Action.FALL)
+
+        fighter = _Fighter()
         fighter.action = up.ground_end
         up._transition_animation_end(fighter, _context())
         self.assertIs(fighter.action, Action.WAIT)
@@ -183,6 +190,20 @@ class PeachSpecialTests(unittest.TestCase):
             fighter, SimpleNamespace(event=SimpleNamespace(value=0))
         )
         self.assertEqual(fighter.changes, [])
+
+    def test_special_entries_clear_native_command_windows(self):
+        for move, action, expected in (
+            (Peach.specials.neutral, Peach.specials.neutral.ground, (0, 0, 0, 0)),
+            (Peach.specials.side, Peach.specials.side.ground_start, (0, 0, 0, 0)),
+            (Peach.specials.up, Peach.specials.up.ground, (0, 0, 0, 8)),
+        ):
+            fighter = _Fighter()
+            fighter.action_state.command = (7, 6, 5, 8)
+            fighter.action = action
+
+            move.reset_command_window(fighter, SimpleNamespace())
+
+            self.assertEqual(fighter.action_state.command, expected)
 
     def test_side_start_waits_for_animation_end_then_selects_block_branch(self):
         side = Peach.specials.side

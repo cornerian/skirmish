@@ -46,9 +46,12 @@ class DancingBlade(EmblemSideSpecial):
     def _ab_pressed(ctx) -> bool:
         input_state = getattr(ctx, "input", None)
         query = getattr(input_state, "just_pressed", None)
-        if not callable(query):
-            return False
-        return bool(query(Button.A) and query(Button.B))
+        if callable(query):
+            return bool(query(Button.A) and query(Button.B))
+        # Native callback bridges may expose the serialized button mask rather
+        # than the authoring helper.  Keep the chord atomic in both forms.
+        buttons = getattr(input_state, "pressed_buttons", 0)
+        return bool(buttons & 0x300) if isinstance(buttons, int) else False
 
     @on.input_pressed(Button.A, Button.B, require_all_buttons=True)
     def input_pressed(self, fighter, ctx) -> bool:
@@ -67,6 +70,8 @@ class DancingBlade(EmblemSideSpecial):
         if fighter.action not in self._active_actions() or not self._ab_pressed(ctx):
             return False
         state = getattr(fighter, "action_state", None)
+        if state is None:
+            return False
         command = getattr(state, "command", (0, 0, 0, 0))
         if not isinstance(command, (tuple, list)) or len(command) != 4:
             return False
@@ -138,6 +143,34 @@ class Counter(EmblemDownSpecial):
     ground_hit = source_phase(370)
     air = source_phase(371)
     air_hit = source_phase(372)
+
+    @on.command_changed(1, actions=(ground, air))
+    def command_changed(self, fighter, ctx) -> bool:
+        """Arm the source Counter shield before entering its hit phase.
+
+        ``ftMs_SpecialLw`` registers ``MarsAttributes::x64`` when command
+        variable one is raised.  The portable host may provide that descriptor
+        on the callback context and an optional registration method on the
+        fighter; retaining both lookups keeps this callback useful in native
+        and standalone authoring harnesses without fabricating shield fields.
+        """
+        event = getattr(ctx, "event", None)
+        if getattr(event, "value", 0) != 1:
+            return False
+        descriptor = getattr(ctx, "shield_descriptor", None)
+        if descriptor is None:
+            descriptor = getattr(ctx, "counter_shield", None)
+        register = getattr(fighter, "register_counter_shield", None)
+        if descriptor is not None and callable(register):
+            register(descriptor)
+        fighter_action = fighter.action
+        if fighter_action == self.ground:
+            fighter.change_action(self.ground_hit)
+            return True
+        if fighter_action == self.air:
+            fighter.change_action(self.air_hit)
+            return True
+        return False
 
 
 

@@ -120,9 +120,12 @@ through the fighter's hitlag callbacks. A second roll must exclude rows 2 and
 
 ## Host gaps
 
-The current authoring layer can expose source phases, resource gates, typed
-roll/charge inputs, and terminal transitions. It does not yet own the native
-article object lifecycle, bone attachment, article hitlag forwarding, absorb
-callbacks, command-variable traces, or article-specific hitbox callbacks.
-Those gaps block full Chef food, Judge, Oil Panic, Rescue, and Parachute
-behavioral parity without fabricating native effects.
+The fighter script mirrors the source-local Chef loop-disable flag, Judge
+previous-row shift, and full Oil Panic release calculation when the host
+supplies the corresponding typed inputs and attributes. The authoring layer
+still does not own the native article object lifecycle, bone attachment,
+article hitlag forwarding, absorb callbacks, command-variable traces, or
+article-specific hitbox callbacks. Those gaps block full Chef food, Judge,
+Oil Panic, Rescue, and Parachute behavioral parity without fabricating native
+effects; cached Oil Panic damage remains fighter state until the article
+bridge consumes it.

@@ -278,6 +278,27 @@ class GanondorfTests(unittest.TestCase):
         self.assertTrue(move.wall_rebound(fighter, SimpleNamespace(wall=True)))
         self.assertTrue(getattr(fighter.action, "reference", fighter.action).endswith(":363"))
 
+    def test_wizard_foot_wall_rebound_requires_opposite_facing_wall(self):
+        move = Ganondorf.specials.down
+
+        same_side = _Fighter(move.ground)
+        same_side.action_state.command = (1, 0, 0, 0)
+        same_side.facing = 1.0
+        self.assertFalse(move.wall_rebound(
+            same_side,
+            SimpleNamespace(wall=SimpleNamespace(normal=(1.0, 0.0))),
+        ))
+        self.assertEqual(same_side.changes, [])
+
+        opposite_side = _Fighter(move.ground)
+        opposite_side.action_state.command = (1, 0, 0, 0)
+        opposite_side.facing = 1.0
+        self.assertTrue(move.wall_rebound(
+            opposite_side,
+            SimpleNamespace(wall=SimpleNamespace(normal=(-1.0, 0.0))),
+        ))
+        self.assertTrue(getattr(opposite_side.action, "reference", opposite_side.action).endswith(":363"))
+
 
 if __name__ == "__main__":
     unittest.main()

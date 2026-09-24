@@ -83,6 +83,20 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
     ground = source_phase(347)
     air = source_phase(348)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Clear the up-special command latch on every source entry.
+
+        ``ftMr_SpecialHi_Enter`` and ``ftMr_SpecialAirHi_Enter`` both clear
+        ``cmd_vars[0]`` before starting the motion.  The remaining command
+        slots belong to the common animation stream, so preserve them while
+        reproducing that fighter-local reset.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, command[1], command[2], command[3])
+
 
 class MarioTornado(DownSpecial, _SourcePair):
     ground = source_phase(349)

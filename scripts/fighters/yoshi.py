@@ -116,12 +116,12 @@ class EggLay(NeutralSpecial, _YoshiSpecial):
 class EggRoll(SideSpecial, _YoshiSpecial):
     """Egg Roll's ground and aerial source state machines."""
 
-    ground = source_phase(360)
     ground_start = source_phase(356)
     ground_loop = source_phase(357)
     ground_turn = source_phase(358)
     ground_end = source_phase(359)
-    air = ground
+    ground = ground_start
+    air = source_phase(360)
     air_loop = source_phase(361)
     air_turn = source_phase(362)
     air_landing = source_phase(363)
@@ -136,7 +136,8 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         air_landing,
     )
     on_end = {
-        ground: Transition(air_loop),
+        ground: Transition(ground_loop),
+        air: Transition(air_loop),
         air_loop: Transition(air_turn),
         air_turn: Transition(air_landing),
         air_landing: Transition(Action.FALL),
@@ -146,6 +147,7 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         ground_end: Transition(Action.WAIT),
     }
     on_ground = {
+        air: Transition(ground, preserve_state=True, keep_frame=True),
         ground: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
         air_turn: Transition(ground_turn, preserve_state=True, keep_frame=True),
