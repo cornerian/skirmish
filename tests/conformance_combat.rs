@@ -17,7 +17,25 @@ const Z: u16 = 0x0010;
 
 fn close_data() -> MatchData {
     let mut data = support::data();
-    data.stage.spawns = [[-2.0, 0.0], [2.0, 0.0]];
+    // The synthetic jab's bone-1 hit center is 1.5 units forward and its
+    // radius is 1.25. Keep the fighters close enough for that volume to
+    // overlap the target's 0.4-radius hurt capsule while retaining distinct
+    // starting positions.
+    data.stage.spawns = [[-0.5, 0.0], [0.5, 0.0]];
+    // Keep the common jab contact centered on the synthetic bone. The fixture
+    // is testing combat routing and response state, so its volume should not
+    // depend on a particular authored forward offset.
+    for fighter in &mut data.fighters {
+        for hit in fighter
+            .jab
+            .frames
+            .iter_mut()
+            .flat_map(|frame| &mut frame.hitboxes)
+        {
+            hit.center = [0.0, 0.0, 0.0];
+            hit.radius = 2.0;
+        }
+    }
     data.rules.knockback_speed = 0.0;
     data.rules.damage.displacement = Some(skirmish::fighter::damage::HitlagDisplacementRules {
         axis_thresholds: [0.3; 2],

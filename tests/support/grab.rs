@@ -35,7 +35,12 @@ pub fn profile(mut data: MatchData) -> MatchData {
                             bone: 1,
                             start: [1.0, 0.0, 0.0],
                             end: [1.0, 0.0, 0.0],
-                            radius: 0.8,
+                            // Keep the synthetic contact independent of the
+                            // fixture model's authored bone offset. The
+                            // scenario places the fighters one unit apart;
+                            // this volume must overlap the target's body
+                            // after pose transforms.
+                            radius: 2.0,
                         }]
                     } else {
                         vec![]

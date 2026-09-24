@@ -20,8 +20,14 @@ Run the ignored release benchmark from `skirmish/` with the shared, stable
 environment:
 
 ```text
-xonsh --no-rc -c 'env CARGO_HOME=/tmp/skirmish-pon-cargo CARGO_TARGET_DIR=/tmp/skirmish-pon-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 SKIRMISH_PON_STDLIB_ARCHIVE=/tmp/skirmish-stdlib-release-proof/pon-stdlib-final-sorted.tar.gz SKIRMISH_PON_STDLIB_SHA256=5c7ce12a21f4d5ae49a8cb2c425911bc4de863f427e0ff174fb74ff7bf63639c cargo test --locked --release --test pon_match_performance -- --ignored --nocapture'
+xonsh --no-rc -c 'env CARGO_HOME=/tmp/skirmish-pon-cargo CARGO_TARGET_DIR=/tmp/skirmish-pon-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 SKIRMISH_PON_STDLIB_ARCHIVE=/mnt/archive/runs/skirmish-pon-stdlib-v3.14.0-20260923/pon-stdlib.tar.gz SKIRMISH_PON_STDLIB_SHA256=91aab4eb859690ebe1ecf8e3e21957378fea86b1ebac0a61e7559145f64c642d cargo test --locked --release --test pon_match_performance -- --ignored --nocapture'
 ```
+
+The archive is the verified durable release input. Its manifest identity is
+`b14b1766c1138f9aad84664dbbd4f52242b874a1003810a7ec69410cc5f83782`.
+It was built from Pon commit `ab9067dbd2899c64c4d67a4bc27b8ad49472b126`
+and CPython `v3.14.0`. The retained provenance record is
+`/mnt/archive/runs/skirmish-pon-stdlib-v3.14.0-20260923/README.md`.
 
 The successful 2026-09-15 post-dispatch-fast-path release run printed these per-frame step samples
 (32 repetitions of the 600-frame trace), allocation counts, and checkpoint/restore
@@ -179,9 +185,9 @@ order. Scope ownership still prevents callbacks from another program,
 unrelated native work, or another match frame from sharing it.
 
 The 2026-09-15 figures in this document are retained historical measurements.
-There is no verified latest release Pon benchmark: the required verified Pon
-stdlib archive is currently unavailable in the benchmark environment. Until
-that archive is restored and the release command above completes, this
-document makes no current speed claim and provides no decomp-speed or complete
-behavioral-parity claim. The historical fixture establishes only the observed
-equivalence described at the top of this document.
+The verified release archive is now available, but the latest release Pon
+performance benchmark remains unmeasured until the command above completes.
+This document therefore makes no current speed claim and provides no
+decomp-speed or complete behavioral-parity claim. The historical fixture
+establishes only the observed equivalence described at the top of this
+document.

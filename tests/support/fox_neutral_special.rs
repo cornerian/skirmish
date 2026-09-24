@@ -1,5 +1,6 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
+use skirmish::fighter::specials::Rules;
 use skirmish::game::script::resources::{Resources, Specials};
 use skirmish::game::{Controller, Match, data::MatchData};
 use std::collections::BTreeMap;
@@ -13,6 +14,15 @@ use std::collections::BTreeMap;
 pub fn profile(mut data: MatchData) -> MatchData {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../fixtures/game/fox-neutral-special.json")).unwrap();
+    // The neutral fixture predates the shared special-rule resource. Keep the
+    // same synthetic common thresholds used by the sibling Fox fixtures so
+    // neutral B can reach the character-special dispatcher.
+    data.rules.specials = Some(Rules {
+        side_stick_threshold: 0.3,
+        turn_threshold: 0.1,
+        vertical_threshold: 0.6,
+        air_drift_recovery_step: 0.02,
+    });
     let mut values = BTreeMap::new();
     let mut neutral = fixture["parameters"].clone();
     // The neutral policy consumes the exported command-variable trace.  A
@@ -56,6 +66,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
         resources: Resources::new(values).unwrap(),
     };
     for fighter in &mut data.fighters {
+        fighter.name = "Fox".to_owned();
         fighter.specials = Some(specials.clone());
     }
     data

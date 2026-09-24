@@ -136,7 +136,11 @@ fn directional_aerials_select_forward_back_up_and_down_states() {
 fn grounded_neutral_b_enters_a_character_special() {
     let mut game = Match::new(special_resources::profile(data()), 0).unwrap();
     let state = step(&mut game, input(BUTTON_B, [0.0; 2]));
-    assert!(action(&state, 0).starts_with("special"));
+    assert!(
+        action(&state, 0).starts_with("special"),
+        "grounded neutral B remained in {}",
+        action(&state, 0)
+    );
 }
 
 // src/melee/ft/kinds/ftCommon/ftCo_SpecialAir.c dispatches aerial specials.
@@ -144,7 +148,11 @@ fn grounded_neutral_b_enters_a_character_special() {
 fn airborne_neutral_b_enters_an_aerial_special() {
     let mut game = special_resources::airborne_game(data());
     let state = step(&mut game, input(BUTTON_B, [0.0; 2]));
-    assert!(action(&state, 0).starts_with("special_air"));
+    assert!(
+        action(&state, 0).starts_with("special_air"),
+        "airborne neutral B remained in {}",
+        action(&state, 0)
+    );
     assert!(!state.fighters[0].grounded);
 }
 
