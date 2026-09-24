@@ -69,14 +69,14 @@ class EmblemFamilyTests(unittest.TestCase):
         self.assertEqual(len(surface), 1)
         self.assertEqual(len(surface[0].actions), 18)
 
-    def test_dancing_blade_input_route_requires_atomic_a_and_b_mask(self):
+    def test_dancing_blade_input_route_accepts_either_button_mask(self):
         marth = _load("marth")
         event = next(
             event for event in marth.Marth.specials.side.events()
             if event.hook.value == "input_pressed"
         )
         self.assertEqual(event.buttons, 0x300)
-        self.assertTrue(event.buttons_all)
+        self.assertFalse(event.buttons_all)
 
     def test_dancing_blade_ab_selects_source_phase_tree(self):
         marth = _load("marth")
@@ -84,7 +84,7 @@ class EmblemFamilyTests(unittest.TestCase):
         fighter = self._Fighter(move.ground_start)
         ctx = SimpleNamespace(input=self._Input(stick=(0.0, 0.8)))
 
-        # ftMars first arms cmd_vars[1], then consumes A+B after cmd_vars[0].
+        # ftMars first arms cmd_vars[1], then consumes either A or B after cmd_vars[0].
         self.assertTrue(move.choose_phase(fighter, ctx))
         self.assertEqual(fighter.action_state.command[1], 1)
         # The first callback arms cmd_vars[1]; the animation later sets
@@ -107,19 +107,13 @@ class EmblemFamilyTests(unittest.TestCase):
             self.assertIn("command_trace_changed", hooks)
             self.assertNotIn("before_hit", hooks)
 
-    def test_counter_command_only_registers_shield_and_preserves_start_phase(self):
+    def test_counter_command_waits_for_native_contact(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
             module = _load(module_name)
             move = getattr(module, fighter_name).specials.down
             fighter = self._Fighter(move.ground)
-            registered = []
-            fighter.register_counter_shield = registered.append
-            descriptor = object()
-            ctx = SimpleNamespace(
-                event=SimpleNamespace(value=1), shield_descriptor=descriptor,
-            )
-            self.assertTrue(move.command_changed(fighter, ctx))
-            self.assertEqual(registered, [descriptor])
+            ctx = SimpleNamespace(event=SimpleNamespace(value=1))
+            self.assertFalse(move.command_changed(fighter, ctx))
             self.assertEqual(fighter.action, move.ground)
 
     def test_neutral_command_zero_enters_fully_charged_end_phase(self):
