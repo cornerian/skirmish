@@ -516,11 +516,12 @@ fn dispatch_starlark(
                     super::starlark::Error::Host("lifecycle host lock poisoned".into())
                 })?;
                 host.owned_resource = callback.resource.clone();
-                host.callback_owner = if is_input_hook(hook) {
-                    callback.behavior_index
-                } else {
-                    None
-                };
+                // Lifecycle callbacks retain their behavior owner just like
+                // input callbacks.  ActionEntered/ActionExited and contact
+                // callbacks may call `change_action`; dropping the owner for
+                // those hooks loses move ownership at exactly the transition
+                // boundary where the native dispatcher must preserve it.
+                host.callback_owner = callback_owner_for_dispatch(callback);
             }
             let primary = super::starlark::HostRef::fighter(Arc::clone(&shared));
             let context_ref = super::starlark::HostRef::context(Arc::clone(&shared));
@@ -608,4 +609,33 @@ fn is_input_hook(hook: super::Hook) -> bool {
             | super::Hook::StickChanged
             | super::Hook::ActionAvailabilityChanged
     )
+}
+
+/// Preserve the linked behavior identity while a callback is running. Global
+/// callbacks intentionally carry `None`; behavior callbacks carry the index
+/// selected by metadata routing, regardless of hook kind.
+fn callback_owner_for_dispatch(callback: &super::definition::OwnedCallback) -> Option<usize> {
+    callback.behavior_index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_callbacks_keep_behavior_owner_for_action_changes() {
+        let callback = crate::game::script::definition::OwnedCallback {
+            callback: crate::game::script::starlark::CallbackHandle::new("on_action_entered"),
+            resource: Some("special".into()),
+            behavior_index: Some(7),
+        };
+        assert_eq!(callback_owner_for_dispatch(&callback), Some(7));
+
+        let global = crate::game::script::definition::OwnedCallback {
+            callback: crate::game::script::starlark::CallbackHandle::new("global_action_entered"),
+            resource: None,
+            behavior_index: None,
+        };
+        assert_eq!(callback_owner_for_dispatch(&global), None);
+    }
 }

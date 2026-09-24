@@ -1,0 +1,12 @@
+[package]
+name = "skirmish-compat-math"
+version = "0.1.0"
+edition = "2024"
+description = "Source-compatible binary32 math shared by Skirmish and its script runtime"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

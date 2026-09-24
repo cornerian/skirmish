@@ -4,9 +4,10 @@
 mod aerial_fixture;
 
 use skirmish::{
-    fighter::{clank as math, state::stale},
+    fighter::state::stale,
     game::{
-        Action, BUTTON_A, Controller, Event, Match, State, clank,
+        Action, BUTTON_A, Controller, Event, Match, State,
+        clank::{self, ResponseRules},
         data::{AttackFrame, MatchData},
     },
 };
@@ -22,7 +23,7 @@ fn data(damage: [u32; 2]) -> MatchData {
     data.stage.blast = [-200.0, 200.0, -200.0, 200.0];
     data.rules.clank = Some(clank::Rules {
         profile: clank::Profile::OrdinaryGroundedNonSlash,
-        response: math::Rules {
+        response: ResponseRules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,

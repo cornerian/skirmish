@@ -32,6 +32,7 @@ pub(crate) fn validate_native(movement: &Movement) -> Result<(), String> {
             movement.ground_acceleration,
             movement.ground_knockback,
             movement.shield_knockback,
+            movement.ground_friction_multiplier,
             movement.stick_x,
             movement.attributes.ground_max_horizontal_velocity,
             movement.attributes.air_max_horizontal_velocity,
@@ -63,12 +64,22 @@ pub(crate) fn set_velocity(movement: &mut Movement, x: f32, y: f32) -> Result<()
     require_finite(x, "velocity.x")?;
     require_finite(y, "velocity.y")?;
     movement.self_velocity[..2].copy_from_slice(&[x, y]);
-    Ok(())
+    // Keep this setter on the same validation boundary as the other
+    // script-facing movement commands.  In particular, a native proxy can
+    // carry an invalid third component or attribute value even when the two
+    // values supplied by the script are finite.
+    validate_native(movement)
 }
 
 pub(crate) fn fall(movement: &mut Movement, gravity: f32, terminal: f32) -> Result<(), String> {
     require_finite(gravity, "gravity")?;
     require_finite(terminal, "terminal velocity")?;
+    if gravity < 0.0 {
+        return Err("gravity must be nonnegative".into());
+    }
+    if terminal < 0.0 {
+        return Err("terminal velocity must be nonnegative".into());
+    }
     movement.fall(gravity, terminal);
     validate_native(movement)
 }
@@ -96,4 +107,46 @@ pub(crate) fn drift_or_friction(movement: &mut Movement, step: f32) -> Result<bo
     let result = crate::fighter::helpers::drift_or_friction_air(movement, step);
     validate_native(movement)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_velocity_revalidates_the_complete_native_view() {
+        let mut movement = Movement::default();
+        movement.self_velocity[2] = f32::NAN;
+
+        let result = set_velocity(&mut movement, 1.25, -0.5);
+
+        assert!(result.is_err());
+        assert_eq!(movement.self_velocity[..2], [1.25, -0.5]);
+    }
+
+    #[test]
+    fn fall_clamps_downward_speed_without_touching_horizontal_or_depth_velocity() {
+        let mut movement = Movement {
+            self_velocity: [2.0, -1.9, 0.25],
+            ..Movement::default()
+        };
+
+        fall(&mut movement, 0.2, 2.0).unwrap();
+
+        assert_eq!(movement.self_velocity, [2.0, -2.0, 0.25]);
+    }
+
+    #[test]
+    fn fall_rejects_negative_gravity_and_terminal_velocity_before_mutation() {
+        for (gravity, terminal) in [(-0.1, 2.0), (0.2, -2.0)] {
+            let mut movement = Movement {
+                self_velocity: [1.0, -0.5, 0.25],
+                ..Movement::default()
+            };
+            let before = movement;
+
+            assert!(fall(&mut movement, gravity, terminal).is_err());
+            assert_eq!(movement, before);
+        }
+    }
 }

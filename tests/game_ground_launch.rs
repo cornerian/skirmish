@@ -1,7 +1,9 @@
 //! End-to-end grounded launch projection and scalar knockback decay.
 use skirmish::{
     collision::stage,
-    fighter::damage::{DamageMotion, DamageMotionRules, DamagePoseAttributes, GroundLaunchRules, HurtHeight},
+    fighter::damage::{
+        DamageMotion, DamageMotionRules, DamagePoseAttributes, GroundLaunchRules, HurtHeight,
+    },
     game::{
         Action, BUTTON_A, Controller, Error, Event, Match,
         data::{Bone, MatchData, StageGeometry},

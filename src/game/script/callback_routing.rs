@@ -27,6 +27,7 @@ pub(crate) struct CallbackSelector {
     pub buttons: Option<u16>,
     pub command_index: Option<u8>,
     pub deadline: Option<u32>,
+    pub event_id: Option<u8>,
     pub gate: Option<String>,
 }
 
@@ -35,6 +36,13 @@ impl CallbackSelector {
     /// should reject the returned error rather than silently broadening an
     /// invalid declaration into a wildcard.
     pub(crate) fn from_binding(binding: &EventBinding) -> Result<Self, String> {
+        if binding.hook == Hook::AnimationEvent {
+            if binding.event_id.is_none_or(|event_id| event_id >= 8) {
+                return Err("animation_event requires a numeric event_id in 0..7".into());
+            }
+        } else if binding.event_id.is_some() {
+            return Err("event_id is only valid for animation_event callbacks".into());
+        }
         let action = binding.action.as_deref().and_then(parse_action_name);
         if binding.action.is_some() && action.is_none() {
             return Err(format!("unknown callback action {:?}", binding.action));
@@ -55,6 +63,7 @@ impl CallbackSelector {
             buttons: binding.buttons,
             command_index: binding.command_index,
             deadline: binding.deadline,
+            event_id: binding.event_id,
             gate: binding.gate.clone(),
         })
     }
@@ -131,6 +140,11 @@ pub(crate) fn matches(
     {
         return false;
     }
+    if let Some(event_id) = selector.event_id
+        && event.get("event_id").and_then(Value::as_u64) != Some(u64::from(event_id))
+    {
+        return false;
+    }
     if let Some(deadline) = selector.deadline {
         let direct = event.get("deadline").and_then(Value::as_u64) == Some(u64::from(deadline))
             || event.get("frame").and_then(Value::as_u64) == Some(u64::from(deadline));
@@ -162,24 +176,28 @@ fn action_matches(
         return true;
     }
     let event = context.get("event").unwrap_or(context);
-    let mut candidates = Vec::with_capacity(3);
+    let mut found_candidate = false;
     for key in action_keys(hook) {
         if let Some(action) = event.get(key).and_then(action_value) {
-            candidates.push(action);
+            found_candidate = true;
+            if selector.action.is_some_and(|expected| expected == action)
+                || selector.actions.contains(&action)
+            {
+                return true;
+            }
         }
     }
-    if candidates.is_empty()
-        && let Some(current_action) = current_action
-    {
-        candidates.push(current_action);
-    }
-    selector
-        .action
-        .is_some_and(|action| candidates.contains(&action))
-        || selector
-            .actions
-            .iter()
-            .any(|action| candidates.contains(action))
+    // Preserve the source event contract: the fighter snapshot is only a
+    // fallback when the event carried no recognized action field.  In
+    // particular, an event with an explicit custom action must not be
+    // rebound to the current canonical action.  The old implementation
+    // allocated a temporary candidate vector for every selector match;
+    // callback routing runs once per binding on frame hot paths.
+    !found_candidate
+        && current_action.is_some_and(|action| {
+            selector.action.is_some_and(|expected| expected == action)
+                || selector.actions.contains(&action)
+        })
 }
 
 fn action_keys(hook: Hook) -> &'static [&'static str] {
@@ -191,11 +209,29 @@ fn action_keys(hook: Hook) -> &'static [&'static str] {
 }
 
 fn action_value(value: &Value) -> Option<Action> {
-    value.as_str().and_then(parse_action_name)
+    if let Some(name) = value.as_str() {
+        return parse_action_name(name);
+    }
+    value
+        .get("custom")
+        .and_then(Value::as_u64)
+        .map(crate::game::CustomActionId::new)
+        .map(Action::Custom)
 }
 
 fn parse_action_name(name: &str) -> Option<Action> {
     let name = name.strip_prefix("Action.").unwrap_or(name);
+    // Projectile dispatch snapshots the native action with `Debug`, so
+    // custom/source states arrive as `Custom(CustomActionId(<u64>))` instead
+    // of their canonical Source.* or Custom.* authoring spelling. Preserve
+    // action filters for that route without accepting broader debug output.
+    if let Some(value) = name
+        .strip_prefix("Custom(CustomActionId(")
+        .and_then(|value| value.strip_suffix("))"))
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        return Some(Action::Custom(crate::game::CustomActionId::new(value)));
+    }
     super::parse_action(name)
 }
 
@@ -217,6 +253,7 @@ mod tests {
             buttons: None,
             command_index: None,
             deadline: None,
+            event_id: None,
             gate: None,
         }
     }
@@ -269,6 +306,107 @@ mod tests {
             Hook::CommandTraceChanged,
             &selector,
             &json!({"event":{"command_index":2}}),
+            Some(Action::Wait),
+            None,
+        ));
+    }
+
+    #[test]
+    fn animation_event_selector_requires_and_matches_numeric_id() {
+        let mut binding = binding(Hook::AnimationEvent);
+        binding.event_id = Some(0);
+        let selector = CallbackSelector::from_binding(&binding).unwrap();
+        assert!(matches(
+            Hook::AnimationEvent,
+            &selector,
+            &json!({"event":{"event_id":0}}),
+            Some(Action::Wait),
+            None,
+        ));
+        assert!(!matches(
+            Hook::AnimationEvent,
+            &selector,
+            &json!({"event":{"event_id":1}}),
+            Some(Action::Wait),
+            None,
+        ));
+
+        binding.event_id = None;
+        assert!(CallbackSelector::from_binding(&binding).is_err());
+    }
+
+    #[test]
+    fn action_filter_uses_snapshot_only_when_event_has_no_action() {
+        let mut binding = binding(Hook::AnimationEnded);
+        binding.action = Some("Wait".into());
+        let selector = CallbackSelector::from_binding(&binding).unwrap();
+
+        assert!(matches(
+            Hook::AnimationEnded,
+            &selector,
+            &json!({"event": {}}),
+            Some(Action::Wait),
+            None,
+        ));
+        assert!(!matches(
+            Hook::AnimationEnded,
+            &selector,
+            &json!({"event": {"action": "SpecialNStart"}}),
+            Some(Action::Wait),
+            None,
+        ));
+    }
+
+    #[test]
+    fn action_filter_matches_custom_action_objects_without_snapshot_fallback() {
+        let mut binding = binding(Hook::ActionEntered);
+        binding.action = Some("Custom.test:phase".into());
+        let selector = CallbackSelector::from_binding(&binding).unwrap();
+        let custom_id = crate::game::script::custom_action_id("test", "phase").get();
+        let other_id = crate::game::script::custom_action_id("test", "other").get();
+
+        assert!(matches(
+            Hook::ActionEntered,
+            &selector,
+            &json!({"event": {"to": {"custom": custom_id}}}),
+            Some(Action::Wait),
+            None,
+        ));
+        assert!(!matches(
+            Hook::ActionEntered,
+            &selector,
+            &json!({"event": {"to": {"custom": other_id}}}),
+            Some(Action::Custom(crate::game::CustomActionId::new(custom_id))),
+            None,
+        ));
+    }
+
+    #[test]
+    fn projectile_debug_action_spelling_matches_custom_filter() {
+        let mut binding = binding(Hook::ProjectileContact);
+        binding.action = Some("Custom.test:phase".into());
+        let selector = CallbackSelector::from_binding(&binding).unwrap();
+        let custom_id = crate::game::script::custom_action_id("test", "phase").get();
+
+        assert!(matches(
+            Hook::ProjectileContact,
+            &selector,
+            &json!({
+                "event": {
+                    "action": format!("Custom(CustomActionId({custom_id}))")
+                }
+            }),
+            None,
+            None,
+        ));
+        assert!(!matches(
+            Hook::ProjectileContact,
+            &selector,
+            &json!({
+                "event": {
+                    "action": "Custom(CustomActionId(7))"
+                }
+            }),
             Some(Action::Wait),
             None,
         ));

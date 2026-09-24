@@ -239,7 +239,7 @@ pub struct Attributes {
 /// The subset of fighter state accessed by the translated movement routines.
 /// `animation_velocity` is upstream `x74_anim_vel`, not an already integrated
 /// velocity. `ground_acceleration` is upstream `xE4_ground_accel_1`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Movement {
     pub self_velocity: [f32; 3],
     pub animation_velocity: [f32; 3],
@@ -247,9 +247,29 @@ pub struct Movement {
     pub ground_acceleration: f32,
     pub ground_knockback: f32,
     pub shield_knockback: f32,
+    /// Current floor-material multiplier used by native ground projection.
+    /// One is the neutral value when a stage does not provide material data.
+    pub ground_friction_multiplier: f32,
     pub stick_x: f32,
     pub floor_normal: [f32; 3],
     pub attributes: Attributes,
+}
+
+impl Default for Movement {
+    fn default() -> Self {
+        Self {
+            self_velocity: [0.0; 3],
+            animation_velocity: [0.0; 3],
+            ground_velocity: 0.0,
+            ground_acceleration: 0.0,
+            ground_knockback: 0.0,
+            shield_knockback: 0.0,
+            ground_friction_multiplier: 1.0,
+            stick_x: 0.0,
+            floor_normal: [0.0; 3],
+            attributes: Attributes::default(),
+        }
+    }
 }
 
 impl Movement {
@@ -305,6 +325,16 @@ impl Movement {
             0.0,
         ];
         self.self_velocity = [y * self.ground_velocity, -x * self.ground_velocity, 0.0];
+    }
+
+    /// `ftCommon_ApplyGroundMovement`: apply the current floor-material
+    /// multiplier before projecting the ground acceleration. Callers that
+    /// model `ApplyGroundMovementNoSlide` should keep using `project_ground`.
+    pub fn project_ground_with_friction(&mut self) {
+        if self.ground_friction_multiplier < 1.0 {
+            self.ground_acceleration *= self.ground_friction_multiplier;
+        }
+        self.project_ground();
     }
 
     /// `ftCommon_ClampGrVel`.

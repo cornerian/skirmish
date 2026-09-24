@@ -95,6 +95,7 @@ fn movement(state: [f32; 13]) -> Movement {
         },
         ground_knockback: -7.0,
         shield_knockback: 9.0,
+        ground_friction_multiplier: 1.0,
     }
 }
 

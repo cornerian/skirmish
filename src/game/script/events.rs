@@ -31,6 +31,22 @@ use std::collections::{BTreeMap, BTreeSet};
 /// compiler. This module owns payloads and routing, never a second allowlist.
 pub use skirmish_script_runtime::hooks::HookKind as EventKind;
 
+/// Numeric bit identity emitted by a native animation-event mask. The wire
+/// value is the bit index, not a script-selected string or frame deadline.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct AnimationEventId(pub u8);
+
+impl AnimationEventId {
+    pub const B0: Self = Self(0);
+
+    pub const fn bit(self) -> u8 {
+        if self.0 < 8 { 1u8 << self.0 } else { 0 }
+    }
+}
+
 pub const MAX_SUBSCRIPTIONS: usize = 256;
 pub const MAX_PENDING_TRANSITIONS: usize = 8;
 pub const MAX_PENDING_DEADLINES: usize = 64;
@@ -102,6 +118,17 @@ pub struct NativeEventState {
     /// animation owners can hold their terminal frame.
     #[serde(default)]
     pub animation_delivered_generation: Option<ActionGeneration>,
+    /// Rising bits already delivered from the current action's compact native
+    /// animation-event mask. The generation boundary makes same-action
+    /// re-entry eligible again without depending on frame deadlines.
+    #[serde(default)]
+    pub animation_event_generation: Option<ActionGeneration>,
+    #[serde(default)]
+    pub animation_event_seen_mask: u8,
+    /// Exact animation sample most recently inspected. Repeated snapshots of
+    /// one native frame cannot redeliver its event bits.
+    #[serde(default)]
+    pub animation_event_sample: Option<(ActionGeneration, Action, u32)>,
     /// Last action animation sample whose authored command row was applied.
     /// This is keyed by the native generation and frame rather than mutable
     /// command state: callbacks may consume a command value during dispatch,
@@ -168,6 +195,9 @@ impl NativeEventState {
             .action_generation
             .next()
             .ok_or("native action generation exhausted")?;
+        self.animation_event_generation = Some(generation);
+        self.animation_event_seen_mask = 0;
+        self.animation_event_sample = None;
         self.action_generation = generation;
         self.pending_transitions.push(PendingActionTransition {
             from,
@@ -411,6 +441,12 @@ pub enum Event {
         player: u8,
         action: Action,
     },
+    AnimationEvent {
+        frame: u32,
+        player: u8,
+        action: Action,
+        event_id: AnimationEventId,
+    },
     ScheduledDeadline {
         frame: u32,
         owner: OwnerId,
@@ -481,6 +517,7 @@ impl Event {
             Self::ActionEntered { .. } => EventKind::ActionEntered,
             Self::ActionExited { .. } => EventKind::ActionExited,
             Self::AnimationEnded { .. } => EventKind::AnimationEnded,
+            Self::AnimationEvent { .. } => EventKind::AnimationEvent,
             Self::ScheduledDeadline { .. } => EventKind::ScheduledDeadline,
             Self::CommandTraceChanged { .. } => EventKind::CommandTraceChanged,
             Self::BeforeHit { .. } => EventKind::BeforeHit,
@@ -504,6 +541,7 @@ impl Event {
             | Self::ActionEntered { frame, .. }
             | Self::ActionExited { frame, .. }
             | Self::AnimationEnded { frame, .. }
+            | Self::AnimationEvent { frame, .. }
             | Self::ScheduledDeadline { frame, .. }
             | Self::CommandTraceChanged { frame, .. }
             | Self::BeforeHit { frame, .. }
@@ -567,11 +605,16 @@ impl Dispatcher {
         if self.owners.len() >= MAX_SUBSCRIPTIONS {
             return Err(DispatchError::TooManySubscriptions);
         }
+        // Allocate the ID before touching either index.  If the finite ID
+        // space is exhausted, returning an error must leave the dispatcher
+        // unchanged; inserting into `subscriptions` first would create an
+        // orphan ID that dispatch could route without an owner.
         let id = SubscriptionId(self.next_id);
-        self.next_id = self
+        let next_id = self
             .next_id
             .checked_add(1)
             .ok_or(DispatchError::IdExhausted)?;
+        self.next_id = next_id;
         self.subscriptions.entry(kind).or_default().insert(id);
         self.owners.insert(id, owner);
         Ok(id)
@@ -625,9 +668,14 @@ mod tests {
             EventKind::from_name("before_hit"),
             Some(EventKind::BeforeHit)
         );
+        assert_eq!(
+            EventKind::from_name("animation_event"),
+            Some(EventKind::AnimationEvent)
+        );
         assert_eq!(EventKind::from_name("combat"), None);
         assert_eq!(EventKind::from_name("frame"), None);
-        assert_eq!(EventKind::ALL.len(), 18);
+        assert_eq!(EventKind::ALL.len(), EventKind::COUNT);
+        assert_eq!(EventKind::ALL.len(), 19);
     }
 
     #[test]
@@ -656,6 +704,28 @@ mod tests {
         );
         assert!(dispatcher.cancel(action));
         assert_eq!(dispatcher.len(), 1);
+    }
+
+    #[test]
+    fn exhausted_subscription_ids_do_not_leave_orphan_routes() {
+        let owner = OwnerId::new(7);
+        let mut dispatcher = Dispatcher {
+            next_id: u64::MAX,
+            ..Dispatcher::default()
+        };
+        let event = Event::InputPressed {
+            frame: 1,
+            player: 0,
+            buttons: 1,
+        };
+
+        assert_eq!(
+            dispatcher.subscribe(owner, EventKind::InputPressed),
+            Err(DispatchError::IdExhausted)
+        );
+        assert!(dispatcher.is_empty());
+        assert!(dispatcher.dispatch(&event).is_empty());
+        assert_eq!(dispatcher.next_id, u64::MAX);
     }
 
     #[test]

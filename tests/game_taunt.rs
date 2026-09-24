@@ -23,8 +23,7 @@ use skirmish::{
     fighter::taunt::{Taunt, TauntAnimation, TauntFrame},
     game::{
         Action, BUTTON_A, BUTTON_DPAD_DOWN, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, BUTTON_DPAD_UP,
-        BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Error, Match, State,
-        data::MatchData,
+        BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Error, Match, State, data::MatchData,
     },
 };
 

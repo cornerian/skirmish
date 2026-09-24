@@ -1,7 +1,9 @@
 #![cfg(feature = "c-oracle")]
 #![allow(unsafe_code)]
 use proptest::prelude::*;
-use skirmish::game::clank::{self, Fighter, Hit, ReboundRules, Response, Rules, Victim, Victims};
+use skirmish::game::clank::{
+    self, ClashFighter, Hit, ReboundRules, Response, ResponseRules, Victim, Victims,
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
@@ -24,8 +26,8 @@ struct BridgeFighter {
     towards: f32,
     hits: [BridgeHit; 4],
 }
-impl From<&Fighter> for BridgeFighter {
-    fn from(f: &Fighter) -> Self {
+impl From<&ClashFighter> for BridgeFighter {
+    fn from(f: &ClashFighter) -> Self {
         Self {
             id: f.id,
             grounded: u32::from(f.grounded),
@@ -74,7 +76,12 @@ unsafe extern "C" {
     fn oracle_clank_rebound(values: *const f32, out: *mut f32);
 }
 
-fn compare(mut fighters: [Fighter; 2], slots: [usize; 2], mut candidates: [bool; 4], rules: Rules) {
+fn compare(
+    mut fighters: [ClashFighter; 2],
+    slots: [usize; 2],
+    mut candidates: [bool; 4],
+    rules: ResponseRules,
+) {
     let mut original = fighters.each_ref().map(BridgeFighter::from);
     let mut mask = candidates.map(u32::from);
     let original_result = unsafe {
@@ -123,7 +130,7 @@ fn hit() -> impl Strategy<Value = Hit> {
             hits_grounded: true,
         })
 }
-fn fighter(id: u32) -> impl Strategy<Value = Fighter> {
+fn fighter(id: u32) -> impl Strategy<Value = ClashFighter> {
     (
         any::<bool>(),
         -100.0f32..100.0,
@@ -133,7 +140,7 @@ fn fighter(id: u32) -> impl Strategy<Value = Fighter> {
         -1.0f32..1.0,
     )
         .prop_map(
-            move |(grounded, x, hits, damage, rebound_duration, towards)| Fighter {
+            move |(grounded, x, hits, damage, rebound_duration, towards)| ClashFighter {
                 id,
                 grounded,
                 x,
@@ -153,7 +160,7 @@ proptest! {
         a in fighter(1), b in fighter(2), slots in prop::array::uniform2(0usize..4), mask in any::<[bool;4]>(),
         gap in 0i32..30, scale in -1.0f32..2.0, base in -2.0f32..10.0
     ) {
-        compare([a,b],slots,mask,Rules {damage_gap:gap,duration_scale:scale,duration_base:base});
+        compare([a,b],slots,mask,ResponseRules {damage_gap:gap,duration_scale:scale,duration_base:base});
     }
 
     #[test]
@@ -211,7 +218,7 @@ fn compare_rebound(duration: f32, towards: f32, rules: ReboundRules) {
 
 #[test]
 fn exact_thresholds_fractional_minimum_old_responses_and_zero_impulse_match() {
-    let rules = Rules {
+    let rules = ResponseRules {
         damage_gap: 9,
         duration_scale: 0.5,
         duration_base: 2.0,
@@ -221,7 +228,7 @@ fn exact_thresholds_fractional_minimum_old_responses_and_zero_impulse_match() {
     ] {
         for b in [0.0, -0.0, 0.5, 1.0, 10.0, 19.0] {
             for old in [0, 1, 10, 50] {
-                let fighters = [(1, a), (2, b)].map(|(id, damage)| Fighter {
+                let fighters = [(1, a), (2, b)].map(|(id, damage)| ClashFighter {
                     id,
                     grounded: true,
                     x: -0.0,

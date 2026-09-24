@@ -23,6 +23,7 @@ controller-input = ["dep:sdl3"]
 anyhow = "1"
 glam = { version = "0.33", default-features = false, features = ["scalar-math", "libm"] }
 libm = "0.2"
+skirmish-compat-math = { path = "crates/compat-math" }
 menus = { path = "crates/menus" }
 skirmish-script-runtime = { path = "crates/script-runtime", features = ["experimental-continuations"] }
 serde = { version = "1", features = ["derive"] }

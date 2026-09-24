@@ -84,7 +84,30 @@ impl Controller {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+/// Stable identity for an action declared by a native fighter namespace.
+///
+/// The value is deliberately not an index into a definition table.  Custom
+/// actions can therefore travel through snapshots and rollback without
+/// depending on registration order.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct CustomActionId(pub u64);
+
+impl CustomActionId {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Wait,
@@ -323,6 +346,199 @@ pub enum Action {
     /// Captain Falcon's grounded Falcon Kick airborne end (Slippi 362).
     SpecialLwEndAir,
     Eliminated,
+    /// Source-defined action state. The identifier is a stable hash of the
+    /// qualified fighter namespace and canonical action key.
+    Custom(CustomActionId),
+}
+
+impl Action {
+    /// Number of dense built-in action slots. Keep this independent of the
+    /// custom variant so adding a source action cannot shift wire/index IDs.
+    pub const BUILTIN_COUNT: usize = 168;
+
+    /// Return the dense built-in slot, or `None` for a source-defined action.
+    /// This explicit match preserves the existing O(1) action tables on the
+    /// native hot path while custom actions use their immutable maps.
+    pub const fn builtin_index(self) -> Option<usize> {
+        match self {
+            Self::Wait => Some(0),
+            Self::Walk => Some(1),
+            Self::Dash => Some(2),
+            Self::Run => Some(3),
+            Self::RunTurn => Some(4),
+            Self::RunBrake => Some(5),
+            Self::Turn => Some(6),
+            Self::Squat => Some(7),
+            Self::SquatWait => Some(8),
+            Self::SquatRv => Some(9),
+            Self::Ottotto => Some(10),
+            Self::OttottoWait => Some(11),
+            Self::AppealSR => Some(12),
+            Self::AppealSL => Some(13),
+            Self::JumpSquat => Some(14),
+            Self::Jump => Some(15),
+            Self::JumpAerial => Some(16),
+            Self::GuardOn => Some(17),
+            Self::Guard => Some(18),
+            Self::GuardOff => Some(19),
+            Self::GuardSetOff => Some(20),
+            Self::GuardReflect => Some(21),
+            Self::ShieldBreakFly => Some(22),
+            Self::ShieldBreakFall => Some(23),
+            Self::ShieldBreakDown => Some(24),
+            Self::ShieldBreakStand => Some(25),
+            Self::Furafura => Some(26),
+            Self::EscapeF => Some(27),
+            Self::EscapeB => Some(28),
+            Self::EscapeN => Some(29),
+            Self::EscapeAir => Some(30),
+            Self::Pass => Some(31),
+            Self::Fall => Some(32),
+            Self::FallSpecial => Some(33),
+            Self::LandingFallSpecial => Some(34),
+            Self::Jab => Some(35),
+            Self::Attack12 => Some(36),
+            Self::Attack13 => Some(37),
+            Self::Attack100Start => Some(38),
+            Self::Attack100Loop => Some(39),
+            Self::Attack100End => Some(40),
+            Self::AttackDash => Some(41),
+            Self::AttackS3Hi => Some(42),
+            Self::AttackS3HiS => Some(43),
+            Self::AttackS3S => Some(44),
+            Self::AttackS3LwS => Some(45),
+            Self::AttackS3Lw => Some(46),
+            Self::AttackHi3 => Some(47),
+            Self::AttackLw3 => Some(48),
+            Self::AttackS4Hi => Some(49),
+            Self::AttackS4HiS => Some(50),
+            Self::AttackS4S => Some(51),
+            Self::AttackS4LwS => Some(52),
+            Self::AttackS4Lw => Some(53),
+            Self::AttackHi4 => Some(54),
+            Self::AttackLw4 => Some(55),
+            Self::Catch => Some(56),
+            Self::CatchDash => Some(57),
+            Self::CatchPull => Some(58),
+            Self::CatchDashPull => Some(59),
+            Self::CatchWait => Some(60),
+            Self::CatchAttack => Some(61),
+            Self::CatchCut => Some(62),
+            Self::ThrowF => Some(63),
+            Self::ThrowB => Some(64),
+            Self::ThrowHi => Some(65),
+            Self::ThrowLw => Some(66),
+            Self::CapturePulledHi => Some(67),
+            Self::CaptureWaitHi => Some(68),
+            Self::CaptureDamageHi => Some(69),
+            Self::CapturePulledLw => Some(70),
+            Self::CaptureWaitLw => Some(71),
+            Self::CaptureDamageLw => Some(72),
+            Self::CaptureCut => Some(73),
+            Self::CaptureCaptain => Some(74),
+            Self::ThrownF => Some(75),
+            Self::ThrownB => Some(76),
+            Self::ThrownHi => Some(77),
+            Self::ThrownLw => Some(78),
+            Self::CliffCatch => Some(79),
+            Self::CliffWait => Some(80),
+            Self::CliffClimb => Some(81),
+            Self::CliffJump => Some(82),
+            Self::CliffAttack => Some(83),
+            Self::CliffEscape => Some(84),
+            Self::Rebirth => Some(85),
+            Self::RebirthWait => Some(86),
+            Self::Entry => Some(87),
+            Self::EntryStart => Some(88),
+            Self::EntryEnd => Some(89),
+            Self::SpecialNStart => Some(90),
+            Self::SpecialNLoop => Some(91),
+            Self::SpecialNEnd => Some(92),
+            Self::SpecialAirNStart => Some(93),
+            Self::SpecialAirNLoop => Some(94),
+            Self::SpecialAirNEnd => Some(95),
+            Self::SpecialSStart => Some(96),
+            Self::SpecialS => Some(97),
+            Self::SpecialSEnd => Some(98),
+            Self::SpecialAirSStart => Some(99),
+            Self::SpecialAirS => Some(100),
+            Self::SpecialAirSEnd => Some(101),
+            Self::SpecialHiHold => Some(102),
+            Self::SpecialHiHoldAir => Some(103),
+            Self::SpecialHi => Some(104),
+            Self::SpecialAirHi => Some(105),
+            Self::SpecialHiCatch => Some(106),
+            Self::SpecialHiThrow => Some(107),
+            Self::SpecialHiLanding => Some(108),
+            Self::SpecialHiFall => Some(109),
+            Self::SpecialHiBound => Some(110),
+            Self::SpecialLwStart => Some(111),
+            Self::SpecialLw => Some(112),
+            Self::SpecialLwHit => Some(113),
+            Self::SpecialLwEnd => Some(114),
+            Self::SpecialLwTurn => Some(115),
+            Self::SpecialAirLwStart => Some(116),
+            Self::SpecialAirLw => Some(117),
+            Self::SpecialAirLwHit => Some(118),
+            Self::SpecialAirLwEnd => Some(119),
+            Self::SpecialAirLwTurn => Some(120),
+            Self::AttackAirN => Some(121),
+            Self::AttackAirF => Some(122),
+            Self::AttackAirB => Some(123),
+            Self::AttackAirHi => Some(124),
+            Self::AttackAirLw => Some(125),
+            Self::LandingAirN => Some(126),
+            Self::LandingAirF => Some(127),
+            Self::LandingAirB => Some(128),
+            Self::LandingAirHi => Some(129),
+            Self::LandingAirLw => Some(130),
+            Self::Damage => Some(131),
+            Self::DamageFall => Some(132),
+            Self::FlyReflectWall => Some(133),
+            Self::FlyReflectCeiling => Some(134),
+            Self::PassiveWall => Some(135),
+            Self::PassiveWallJump => Some(136),
+            Self::PassiveCeiling => Some(137),
+            Self::Passive => Some(138),
+            Self::PassiveStandF => Some(139),
+            Self::PassiveStandB => Some(140),
+            Self::DownBound => Some(141),
+            Self::DownWait => Some(142),
+            Self::DownDamage => Some(143),
+            Self::DownForward => Some(144),
+            Self::DownBack => Some(145),
+            Self::DownAttack => Some(146),
+            Self::DownStand => Some(147),
+            Self::ReboundStop => Some(148),
+            Self::Rebound => Some(149),
+            Self::Landing => Some(150),
+            Self::DeadDown => Some(151),
+            Self::DeadLeft => Some(152),
+            Self::DeadRight => Some(153),
+            Self::DeadUp => Some(154),
+            Self::DeadUpStar => Some(155),
+            Self::DeadUpStarIce => Some(156),
+            Self::DeadUpFall => Some(157),
+            Self::DeadUpFallHitCamera => Some(158),
+            Self::DeadUpFallHitCameraFlat => Some(159),
+            Self::DeadUpFallIce => Some(160),
+            Self::DeadUpFallHitCameraIce => Some(161),
+            Self::Respawn => Some(162),
+            Self::SpecialLwGroundEnd => Some(163),
+            Self::SpecialAirLwLandingEnd => Some(164),
+            Self::SpecialAirLwEndAir => Some(165),
+            Self::SpecialLwEndAir => Some(166),
+            Self::Eliminated => Some(167),
+            Self::Custom(_) => None,
+        }
+    }
+
+    pub const fn custom_id(self) -> Option<CustomActionId> {
+        match self {
+            Self::Custom(id) => Some(id),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -449,6 +665,9 @@ pub struct Fighter {
     /// Fully validated native projectile commands staged by callbacks.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) pending_projectiles: Vec<projectile::PendingProjectile>,
+    /// Compact numeric article commands emitted by typed fighter scripts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) pending_article_spawns: Vec<projectile::PendingArticleSpawn>,
     /// Effects parented to this fighter, included in checkpoints and cleared
     /// together according to the native fighter ownership boundary.
     pub effects: crate::game::flow::effects::EffectState,
@@ -772,17 +991,5 @@ impl Match {
         }
         self.state = checkpoint.state.clone();
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fixture() -> MatchData {
-        serde_json::from_str(include_str!(
-            "../../tests/fixtures/game/integration-match.json"
-        ))
-        .unwrap()
     }
 }

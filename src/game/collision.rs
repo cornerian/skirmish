@@ -127,6 +127,7 @@ pub(crate) fn geometry(data: &Stage) -> Cow<'_, StageGeometry> {
 
 pub(crate) fn sample(f: &mut Fighter, data: &FighterData, pose: &Pose) -> Result<(), Error> {
     match &data.collision_box {
+        CollisionBox::None => return Ok(()),
         CollisionBox::Fixed { source } => f.ecb.load_fixed(source, f.facing as i32),
         CollisionBox::Bones {
             indices,
@@ -143,6 +144,18 @@ pub(crate) fn sample(f: &mut Fighter, data: &FighterData, pose: &Pose) -> Result
         }
     }
     Ok(())
+}
+
+/// Sample the fighter's active ECB, evaluating its pose only when the data
+/// actually derives the ECB from bones.  `CollisionBox::None` is a legitimate
+/// source configuration, not a zero-sized pose-derived box, so it must remain
+/// a zero-work path at every caller.
+pub(crate) fn sample_current(f: &mut Fighter, data: &FighterData) -> Result<(), Error> {
+    if data.collision_box.is_none() {
+        return Ok(());
+    }
+    let pose = simulation::pose(f, data)?;
+    sample(f, data, &pose)
 }
 
 /// `mpColl_LoadECB_inline`'s flags argument (`mp/mpcoll.c`), chosen per
@@ -199,7 +212,10 @@ pub(crate) fn initialize(
     data: &FighterData,
     geometry: &StageGeometry,
 ) -> Result<(), Error> {
-    sample(f, data, &simulation::pose(f, data)?)?;
+    if data.collision_box.is_none() {
+        return Ok(());
+    }
+    sample_current(f, data)?;
     f.ecb.interpolate(1.0).map_err(physics)?;
     let stage = stage::Stage::new(&geometry.lines, &geometry.joints).map_err(physics)?;
     let bottom = add(f.position, f.ecb.current.bottom);
@@ -241,6 +257,9 @@ pub(crate) fn resolve(
 ) -> Result<(), Error> {
     let (stage, geometry, previous_geometry) = environment;
     let (data, rules, input) = resources;
+    if data.collision_box.is_none() {
+        return Ok(());
+    }
     // Ground-contact lifecycle delivery belongs to the native collision
     // boundary.  Capture the state before any substep changes it so a
     // stationary grounded fighter does not poll the callback every frame,
@@ -936,6 +955,26 @@ fn physics(error: impl core::fmt::Display) -> Error {
 mod tests {
     use super::*;
     use crate::game::Controller;
+
+    #[test]
+    fn none_collision_box_skips_pose_evaluation() {
+        let mut data: MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let mut state = simulation::initial_state(&data, 0, [0, 1]).unwrap();
+        data.fighters[0].collision_box = CollisionBox::None;
+        // This pose is deliberately unusable. If initialization evaluated it
+        // before checking the ECB variant, it would report BoneOutOfRange.
+        data.fighters[0].bones = vec![crate::game::data::Bone {
+            parent: Some(usize::MAX),
+            classical_scale: false,
+            translation: [0.0; 3],
+            rotation: [0.0; 3],
+            scale: [1.0; 3],
+        }];
+        sample_current(&mut state.fighters[0], &data.fighters[0]).unwrap();
+    }
 
     fn line(start: [f32; 2], end: [f32; 2], kind: u32) -> stage::Line {
         stage::Line {

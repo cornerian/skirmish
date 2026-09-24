@@ -1,7 +1,9 @@
 //! Explicit synthetic kernel compositions, not an implemented match scheduler.
 use skirmish::{
     fighter::{combat, state::stale},
-    game::clank::{self, ClashFighter, Hit, ReboundRules, Response, ResponseRules, Victim, Victims},
+    game::clank::{
+        self, ClashFighter, Hit, ReboundRules, Response, ResponseRules, Victim, Victims,
+    },
 };
 
 fn fighters(damage: [f32; 2]) -> [ClashFighter; 2] {

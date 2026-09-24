@@ -304,9 +304,11 @@ fn captain_two_player_fixture_records_roster_and_special_entries() {
     for index in 0..summary.selected_frames {
         observed.insert(actor_at_port(&replay, index, Port::P1).post.state);
     }
-    assert!([347, 349, 350, 351, 354, 355, 356]
-        .into_iter()
-        .all(|state| observed.contains(&state)));
+    assert!(
+        [347, 349, 350, 351, 354, 355, 356]
+            .into_iter()
+            .all(|state| observed.contains(&state))
+    );
 
     // Representative recorded entries, retaining controller input and both
     // sides of each action-state transition for future adapter consumers.
@@ -340,7 +342,10 @@ fn captain_dive_capture_fixture_preserves_catch_victim_window() {
         let captain = actor_at_port(&replay, (frame + 123) as usize, Port::P1);
         let victim = actor_at_port(&replay, (frame + 123) as usize, Port::P4);
         assert_eq!(captain.post.state, 355, "Captain catch state at {frame}");
-        assert_eq!(victim.post.state, 275, "CaptureCaptain victim state at {frame}");
+        assert_eq!(
+            victim.post.state, 275,
+            "CaptureCaptain victim state at {frame}"
+        );
     }
     let throw = actor_at_port(&replay, (8671 + 123) as usize, Port::P1);
     let released = actor_at_port(&replay, (8671 + 123) as usize, Port::P4);

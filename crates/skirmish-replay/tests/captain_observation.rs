@@ -233,7 +233,7 @@ fn actor_selective_observation_reads_captain_from_four_player_frame() {
         .copied()
         .find_map(|index| {
             let frame = replay.frame(index).unwrap();
-            (frame.id == 522).then(|| frame)
+            (frame.id == 522).then_some(frame)
         })
         .expect("recorded frame 522");
 
@@ -270,13 +270,18 @@ fn captain_special_entries_preserve_source_input_evidence() {
     // These are raw replay observations paired with the resulting Captain
     // state; they are not a claim that the two-player simulator can reproduce
     // the full four-player recording.
-    for (frame_id, state, stick_y_sign) in [
-        (522, 354, 1.0_f32),
-        (6594, 359, -1.0_f32),
-    ] {
+    for (frame_id, state, stick_y_sign) in [(522, 354, 1.0_f32), (6594, 359, -1.0_f32)] {
         let actor = captain_at_frame(&replay, frame_id);
-        assert_eq!(u32::from(actor.post.state), state, "Captain state at frame {frame_id}");
-        assert_ne!(actor.pre.buttons & u32::from(game::BUTTON_B), 0, "B input at frame {frame_id}");
+        assert_eq!(
+            u32::from(actor.post.state),
+            state,
+            "Captain state at frame {frame_id}"
+        );
+        assert_ne!(
+            actor.pre.buttons & u32::from(game::BUTTON_B),
+            0,
+            "B input at frame {frame_id}"
+        );
         assert!(
             actor.pre.joystick.y * stick_y_sign > 0.5,
             "Captain stick y should select the recorded special at frame {frame_id}: {}",

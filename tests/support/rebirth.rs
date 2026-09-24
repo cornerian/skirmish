@@ -1,4 +1,4 @@
-use skirmish::game::{data::MatchData, rebirth::Rules};
+use skirmish::game::{data::MatchData, flow::rebirth::Rules};
 
 pub fn profile(mut data: MatchData) -> MatchData {
     data.rules.rebirth = Some(Rules {

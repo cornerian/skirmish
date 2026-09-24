@@ -8,7 +8,7 @@ use skirmish::{
     game::{
         BUTTON_A, BUTTON_X, Controller, Error, Event, Match,
         data::{CollisionBox, MatchData, StageGeometry},
-        stage_motion::{Rules, Track, Transform},
+        flow::stage_motion::{Rules, Track, Transform},
     },
 };
 

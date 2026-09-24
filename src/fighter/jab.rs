@@ -463,12 +463,11 @@ fn start_rapid(fighter: &mut Fighter, data: &FighterData, parameters: &Parameter
         crate::game::script::move_registry::MoveSlot::RapidJab,
         Action::Attack100Start,
     );
-    if fighter.action == Action::Attack100Start {
-        if let Some(flags) =
+    if fighter.action == Action::Attack100Start
+        && let Some(flags) =
             script(parameters, Action::Attack100Start).and_then(|s| s.flags.first().copied())
-        {
-            apply_flags(fighter, flags);
-        }
+    {
+        apply_flags(fighter, flags);
     }
 }
 

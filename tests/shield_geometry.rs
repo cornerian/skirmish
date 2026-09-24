@@ -67,6 +67,50 @@ fn bone_hierarchy_translation_and_nonuniform_scale_feed_shield_contact() {
 }
 
 #[test]
+fn reflected_parent_pose_mirrors_shield_contact_geometry() {
+    let make_pose = |scale| {
+        Pose::evaluate(&[Bone {
+            local: LocalTransform {
+                scale: [scale, 1.0, 1.0],
+                ..Default::default()
+            },
+            ..Default::default()
+        }])
+        .unwrap()
+    };
+    let positive = make_pose(2.0);
+    let reflected = make_pose(-2.0);
+
+    let positive_center = bones::transform_point(positive.world_matrix(0).unwrap(), [0.0; 3]);
+    let reflected_center = bones::transform_point(reflected.world_matrix(0).unwrap(), [0.0; 3]);
+    assert_eq!(positive_center, [0.0, 0.0, 0.0]);
+    assert_eq!(reflected_center, [0.0, 0.0, 0.0]);
+
+    let positive_contact = shield::shield_contact(
+        &point([2.5, 0.0, 0.0], 0.5),
+        positive_center,
+        positive.world_matrix(0).unwrap(),
+        1.0,
+        20.0,
+    )
+    .unwrap()
+    .unwrap();
+    let reflected_contact = shield::shield_contact(
+        &point([-2.5, 0.0, 0.0], 0.5),
+        reflected_center,
+        reflected.world_matrix(0).unwrap(),
+        1.0,
+        20.0,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(positive_contact.position, [2.0, 0.0, 0.0]);
+    assert_eq!(reflected_contact.position, [-2.0, 0.0, 0.0]);
+    assert_eq!(positive_contact.overlap, reflected_contact.overlap);
+}
+
+#[test]
 fn shear_and_swept_hitboxes_use_the_matrix_aware_path() {
     let shear = [
         [1.0, 1.0, 0.0, 0.0],

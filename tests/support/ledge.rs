@@ -1,7 +1,5 @@
 use skirmish::fighter::ledge::{Attachment, AttackMotion, Frame, Jump, Motion, Parameters, Rules};
-use skirmish::game::{
-    data::{Attack, AttackFrame, Hitbox, MatchData},
-};
+use skirmish::game::data::{Attack, AttackFrame, Hitbox, MatchData};
 
 pub fn profile(mut data: MatchData) -> MatchData {
     data.rules.ledge = Some(Rules {
@@ -25,6 +23,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
         let motion = |offsets: &[[f32; 3]]| Motion {
             blend_frames: 0,
             dynamics_variant: 0,
+            phase2_blend_frames: 0,
+            phase2_dynamics_variant: 0,
             frames: offsets.iter().copied().map(frame).collect(),
         };
         let attack_offsets = [

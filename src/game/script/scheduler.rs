@@ -298,6 +298,13 @@ impl SchedulerState {
         owner: OwnerId,
         action: Action,
     ) -> Result<ActionScope, ScheduleError> {
+        let active = self
+            .actions
+            .get(&owner)
+            .ok_or(ScheduleError::NoActiveAction)?;
+        if active.action != action {
+            return Err(ScheduleError::ActionMismatch);
+        }
         let mut candidate = self.clone();
         candidate.cancel_action_timers(owner);
         let generation = ActionGeneration(candidate.next_generation);
@@ -376,9 +383,7 @@ impl SchedulerState {
         if now < self.now {
             return Err(ScheduleError::TimeWentBackwards);
         }
-        let mut candidate = self.clone();
-        candidate.now = now;
-        let mut due = candidate
+        let mut due = self
             .timers
             .iter()
             .filter(|(_, timer)| {
@@ -390,9 +395,13 @@ impl SchedulerState {
         if due.len() > MAX_DELIVERIES_PER_ADVANCE {
             return Err(ScheduleError::TooManyDeliveries);
         }
+        // All fallible checks are complete. Updating the clock and draining
+        // in place avoids cloning the whole timer tree on every simulation
+        // frame (the old copy was only needed to make those checks atomic).
+        self.now = now;
         let mut events = Vec::with_capacity(due.len());
         for (id, timer) in due {
-            candidate.timers.remove(&id);
+            self.timers.remove(&id);
             events.push(Event::ScheduledDeadline {
                 frame: timer.deadline,
                 owner: timer.owner,
@@ -400,7 +409,6 @@ impl SchedulerState {
                 token: timer.token,
             });
         }
-        *self = candidate;
         Ok(events)
     }
 
@@ -422,13 +430,7 @@ impl SchedulerState {
         }
         let action = active.action;
         let generation = active.generation;
-        let mut candidate = self.clone();
-        candidate
-            .actions
-            .get_mut(&owner)
-            .expect("active action was checked above")
-            .last_frame = action_frame;
-        let mut due = candidate
+        let mut due = self
             .timers
             .iter()
             .filter(|(_, timer)| {
@@ -448,17 +450,23 @@ impl SchedulerState {
         if due.len() > MAX_DELIVERIES_PER_ADVANCE {
             return Err(ScheduleError::TooManyDeliveries);
         }
+        // The monotonic-frame and delivery-limit checks are complete. Once
+        // they pass, mutate in place so per-frame advancement does not copy
+        // its timer tree.
+        self.actions
+            .get_mut(&owner)
+            .expect("active action was checked above")
+            .last_frame = action_frame;
         let mut events = Vec::with_capacity(due.len());
         for (id, timer) in due {
-            candidate.timers.remove(&id);
+            self.timers.remove(&id);
             events.push(Event::ScheduledDeadline {
-                frame: candidate.now,
+                frame: self.now,
                 owner: timer.owner,
                 timer: id,
                 token: timer.token,
             });
         }
-        *self = candidate;
         Ok(events)
     }
 
@@ -599,6 +607,23 @@ mod tests {
     }
 
     #[test]
+    fn action_clock_restart_rejects_a_different_action_identity() {
+        let owner = OwnerId::new(6);
+        let mut scheduler = SchedulerState::new();
+        scheduler
+            .enter_action(owner, Action::Attack100Loop)
+            .unwrap();
+        assert_eq!(
+            scheduler.restart_action_clock(owner, Action::Wait),
+            Err(ScheduleError::ActionMismatch)
+        );
+        assert_eq!(
+            scheduler.action_scope(owner).map(|scope| scope.action),
+            Some(Action::Attack100Loop)
+        );
+    }
+
+    #[test]
     fn zero_delay_and_recurring_forms_are_unrepresentable() {
         let owner = OwnerId::new(2);
         let mut scheduler = SchedulerState::new();
@@ -653,6 +678,54 @@ mod tests {
             scheduler.advance_action(owner, 5).unwrap().as_slice(),
             [Event::ScheduledDeadline { token: 55, .. }]
         ));
+    }
+
+    #[test]
+    fn fast_action_step_drains_crossed_deadlines_without_rewinding_clock() {
+        let owner = OwnerId::new(13);
+        let mut scheduler = SchedulerState::new();
+        scheduler.enter_action(owner, Action::Wait).unwrap();
+        scheduler
+            .schedule(
+                owner,
+                TimerSpec::AtActionFrame {
+                    action: Action::Wait,
+                    frame: 2,
+                },
+                2,
+            )
+            .unwrap();
+        scheduler
+            .schedule(
+                owner,
+                TimerSpec::AtActionFrame {
+                    action: Action::Wait,
+                    frame: 5,
+                },
+                5,
+            )
+            .unwrap();
+
+        let events = scheduler.advance_action(owner, 7).unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                Event::ScheduledDeadline {
+                    frame: 0,
+                    token: 2,
+                    ..
+                },
+                Event::ScheduledDeadline {
+                    frame: 0,
+                    token: 5,
+                    ..
+                },
+            ]
+        ));
+        assert_eq!(
+            scheduler.advance_action(owner, 6),
+            Err(ScheduleError::ActionFrameWentBackwards)
+        );
     }
 
     #[test]

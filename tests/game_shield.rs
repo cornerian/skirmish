@@ -1,6 +1,6 @@
 //! End-to-end ordinary shield branches in an explicitly synthetic native world.
-use skirmish::game::data::HitElement;
 use skirmish::fighter::shield;
+use skirmish::game::data::HitElement;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, Controller, Event, Match, State, data::MatchData,
 };

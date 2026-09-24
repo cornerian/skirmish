@@ -19,9 +19,53 @@ const MAX_STATE_VALUE_NODES: usize = 4096;
 /// the scripting runtime ownership of those structures.
 pub(crate) fn validate(fighter: &Fighter) -> Result<(), Error> {
     validate_controller(fighter.previous_input)?;
+    // serde_json represents non-finite Rust floats as JSON null.  That makes
+    // a serialize-then-walk check unable to distinguish NaN/Inf from a real
+    // optional field, so validate the hot top-level motion scalars before
+    // serialization.  The nested state is still covered by the structural
+    // serializer walk below.
+    validate_native_scalars(fighter)?;
     let value = serde_json::to_value(fighter)
         .map_err(|error| Error::Invalid(format!("fighter state is not serializable: {error}")))?;
     validate_numbers(&value, "fighter", 0)
+}
+
+fn validate_native_scalars(fighter: &Fighter) -> Result<(), Error> {
+    bounded("fighter.position", &fighter.position)?;
+    bounded("fighter.deferred_position", &fighter.deferred_position)?;
+    bounded("fighter.nudge", &fighter.nudge)?;
+    bounded("fighter.velocity", &fighter.velocity)?;
+    bounded("fighter.knockback", &fighter.knockback)?;
+    bounded("fighter.floor_normal", &fighter.floor_normal)?;
+    validate_nested_scalars(
+        fighter.shield.health,
+        fighter.aerial.mobility,
+        fighter.aerial.landing_lag,
+    )?;
+    for (name, value) in [
+        ("fighter.depth", fighter.depth),
+        ("fighter.ground_knockback", fighter.ground_knockback),
+        ("fighter.ground_velocity", fighter.ground_velocity),
+        ("fighter.facing", fighter.facing),
+        ("fighter.percent", fighter.percent),
+        ("fighter.hitlag", fighter.hitlag),
+    ] {
+        validate_f32(name, value)?;
+    }
+    Ok(())
+}
+
+fn validate_nested_scalars(
+    shield_health: f32,
+    aerial_mobility: f32,
+    landing_lag: Option<f32>,
+) -> Result<(), Error> {
+    validate_f32("fighter.shield.health", shield_health)?;
+    validate_f32("fighter.aerial.mobility", aerial_mobility)?;
+    if let Some(landing_lag) = landing_lag {
+        validate_f32("fighter.aerial.landing_lag", landing_lag)?;
+    }
+    Ok(())
 }
 
 /// Commit a validated clone. The source remains untouched when validation
@@ -107,6 +151,13 @@ pub(crate) fn validate_state(state: &LocalState) -> Result<(), Error> {
         {
             return Err(Error::Invalid(format!("invalid script state key {key:?}")));
         }
+        // Native animation command variables are a fixed four-slot register
+        // file (`cmd_vars[0..3]` in the decomp).  Keep the projected action
+        // state ABI equally strict so callbacks cannot observe a short or
+        // mixed-type command tuple and silently fall back to zeroes.
+        if key == "command" {
+            validate_command_state(value)?;
+        }
         match value {
             super::LocalValue::Bool(_) => {}
             super::LocalValue::Integer(value) => {
@@ -141,6 +192,24 @@ pub(crate) fn validate_state(state: &LocalState) -> Result<(), Error> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_command_state(value: &super::LocalValue) -> Result<(), Error> {
+    let super::LocalValue::Tuple(values) = value else {
+        return Err(Error::Invalid(
+            "command state must be a four-slot integer tuple".into(),
+        ));
+    };
+    if values.len() != 4
+        || values
+            .iter()
+            .any(|value| !matches!(value, super::LocalValue::Integer(_)))
+    {
+        return Err(Error::Invalid(
+            "command state must be a four-slot integer tuple".into(),
+        ));
     }
     Ok(())
 }
@@ -195,4 +264,91 @@ fn validate_local_value(
 /// Check a single value before writing it through a native host field.
 pub(crate) fn validate_f32(name: &str, value: f32) -> Result<f32, Error> {
     bounded(name, std::slice::from_ref(&value)).map(|()| value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_validation_rejects_nonfinite_values_before_json_projection() {
+        assert!(validate_f32("fighter.position", f32::NAN).is_err());
+        assert!(validate_f32("fighter.position", f32::INFINITY).is_err());
+        assert!(validate_f32("fighter.position", f32::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn scalar_validation_preserves_signed_zero_and_state_edges() {
+        assert_eq!(
+            validate_f32("fighter.velocity", -0.0)
+                .expect("signed zero should remain valid")
+                .to_bits(),
+            (-0.0_f32).to_bits()
+        );
+        assert_eq!(
+            validate_f32("fighter.velocity", 0.0)
+                .expect("positive zero should remain valid")
+                .to_bits(),
+            0.0_f32.to_bits()
+        );
+        assert_eq!(
+            validate_f32("fighter.percent", STATE_LIMIT)
+                .expect("positive state edge should remain valid"),
+            STATE_LIMIT
+        );
+        assert_eq!(
+            validate_f32("fighter.percent", -STATE_LIMIT)
+                .expect("negative state edge should remain valid"),
+            -STATE_LIMIT
+        );
+    }
+
+    #[test]
+    fn nested_mutable_scalars_reject_nonfinite_values_before_json_projection() {
+        assert!(validate_nested_scalars(f32::NAN, 0.0, Some(0.0)).is_err());
+        assert!(validate_nested_scalars(0.0, f32::INFINITY, Some(0.0)).is_err());
+        assert!(validate_nested_scalars(0.0, 0.0, Some(f32::NEG_INFINITY)).is_err());
+        assert!(validate_nested_scalars(-0.0, 0.0, Some(-0.0)).is_ok());
+    }
+
+    #[test]
+    fn state_validation_is_transaction_safe_for_rejected_nested_values() {
+        let original = LocalState::from([("stable".into(), super::super::LocalValue::Integer(7))]);
+        let mut candidate = original.clone();
+        candidate.insert(
+            "invalid".into(),
+            super::super::LocalValue::Number(f64::INFINITY),
+        );
+        assert!(validate_state(&candidate).is_err());
+        assert_eq!(original["stable"], super::super::LocalValue::Integer(7));
+        assert!(!original.contains_key("invalid"));
+    }
+
+    #[test]
+    fn command_state_matches_native_four_slot_registers() {
+        let valid = LocalState::from([(
+            "command".into(),
+            super::super::LocalValue::Tuple(vec![
+                super::super::LocalValue::Integer(0),
+                super::super::LocalValue::Integer(1),
+                super::super::LocalValue::Integer(2),
+                super::super::LocalValue::Integer(3),
+            ]),
+        )]);
+        assert!(validate_state(&valid).is_ok());
+
+        for value in [
+            super::super::LocalValue::Tuple(vec![super::super::LocalValue::Integer(0); 3]),
+            super::super::LocalValue::Tuple(vec![
+                super::super::LocalValue::Integer(0),
+                super::super::LocalValue::Bool(false),
+                super::super::LocalValue::Integer(0),
+                super::super::LocalValue::Integer(0),
+            ]),
+            super::super::LocalValue::Integer(0),
+        ] {
+            let state = LocalState::from([("command".into(), value)]);
+            assert!(validate_state(&state).is_err());
+        }
+    }
 }

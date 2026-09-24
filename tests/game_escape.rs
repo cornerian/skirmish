@@ -291,6 +291,22 @@ fn guard_off_allows_spot_dodge_but_not_directional_rolls() {
 }
 
 #[test]
+fn guard_to_guard_off_does_not_regenerate_on_the_transition_frame() {
+    let mut game = Match::new(data(), 42).unwrap();
+    step(&mut game, attacker(0), held());
+    step(&mut game, attacker(0), Controller::default());
+    step(&mut game, attacker(0), held());
+    let guarding = game.state().fighters[1].shield.health;
+
+    let released = step(&mut game, attacker(0), held());
+    assert_eq!(released.fighters[1].action, Action::GuardOff);
+    // Guard's animation callback drains before the release transition; the
+    // frame-start gate must prevent the end-of-frame regeneration from
+    // partially cancelling that drain.
+    assert_eq!(released.fighters[1].shield.health, guarding - 0.2);
+}
+
+#[test]
 fn guard_reflect_offers_the_same_evasions() {
     let mut resource = data();
     let rules = resource.rules.shield.as_mut().unwrap();

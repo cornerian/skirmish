@@ -504,6 +504,22 @@ mod tests {
     }
 
     #[test]
+    fn signed_parent_scale_stays_signed_during_child_compensation() {
+        let parent = [-2.0, 3.0, 4.0];
+        let child = LocalTransform {
+            rotation: [0.0, 0.0, core::f32::consts::FRAC_PI_2],
+            ..LocalTransform::default()
+        };
+        let matrix = srt(child, Some(parent));
+
+        // HSD's compensation divides by the signed parent scale.  In
+        // particular, the reflected x axis must not be abs()'d away while
+        // preparing the child's rotated basis.
+        assert!((matrix[0][1] - 1.5).abs() < 0.000001);
+        assert!((matrix[1][0] + (2.0 / 3.0)).abs() < 0.000001);
+    }
+
+    #[test]
     fn invalid_hierarchies_and_capsules_are_errors() {
         assert!(matches!(
             Pose::evaluate(&[Bone {

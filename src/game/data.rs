@@ -78,9 +78,17 @@ pub struct StageGeometry {
 }
 
 /// Environmental collision samples are physics data, independent of hurtboxes.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CollisionBox {
+    /// The fighter has no source environmental collision-box resource.
+    ///
+    /// This is distinct from a present box whose dimensions happen to be
+    /// zero: sampling and stage collision are skipped entirely.  Native
+    /// fighter packages can omit an ECB when the source's six raw anchors do
+    /// not belong to the exported skeleton.
+    #[default]
+    None,
     Fixed {
         source: ecb::FixedSource,
     },
@@ -114,9 +122,20 @@ impl<'de> Deserialize<'de> for CollisionBox {
     }
 }
 
+impl CollisionBox {
+    pub const fn none() -> Self {
+        Self::None
+    }
+
+    pub const fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum CollisionBoxWire {
+    None,
     Fixed {
         source: ecb::FixedSource,
     },
@@ -130,6 +149,7 @@ enum CollisionBoxWire {
 impl CollisionBoxWire {
     fn into_collision_box(self) -> CollisionBox {
         match self {
+            Self::None => CollisionBox::None,
             Self::Fixed { source } => CollisionBox::Fixed { source },
             Self::Bones {
                 indices,
@@ -207,6 +227,16 @@ mod collision_box_tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn explicit_none_collision_box_round_trips() {
+        let encoded = serde_json::to_string(&CollisionBox::None).unwrap();
+        assert_eq!(encoded, r#"{"kind":"none"}"#);
+        assert_eq!(
+            serde_json::from_str::<CollisionBox>(&encoded).unwrap(),
+            CollisionBox::None
+        );
     }
 }
 
@@ -407,6 +437,9 @@ pub struct FighterData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle: Option<crate::fighter::idle::IdleAnimations>,
     pub weight: f32,
+    /// Optional in source-backed packages. Missing data means the fighter
+    /// has no environmental collision box; present boxes remain validated.
+    #[serde(default, skip_serializing_if = "CollisionBox::is_none")]
     pub collision_box: CollisionBox,
     pub bones: Vec<Bone>,
     /// Per-frame physics poses for movement (non-attack) actions, keyed by
@@ -461,6 +494,9 @@ impl FighterData {
         {
             return specials.resources.attack_by_id(id);
         }
+        if let Some(attack) = crate::game::script::definition::attack(fighter.action, self) {
+            return Some(attack);
+        }
         self.attack_native_only(fighter.action, fighter.prone, fighter.ledge.slow)
     }
 
@@ -475,6 +511,9 @@ impl FighterData {
             && let Some(specials) = self.specials.as_ref()
         {
             return specials.resources.attack_by_id(id);
+        }
+        if let Some(attack) = crate::game::script::definition::attack(action, self) {
+            return Some(attack);
         }
         self.attack_native_only(action, fighter.prone, fighter.ledge.slow)
     }

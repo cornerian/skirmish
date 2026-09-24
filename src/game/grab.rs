@@ -1324,23 +1324,32 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
     }
 }
 
-pub(crate) fn break_for_player(state: &mut MatchState, player: usize) {
-    if let Some(victim) = state.fighters[player].grab.victim {
-        detach(state, player, victim);
-        let grounded = state.fighters[victim].grounded;
-        simulation::enter(
-            &mut state.fighters[victim],
-            if grounded { Action::Wait } else { Action::Fall },
-        );
-    }
-    if let Some(holder) = state.fighters[player].grab.captor {
-        detach(state, holder, player);
-        let grounded = state.fighters[holder].grounded;
-        simulation::enter(
-            &mut state.fighters[holder],
-            if grounded { Action::Wait } else { Action::Fall },
-        );
-    }
+/// Data-aware variant for forced breaks.  The decomp's `ftCo_800DA698` and
+/// `ftCo_CaptureCut_Enter` both apply release impulses when a pair is cut;
+/// simulation boundaries pass the live match data through this entry point.
+pub(crate) fn break_for_player_with_data(data: &MatchData, state: &mut MatchState, player: usize) {
+    let Some((holder, victim)) = state.fighters[player]
+        .grab
+        .victim
+        .map(|victim| (player, victim))
+        .or_else(|| {
+            state.fighters[player]
+                .grab
+                .captor
+                .map(|holder| (holder, player))
+        })
+    else {
+        return;
+    };
+    let speed = data
+        .rules
+        .grab
+        .as_ref()
+        .map_or(0.0, |rules| rules.escape.release_speed);
+    detach(state, holder, victim);
+    release_cut_impulses(state, holder, victim, speed);
+    simulation::enter(&mut state.fighters[holder], Action::CatchCut);
+    simulation::enter(&mut state.fighters[victim], Action::CaptureCut);
 }
 
 pub(crate) fn attach_all(data: &MatchData, state: &mut MatchState) -> Result<(), Error> {
@@ -1632,13 +1641,32 @@ fn update_escape(data: &MatchData, state: &mut MatchState, victim: usize, contro
 
 fn escape_pair(data: &MatchData, state: &mut MatchState, holder: usize, victim: usize) {
     let speed = data.rules.grab.as_ref().unwrap().escape.release_speed;
-    let facing = state.fighters[holder].facing;
     detach(state, holder, victim);
     simulation::enter(&mut state.fighters[holder], Action::CatchCut);
     simulation::enter(&mut state.fighters[victim], Action::CaptureCut);
-    release_velocity(&mut state.fighters[holder], -facing * speed);
-    release_velocity(&mut state.fighters[victim], facing * speed);
+    release_cut_impulses(state, holder, victim, speed);
     state.events.push(Event::GrabEscaped { holder, victim });
+}
+
+fn release_cut_impulses(state: &mut MatchState, holder: usize, victim: usize, speed: f32) {
+    let facing = state.fighters[holder].facing;
+    // ftCo_800DA698 uses the holder's backward release impulse.  The shared
+    // authored speed is the host-side equivalent of x370/x374; preserve the
+    // source's grounded/airborne storage fields and add the aerial lift.
+    let (holder_velocity, victim_velocity) = cut_release_horizontal(facing, speed);
+    release_velocity(&mut state.fighters[holder], holder_velocity);
+    if !state.fighters[holder].grounded {
+        state.fighters[holder].velocity[1] = speed;
+    }
+    // ftCo_CaptureCut_Enter uses the victim's facing too. Capture setup
+    // aligns that facing with the holder, so both cuts launch backward in
+    // the same world direction.
+    release_velocity(&mut state.fighters[victim], victim_velocity);
+}
+
+#[inline]
+fn cut_release_horizontal(facing: f32, speed: f32) -> (f32, f32) {
+    (-facing * speed, -facing * speed)
 }
 
 fn release_velocity(fighter: &mut Fighter, velocity: f32) {
@@ -1917,7 +1945,11 @@ mod tests {
         );
     }
 
-    use crate::game::*;
+    #[test]
+    fn capture_cut_and_catch_cut_launch_in_the_same_world_direction() {
+        assert_eq!(cut_release_horizontal(1.0, 2.5), (-2.5, -2.5));
+        assert_eq!(cut_release_horizontal(-1.0, 2.5), (2.5, 2.5));
+    }
 
     #[test]
     fn equal_stocks_tie_at_standing_zero_regardless_of_percent() {

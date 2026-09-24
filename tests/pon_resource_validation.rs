@@ -17,6 +17,7 @@ mod up_special_resources;
 
 use skirmish::game::{
     Match,
+    data::MotionStateProfile,
     script::resources::{Resources, Specials},
 };
 
@@ -39,6 +40,9 @@ fn valid_data() -> skirmish::game::data::MatchData {
     }
     let specials = Specials {
         character: "Fox".into(),
+        special_attributes: None,
+        animations: None,
+        articles: None,
         resources: Resources::new(values).expect("combined specials resources"),
     };
     let mut data = conformance::data();
@@ -63,6 +67,55 @@ fn neutral_only_data() -> skirmish::game::data::MatchData {
         fighter.specials = Some(specials.clone());
     }
     data
+}
+
+#[test]
+fn invalid_complete_animation_attack_is_rejected_before_match_creation() {
+    let mut data = conformance::data();
+    let mut attack = serde_json::to_value(&data.fighters[0].jab).unwrap();
+    attack["frames"][0]["hitboxes"] = serde_json::json!([{
+        "group": 0,
+        "bone": 0,
+        "center": [0.0, 0.0, 0.0],
+        "radius": -1.0,
+        "damage": 1,
+        "angle_degrees": 45.0,
+        "growth": 1,
+        "fixed": 1,
+        "base": 1
+    }]);
+    let specials: Specials = serde_json::from_value(serde_json::json!({
+        "character": "donkey-kong",
+        "animations": {
+            "331": {
+                "animation_id": 331,
+                "state_ids": [381],
+                "status": "complete",
+                "resource": attack
+            }
+        }
+    }))
+    .unwrap();
+    for fighter in &mut data.fighters {
+        fighter.motion_states = Some(vec![MotionStateProfile {
+            state_id: 381,
+            animation_id: 331,
+            move_id: 20,
+            flags: 0,
+        }]);
+        fighter.specials = Some(specials.clone());
+    }
+
+    let error = Match::new(data, 0).expect_err("invalid animation attack must fail registration");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid animation 331"),
+        "unexpected error: {message}"
+    );
+    assert!(
+        message.contains("invalid or unsupported hitbox"),
+        "unexpected error: {message}"
+    );
 }
 
 #[test]

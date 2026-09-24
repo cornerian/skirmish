@@ -9,7 +9,7 @@ use skirmish::{
     game::{
         BUTTON_X, Controller, Event, Match,
         data::{CollisionBox, MatchData, StageGeometry},
-        stage_motion::{Rules, Track, Transform},
+        flow::stage_motion::{Rules, Track, Transform},
     },
 };
 
@@ -51,6 +51,7 @@ fn boxed_data() -> MatchData {
         joints: vec![stage::Joint {
             id: 0,
             flags: stage::ENABLED,
+            enabled_at_start: true,
             bounds_min: [-110.0, -20.0],
             bounds_max: [110.0, 20.0],
             floor: 0..1,

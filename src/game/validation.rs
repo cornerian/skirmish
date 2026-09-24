@@ -27,6 +27,10 @@ fn nonnegative(values: impl IntoIterator<Item = f32>) -> bool {
     values.into_iter().all(|v| (0.0..=1_000_000.0).contains(&v))
 }
 
+fn valid_hitbox_damage(value: f32) -> bool {
+    (0.0..=999.0).contains(&value)
+}
+
 pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
     require(data.schema == 1, "unsupported schema")?;
     require(!data.provenance.trim().is_empty(), "provenance is required")?;
@@ -200,6 +204,17 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         "invalid hitlag rules",
     )?;
     for fighter in &data.fighters {
+        validate_motion_states(fighter)?;
+        if let Some(specials) = fighter.specials.as_ref() {
+            specials
+                .validate_animation_states(fighter.motion_states.as_deref())
+                .map_err(|error| Error::Data(format!("invalid animation resources: {error}")))?;
+            for (animation_id, attack) in specials.complete_animation_attacks() {
+                validate_attack(attack, fighter, rules).map_err(|error| {
+                    Error::Data(format!("invalid animation {animation_id}: {error}"))
+                })?;
+            }
+        }
         script::lifecycle_resources::validate(fighter, rules)
             .map_err(|error| Error::Data(format!("invalid specials resource: {error}")))?;
         super::special_capture::validate_resource(fighter)?;
@@ -604,6 +619,7 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
         )?;
         let pose = validate_bones(&fighter.bones)?;
         match &fighter.collision_box {
+            CollisionBox::None => {}
             CollisionBox::Fixed { source } => require(
                 nonnegative([source.up, source.down, source.front, source.back])
                     && finite([source.angle]),
@@ -717,52 +733,76 @@ pub(crate) fn validate(data: &MatchData) -> Result<(), Error> {
                 .map(|attack| &attack.attack)
             }))
         {
-            require(
-                rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),
-                "staling requires an explicit nonzero attack move_id",
-            )?;
-            require(
-                !attack.frames.is_empty() && attack.frames.len() <= 4096,
-                "attack must supply 1..4096 complete physics frames",
-            )?;
-            for frame in &attack.frames {
-                let pose = validate_animation_pose(&frame.bones, fighter)?;
-                require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
-                require(
-                    frame.hurtbox_states.is_empty()
-                        || frame.hurtbox_states.len() == fighter.hurtboxes.len(),
-                    "attack hurtbox state samples must be empty or complete",
-                )?;
-                for hit in &frame.hitboxes {
-                    require(
-                        rules.clank.is_some() || !(hit.clank || hit.rebound),
-                        "clank/rebound flags require an explicit ordinary profile",
-                    )?;
-                    require(
-                        hit.bone < frame.bones.len()
-                            && hit.group < 16
-                            && finite(hit.center)
-                            && nonnegative([hit.radius])
-                            && hit.damage <= 999
-                            && (-1000..=1000).contains(&hit.shield_damage)
-                            && hit.growth <= 1000
-                            && hit.fixed <= 1000
-                            && hit.base <= 1000
-                            && (0.0..=362.0).contains(&hit.angle_degrees)
-                            && hit.angle_degrees.fract() == 0.0,
-                        "invalid or unsupported hitbox",
-                    )?;
-                    validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
-                    require(
-                        hit.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base
-                            < 1_000_000.0,
-                        "hitlag exceeds supported counter range",
-                    )?;
-                }
-            }
+            validate_attack(attack, fighter, rules)?;
         }
     }
     Ok(())
+}
+
+pub(crate) fn validate_attack(
+    attack: &Attack,
+    fighter: &FighterData,
+    rules: &Rules,
+) -> Result<(), Error> {
+    require(
+        rules.staling.is_none() || attack.move_id.is_some_and(|id| id != 0),
+        "staling requires an explicit nonzero attack move_id",
+    )?;
+    require(
+        !attack.frames.is_empty() && attack.frames.len() <= 4096,
+        "attack must supply 1..4096 complete physics frames",
+    )?;
+    for frame in &attack.frames {
+        let pose = validate_animation_pose(&frame.bones, fighter)?;
+        require(frame.hitboxes.len() <= 4, "at most four hitboxes per frame")?;
+        require(
+            frame.hurtbox_states.is_empty()
+                || frame.hurtbox_states.len() == fighter.hurtboxes.len(),
+            "attack hurtbox state samples must be empty or complete",
+        )?;
+        for hit in &frame.hitboxes {
+            require(
+                rules.clank.is_some() || !(hit.clank || hit.rebound),
+                "clank/rebound flags require an explicit ordinary profile",
+            )?;
+            require(
+                hit.bone < frame.bones.len()
+                    && hit.group < 16
+                    && finite(hit.center)
+                    && nonnegative([hit.radius])
+                    && valid_hitbox_damage(hit.damage as f32)
+                    && (-1000..=1000).contains(&hit.shield_damage)
+                    && hit.growth <= 1000
+                    && hit.fixed <= 1000
+                    && hit.base <= 1000
+                    && (0.0..=362.0).contains(&hit.angle_degrees)
+                    && hit.angle_degrees.fract() == 0.0,
+                "invalid or unsupported hitbox",
+            )?;
+            validate_shape(BoneCapsule::sphere(hit.bone, hit.center, hit.radius), &pose)?;
+            require(
+                hit.damage as f32 * rules.hitlag.damage_scale + rules.hitlag.base < 1_000_000.0,
+                "hitlag exceeds supported counter range",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_motion_states(fighter: &FighterData) -> Result<(), Error> {
+    let Some(states) = fighter.motion_states.as_deref() else {
+        return Ok(());
+    };
+    require(
+        states
+            .windows(2)
+            .all(|pair| pair[0].state_id < pair[1].state_id),
+        "motion state profiles require strictly increasing unique state ids",
+    )?;
+    require(
+        states.iter().all(|profile| profile.animation_id >= -1),
+        "motion state animation ids must be -1 or nonnegative",
+    )
 }
 
 /// Validates every supplied `MovementPoses` field: each is a nonempty,
@@ -817,7 +857,11 @@ fn validate_bones(bones: &[Bone]) -> Result<Pose, Error> {
             finite(b.translation)
                 && finite(b.rotation)
                 && finite(b.scale)
-                && b.scale.iter().all(|&s| s > 0.0)
+                // HSD animation joints may mirror a local axis.  Preserve
+                // that sign through the matrix; only zero is unsupported by
+                // the resource contract because it makes descendant scale
+                // compensation singular.  `s != 0.0` also rejects -0.0.
+                && b.scale.iter().all(|&s| s != 0.0)
         }),
         "invalid bone transform",
     )?;
@@ -1007,6 +1051,53 @@ pub(crate) fn state(state: &State) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_classical_animation_scale_matches_yoshi_catch_resource() {
+        let mut bones = vec![
+            Bone {
+                parent: None,
+                classical_scale: true,
+                translation: [0.0; 3],
+                rotation: [0.0; 3],
+                scale: [1.0; 3],
+            };
+            42
+        ];
+        bones[41] = Bone {
+            parent: Some(40),
+            classical_scale: true,
+            rotation: [f32::from_bits(0xbe469ed2), -0.0, 0.0],
+            scale: [1.0, 1.0, f32::from_bits(0xbeaaaaa8)],
+            translation: [0.0, f32::from_bits(0xbf1be76d), f32::from_bits(0x3fb7a440)],
+        };
+
+        let pose = validate_bones(&bones).expect("Yoshi Catch frame 15 bone 41");
+        let matrix = pose.world_matrix(41).unwrap();
+        assert!(matrix[2][2] < 0.0, "signed Z scale was sanitized");
+
+        for scale in [[0.0, 1.0, 1.0], [-0.0, 1.0, 1.0]] {
+            bones[41].scale = scale;
+            assert!(
+                validate_bones(&bones).is_err(),
+                "accepted zero scale {scale:?}"
+            );
+        }
+        bones[41].scale = [1.0, f32::NAN, 1.0];
+        assert!(validate_bones(&bones).is_err());
+        bones[41].scale = [1.0, f32::INFINITY, 1.0];
+        assert!(validate_bones(&bones).is_err());
+    }
+
+    #[test]
+    fn hitbox_damage_uses_the_nonnegative_source_range() {
+        assert!(valid_hitbox_damage(0.0));
+        assert!(valid_hitbox_damage(-0.0));
+        assert!(valid_hitbox_damage(999.0));
+        assert!(!valid_hitbox_damage(-f32::EPSILON));
+        let above_max = f32::from_bits(999.0_f32.to_bits() + 1);
+        assert!(!valid_hitbox_damage(above_max));
+    }
 
     #[test]
     fn rejects_nonfinite_events_even_when_fighter_state_is_finite() {

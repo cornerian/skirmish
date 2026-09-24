@@ -19,12 +19,6 @@ fn captain_bundle() -> SourceBundle {
             "captain.py",
             include_str!("../../../scripts/fighters/captain.py"),
         )
-        .and_then(|bundle| {
-            bundle.with_file(
-                "shared/common.py",
-                include_str!("../../../scripts/fighters/common.py"),
-            )
-        })
         .expect("Captain Falcon module path")
 }
 
@@ -140,7 +134,7 @@ impl NativeHost for CaptainHost {
             "fighter.resource.side" => object(NativeKind::Value, "fighter.resource.side"),
             "fighter.resource.side.attributes" => {
                 object(NativeKind::Value, "fighter.resource.side.attributes")
-            },
+            }
             "fighter.resource.side.attributes.specials_gr_vel_x" => NativeValue::F32(0.75),
             "hit" => object(NativeKind::Hit, "hit"),
             _ => return Err(Error::Host(format!("unexpected Captain get path {path}"))),
@@ -150,22 +144,21 @@ impl NativeHost for CaptainHost {
 
     fn set(&mut self, path: &str, value: NativeValue) -> Result<(), Error> {
         let mut state = self.state.lock().unwrap();
-        if path == "fighter.facing" {
-            if let NativeValue::F32(facing) = &value {
-                state.facing = *facing;
-            }
+        if path == "fighter.facing"
+            && let NativeValue::F32(facing) = &value
+        {
+            state.facing = *facing;
         }
-        if path == "fighter.velocity" {
-            if let NativeValue::List(values) = &value {
-                if let [NativeValue::F32(x), NativeValue::F32(y)] = values.as_slice() {
-                    state.velocity = [*x, *y];
-                }
-            }
+        if path == "fighter.velocity"
+            && let NativeValue::List(values) = &value
+            && let [NativeValue::F32(x), NativeValue::F32(y)] = values.as_slice()
+        {
+            state.velocity = [*x, *y];
         }
-        if path == "fighter.ground_velocity" {
-            if let NativeValue::F32(value) = &value {
-                state.ground_velocity = *value;
-            }
+        if path == "fighter.ground_velocity"
+            && let NativeValue::F32(value) = &value
+        {
+            state.ground_velocity = *value;
         }
         state.sets.push((path.to_owned(), value));
         Ok(())
@@ -199,7 +192,10 @@ impl NativeHost for CaptainHost {
                         "Captain hit resource path is not a string".into(),
                     ));
                 };
-                Ok(object(NativeKind::Value, format!("fighter.resource.{resource}").as_str()))
+                Ok(object(
+                    NativeKind::Value,
+                    format!("fighter.resource.{resource}").as_str(),
+                ))
             }
             "fighter.change_action" | "fighter.enter_fall_special" => Ok(NativeValue::None),
             other => Err(Error::Host(format!("unexpected Captain call path {other}"))),
@@ -332,7 +328,11 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     state.lock().unwrap().press_b();
     assert_eq!(
         program
-            .dispatch(&punch, fighter.clone(), &[context_value.clone()])
+            .dispatch(
+                &punch,
+                fighter.clone(),
+                std::slice::from_ref(&context_value)
+            )
             .unwrap(),
         NativeValue::Bool(true)
     );
@@ -347,7 +347,11 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     }
     assert_eq!(
         program
-            .dispatch(&raptor_boost, fighter.clone(), &[context_value.clone()])
+            .dispatch(
+                &raptor_boost,
+                fighter.clone(),
+                std::slice::from_ref(&context_value),
+            )
             .unwrap(),
         NativeValue::Bool(true)
     );
@@ -359,7 +363,7 @@ fn captain_callbacks_dispatch_against_resource_shaped_host() {
     }
     assert_eq!(
         program
-            .dispatch(&dive, fighter.clone(), &[context_value.clone()])
+            .dispatch(&dive, fighter.clone(), std::slice::from_ref(&context_value))
             .unwrap(),
         NativeValue::Bool(true)
     );
@@ -556,8 +560,9 @@ fn captain_aerial_raptor_boost_contact_skips_ground_resource_and_planar_velocity
             && args.first() == Some(&NativeValue::String("special_air_s".into()))
     }));
     assert!(host.calls.iter().all(|(path, _)| path != "hit.resource"));
-    assert!(host
-        .sets
-        .iter()
-        .all(|(path, _)| path != "fighter.velocity" && path != "fighter.ground_velocity"));
+    assert!(
+        host.sets
+            .iter()
+            .all(|(path, _)| path != "fighter.velocity" && path != "fighter.ground_velocity")
+    );
 }

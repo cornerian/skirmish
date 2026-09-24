@@ -444,6 +444,20 @@ fn action_age_with_offset(
         // in `action_frame = 1`. Unlike the generic action clock, this value
         // already matches Slippi's state_age and must not be decremented.
         fighter.action_frame as f32 + offset
+    } else if matches!(
+        fighter.action,
+        game::Action::AttackAirN
+            | game::Action::AttackAirF
+            | game::Action::AttackAirB
+            | game::Action::AttackAirHi
+            | game::Action::AttackAirLw
+    ) {
+        // `ftCo_AttackAir_EnterFromMsid` advances the animation once after
+        // changing motion state. `simulation::enter` models that native
+        // entry advance and the shared tail, while Slippi's post-frame
+        // `state_age` reflects only one elapsed frame. Project the simulation
+        // clock back over the extra native entry advance.
+        fighter.action_frame.saturating_sub(1) as f32 + offset
     } else if let Some(frames) = looping_movement_pose_frames(fighter, fighter_data) {
         // These sub-motions persist indefinitely (Fall/FallAerial,
         // FallSpecial, SquatWait, OttottoWait), so their own figatree
@@ -941,7 +955,10 @@ pub fn action_state(fighter: &game::Fighter, character: Option<u8>) -> Option<u1
             skirmish::game::script::definition::builtin_slippi_state(character, fighter.action)?
                 as u16
         }
-        Eliminated => return None,
+        // Source-defined actions have no common Slippi state identity. Their
+        // stable custom id is retained by the simulation, but observation
+        // state remains unresolved until a native/common mapping exists.
+        Custom(_) | Eliminated => return None,
     })
 }
 
@@ -1810,6 +1827,56 @@ mod tests {
     }
 
     #[test]
+    fn aerial_attack_actions_report_the_native_entry_animation_age() {
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let fighter_data = game.data().fighters[0].clone();
+
+        for action in [
+            game::Action::AttackAirN,
+            game::Action::AttackAirF,
+            game::Action::AttackAirB,
+            game::Action::AttackAirHi,
+            game::Action::AttackAirLw,
+        ] {
+            fighter.action = action;
+            for action_frame in [2, 8] {
+                fighter.action_frame = action_frame;
+                assert_eq!(
+                    action_age_with_offset(&fighter, &fighter_data, 0.25),
+                    action_frame.saturating_sub(1) as f32 + 0.25,
+                    "{action:?} at action frame {action_frame}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_actions_keep_the_generic_transition_age_projection() {
+        let data = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let game = game::Match::new(data, 1).unwrap();
+        let mut fighter = game.state().fighters[0].clone();
+        let fighter_data = game.data().fighters[0].clone();
+        fighter.action = game::Action::Wait;
+
+        for action_frame in [1, 7] {
+            fighter.action_frame = action_frame;
+            assert_eq!(
+                action_age_with_offset(&fighter, &fighter_data, 0.25),
+                action_frame.saturating_sub(1) as f32 + 0.25,
+                "Wait at action frame {action_frame}"
+            );
+        }
+    }
+
+    #[test]
     fn common_action_and_animation_ids_preserve_the_pinned_tables() {
         let data = serde_json::from_str(include_str!(
             "../../../tests/fixtures/game/integration-match.json"
@@ -1959,6 +2026,9 @@ mod tests {
         assert_eq!(action_state(&fighter, Some(2)), Some(11));
         assert_eq!(animation_index(&fighter, Some(2)), Some(u32::MAX));
         fighter.action = game::Action::Eliminated;
+        assert_eq!(action_state(&fighter, Some(2)), None);
+        assert_eq!(animation_index(&fighter, Some(2)), None);
+        fighter.action = game::Action::Custom(game::CustomActionId::new(0xfeed_beef));
         assert_eq!(action_state(&fighter, Some(2)), None);
         assert_eq!(animation_index(&fighter, Some(2)), None);
         fighter.action = game::Action::SpecialNStart;

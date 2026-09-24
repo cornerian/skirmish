@@ -133,6 +133,9 @@ pub struct EventBinding {
     pub command_index: Option<u8>,
     #[serde(default)]
     pub deadline: Option<u32>,
+    /// Numeric native animation-event bit selected by `@hook.animation_event`.
+    #[serde(default)]
+    pub event_id: Option<u8>,
     /// Optional native availability gate declared by a lifecycle callback.
     /// The bridge resolves this field against the registered fighter host.
     #[serde(default)]
@@ -288,39 +291,73 @@ impl Eq for DefinitionIndexes {}
 #[derive(Debug)]
 struct IndexedDefinition {
     top_actions: Vec<Option<String>>,
-    behavior_actions: Vec<Vec<(String, usize)>>,
-    behavior_owners: Vec<Vec<usize>>,
+    top_custom_actions: BTreeMap<Action, String>,
+    custom_actions_by_slippi_state: BTreeMap<u32, Action>,
+    behavior_actions: Vec<Vec<(String, Action)>>,
+    /// First owner of each behavior action, matching the historical
+    /// declaration-order lookup in [`FighterDefinition::action`].  Keeping
+    /// this flat index avoids scanning every behavior on each motion lookup;
+    /// the owner-specific resolver still uses `behavior_actions` below.
+    behavior_action_lookup: BTreeMap<Action, (usize, String)>,
+    /// Behavior owners grouped by action in declaration order.  Lifecycle
+    /// dispatch can use this to skip unrelated behaviors for action-scoped
+    /// hooks while retaining the existing first-enabled-owner semantics.
+    behavior_action_owners: BTreeMap<Action, Vec<usize>>,
+    behavior_owners: Vec<Vec<Action>>,
 }
 
-const ACTION_INDEX_SIZE: usize = Action::Eliminated as usize + 1;
+const ACTION_INDEX_SIZE: usize = Action::BUILTIN_COUNT;
 
 impl DefinitionIndexes {
     fn get(&self, definition: &FighterDefinition) -> &IndexedDefinition {
         self.built.get_or_init(|| {
             let mut top_actions = vec![None; ACTION_INDEX_SIZE];
-            for (key, action) in &definition.actions {
-                if let Some(action) = parse_definition_action(key, action)
-                    && (top_actions[action as usize].is_none() || key == &action_name(action))
-                {
-                    top_actions[action as usize] = Some(key.clone());
+            let mut top_custom_actions = BTreeMap::new();
+            let mut custom_actions_by_slippi_state = BTreeMap::new();
+            for (key, definition_action) in &definition.actions {
+                if let Some(action) = parse_definition_action(key, definition_action) {
+                    if let Some(index) = action.builtin_index() {
+                        if top_actions[index].is_none()
+                            || is_canonical_definition_name(key, definition_action, action)
+                        {
+                            top_actions[index] = Some(key.clone());
+                        }
+                    } else if !top_custom_actions.contains_key(&action)
+                        || is_canonical_definition_name(key, definition_action, action)
+                    {
+                        top_custom_actions.insert(action, key.clone());
+                    }
+                    if action.custom_id().is_some()
+                        && let Some(state) = definition_action.slippi_state
+                    {
+                        custom_actions_by_slippi_state
+                            .entry(state)
+                            .or_insert(action);
+                    }
                 }
             }
-            let behavior_actions: Vec<Vec<(String, usize)>> = definition
+            let behavior_actions: Vec<Vec<(String, Action)>> = definition
                 .behaviors
                 .iter()
                 .map(|behavior| {
                     let mut actions = Vec::new();
                     for (key, definition) in &behavior.actions {
                         if let Some(action) = parse_definition_action(key, definition) {
-                            if let Some(existing) = actions
-                                .iter_mut()
-                                .find(|(_, indexed)| *indexed == action as usize)
+                            if action.custom_id().is_some()
+                                && let Some(state) = definition.slippi_state
                             {
-                                if key == &action_name(action) {
+                                custom_actions_by_slippi_state
+                                    .entry(state)
+                                    .or_insert(action);
+                            }
+                            if let Some(existing) =
+                                actions.iter_mut().find(|(_, indexed)| *indexed == action)
+                            {
+                                if is_canonical_definition_name(key, definition, action) {
                                     existing.0 = key.clone();
                                 }
                             } else {
-                                actions.push((key.clone(), action as usize));
+                                actions.push((key.clone(), action));
                             }
                         }
                     }
@@ -328,9 +365,32 @@ impl DefinitionIndexes {
                 })
                 .collect();
             let mut behavior_owners = vec![Vec::new(); definition.behaviors.len()];
+            let mut behavior_action_lookup = BTreeMap::new();
+            let mut behavior_action_owners: BTreeMap<Action, Vec<usize>> = BTreeMap::new();
+            for (owner, actions) in behavior_actions.iter().enumerate() {
+                if let Some(action) = definition.behaviors[owner]
+                    .entry_action
+                    .as_deref()
+                    .and_then(parse_action_ref)
+                {
+                    behavior_action_owners
+                        .entry(action)
+                        .or_default()
+                        .push(owner);
+                }
+                for (key, action) in actions {
+                    behavior_action_lookup
+                        .entry(*action)
+                        .or_insert_with(|| (owner, key.clone()));
+                    let owners = behavior_action_owners.entry(*action).or_default();
+                    if owners.last().copied() != Some(owner) {
+                        owners.push(owner);
+                    }
+                }
+            }
             for (index, behavior) in definition.behaviors.iter().enumerate() {
                 if let Some(action) = behavior.entry_action.as_deref().and_then(parse_action_ref) {
-                    behavior_owners[index].push(action as usize);
+                    behavior_owners[index].push(action);
                 }
                 for (_, action) in &behavior_actions[index] {
                     if !behavior_owners[index].contains(action) {
@@ -340,7 +400,11 @@ impl DefinitionIndexes {
             }
             IndexedDefinition {
                 top_actions,
+                top_custom_actions,
+                custom_actions_by_slippi_state,
                 behavior_actions,
+                behavior_action_lookup,
+                behavior_action_owners,
                 behavior_owners,
             }
         })
@@ -365,7 +429,7 @@ impl FighterDefinition {
             .get(self)
             .behavior_owners
             .get(index)
-            .is_some_and(|actions| actions.contains(&(action as usize)))
+            .is_some_and(|actions| actions.contains(&action))
     }
 
     /// Warm all immutable action metadata indexes at resource registration.
@@ -376,25 +440,31 @@ impl FighterDefinition {
 
     pub fn action(&self, action: Action) -> Option<&ActionDefinition> {
         let indexed = self.indexes.get(self);
-        indexed.top_actions[action as usize]
-            .as_deref()
-            .and_then(|key| self.actions.get(key))
-            .or_else(|| {
-                indexed
-                    .behavior_actions
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, actions)| {
-                        actions
-                            .iter()
-                            .find(|(_, indexed)| *indexed == action as usize)
-                            .and_then(|(key, _)| {
-                                self.behaviors
-                                    .get(index)
-                                    .and_then(|behavior| behavior.actions.get(key))
-                            })
-                    })
-            })
+        let key = action
+            .builtin_index()
+            .and_then(|index| indexed.top_actions[index].as_deref())
+            .or_else(|| indexed.top_custom_actions.get(&action).map(String::as_str));
+        key.and_then(|key| self.actions.get(key)).or_else(|| {
+            indexed
+                .behavior_action_lookup
+                .get(&action)
+                .and_then(|(owner, key)| {
+                    self.behaviors
+                        .get(*owner)
+                        .and_then(|behavior| behavior.actions.get(key))
+                })
+        })
+    }
+
+    /// Resolve a custom action by its numeric Slippi action-state id.  Native
+    /// actions retain their static table; only source-defined actions need
+    /// this immutable definition index.
+    pub fn action_for_slippi_state(&self, state_id: u32) -> Option<Action> {
+        self.indexes
+            .get(self)
+            .custom_actions_by_slippi_state
+            .get(&state_id)
+            .copied()
     }
 
     pub fn action_for_owner(&self, owner: usize, action: Action) -> Option<&ActionDefinition> {
@@ -403,7 +473,7 @@ impl FighterDefinition {
             .behavior_actions
             .get(owner)?
             .iter()
-            .find(|(_, indexed)| *indexed == action as usize)
+            .find(|(_, indexed)| *indexed == action)
             .map(|(key, _)| key)?;
         self.behaviors.get(owner)?.actions.get(key)
     }
@@ -503,17 +573,24 @@ impl FighterDefinition {
             return result;
         }
 
+        let indexed = self.indexes.get(self);
+        let owners = if all_behaviors {
+            None
+        } else {
+            Some(
+                indexed
+                    .behavior_action_owners
+                    .get(&action_enum)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            )
+        };
+        let behavior_indices = (0..self.behaviors.len())
+            .filter(|index| owners.is_none_or(|owners| owners.binary_search(index).is_ok()));
         let mut owns_action = false;
-        for index in 0..self.behaviors.len() {
+        for index in behavior_indices {
             let behavior = &self.behaviors[index];
-            let owns = self
-                .indexes
-                .get(self)
-                .behavior_owners
-                .get(index)
-                .is_some_and(|actions| actions.contains(&(action_enum as usize)));
-            if self.behavior_enabled(index, resources) && (all_behaviors || (!owns_action && owns))
-            {
+            if self.behavior_enabled(index, resources) && (all_behaviors || !owns_action) {
                 owns_action = true;
                 result.extend(
                     program
@@ -571,6 +648,7 @@ impl Definition {
         let source = source.into();
         let program = Arc::new(Program::new_registered(source.clone(), assets)?);
         let manifest = program.metadata_arc();
+        validate_custom_slippi_states(&manifest)?;
         Ok(Self {
             manifest,
             move_registry: program.moves_arc(),
@@ -600,8 +678,163 @@ impl Definition {
     /// animation id.  Some source-authored action states are observable in
     /// replay even while their animation resource is intentionally absent.
     pub fn slippi_state(&self, action: Action) -> Option<u32> {
-        self.action(action).and_then(|definition| definition.slippi_state)
+        self.action(action)
+            .and_then(|definition| definition.slippi_state)
     }
+
+    pub fn action_for_slippi_state(&self, state_id: u32) -> Option<Action> {
+        self.manifest.action_for_slippi_state(state_id)
+    }
+}
+
+/// Link custom action references before any runtime index is exposed.  Hash
+/// collisions are harmless only when they name the same canonical action;
+/// different qualified names must fail definition loading deterministically.
+pub(crate) fn validate_custom_action_collisions(
+    definition: &FighterDefinition,
+) -> Result<(), Error> {
+    let mut seen = BTreeMap::<crate::game::CustomActionId, String>::new();
+    let mut check = |reference: &str| -> Result<(), Error> {
+        let canonical = reference.strip_prefix("Action.").unwrap_or(reference);
+        let Some(crate::game::Action::Custom(id)) = script::parse_custom_action(canonical) else {
+            return Ok(());
+        };
+        if let Some(previous) = seen.insert(id, canonical.to_owned())
+            && previous != canonical
+        {
+            return Err(Error::Invalid(format!(
+                "custom action hash collision between {previous:?} and {canonical:?} (id {})",
+                id.get()
+            )));
+        }
+        Ok(())
+    };
+    for (name, action) in &definition.actions {
+        check(name)?;
+        if let Some(reference) = action.action.as_deref() {
+            check(reference)?;
+        }
+        for binding in &action.callbacks {
+            if let Some(reference) = binding.action.as_deref() {
+                check(reference)?;
+            }
+            for reference in &binding.actions {
+                check(reference)?;
+            }
+        }
+    }
+    for behavior in &definition.behaviors {
+        if let Some(reference) = behavior.entry_action.as_deref() {
+            check(reference)?;
+        }
+        for (name, action) in &behavior.actions {
+            check(name)?;
+            if let Some(reference) = action.action.as_deref() {
+                check(reference)?;
+            }
+            for binding in &action.callbacks {
+                if let Some(reference) = binding.action.as_deref() {
+                    check(reference)?;
+                }
+                for reference in &binding.actions {
+                    check(reference)?;
+                }
+            }
+        }
+        for clock in &behavior.clocks {
+            for reference in &clock.actions {
+                check(reference)?;
+            }
+        }
+    }
+    for binding in definition.callbacks.iter().chain(
+        definition
+            .behaviors
+            .iter()
+            .flat_map(|behavior| behavior.callbacks.iter()),
+    ) {
+        if let Some(reference) = binding.action.as_deref() {
+            check(reference)?;
+        }
+        for reference in &binding.actions {
+            check(reference)?;
+        }
+    }
+    Ok(())
+}
+
+/// A native state id identifies one source-defined action within a fighter.
+/// Aliases may point at the same action, but two different custom actions
+/// claiming one numeric state would make replay resolution order-dependent.
+pub(crate) fn validate_custom_slippi_states(definition: &FighterDefinition) -> Result<(), Error> {
+    let mut seen = BTreeMap::<u32, Action>::new();
+    let mut check = |action: Action, descriptor: &ActionDefinition| -> Result<(), Error> {
+        let Some(state) = descriptor.slippi_state else {
+            return Ok(());
+        };
+        if action.custom_id().is_none() {
+            return Ok(());
+        }
+        if let Some(previous) = seen.insert(state, action)
+            && previous != action
+        {
+            return Err(Error::Invalid(format!(
+                "custom actions {previous:?} and {action:?} both claim Slippi state {state}"
+            )));
+        }
+        Ok(())
+    };
+    for (key, descriptor) in &definition.actions {
+        if let Some(action) = parse_definition_action(key, descriptor) {
+            check(action, descriptor)?;
+        }
+    }
+    for behavior in &definition.behaviors {
+        for (key, descriptor) in &behavior.actions {
+            if let Some(action) = parse_definition_action(key, descriptor) {
+                check(action, descriptor)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A canonical [`Action`] owns its animation clock.  Behavior descriptors
+/// may alias that action, but they must not disagree about the animation
+/// resource or whether it loops; use a custom action for genuinely distinct
+/// source phases.
+pub(crate) fn validate_action_animation_metadata(
+    definition: &FighterDefinition,
+) -> Result<(), Error> {
+    let mut seen = BTreeMap::<Action, (u32, bool, String)>::new();
+    let mut check = |key: &str, descriptor: &ActionDefinition| -> Result<(), Error> {
+        let Some(action) = parse_definition_action(key, descriptor) else {
+            return Ok(());
+        };
+        let Some(animation) = descriptor.animation else {
+            return Ok(());
+        };
+        let metadata = (animation, descriptor.animation_loop, key.to_owned());
+        if let Some((previous_animation, previous_loop, previous_key)) = seen.get(&action)
+            && (*previous_animation != animation || *previous_loop != descriptor.animation_loop)
+        {
+            return Err(Error::Invalid(format!(
+                "canonical action {action:?} has conflicting animation metadata: {previous_key:?} uses animation {previous_animation} (loop={previous_loop}), but {key:?} uses animation {animation} (loop={})",
+                descriptor.animation_loop
+            )));
+        }
+        seen.entry(action).or_insert(metadata);
+        Ok(())
+    };
+    for (key, descriptor) in &definition.actions {
+        check(key, descriptor)?;
+    }
+    for behavior in &definition.behaviors {
+        for (key, descriptor) in &behavior.actions {
+            check(key, descriptor)?;
+        }
+    }
+    Ok(())
 }
 
 /// Sources available to `load`. No filesystem/module search is
@@ -618,6 +851,25 @@ impl AssetStore {
     }
     pub fn get(&self, name: &str) -> Option<&str> {
         self.sources.get(name).map(String::as_str)
+    }
+
+    /// Return the private module filename that owns an exact source string.
+    ///
+    /// The embedded loader gives the root source its real module filename so
+    /// Python's normal ``__name__``/``__file__`` identity remains available to
+    /// the authoring API.  Arbitrary external programs do not have a source
+    /// asset entry and therefore keep the generic ``fighter.py`` filename;
+    /// those programs still need an explicit identity declaration.
+    pub(crate) fn filename_for_source(&self, source: &str) -> Option<&str> {
+        let mut matches = self
+            .sources
+            .iter()
+            .filter_map(|(filename, candidate)| (candidate == source).then_some(filename.as_str()));
+        let filename = matches.next()?;
+        // Never infer an identity from an ambiguous source alias.  Canonical
+        // builtins are one-to-one; an external caller that registers the same
+        // bytes under two names must provide an explicit identity instead.
+        matches.next().is_none().then_some(filename)
     }
 
     /// Register a shared authoring library. Shared libraries are available to
@@ -648,19 +900,9 @@ impl AssetStore {
 
     pub fn builtins() -> Self {
         let mut assets = Self::default();
-        assets.register(
-            "captain.py",
-            include_str!("../../../scripts/fighters/captain.py"),
-        );
-        assets.register("fox.py", include_str!("../../../scripts/fighters/fox.py"));
-        assets.register(
-            "falco.py",
-            include_str!("../../../scripts/fighters/falco.py"),
-        );
-        assets.register_shared(
-            "common.py",
-            include_str!("../../../scripts/fighters/common.py"),
-        );
+        for builtin in &script::BUILTIN_SCRIPTS {
+            assets.register(builtin.filename, builtin.source);
+        }
         assets
     }
 }
@@ -669,6 +911,19 @@ impl AssetStore {
 /// an explicit wire-name method.  It intentionally does not depend on Fox.
 fn action_name(action: Action) -> String {
     format!("{action:?}")
+}
+
+fn is_canonical_definition_name(name: &str, definition: &ActionDefinition, action: Action) -> bool {
+    let name = name.strip_prefix("Action.").unwrap_or(name);
+    let canonical = definition
+        .action
+        .as_deref()
+        .map(|reference| reference.strip_prefix("Action.").unwrap_or(reference))
+        .unwrap_or(name);
+    canonical == name
+        || (definition.action.is_none()
+            && action.builtin_index().is_some()
+            && name == action_name(action))
 }
 
 fn cached_source(source: &str) -> Result<Arc<Definition>, Error> {
@@ -723,7 +978,7 @@ pub(crate) fn program_for_registration(
     let program = if let Some(program) = data.script.as_ref() {
         Arc::new(program.clone())
     } else {
-        let Some(source) = script::bundled_source(data.specials.as_ref()) else {
+        let Some(source) = script::bundled_source_for_fighter(data) else {
             return Ok(None);
         };
         Arc::clone(&cached_source(source)?.program)
@@ -781,8 +1036,22 @@ pub(crate) fn attack(
     action: Action,
     data: &crate::game::data::FighterData,
 ) -> Option<&crate::game::data::Attack> {
-    let path = with_action_definition(action, data, |definition| definition.attack.clone())?;
-    data.specials.as_ref()?.attack(path.as_str())
+    let program = cached_program(data)?;
+    let definition = program.metadata().action(action)?;
+    if let Some(path) = definition.attack.as_deref() {
+        return data.specials.as_ref()?.attack(path);
+    }
+    // Source definitions may identify the sampled animation directly. This
+    // is the common path for custom action phases whose native motion-state
+    // table is not included in the generic fighter archive.
+    if let Some(animation) = definition.animation {
+        return data.specials.as_ref()?.animation_attack(animation);
+    }
+    let state = definition.slippi_state?;
+    let animation = data.motion_state(state)?.animation_id;
+    u32::try_from(animation)
+        .ok()
+        .and_then(|animation| data.specials.as_ref()?.animation_attack(animation))
 }
 
 #[allow(dead_code)]
@@ -828,10 +1097,10 @@ impl Registry {
     pub fn builtins() -> Result<Self, Error> {
         let assets = AssetStore::builtins();
         let mut registry = Self::default();
-        for name in ["captain.py", "fox.py", "falco.py"] {
+        for builtin in &script::BUILTIN_SCRIPTS {
             let source = assets
-                .get(name)
-                .ok_or_else(|| Error::Invalid(format!("missing builtin {name}")))?;
+                .get(builtin.filename)
+                .ok_or_else(|| Error::Invalid(format!("missing builtin {}", builtin.filename)))?;
             registry.insert(Definition::load_registered(source, &assets)?)?;
         }
         Ok(registry)
@@ -880,8 +1149,7 @@ impl Registry {
 /// definitions. The registry is initialized once so observation remains a
 /// cheap read during frame streaming.
 pub fn builtin_slippi_ids(character: Option<u8>, action: Action) -> Option<(u32, u32)> {
-    builtin_definition(character)
-        .and_then(|definition| definition.slippi_ids(action))
+    builtin_definition(character).and_then(|definition| definition.slippi_ids(action))
 }
 
 /// Resolve a bundled fighter's Slippi action-state id without requiring an
@@ -889,6 +1157,12 @@ pub fn builtin_slippi_ids(character: Option<u8>, action: Action) -> Option<(u32,
 /// contract remains useful to callers that need both replay identifiers.
 pub fn builtin_slippi_state(character: Option<u8>, action: Action) -> Option<u32> {
     builtin_definition(character).and_then(|definition| definition.slippi_state(action))
+}
+
+/// Resolve a bundled source-defined action from its numeric native state id.
+pub fn builtin_action_for_slippi_state(character: Option<u8>, state_id: u32) -> Option<Action> {
+    builtin_definition(character)
+        .and_then(|definition| definition.action_for_slippi_state(state_id))
 }
 
 fn builtin_definition(character: Option<u8>) -> Option<&'static Definition> {
@@ -931,7 +1205,7 @@ mod tests {
         );
         assert_eq!(
             definition.indexes.get(&definition).behavior_owners[0],
-            vec![Action::SpecialNStart as usize]
+            vec![Action::SpecialNStart]
         );
     }
 
@@ -978,10 +1252,70 @@ mod tests {
                 .iter()
                 .map(|actions| actions[0])
                 .collect::<Vec<_>>(),
-            vec![
-                Action::SpecialNStart as usize,
-                Action::SpecialNStart as usize,
-            ]
+            vec![Action::SpecialNStart, Action::SpecialNStart,]
+        );
+        assert_eq!(
+            definition
+                .indexes
+                .get(&definition)
+                .behavior_action_owners
+                .get(&Action::SpecialNStart),
+            Some(&vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn behavior_action_index_preserves_first_owner_lookup() {
+        let action = "Action.Custom.samus:special_phase";
+        let mut definition = FighterDefinition::default();
+        for resource in ["first-resource", "second-resource"] {
+            definition.behaviors.push(BehaviorDefinition {
+                actions: BTreeMap::from([(
+                    "phase".into(),
+                    action_definition(Some(action), resource),
+                )]),
+                ..BehaviorDefinition::default()
+            });
+        }
+        definition.prepare_runtime_indexes();
+        let parsed = parse_action_ref(action).expect("custom action reference");
+        assert_eq!(
+            definition
+                .action(parsed)
+                .and_then(|descriptor| descriptor.resource.as_deref()),
+            Some("first-resource")
+        );
+        assert_eq!(
+            definition
+                .indexes
+                .get(&definition)
+                .behavior_action_owners
+                .get(&parsed),
+            Some(&vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn custom_action_entry_and_owner_link_without_dense_index_casts() {
+        let action = "Action.Custom.fighter.training:special.phase_a";
+        let mut definition = FighterDefinition::default();
+        definition.behaviors.push(BehaviorDefinition {
+            entry_action: Some(action.into()),
+            actions: BTreeMap::from([(
+                "startup".into(),
+                action_definition(Some(action), "startup-resource"),
+            )]),
+            ..BehaviorDefinition::default()
+        });
+        definition.prepare_runtime_indexes();
+        let parsed = parse_action_ref(action).unwrap();
+        assert!(parsed.custom_id().is_some());
+        assert!(definition.behavior_owns_action(0, parsed));
+        assert_eq!(
+            definition
+                .action_for_owner(0, parsed)
+                .and_then(|action| action.resource.as_deref()),
+            Some("startup-resource")
         );
     }
 
@@ -994,8 +1328,8 @@ mod tests {
                     action: Some("Action.SpecialNStart".into()),
                     slippi_state: Some(347),
                     ..ActionDefinition::default()
-                }),
-            ]),
+                },
+            )]),
             ..FighterDefinition::default()
         };
         assert_eq!(
@@ -1010,5 +1344,171 @@ mod tests {
                 .and_then(|action| Some((action.slippi_state?, action.animation?))),
             None
         );
+    }
+
+    #[test]
+    fn custom_slippi_state_resolves_through_numeric_index() {
+        let reference = "Action.Custom.dk:special_hi";
+        let action = parse_action_ref(reference).expect("custom action reference");
+        let definition = FighterDefinition {
+            actions: BTreeMap::from([(
+                "special_hi".into(),
+                ActionDefinition {
+                    action: Some(reference.into()),
+                    slippi_state: Some(381),
+                    animation: Some(331),
+                    ..ActionDefinition::default()
+                },
+            )]),
+            ..FighterDefinition::default()
+        };
+        validate_custom_slippi_states(&definition).expect("unique native state");
+        definition.prepare_runtime_indexes();
+        assert_eq!(definition.action_for_slippi_state(381), Some(action));
+        assert_eq!(definition.action_for_slippi_state(382), None);
+        assert_eq!(
+            definition.action(action).and_then(|entry| entry.animation),
+            Some(331)
+        );
+    }
+
+    #[test]
+    fn distinct_custom_actions_cannot_claim_one_slippi_state() {
+        let definition = FighterDefinition {
+            actions: BTreeMap::from([
+                (
+                    "hi_a".into(),
+                    ActionDefinition {
+                        action: Some("Action.Custom.dk:special_hi_a".into()),
+                        slippi_state: Some(381),
+                        ..ActionDefinition::default()
+                    },
+                ),
+                (
+                    "hi_b".into(),
+                    ActionDefinition {
+                        action: Some("Action.Custom.dk:special_hi_b".into()),
+                        slippi_state: Some(381),
+                        ..ActionDefinition::default()
+                    },
+                ),
+            ]),
+            ..FighterDefinition::default()
+        };
+        let error = validate_custom_slippi_states(&definition).expect_err("duplicate state");
+        assert!(error.to_string().contains("381"));
+        definition.prepare_runtime_indexes();
+    }
+
+    #[test]
+    fn canonical_action_rejects_conflicting_behavior_animation_metadata() {
+        let mut definition = FighterDefinition {
+            actions: BTreeMap::from([(
+                "SpecialNStart".into(),
+                ActionDefinition {
+                    animation: Some(100),
+                    ..ActionDefinition::default()
+                },
+            )]),
+            ..FighterDefinition::default()
+        };
+        definition.behaviors.push(BehaviorDefinition {
+            actions: BTreeMap::from([(
+                "startup".into(),
+                ActionDefinition {
+                    action: Some("Action.SpecialNStart".into()),
+                    animation: Some(101),
+                    ..ActionDefinition::default()
+                },
+            )]),
+            ..BehaviorDefinition::default()
+        });
+        let error = validate_action_animation_metadata(&definition).expect_err("conflict");
+        assert!(error.to_string().contains("conflicting animation metadata"));
+    }
+
+    #[test]
+    fn canonical_action_allows_identical_or_absent_animation_metadata() {
+        let mut definition = FighterDefinition {
+            actions: BTreeMap::from([(
+                "SpecialNStart".into(),
+                ActionDefinition {
+                    animation: Some(100),
+                    animation_loop: true,
+                    ..ActionDefinition::default()
+                },
+            )]),
+            ..FighterDefinition::default()
+        };
+        definition.behaviors.push(BehaviorDefinition {
+            actions: BTreeMap::from([
+                (
+                    "same".into(),
+                    ActionDefinition {
+                        action: Some("Action.SpecialNStart".into()),
+                        animation: Some(100),
+                        animation_loop: true,
+                        ..ActionDefinition::default()
+                    },
+                ),
+                (
+                    "absent".into(),
+                    ActionDefinition {
+                        action: Some("Action.SpecialNStart".into()),
+                        ..ActionDefinition::default()
+                    },
+                ),
+            ]),
+            ..BehaviorDefinition::default()
+        });
+        validate_action_animation_metadata(&definition).expect("identical and absent metadata");
+    }
+
+    #[test]
+    fn all_builtin_sources_are_registered_and_visible() {
+        let keys = script::BUILTIN_SCRIPTS
+            .iter()
+            .map(|builtin| builtin.character_key)
+            .collect::<std::collections::BTreeSet<_>>();
+        let files = script::BUILTIN_SCRIPTS
+            .iter()
+            .map(|builtin| builtin.filename)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(script::BUILTIN_SCRIPTS.len(), 26);
+        assert_eq!(keys.len(), script::BUILTIN_SCRIPTS.len());
+        assert_eq!(files.len(), script::BUILTIN_SCRIPTS.len());
+
+        let assets = AssetStore::builtins();
+        let dependencies = assets
+            .dependencies("")
+            .expect("bundled dependencies are available");
+        for builtin in &script::BUILTIN_SCRIPTS {
+            assert_eq!(assets.get(builtin.filename), Some(builtin.source));
+            assert_eq!(
+                dependencies.get(builtin.filename).map(String::as_str),
+                Some(builtin.source)
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_source_keeps_its_private_module_filename() {
+        let assets = AssetStore::builtins();
+        assert_eq!(
+            assets.filename_for_source(
+                script::BUILTIN_SCRIPTS
+                    .iter()
+                    .find(|builtin| builtin.character_key == "yoshi")
+                    .expect("Yoshi builtin")
+                    .source,
+            ),
+            Some("yoshi.py"),
+        );
+        assert_eq!(assets.filename_for_source("external fighter"), None);
+
+        let mut ambiguous = AssetStore::default();
+        ambiguous.register("first.py", "same source");
+        ambiguous.register("second.py", "same source");
+        assert_eq!(ambiguous.filename_for_source("same source"), None);
     }
 }

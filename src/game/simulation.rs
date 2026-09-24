@@ -160,6 +160,7 @@ fn spawn(
         previous_input: Controller::default(),
         script_events: Default::default(),
         pending_projectiles: Vec::new(),
+        pending_article_spawns: Vec::new(),
         effects: Default::default(),
     };
     collision::initialize(&mut fighter, &data.fighters[player], geometry)?;
@@ -199,14 +200,15 @@ pub(crate) fn enter(fighter: &mut Fighter, action: Action) {
     // Every native motion transition receives a fresh lifecycle generation,
     // including same-action re-entry.  Script callbacks are drained by the
     // later event phase; no VM call is made from this entry routine.
-    if fighter
+    if let Err(error) = fighter
         .script_events
         .begin_action(Some(fighter.action), action)
-        .is_err()
     {
         // The bounded rollback queue is part of the transition transaction.
         // Do not mutate the native action when its generation record cannot
-        // be staged.
+        // be staged. Surface the failure after the phase instead of silently
+        // continuing with a partially entered source action.
+        fighter.script_events.record_native_error(error);
         return;
     }
     let identity = crate::fighter::state::action_instance::motion_identity(
@@ -431,6 +433,13 @@ where
         _ => inputs,
     };
 
+    // Native shield regeneration is gated by the frame-start guard flag. A
+    // transition out of Guard during this frame must still consume the
+    // active-shield path, even though the transition clears that flag before
+    // end-of-frame processing.
+    let shield_active_at_frame_start: [bool; 2] =
+        core::array::from_fn(|player| shield::active(&state.fighters[player]));
+
     // Slippi's recorder clears these transient fields before their producer
     // callbacks. Contacts and landings later in the frame replace them.
     for fighter in &mut state.fighters {
@@ -532,11 +541,7 @@ where
                 damage::during_hitlag(fighter, input.stick, &data.rules.damage)?;
                 stage_motion::carry(&data.stage, &state.stage, fighter)?;
                 advance_ecb_lock(fighter);
-                collision::sample(
-                    fighter,
-                    &data.fighters[player],
-                    &pose(fighter, &data.fighters[player])?,
-                )?;
+                collision::sample_current(fighter, &data.fighters[player])?;
                 if stage_moved
                     || fighter.position != previous_position
                     || fighter.ecb.current != fighter.ecb.desired
@@ -568,23 +573,6 @@ where
 
     let mut clank_owns = [false; 2];
     let mut shield_owns = [false; 2];
-    // `ftCo_8009A184`/`ftCo_8009A228` (`begin_pass`) call the same
-    // `Fighter_ChangeMotionState` as any other transition, which
-    // unconditionally clears `fp->x221A_b7` (`fighter.c:1048`) -- the flag
-    // `Fighter_ProcessHit_8006D1EC` (priority 0xE, `fighter.c:908,2821`)
-    // gates shield regeneration on, only ever set by GuardOn/Guard/
-    // GuardReflect's own entries (`ftCo_Guard.c:267,523,708,803,984`). Yet
-    // `fox-bf.slp`'s own P4 (`docs/parity.md`) shows no regeneration lands
-    // on the very frame `GuardOn` converts into `Pass`, despite that clear
-    // taking effect earlier the same frame. This flag preserves, for
-    // `shield::finish_frame` alone, whether a fighter was still actively
-    // shielding immediately before this exact conversion -- narrowly, since
-    // the same generic clear also fires leaving Guard through the ordinary
-    // GuardOff release and through `ftCo_8009917C`/`ftCo_8009980C`'s rolls
-    // and spot dodges, both already covered by their own tests expecting
-    // ordinary immediate regeneration and not reachable through
-    // `pass_request_after_actions`.
-    let mut shield_active_into_pass = [false; 2];
     // ftCo_Wait_Anim's HSD_Randi draw runs within the same animation-phase
     // callback order Melee dispatches in (player order); the seed is handed
     // off to the blast-zone death draw further below exactly as today.
@@ -691,7 +679,6 @@ where
             state.next_frame,
             player,
         )?;
-        let shielding_before_pass = shield::active(fighter);
         if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
             &data.fighters[player],
@@ -700,7 +687,6 @@ where
             shield_owns[player],
         ) {
             collision::begin_pass(fighter, &data.fighters[player], &geometry, velocity_y);
-            shield_active_into_pass[player] = shielding_before_pass;
             drain_script_transitions(
                 fighter,
                 &data.fighters[player],
@@ -759,11 +745,7 @@ where
                 .ok_or_else(|| Error::Data("rebirth state requires explicit rules".into()))?;
             rebirth::move_fighter(fighter, rules, player);
             combat_history::push(fighter, &data.rules.damage.combo);
-            collision::sample(
-                fighter,
-                &data.fighters[player],
-                &pose(fighter, &data.fighters[player])?,
-            )?;
+            collision::sample_current(fighter, &data.fighters[player])?;
             staling::flush(
                 fighter,
                 &data.fighters[player],
@@ -777,11 +759,7 @@ where
         if ledge::attached(fighter) {
             ledge::attach(fighter, &data.fighters[player], &geometry)?;
             combat_history::push(fighter, &data.rules.damage.combo);
-            collision::sample(
-                fighter,
-                &data.fighters[player],
-                &pose(fighter, &data.fighters[player])?,
-            )?;
+            collision::sample_current(fighter, &data.fighters[player])?;
             staling::flush(
                 fighter,
                 &data.fighters[player],
@@ -817,11 +795,7 @@ where
         combat_history::push(fighter, &data.rules.damage.combo);
         stage_motion::carry(&data.stage, &state.stage, fighter)?;
         advance_ecb_lock(fighter);
-        collision::sample(
-            fighter,
-            &data.fighters[player],
-            &pose(fighter, &data.fighters[player])?,
-        )?;
+        collision::sample_current(fighter, &data.fighters[player])?;
         collision::resolve(
             fighter,
             previous_position,
@@ -1066,11 +1040,13 @@ where
         }
     }
     let captured = if action_age_offsets != [0.0; 2] {
-        capture.take().map(|capture| capture(super::ObservationBoundary {
-            state,
-            data,
-            action_age_offsets,
-        }))
+        capture.take().map(|capture| {
+            capture(super::ObservationBoundary {
+                state,
+                data,
+                action_age_offsets,
+            })
+        })
     } else {
         None
     };
@@ -1231,7 +1207,7 @@ where
     }
     for (player, &knocked_out) in blast_knockouts.iter().enumerate() {
         if knocked_out {
-            grab::break_for_player(state, player);
+            grab::break_for_player_with_data(data, state, player);
             special_capture::break_for_player(state, player);
         }
     }
@@ -1250,13 +1226,11 @@ where
             state.fighters[player].action,
             Action::Respawn | Action::Eliminated
         ) {
-            let was_active =
-                shield::active(&state.fighters[player]) || shield_active_into_pass[player];
             shield::finish_frame(
                 &mut state.fighters[player],
                 data.rules.shield.as_ref(),
                 shield_contact[player],
-                was_active,
+                shield_active_at_frame_start[player],
             );
             if let Some(kind) = blast_deaths[player] {
                 death::begin(
@@ -1742,11 +1716,7 @@ fn resolve_captured_collisions(
             continue;
         }
         let fighter = &mut state.fighters[player];
-        collision::sample(
-            fighter,
-            &data.fighters[player],
-            &pose(fighter, &data.fighters[player])?,
-        )?;
+        collision::sample_current(fighter, &data.fighters[player])?;
         collision::resolve(
             fighter,
             previous_positions[player],
@@ -2765,5 +2735,28 @@ mod tests {
 
         enter(&mut fighter, Action::DamageFall);
         assert_eq!(fighter.action_frame, 0);
+    }
+
+    #[test]
+    fn failed_action_entry_records_native_error_without_mutating_action() {
+        let data = fixture();
+        let mut fighter = initial_state(&data, 0, [0, 1]).unwrap().fighters[0].clone();
+        let original = fighter.action;
+        for _ in 0..crate::game::script::events::MAX_PENDING_TRANSITIONS {
+            assert!(
+                fighter
+                    .script_events
+                    .begin_action(Some(original), Action::Wait)
+                    .is_ok()
+            );
+        }
+
+        enter(&mut fighter, Action::SpecialNStart);
+
+        assert_eq!(fighter.action, original);
+        assert_eq!(
+            fighter.script_events.native_error.as_deref(),
+            Some("native action transition queue is full")
+        );
     }
 }

@@ -242,12 +242,7 @@ mod tests {
         let data = fixture_with_full_ledge_jump_metadata();
         let bytes = encode(&data).unwrap();
         let decoded = decode(&bytes).unwrap();
-        let jump = &decoded.fighters[0]
-            .ledge
-            .as_ref()
-            .unwrap()
-            .jump
-            .motion;
+        let jump = &decoded.fighters[0].ledge.as_ref().unwrap().jump.motion;
 
         assert_eq!(jump.phase2_blend_frames, 5);
         assert_eq!(jump.phase2_dynamics_variant, 6);

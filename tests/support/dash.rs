@@ -1,5 +1,11 @@
-use skirmish::fighter::{dash::{DashAttack, Rules}, tilt::GroundFrameFlags};
-use skirmish::game::{data::{Attack, AttackFrame, Bone, Hitbox, MatchData}, grab::ShieldGrabRules};
+use skirmish::fighter::{
+    dash::{DashAttack, Rules},
+    tilt::GroundFrameFlags,
+};
+use skirmish::game::{
+    data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
+    grab::ShieldGrabRules,
+};
 
 /// Invented dash rules: `early_frames` (x44), `roll_frames` (x48),
 /// `transition_friction` (x54) and `attack_friction_multiplier` (x50).
@@ -58,6 +64,8 @@ pub fn attack(bones: &[Bone], root_translations: Option<Vec<f32>>) -> DashAttack
     DashAttack {
         attack: Attack {
             move_id: Some(5),
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..FRAMES)
                 .map(|frame| AttackFrame {
                     bones: bones.to_vec(),

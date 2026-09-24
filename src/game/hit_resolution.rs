@@ -3,11 +3,22 @@
 use crate::fighter::damage::ProneOrientation;
 use crate::fighter::{combat, damage, shield};
 use crate::game::{
+    Action, Error, Event, Fighter, State,
     data::{Hitbox, MatchData},
-    script, Action, Error, Event, Fighter, State,
+    script,
 };
 fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
+}
+
+/// Melee's hitlag decision is driven by applied damage separately from
+/// knockback: damage-only contacts still enter hitlag, while knockback-only
+/// contacts do not.
+fn should_apply_hitlag(patch: &script::HitPatch) -> bool {
+    // The native path keys hitlag from x183C_applied, which is set only when
+    // this contact actually applied percent. A script that suppresses damage
+    // must therefore not leave the native damage hitlag behind.
+    patch.apply_damage && patch.apply_hitlag && patch.damage as i32 > 0
 }
 
 // The original damage transition assigns/merges launch velocity before hitlag,
@@ -392,7 +403,7 @@ pub(crate) fn resolve_prepared_hit(
     let apply_knockback = patch.apply_knockback && patch.knockback != 0.0;
     let has_knockback = patch.knockback != 0.0;
     let apply_hitstun = patch.apply_hitstun && has_knockback;
-    let apply_hitlag = patch.apply_hitlag && has_knockback;
+    let apply_hitlag = should_apply_hitlag(&patch);
     let damage_motion = rules.damage.damage_motion.as_ref().map(|profile| {
         damage::damage_motion(
             patch.knockback,
@@ -479,10 +490,9 @@ pub(crate) fn resolve_prepared_hit(
     // bookkeeping (the same function's `combo::record`) is unaffected --
     // it is the attacker's own accounting, set independently of whether the
     // victim ever flinches -- so `record_hit` itself still runs every hit.
-    // The attacker's own hitlag, though, is part of the same skipped
-    // reaction (`ftCo_8008EC90`'s gate runs before `ftCo_Damage_
-    // CalcHitlag` would otherwise apply it to either side), so it stays
-    // gated alongside the victim's.
+    // Hitlag is calculated from the positive applied damage count after this
+    // reaction branch.  A zero-knockback contact therefore still freezes both
+    // fighters when it dealt damage, even though it skipped Damage motion.
     let reacted = apply_knockback;
     if apply_hitlag {
         state.fighters[attacker].hitlag = state.fighters[attacker].hitlag.max(attacker_hitlag);
@@ -722,4 +732,108 @@ pub(crate) fn apply_shield_contact(
         broken,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FighterContact, should_apply_hitlag};
+    use crate::fighter::state::stale::Entry;
+    use crate::game::Action;
+    use crate::game::data::{Hitbox, MatchData};
+    use crate::game::script::HitPatch;
+
+    #[test]
+    fn positive_damage_keeps_hitlag_without_knockback() {
+        let patch = HitPatch {
+            damage: 1.0,
+            knockback: 0.0,
+            ..HitPatch::default()
+        };
+        assert!(should_apply_hitlag(&patch));
+    }
+
+    #[test]
+    fn knockback_without_damage_does_not_create_hitlag() {
+        let patch = HitPatch {
+            damage: 0.0,
+            knockback: 20.0,
+            ..HitPatch::default()
+        };
+        assert!(!should_apply_hitlag(&patch));
+    }
+
+    #[test]
+    fn scripts_can_disable_damage_hitlag() {
+        let patch = HitPatch {
+            damage: 5.0,
+            apply_hitlag: false,
+            ..HitPatch::default()
+        };
+        assert!(!should_apply_hitlag(&patch));
+    }
+
+    #[test]
+    fn suppressed_damage_does_not_create_native_hitlag() {
+        let patch = HitPatch {
+            damage: 5.0,
+            apply_damage: false,
+            ..HitPatch::default()
+        };
+        assert!(!should_apply_hitlag(&patch));
+    }
+
+    #[test]
+    fn damage_only_contact_applies_both_hitlag_timers_without_damage_motion() {
+        let data: MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        let mut state =
+            crate::game::simulation::initial_state(&data, 0, [0, 1]).expect("initial state");
+        state.fighters[1].action = Action::JumpSquat;
+        state.fighters[1].grounded = true;
+        let hit = Hitbox {
+            clank: false,
+            rebound: false,
+            element: Default::default(),
+            shield_damage: 0,
+            group: 0,
+            bone: 0,
+            center: [0.0; 3],
+            radius: 1.0,
+            damage: 1,
+            angle_degrees: 0.0,
+            growth: 0,
+            fixed: 0,
+            base: 0,
+        };
+        let staled = crate::game::staling::Hit {
+            identity: Entry::INACTIVE,
+            group: 0,
+            base_damage: 1,
+            damage: 1.0,
+        };
+
+        assert!(
+            super::apply_hit(
+                &data,
+                &mut state,
+                0,
+                &hit,
+                staled,
+                crate::fighter::damage::HurtHeight::Middle,
+                super::HitDirection::FighterContact(FighterContact {
+                    hurt_start: [2.0, 0.0, 0.0],
+                    hurt_end: [2.0, 0.0, 0.0],
+                    position: [2.0, 0.0, 0.0],
+                }),
+                false,
+            )
+            .expect("damage-only contact resolves")
+        );
+        assert!(state.fighters[0].hitlag > 0.0);
+        assert!(state.fighters[1].hitlag > 0.0);
+        assert_eq!(state.fighters[1].action, Action::JumpSquat);
+        assert_eq!(state.fighters[1].percent, 1.0);
+    }
 }

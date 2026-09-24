@@ -30,6 +30,9 @@ pub fn profile(mut data: MatchData) -> MatchData {
         values.insert("down".into(), fixture.parameters.clone());
         fighter.specials = Some(Specials {
             character: "fox".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: Resources::new(values).unwrap(),
         });
     }
@@ -45,7 +48,7 @@ pub fn profile(mut data: MatchData) -> MatchData {
 pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
     data.rules.clank = Some(clank::Rules {
         profile: clank::Profile::OrdinaryGroundedNonSlash,
-            response: clank_math::ResponseRules {
+        response: clank_math::ResponseRules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,
@@ -65,6 +68,8 @@ pub fn with_ordinary_clank(mut data: MatchData) -> MatchData {
                     pose
                 })
                 .collect(),
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
         });
     }
     data

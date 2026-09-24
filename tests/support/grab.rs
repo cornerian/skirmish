@@ -42,6 +42,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
                     },
                 })
                 .collect(),
+            blend_frames: 0,
+            dynamics_variant: 0,
             pull_frames: 2,
             grounded_targets_only: true,
         };
@@ -54,6 +56,8 @@ pub fn profile(mut data: MatchData) -> MatchData {
             }),
             weight_independent: false,
             poses: vec![bones.clone(); 6],
+            poses_blend_frames: 0,
+            poses_dynamics_variant: 0,
             release_frame: 2,
             hit: ThrowHit {
                 damage: 8,
@@ -75,16 +79,26 @@ pub fn profile(mut data: MatchData) -> MatchData {
             pummel: Pummel {
                 move_id: Some(40),
                 poses: vec![bones.clone(); 4],
+                poses_blend_frames: 0,
+                poses_dynamics_variant: 0,
                 hit_frame: 1,
                 damage: 3,
             },
             capture_damage: CaptureDamage {
                 high: vec![bones.clone(); 3],
                 low: vec![bones.clone(); 3],
+                high_blend_frames: 0,
+                high_dynamics_variant: 0,
+                low_blend_frames: 0,
+                low_dynamics_variant: 0,
             },
             escape: Escape {
                 catch_cut_poses: vec![bones.clone(); 3],
                 capture_cut_poses: vec![bones.clone(); 3],
+                catch_cut_poses_blend_frames: 0,
+                catch_cut_poses_dynamics_variant: 0,
+                capture_cut_poses_blend_frames: 0,
+                capture_cut_poses_dynamics_variant: 0,
             },
             throws: Throws {
                 forward: throw(30.0),

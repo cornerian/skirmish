@@ -11,15 +11,23 @@ use super::action_events::{
 };
 use super::lifecycle_host::json_to_native;
 use super::motion::{MotionProfile, MotionProfileId};
-use super::motion_resources::{MotionDescriptor, link_profile};
+use super::motion_resources::{
+    MotionDescriptor, MotionParameterSource, SpecialAttributeRef, link_profile,
+};
 use super::starlark::value as native;
 use crate::game::data::{FighterData, Hitbox, Rules};
+use crate::game::projectile::ProjectileKind;
+use crate::game::script::definition::ActionDefinition;
 use crate::game::script::resources::AttackId;
+use crate::game::script::resources::{ArticleId, ArticleResource, ProjectileContactPolicy};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 const MAX_PATH_BYTES: usize = 256;
+type Action = crate::game::Action;
+type ActionMap<T> = BTreeMap<Action, T>;
+type OwnedActionMap<T> = BTreeMap<(usize, Action), T>;
 
 #[derive(Clone, Debug)]
 struct AttackMeta {
@@ -28,16 +36,47 @@ struct AttackMeta {
 }
 
 type CommandTraceRows = Arc<[[Option<u32>; 4]]>;
+type AnimationEventMaskRows = Arc<[u8]>;
 
 #[derive(Clone, Debug)]
 struct ProjectileMeta {
+    lifetime: f32,
     hitboxes: Arc<[Hitbox]>,
     move_id: u16,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ArticleMeta {
+    pub(crate) behavior: ArticleBehavior,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ArticleBehavior {
+    Ray {
+        kind: ProjectileKind,
+        lifetime: f32,
+        hitboxes: Arc<[Hitbox]>,
+        move_id: u16,
+    },
+    Gravity {
+        speed: f32,
+        angle: f32,
+        lifetime: f32,
+        half_life: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        surface_multiplier: f32,
+        terrain_stop_speed: f32,
+        hitboxes: Arc<[Hitbox]>,
+        move_id: u16,
+        contact: ProjectileContactPolicy,
+    },
 }
 
 /// Read-only resource data shared by all dispatches for one fighter.
 #[derive(Clone, Debug)]
 pub(crate) struct ResourceCache {
+    special_attributes: Option<super::resources::SpecialAttributes>,
     values: Arc<BTreeMap<String, JsonValue>>,
     attacks: Arc<BTreeMap<String, AttackMeta>>,
     array_counts: Arc<BTreeMap<String, usize>>,
@@ -47,16 +86,56 @@ pub(crate) struct ResourceCache {
     program: Option<Arc<super::Program>>,
     profiles: Arc<Vec<MotionProfile>>,
     action_profiles: Arc<Vec<Option<MotionProfileId>>>,
-    action_profiles_by_owner: Arc<BTreeMap<(usize, u16), MotionProfileId>>,
+    action_profiles_custom: Arc<ActionMap<MotionProfileId>>,
+    action_profiles_by_owner: Arc<OwnedActionMap<MotionProfileId>>,
     action_delay_fields: Arc<Vec<Option<String>>>,
-    action_delay_fields_by_owner: Arc<BTreeMap<(usize, u16), Option<String>>>,
+    action_delay_fields_custom: Arc<ActionMap<Option<String>>>,
+    action_delay_fields_by_owner: Arc<OwnedActionMap<Option<String>>>,
     action_animation_loops: Arc<Vec<bool>>,
-    action_animation_loops_by_owner: Arc<BTreeMap<(usize, u16), bool>>,
-    action_attacks_by_owner: Arc<BTreeMap<(usize, u16), AttackId>>,
-    command_traces: Arc<BTreeMap<u16, CommandTraceRows>>,
-    command_traces_by_owner: Arc<BTreeMap<(usize, u16), CommandTraceRows>>,
+    action_animation_loops_custom: Arc<ActionMap<bool>>,
+    action_animation_loops_by_owner: Arc<OwnedActionMap<bool>>,
+    action_attacks_by_owner: Arc<OwnedActionMap<AttackId>>,
+    command_traces: Arc<ActionMap<CommandTraceRows>>,
+    command_traces_by_owner: Arc<OwnedActionMap<CommandTraceRows>>,
+    animation_event_masks: Arc<ActionMap<AnimationEventMaskRows>>,
+    animation_event_masks_by_owner: Arc<OwnedActionMap<AnimationEventMaskRows>>,
     projectile_resources: Arc<BTreeMap<String, ProjectileMeta>>,
+    articles: Arc<BTreeMap<ArticleId, ArticleMeta>>,
     action_events: Arc<ActionEventTable>,
+    /// Native states whose motion table entry links to a complete executable
+    /// `specials.animations` resource.  This is built once at registration;
+    /// callback queries are binary searches over the sorted ids.
+    complete_animation_states: Arc<[u32]>,
+}
+
+impl MotionParameterSource for ResourceCache {
+    fn number_path(&self, path: &str) -> Option<f32> {
+        self.value_path(path)
+            .and_then(|value| value.as_f64())
+            .filter(|value| value.is_finite())
+            .filter(|value| *value >= f64::from(f32::MIN) && *value <= f64::from(f32::MAX))
+            .map(|value| value as f32)
+    }
+
+    fn special_attribute(&self, reference: SpecialAttributeRef) -> Option<f32> {
+        self.special_attribute(reference.layout, reference.field_id)
+    }
+}
+
+struct LinkedMotionParameters<'a> {
+    values: &'a JsonValue,
+    resources: &'a ResourceCache,
+}
+
+impl MotionParameterSource for LinkedMotionParameters<'_> {
+    fn number_path(&self, path: &str) -> Option<f32> {
+        <JsonValue as MotionParameterSource>::number_path(self.values, path)
+    }
+
+    fn special_attribute(&self, reference: SpecialAttributeRef) -> Option<f32> {
+        self.resources
+            .special_attribute(reference.layout, reference.field_id)
+    }
 }
 
 /// Match-owned handle for the immutable resource projection. The handle is
@@ -95,6 +174,7 @@ impl ResourceCache {
     ) -> Result<Self, Error> {
         let (mut values, attacks) = resource_views(data, rules, check_attacks)?;
         let projectile_resources = link_projectile_resources(data)?;
+        let articles = link_article_resources(data, &projectile_resources)?;
         if let Some(data) = data {
             if let Some(escape_air) = &data.escape_air {
                 let value = serde_json::to_value(escape_air).map_err(|error| {
@@ -133,25 +213,35 @@ impl ResourceCache {
             .transpose()?
             .flatten();
         let mut cache = Self {
+            special_attributes: data
+                .and_then(|fighter| fighter.specials.as_ref())
+                .and_then(|specials| specials.special_attributes.clone()),
             values: Arc::new(values),
             attacks: Arc::new(attacks),
             array_counts: Arc::new(array_counts),
             program,
             profiles: Arc::default(),
             action_profiles: Arc::default(),
+            action_profiles_custom: Arc::default(),
             action_profiles_by_owner: Arc::default(),
             action_delay_fields: Arc::default(),
+            action_delay_fields_custom: Arc::default(),
             action_delay_fields_by_owner: Arc::default(),
             action_animation_loops: Arc::default(),
+            action_animation_loops_custom: Arc::default(),
             action_animation_loops_by_owner: Arc::default(),
             action_attacks_by_owner: Arc::default(),
             command_traces: Arc::default(),
             command_traces_by_owner: Arc::default(),
+            animation_event_masks: Arc::default(),
+            animation_event_masks_by_owner: Arc::default(),
             projectile_resources: Arc::new(projectile_resources),
+            articles: Arc::new(articles),
             action_events: Arc::new(
                 ActionEventTable::compile(Vec::new(), Vec::new(), Vec::new())
                     .map_err(|error| Error::Invalid(error.to_string()))?,
             ),
+            complete_animation_states: link_complete_animation_states(data),
         };
         cache.action_events = Arc::new(cache.compile_action_events()?);
         let environment = cache.environment()?;
@@ -166,6 +256,48 @@ impl ResourceCache {
         self.projectile_resources
             .get(path)
             .map(|meta| meta.hitboxes.as_ref())
+    }
+
+    pub(crate) fn article(&self, id: ArticleId) -> Option<&ArticleMeta> {
+        self.articles.get(&id)
+    }
+
+    /// Map the old stringly projectile adapter onto the numeric catalog when
+    /// its descriptor is the same native article.  This runs only at the
+    /// compatibility boundary; typed callbacks use `article` directly.
+    pub(crate) fn legacy_article(
+        &self,
+        kind: ProjectileKind,
+        hitboxes_path: &str,
+        lifetime: f32,
+        move_id: u16,
+    ) -> Option<ArticleId> {
+        let id = match kind {
+            ProjectileKind::FoxLaser => ArticleId::FOX_LASER,
+            ProjectileKind::FalcoLaser => ArticleId::FALCO_LASER,
+            ProjectileKind::Gravity(_) => return None,
+        };
+        let meta = self.article(id)?;
+        let ArticleBehavior::Ray {
+            lifetime: article_lifetime,
+            move_id: article_move_id,
+            hitboxes: article_hitboxes,
+            ..
+        } = &meta.behavior
+        else {
+            return None;
+        };
+        (*article_lifetime == lifetime
+            && *article_move_id == move_id
+            && self
+                .projectile_resources
+                .get(hitboxes_path)
+                .is_some_and(|legacy| {
+                    legacy.move_id == *article_move_id
+                        && legacy.lifetime == *article_lifetime
+                        && legacy.hitboxes.as_ref() == article_hitboxes.as_ref()
+                }))
+        .then_some(id)
     }
 
     pub(crate) fn projectile_move_id(&self, path: &str) -> Option<u16> {
@@ -183,9 +315,12 @@ impl ResourceCache {
 
     pub(crate) fn motion_profile(
         &self,
-        action: crate::game::Action,
+        action: Action,
     ) -> Option<(MotionProfileId, &MotionProfile)> {
-        let id = self.action_profiles.get(action as usize)?.as_ref()?;
+        let id = match action.builtin_index() {
+            Some(index) => self.action_profiles.get(index)?.as_ref()?,
+            None => self.action_profiles_custom.get(&action)?,
+        };
         Some((*id, self.profiles.get(usize::from(id.0))?))
     }
 
@@ -193,21 +328,28 @@ impl ResourceCache {
         self.profiles.get(usize::from(id.0))
     }
 
-    pub(crate) fn profile_delay_field(&self, action: crate::game::Action) -> Option<&str> {
-        self.action_delay_fields
-            .get(action as usize)
-            .and_then(Option::as_deref)
+    pub(crate) fn profile_delay_field(&self, action: Action) -> Option<&str> {
+        match action.builtin_index() {
+            Some(index) => self
+                .action_delay_fields
+                .get(index)
+                .and_then(Option::as_deref),
+            None => self
+                .action_delay_fields_custom
+                .get(&action)
+                .and_then(Option::as_deref),
+        }
     }
 
     pub(crate) fn motion_profile_for_owner(
         &self,
         owner: Option<usize>,
-        action: crate::game::Action,
+        action: Action,
     ) -> Option<(MotionProfileId, &MotionProfile)> {
         match owner {
             Some(owner) => self
                 .action_profiles_by_owner
-                .get(&(owner, action as u16))
+                .get(&(owner, action))
                 .copied()
                 .and_then(|id| {
                     self.profiles
@@ -221,12 +363,12 @@ impl ResourceCache {
     pub(crate) fn profile_delay_field_for_owner(
         &self,
         owner: Option<usize>,
-        action: crate::game::Action,
+        action: Action,
     ) -> Option<&str> {
         match owner {
             Some(owner) => self
                 .action_delay_fields_by_owner
-                .get(&(owner, action as u16))
+                .get(&(owner, action))
                 .and_then(Option::as_deref),
             None => self.profile_delay_field(action),
         }
@@ -235,22 +377,26 @@ impl ResourceCache {
     /// Whether the registered action's finite animation samples cycle while
     /// its native action frame continues advancing. This is immutable action
     /// metadata compiled at resource registration.
-    pub(crate) fn animation_loop(&self, action: crate::game::Action) -> bool {
-        self.action_animation_loops
-            .get(action as usize)
-            .copied()
-            .unwrap_or(false)
+    pub(crate) fn animation_loop(&self, action: Action) -> bool {
+        match action.builtin_index() {
+            Some(index) => self
+                .action_animation_loops
+                .get(index)
+                .copied()
+                .unwrap_or(false),
+            None => self
+                .action_animation_loops_custom
+                .get(&action)
+                .copied()
+                .unwrap_or(false),
+        }
     }
 
-    pub(crate) fn animation_loop_for_owner(
-        &self,
-        owner: Option<usize>,
-        action: crate::game::Action,
-    ) -> bool {
+    pub(crate) fn animation_loop_for_owner(&self, owner: Option<usize>, action: Action) -> bool {
         match owner {
             Some(owner) => self
                 .action_animation_loops_by_owner
-                .get(&(owner, action as u16))
+                .get(&(owner, action))
                 .copied()
                 .unwrap_or(false),
             None => self.animation_loop(action),
@@ -261,17 +407,48 @@ impl ResourceCache {
         &self.action_events
     }
 
+    /// Return whether a numeric native motion state has a complete,
+    /// executable animation resource.  The immutable index makes this a
+    /// logarithmic hot-path lookup and naturally fails closed for absent or
+    /// unsupported animation data.
+    pub(crate) fn has_complete_animation(&self, state_id: u32) -> bool {
+        self.complete_animation_states
+            .binary_search(&state_id)
+            .is_ok()
+    }
+
+    pub(crate) fn special_attribute(&self, layout: u8, field_id: u16) -> Option<f32> {
+        let attributes = self.special_attributes.as_ref()?;
+        (attributes.layout == layout)
+            .then(|| attributes.get(field_id))
+            .flatten()
+    }
+
     pub(crate) fn command_trace(
         &self,
         owner: Option<usize>,
-        action: crate::game::Action,
+        action: Action,
     ) -> Option<&[[Option<u32>; 4]]> {
         match owner {
             Some(owner) => self
                 .command_traces_by_owner
-                .get(&(owner, action as u16))
+                .get(&(owner, action))
                 .map(AsRef::as_ref),
-            None => self.command_traces.get(&(action as u16)).map(AsRef::as_ref),
+            None => self.command_traces.get(&action).map(AsRef::as_ref),
+        }
+    }
+
+    pub(crate) fn animation_event_masks(
+        &self,
+        owner: Option<usize>,
+        action: Action,
+    ) -> Option<&[u8]> {
+        match owner {
+            Some(owner) => self
+                .animation_event_masks_by_owner
+                .get(&(owner, action))
+                .map(AsRef::as_ref),
+            None => self.animation_event_masks.get(&action).map(AsRef::as_ref),
         }
     }
 
@@ -280,6 +457,7 @@ impl ResourceCache {
             return Ok(());
         };
         let mut root = BTreeMap::new();
+        let mut event_masks_root = BTreeMap::new();
         for (canonical, action) in selected_action_definitions(&program.metadata().actions) {
             if let Some(source) = action.source_behavior.as_deref() {
                 let behavior = program
@@ -298,12 +476,10 @@ impl ResourceCache {
                     continue;
                 }
             }
-            if let Some(path) = action.command_trace.as_deref() {
-                self.validate_command_trace_lengths(path, action.attack.as_deref())?;
-                root.insert(canonical, self.compile_command_trace(path)?);
-            }
+            self.link_action_sidecars(canonical, action, &mut root, &mut event_masks_root)?;
         }
         let mut owned = BTreeMap::new();
+        let mut event_masks_owned = BTreeMap::new();
         for (owner, behavior) in program.metadata().behaviors.iter().enumerate() {
             // A behavior resource is an optional enablement gate.  If its
             // declared root is absent, the definition omits that behavior
@@ -318,14 +494,56 @@ impl ResourceCache {
                 continue;
             }
             for (canonical, action) in selected_action_definitions(&behavior.actions) {
-                if let Some(path) = action.command_trace.as_deref() {
-                    self.validate_command_trace_lengths(path, action.attack.as_deref())?;
-                    owned.insert((owner, canonical), self.compile_command_trace(path)?);
-                }
+                self.link_action_sidecars(
+                    (owner, canonical),
+                    action,
+                    &mut owned,
+                    &mut event_masks_owned,
+                )?;
             }
         }
         self.command_traces = Arc::new(root);
         self.command_traces_by_owner = Arc::new(owned);
+        self.animation_event_masks = Arc::new(event_masks_root);
+        self.animation_event_masks_by_owner = Arc::new(event_masks_owned);
+        Ok(())
+    }
+
+    fn link_action_sidecars<K>(
+        &self,
+        key: K,
+        action: &ActionDefinition,
+        traces: &mut BTreeMap<K, CommandTraceRows>,
+        event_masks: &mut BTreeMap<K, AnimationEventMaskRows>,
+    ) -> Result<(), Error>
+    where
+        K: Clone + Ord,
+    {
+        if let Some(path) = action.command_trace.as_deref() {
+            self.validate_command_trace_lengths(path, action.attack.as_deref())?;
+            traces.insert(key.clone(), self.compile_command_trace(path)?);
+            if let Some(masks) =
+                self.compile_animation_event_masks(path, action.attack.as_deref())?
+            {
+                event_masks.insert(key.clone(), masks);
+            }
+            return Ok(());
+        }
+
+        // Some native actions have no command variables at all but still
+        // expose animation events.  Their compact sidecar lives beside the
+        // action's animation resource, so it must be linked independently of
+        // the command-trace cache.
+        let Some(path) = action.attack.as_deref() else {
+            return Ok(());
+        };
+        if self
+            .value_path(&format!("{path}.animation_event_masks"))
+            .is_some()
+            && let Some(masks) = self.compile_animation_event_masks(path, Some(path))?
+        {
+            event_masks.insert(key, masks);
+        }
         Ok(())
     }
 
@@ -404,12 +622,61 @@ impl ResourceCache {
         Ok(Arc::from(linked.into_boxed_slice()))
     }
 
+    /// Compile the compact native animation-event sidecar once at resource
+    /// registration. Missing entries are an all-zero suffix; the exporter
+    /// intentionally trims only trailing zeros, so indices remain frame
+    /// aligned and the hot path never parses JSON.
+    fn compile_animation_event_masks(
+        &self,
+        path: &str,
+        attack_path: Option<&str>,
+    ) -> Result<Option<AnimationEventMaskRows>, Error> {
+        let Some(value) = self.value_path(&format!("{path}.animation_event_masks")) else {
+            return Ok(None);
+        };
+        let Some(rows) = value.as_array() else {
+            return Err(Error::Invalid(format!(
+                "animation event masks {path:?} must be an array"
+            )));
+        };
+        let Some(attack_path) = attack_path else {
+            return Err(Error::Invalid(format!(
+                "animation event masks {path:?} require an animation resource"
+            )));
+        };
+        let expected = self.frame_count(attack_path);
+        if expected == 0 {
+            return Err(Error::Invalid(format!(
+                "animation event masks {path:?} reference missing pose resource {attack_path:?}"
+            )));
+        }
+        if rows.len() > expected || rows.len() > 4_096 {
+            return Err(Error::Invalid(format!(
+                "animation event masks {path:?} has {} rows, expected at most {expected}",
+                rows.len()
+            )));
+        }
+        let mut linked = Vec::with_capacity(rows.len());
+        for (frame, value) in rows.iter().enumerate() {
+            let mask = value
+                .as_u64()
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "animation event masks {path:?} frame {frame} must be a u8"
+                    ))
+                })?;
+            linked.push(mask);
+        }
+        Ok(Some(Arc::from(linked.into_boxed_slice())))
+    }
+
     pub(crate) fn attack_for_owner(
         &self,
         owner: Option<usize>,
-        action: crate::game::Action,
+        action: Action,
     ) -> Option<AttackId> {
-        let key = (owner.unwrap_or(usize::MAX), action as u16);
+        let key = (owner.unwrap_or(usize::MAX), action);
         self.action_attacks_by_owner.get(&key).copied()
     }
 
@@ -431,7 +698,7 @@ impl ResourceCache {
     fn attack_links(
         definition: &super::definition::FighterDefinition,
         resources: &crate::game::script::resources::Resources,
-    ) -> BTreeMap<(usize, u16), AttackId> {
+    ) -> OwnedActionMap<AttackId> {
         let mut links = BTreeMap::new();
         let canonical = |definition: &super::definition::ActionDefinition| {
             definition.action.as_deref().and_then(|reference| {
@@ -444,7 +711,7 @@ impl ResourceCache {
                 action_definition.attack.as_deref(),
             ) && let Some(id) = resources.attack_id(path)
             {
-                links.insert((usize::MAX, action as u16), id);
+                links.insert((usize::MAX, action), id);
             }
         }
         for (owner, behavior) in definition.behaviors.iter().enumerate() {
@@ -454,7 +721,7 @@ impl ResourceCache {
                     action_definition.attack.as_deref(),
                 ) && let Some(id) = resources.attack_id(path)
                 {
-                    links.insert((owner, action as u16), id);
+                    links.insert((owner, action), id);
                 }
             }
         }
@@ -479,18 +746,22 @@ impl ResourceCache {
             .transpose()
             .map_err(|error| Error::Invalid(format!("invalid motion rules: {error}")))?
             .unwrap_or(serde_json::Value::Null);
-        let parameters = serde_json::json!({
+        let parameter_values = serde_json::json!({
             "movement": movement.clone(),
             "fighter": movement,
             "rules": rules,
         });
+        let parameters = LinkedMotionParameters {
+            values: &parameter_values,
+            resources: self,
+        };
         let mut profiles = Vec::new();
         let mut profile_ids = BTreeMap::new();
-        let mut owner_profile_ids = BTreeMap::new();
+        let mut owner_profile_ids: OwnedActionMap<MotionProfileId> = BTreeMap::new();
         let mut delay_fields = BTreeMap::new();
-        let mut owner_delay_fields = BTreeMap::new();
+        let mut owner_delay_fields: OwnedActionMap<Option<String>> = BTreeMap::new();
         let mut animation_loops = BTreeMap::new();
-        let mut owner_animation_loops = BTreeMap::new();
+        let mut owner_animation_loops: OwnedActionMap<bool> = BTreeMap::new();
         for (name, action) in &program.metadata().actions {
             let key = action
                 .action
@@ -513,7 +784,7 @@ impl ResourceCache {
                     super::parse_action(reference.strip_prefix("Action.").unwrap_or(reference))
                 }) {
                     owner_animation_loops
-                        .insert((behavior_index, canonical as u16), action.animation_loop);
+                        .insert((behavior_index, canonical), action.animation_loop);
                 }
             }
         }
@@ -630,7 +901,7 @@ impl ResourceCache {
                     .to_owned();
                 profile_ids.insert(action_key.clone(), id);
                 if let Some(canonical) = super::parse_action(&action_key) {
-                    owner_profile_ids.insert((behavior_index, canonical as u16), id);
+                    owner_profile_ids.insert((behavior_index, canonical), id);
                 }
                 let delay = action.profile_delay_field.clone();
                 if let Some(field) = &delay {
@@ -644,7 +915,7 @@ impl ResourceCache {
                 delay_fields.insert(action_key.clone(), delay);
                 if let Some(canonical) = super::parse_action(&action_key) {
                     owner_delay_fields.insert(
-                        (behavior_index, canonical as u16),
+                        (behavior_index, canonical),
                         action.profile_delay_field.clone(),
                     );
                 }
@@ -652,35 +923,47 @@ impl ResourceCache {
             }
         }
         self.profiles = Arc::new(profiles);
-        let mut action_profiles = vec![None; 256];
+        let mut action_profiles = vec![None; Action::BUILTIN_COUNT];
+        let mut action_profiles_custom = BTreeMap::new();
         for (name, id) in &profile_ids {
-            if let Some(action) = super::parse_action(name)
-                && let Some(slot) = action_profiles.get_mut(action as usize)
-            {
-                *slot = Some(*id);
+            if let Some(action) = super::parse_action(name) {
+                if let Some(index) = action.builtin_index() {
+                    action_profiles[index] = Some(*id);
+                } else {
+                    action_profiles_custom.insert(action, *id);
+                }
             }
         }
         self.action_profiles = Arc::new(action_profiles);
+        self.action_profiles_custom = Arc::new(action_profiles_custom);
         self.action_profiles_by_owner = Arc::new(owner_profile_ids);
-        let mut action_delay_fields = vec![None; 256];
+        let mut action_delay_fields = vec![None; Action::BUILTIN_COUNT];
+        let mut action_delay_fields_custom = BTreeMap::new();
         for (name, delay) in delay_fields.iter() {
-            if let Some(action) = super::parse_action(name)
-                && let Some(slot) = action_delay_fields.get_mut(action as usize)
-            {
-                *slot = delay.clone();
+            if let Some(action) = super::parse_action(name) {
+                if let Some(index) = action.builtin_index() {
+                    action_delay_fields[index] = delay.clone();
+                } else {
+                    action_delay_fields_custom.insert(action, delay.clone());
+                }
             }
         }
         self.action_delay_fields = Arc::new(action_delay_fields);
+        self.action_delay_fields_custom = Arc::new(action_delay_fields_custom);
         self.action_delay_fields_by_owner = Arc::new(owner_delay_fields);
-        let mut action_animation_loops = vec![false; 256];
+        let mut action_animation_loops = vec![false; Action::BUILTIN_COUNT];
+        let mut action_animation_loops_custom = BTreeMap::new();
         for (name, looping) in animation_loops {
-            if let Some(action) = super::parse_action(&name)
-                && let Some(slot) = action_animation_loops.get_mut(action as usize)
-            {
-                *slot = looping;
+            if let Some(action) = super::parse_action(&name) {
+                if let Some(index) = action.builtin_index() {
+                    action_animation_loops[index] = looping;
+                } else {
+                    action_animation_loops_custom.insert(action, looping);
+                }
             }
         }
         self.action_animation_loops = Arc::new(action_animation_loops);
+        self.action_animation_loops_custom = Arc::new(action_animation_loops_custom);
         self.action_animation_loops_by_owner = Arc::new(owner_animation_loops);
         Ok(())
     }
@@ -991,15 +1274,14 @@ fn canonical_action(
 /// key with `command_trace: None` must suppress an alias carrying a trace.
 fn selected_action_definitions(
     actions: &BTreeMap<String, super::definition::ActionDefinition>,
-) -> BTreeMap<u16, &super::definition::ActionDefinition> {
+) -> ActionMap<&super::definition::ActionDefinition> {
     let mut selected = BTreeMap::new();
     for (name, action) in actions {
         let Some(canonical) = canonical_action(name, action) else {
             continue;
         };
-        let key = canonical as u16;
-        if !selected.contains_key(&key) || is_canonical_name(name, canonical) {
-            selected.insert(key, action);
+        if !selected.contains_key(&canonical) || is_canonical_name(name, canonical) {
+            selected.insert(canonical, action);
         }
     }
     selected
@@ -1500,6 +1782,7 @@ fn link_projectile_value(
         linked.insert(
             format!("{path}.hitboxes"),
             ProjectileMeta {
+                lifetime: lifetime as f32,
                 hitboxes: Arc::from(hitboxes.into_boxed_slice()),
                 move_id,
             },
@@ -1509,6 +1792,231 @@ fn link_projectile_value(
     for (key, child) in object {
         link_projectile_value(&format!("{path}.{key}"), child, linked)?;
     }
+    Ok(())
+}
+
+fn link_article_resources(
+    data: Option<&FighterData>,
+    legacy: &BTreeMap<String, ProjectileMeta>,
+) -> Result<BTreeMap<ArticleId, ArticleMeta>, Error> {
+    let Some(data) = data else {
+        return Ok(BTreeMap::new());
+    };
+    let Some(specials) = data.specials.as_ref() else {
+        return Ok(BTreeMap::new());
+    };
+    if let Some(articles) = specials.articles.as_ref() {
+        let mut linked = BTreeMap::new();
+        for (id, resource) in articles {
+            let path = format!("article {}", id.0);
+            let behavior = match resource {
+                ArticleResource::Ray {
+                    lifetime,
+                    hitboxes,
+                    move_id,
+                } => {
+                    let kind = match *id {
+                        ArticleId::FOX_LASER => ProjectileKind::FoxLaser,
+                        ArticleId::FALCO_LASER => ProjectileKind::FalcoLaser,
+                        ArticleId(value) => {
+                            return Err(Error::Invalid(format!(
+                                "unsupported ray article id {value}"
+                            )));
+                        }
+                    };
+                    validate_projectile_fields(&path, *lifetime, hitboxes, *move_id)?;
+                    ArticleBehavior::Ray {
+                        kind,
+                        lifetime: *lifetime,
+                        hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                        move_id: *move_id,
+                    }
+                }
+                ArticleResource::GravityProjectile {
+                    speed,
+                    angle,
+                    lifetime,
+                    half_life,
+                    gravity,
+                    terminal_velocity,
+                    surface_multiplier,
+                    terrain_stop_speed,
+                    hitboxes,
+                    move_id,
+                    contact,
+                } => {
+                    if let Some(name) = peach_native_article(*id) {
+                        return Err(Error::Invalid(format!(
+                            "unsupported Peach article {name} id {}",
+                            id.0
+                        )));
+                    }
+                    validate_gravity_projectile_fields(GravityProjectileFields {
+                        path: &path,
+                        speed: *speed,
+                        angle: *angle,
+                        lifetime: *lifetime,
+                        half_life: *half_life,
+                        gravity: *gravity,
+                        terminal_velocity: *terminal_velocity,
+                        surface_multiplier: *surface_multiplier,
+                        terrain_stop_speed: *terrain_stop_speed,
+                        hitboxes,
+                        move_id: *move_id,
+                    })?;
+                    ArticleBehavior::Gravity {
+                        speed: *speed,
+                        angle: *angle,
+                        lifetime: *lifetime,
+                        half_life: *half_life,
+                        gravity: *gravity,
+                        terminal_velocity: *terminal_velocity,
+                        surface_multiplier: *surface_multiplier,
+                        terrain_stop_speed: *terrain_stop_speed,
+                        hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                        move_id: *move_id,
+                        contact: *contact,
+                    }
+                }
+            };
+            linked.insert(*id, ArticleMeta { behavior });
+        }
+        return Ok(linked);
+    }
+
+    // v16 packs predate the numeric article catalog.  Convert only the two
+    // native ray articles that already have a complete legacy descriptor;
+    // this compatibility path is centralized here and never runs per frame.
+    let id = if specials.character_key_is("fox") {
+        ArticleId::FOX_LASER
+    } else if specials.character_key_is("falco") {
+        ArticleId::FALCO_LASER
+    } else {
+        return Ok(BTreeMap::new());
+    };
+    let Some(meta) = legacy.get("neutral.laser.hitboxes") else {
+        return Ok(BTreeMap::new());
+    };
+    let kind = if id == ArticleId::FOX_LASER {
+        ProjectileKind::FoxLaser
+    } else {
+        ProjectileKind::FalcoLaser
+    };
+    Ok(BTreeMap::from([(
+        id,
+        ArticleMeta {
+            behavior: ArticleBehavior::Ray {
+                kind,
+                lifetime: meta.lifetime,
+                hitboxes: Arc::clone(&meta.hitboxes),
+                move_id: meta.move_id,
+            },
+        },
+    )]))
+}
+
+/// Peach's native item callbacks own these articles' state machines.  They
+/// are listed explicitly from `melee/it/forward.h` so a generic gravity
+/// descriptor cannot silently turn a turnip, parasol, Toad, or Bomber effect
+/// into a projectile with incorrect behavior.
+fn peach_native_article(id: ArticleId) -> Option<&'static str> {
+    match id.0 {
+        98 => Some("Bomber explosion"),
+        99 => Some("turnip"),
+        103 => Some("parasol"),
+        104 => Some("Toad"),
+        111 => Some("Toad spore"),
+        _ => None,
+    }
+}
+
+struct GravityProjectileFields<'a> {
+    path: &'a str,
+    speed: f32,
+    angle: f32,
+    lifetime: f32,
+    half_life: f32,
+    gravity: f32,
+    terminal_velocity: f32,
+    surface_multiplier: f32,
+    terrain_stop_speed: f32,
+    hitboxes: &'a [Hitbox],
+    move_id: u16,
+}
+
+fn validate_gravity_projectile_fields(fields: GravityProjectileFields<'_>) -> Result<(), Error> {
+    let GravityProjectileFields {
+        path,
+        speed,
+        angle,
+        lifetime,
+        half_life,
+        gravity,
+        terminal_velocity,
+        surface_multiplier,
+        terrain_stop_speed,
+        hitboxes,
+        move_id,
+    } = fields;
+    let finite = |value: f32| value.is_finite() && value.abs() <= 1_000_000.0;
+    if !finite(speed) || speed < 0.0 {
+        return Err(Error::Invalid(format!("{path} speed is invalid")));
+    }
+    if !finite(angle) {
+        return Err(Error::Invalid(format!("{path} angle is invalid")));
+    }
+    if !finite(half_life) || half_life < 0.0 {
+        return Err(Error::Invalid(format!("{path} half-life is invalid")));
+    }
+    if !finite(gravity) || !finite(terminal_velocity) || terminal_velocity < 0.0 {
+        return Err(Error::Invalid(format!("{path} gravity is invalid")));
+    }
+    if !finite(surface_multiplier) || surface_multiplier < 0.0 {
+        return Err(Error::Invalid(format!(
+            "{path} surface multiplier is invalid"
+        )));
+    }
+    if !finite(terrain_stop_speed) || terrain_stop_speed < 0.0 {
+        return Err(Error::Invalid(format!(
+            "{path} terrain stop speed is invalid"
+        )));
+    }
+    validate_projectile_fields(path, lifetime, hitboxes, move_id)
+}
+
+fn validate_projectile_fields(
+    path: &str,
+    lifetime: f32,
+    hitboxes: &[Hitbox],
+    move_id: u16,
+) -> Result<(), Error> {
+    if !lifetime.is_finite() || lifetime < 0.0 {
+        return Err(Error::Invalid(format!("{path} lifetime is invalid")));
+    }
+    if !(1..=4).contains(&hitboxes.len()) {
+        return Err(Error::Invalid(format!(
+            "{path} must contain 1..=4 hitboxes"
+        )));
+    }
+    for hitbox in hitboxes {
+        let finite = |value: f32| value.is_finite() && value.abs() <= 1_000_000.0;
+        if !hitbox.center.iter().copied().all(finite)
+            || !hitbox.radius.is_finite()
+            || !(0.0..=1_000_000.0).contains(&hitbox.radius)
+            || !hitbox.angle_degrees.is_finite()
+            || !(0.0..=362.0).contains(&hitbox.angle_degrees)
+            || hitbox.angle_degrees.fract() != 0.0
+            || hitbox.group >= 16
+            || hitbox.damage > 999
+            || !(-1000..=1000).contains(&hitbox.shield_damage)
+            || hitbox.growth > 1000
+            || hitbox.fixed > 1000
+            || hitbox.base > 1000
+        {
+            return Err(Error::Invalid(format!("{path} contains an invalid hitbox")));
+        }
+    }
+    let _ = move_id;
     Ok(())
 }
 
@@ -1537,6 +2045,52 @@ fn resource_views(
         &mut attacks,
     )?;
     Ok((values, attacks))
+}
+
+fn link_complete_animation_states(data: Option<&FighterData>) -> Arc<[u32]> {
+    let Some(data) = data else {
+        return Arc::from([]);
+    };
+    let Some(states) = data.motion_states.as_deref() else {
+        return Arc::from([]);
+    };
+    let Some(specials) = data.specials.as_ref() else {
+        return Arc::from([]);
+    };
+    let Some(animations) = specials.animations.as_ref() else {
+        return Arc::from([]);
+    };
+
+    // A wrapper whose state table disagrees with the native motion table is
+    // not safe to expose piecemeal. Match validation reports the detailed
+    // error; the runtime gate simply fails closed.
+    if specials.validate_animation_states(Some(states)).is_err()
+        || states
+            .windows(2)
+            .any(|pair| pair[0].state_id >= pair[1].state_id)
+    {
+        return Arc::from([]);
+    }
+
+    let mut complete = Vec::new();
+    for profile in states {
+        let Ok(animation_id) = u32::try_from(profile.animation_id) else {
+            continue;
+        };
+        let Some(resource) = animations.get(&animation_id) else {
+            continue;
+        };
+        if resource.status != crate::game::script::resources::AnimationResourceStatus::Complete
+            || resource.resource.is_none()
+            || !specials
+                .animation_attack(animation_id)
+                .is_some_and(|attack| !attack.frames.is_empty())
+        {
+            continue;
+        }
+        complete.push(profile.state_id);
+    }
+    Arc::from(complete.into_boxed_slice())
 }
 
 #[allow(clippy::too_many_arguments)] // Indexing receives the independent resource stores it updates.
@@ -1726,7 +2280,10 @@ fn sanitized_attack_view(value: &JsonValue) -> JsonValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{ResourceCache, sanitized_view};
+    use super::{
+        GravityProjectileFields, MotionParameterSource, ResourceCache, sanitized_view,
+        validate_gravity_projectile_fields,
+    };
     use crate::game::script::action_events::ActionEventTable;
     use crate::game::script::definition::{
         ActionDefinition, BehaviorDefinition, FighterDefinition,
@@ -1736,11 +2293,27 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
+    fn gravity_hitbox() -> crate::game::data::Hitbox {
+        serde_json::from_value(json!({
+            "group": 0,
+            "bone": 0,
+            "center": [0.0, 0.0, 0.0],
+            "radius": 0.5,
+            "damage": 3,
+            "angle_degrees": 45.0,
+            "growth": 20,
+            "fixed": 0,
+            "base": 10
+        }))
+        .unwrap()
+    }
+
     fn metadata_cache(
         values: BTreeMap<String, serde_json::Value>,
         definition: FighterDefinition,
     ) -> ResourceCache {
         ResourceCache {
+            special_attributes: None,
             values: Arc::new(values),
             attacks: Arc::default(),
             array_counts: Arc::default(),
@@ -1761,17 +2334,127 @@ mod tests {
             })),
             profiles: Arc::default(),
             action_profiles: Arc::default(),
+            action_profiles_custom: Arc::default(),
             action_profiles_by_owner: Arc::default(),
             action_delay_fields: Arc::default(),
+            action_delay_fields_custom: Arc::default(),
             action_delay_fields_by_owner: Arc::default(),
             action_animation_loops: Arc::default(),
+            action_animation_loops_custom: Arc::default(),
             action_animation_loops_by_owner: Arc::default(),
             action_attacks_by_owner: Arc::default(),
             command_traces: Arc::default(),
             command_traces_by_owner: Arc::default(),
+            animation_event_masks: Arc::default(),
+            animation_event_masks_by_owner: Arc::default(),
             projectile_resources: Arc::default(),
+            articles: Arc::default(),
             action_events: Arc::new(ActionEventTable::compile(vec![], vec![], vec![]).unwrap()),
+            complete_animation_states: Arc::default(),
         }
+    }
+
+    #[test]
+    fn gravity_article_validation_rejects_bad_physics_and_accepts_typed_values() {
+        let hitboxes = [gravity_hitbox()];
+        validate_gravity_projectile_fields(GravityProjectileFields {
+            path: "article 48",
+            speed: 1.5,
+            angle: 0.0,
+            lifetime: 60.0,
+            half_life: 30.0,
+            gravity: 0.08,
+            terminal_velocity: 2.4,
+            surface_multiplier: 0.5,
+            terrain_stop_speed: 0.2,
+            hitboxes: &hitboxes,
+            move_id: 20,
+        })
+        .expect("valid gravity article");
+        assert!(
+            validate_gravity_projectile_fields(GravityProjectileFields {
+                path: "article 48",
+                speed: 1.5,
+                angle: 0.0,
+                lifetime: 60.0,
+                half_life: -1.0,
+                gravity: 0.08,
+                terminal_velocity: 2.4,
+                surface_multiplier: 0.5,
+                terrain_stop_speed: 0.2,
+                hitboxes: &hitboxes,
+                move_id: 20,
+            })
+            .is_err()
+        );
+        assert!(
+            validate_gravity_projectile_fields(GravityProjectileFields {
+                path: "article 48",
+                speed: 1.5,
+                angle: 0.0,
+                lifetime: 60.0,
+                half_life: f32::NAN,
+                gravity: 0.08,
+                terminal_velocity: 2.4,
+                surface_multiplier: 0.5,
+                terrain_stop_speed: f32::NAN,
+                hitboxes: &hitboxes,
+                move_id: 20,
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn special_attribute_projection_requires_native_layout_identity() {
+        let mut cache = metadata_cache(BTreeMap::new(), FighterDefinition::default());
+        cache.special_attributes = Some(
+            serde_json::from_value(json!({
+                "layout": 4,
+                "words": [[0, 1065353216], [6, 1073741824]]
+            }))
+            .expect("typed Samus special attributes"),
+        );
+
+        // Samus's typed ids use layout 4; a field number from another
+        // character must fail closed even when the field id exists.
+        assert_eq!(cache.special_attribute(4, 0), Some(1.0));
+        assert_eq!(cache.special_attribute(4, 6), Some(2.0));
+        assert_eq!(cache.special_attribute(3, 6), None);
+    }
+
+    #[test]
+    fn motion_number_projection_fails_closed_outside_f32_domain() {
+        let cache = metadata_cache(
+            BTreeMap::from([
+                ("finite".into(), json!(1.25)),
+                ("too_large".into(), json!(1.0e40)),
+                ("too_small".into(), json!(-1.0e40)),
+                ("max_f64".into(), json!(f64::MAX)),
+                ("min_f64".into(), json!(-f64::MAX)),
+            ]),
+            FighterDefinition::default(),
+        );
+        assert_eq!(
+            <ResourceCache as MotionParameterSource>::number_path(&cache, "finite"),
+            Some(1.25)
+        );
+        assert_eq!(
+            <ResourceCache as MotionParameterSource>::number_path(&cache, "too_large"),
+            None
+        );
+        assert_eq!(
+            <ResourceCache as MotionParameterSource>::number_path(&cache, "too_small"),
+            None
+        );
+        assert_eq!(
+            <ResourceCache as MotionParameterSource>::number_path(&cache, "max_f64"),
+            None
+        );
+        assert_eq!(
+            <ResourceCache as MotionParameterSource>::number_path(&cache, "min_f64"),
+            None
+        );
     }
 
     #[test]
@@ -1785,22 +2468,30 @@ mod tests {
             }),
         );
         let cache = ResourceCache {
+            special_attributes: None,
             values: Arc::new(values),
             attacks: Arc::default(),
             array_counts: Arc::default(),
             program: None,
             profiles: Arc::default(),
             action_profiles: Arc::default(),
+            action_profiles_custom: Arc::default(),
             action_profiles_by_owner: Arc::default(),
             action_delay_fields: Arc::default(),
+            action_delay_fields_custom: Arc::default(),
             action_delay_fields_by_owner: Arc::default(),
             action_animation_loops: Arc::default(),
+            action_animation_loops_custom: Arc::default(),
             action_animation_loops_by_owner: Arc::default(),
             action_attacks_by_owner: Arc::default(),
             command_traces: Arc::default(),
             command_traces_by_owner: Arc::default(),
+            animation_event_masks: Arc::default(),
+            animation_event_masks_by_owner: Arc::default(),
             projectile_resources: Arc::default(),
+            articles: Arc::default(),
             action_events: Arc::new(ActionEventTable::compile(vec![], vec![], vec![]).unwrap()),
+            complete_animation_states: Arc::default(),
         };
         assert_eq!(cache.value_path("neutral.thresholds[1]"), Some(&json!(0.5)));
         assert_eq!(
@@ -1820,12 +2511,143 @@ mod tests {
     }
 
     #[test]
+    fn article_cache_rejects_mario_fire_as_ray() {
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
+        let mut data: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
+        data.fighters[0].specials = Some(
+            serde_json::from_value(json!({
+                "character": "mario",
+                "articles": {
+                    "48": {
+                        "kind": "ray",
+                        "lifetime": 20.0,
+                        "move_id": 48,
+                        "hitboxes": [{
+                            "group": 0,
+                            "bone": 0,
+                            "center": [0.0, 0.0, 0.0],
+                            "radius": 0.5,
+                            "damage": 3,
+                            "angle_degrees": 0.0,
+                            "growth": 0,
+                            "fixed": 0,
+                            "base": 0
+                        }]
+                    }
+                }
+            }))
+            .unwrap(),
+        );
+        let error = ResourceCache::build(Some(&data.fighters[0]), None, false)
+            .expect_err("Mario fire must not enter the ray fast path");
+        assert!(error.to_string().contains("unsupported ray article id 48"));
+    }
+
+    #[test]
+    fn article_cache_rejects_peach_native_item_as_generic_gravity() {
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
+        let mut data: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
+        data.fighters[0].specials = Some(
+            serde_json::from_value(json!({
+                "character": "peach",
+                "articles": {
+                    "99": {
+                        "kind": "gravity_projectile",
+                        "speed": 1.0,
+                        "angle": 0.25,
+                        "lifetime": 30.0,
+                        "half_life": 10.0,
+                        "gravity": 0.08,
+                        "terminal_velocity": 2.4,
+                        "surface_multiplier": 0.5,
+                        "terrain_stop_speed": 0.2,
+                        "move_id": 12,
+                        "hitboxes": [{
+                            "group": 0,
+                            "bone": 0,
+                            "center": [0.0, 0.0, 0.0],
+                            "radius": 0.5,
+                            "damage": 3,
+                            "angle_degrees": 45.0,
+                            "growth": 20,
+                            "fixed": 0,
+                            "base": 10
+                        }],
+                        "contact": {
+                            "reflection": "none",
+                            "shield": "bounce",
+                            "persistence": "despawn"
+                        }
+                    }
+                }
+            }))
+            .unwrap(),
+        );
+        let error = ResourceCache::build(Some(&data.fighters[0]), None, false)
+            .expect_err("Peach turnip must not enter the generic gravity path");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported Peach article turnip id 99")
+        );
+    }
+
+    fn animation_gate_cache(
+        status: &str,
+        wrapper_state: u32,
+        state_animation_id: u32,
+        wrapper_animation_id: u32,
+    ) -> ResourceCache {
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
+        let base: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
+        let mut data = base.fighters[0].clone();
+        data.motion_states = Some(vec![crate::game::data::MotionStateProfile {
+            state_id: 381,
+            animation_id: i32::try_from(state_animation_id).unwrap(),
+            move_id: 20,
+            flags: 0,
+        }]);
+        let resource = if status == "unsupported" {
+            serde_json::Value::Null
+        } else {
+            json!({"frames": [{"bones": [], "hitboxes": []}]})
+        };
+        data.specials = Some(
+            serde_json::from_value(json!({
+                "character": "animation-gate",
+                "animations": {
+                    (wrapper_animation_id.to_string()): {
+                        "animation_id": wrapper_animation_id,
+                        "state_ids": [wrapper_state],
+                        "status": status,
+                        "resource": resource
+                    }
+                }
+            }))
+            .unwrap(),
+        );
+        ResourceCache::build(Some(&data), None, false).unwrap()
+    }
+
+    #[test]
+    fn complete_animation_gate_accepts_only_consistent_executable_wrappers() {
+        assert!(animation_gate_cache("complete", 381, 331, 331).has_complete_animation(381));
+        assert!(!animation_gate_cache("complete", 382, 331, 331).has_complete_animation(381));
+        assert!(!animation_gate_cache("pose_only", 381, 331, 331).has_complete_animation(381));
+        assert!(!animation_gate_cache("unsupported", 381, 331, 331).has_complete_animation(381));
+        assert!(!animation_gate_cache("complete", 381, 332, 331).has_complete_animation(381));
+    }
+
+    #[test]
     fn build_links_projectile_descriptor_with_typed_metadata() {
         let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
         let base: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
         let mut data = base.fighters[0].clone();
         data.specials = Some(crate::game::script::resources::Specials {
             character: "cache-projectile".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: Resources::new(BTreeMap::from([(
                 "neutral".into(),
                 json!({"laser": {
@@ -1862,6 +2684,9 @@ mod tests {
         let mut data = base.fighters[0].clone();
         data.specials = Some(crate::game::script::resources::Specials {
             character: "cache-projectile".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: Resources::new(BTreeMap::from([(
                 "neutral".into(),
                 json!({"laser": {
@@ -1890,22 +2715,30 @@ mod tests {
             }}}}),
         );
         let cache = ResourceCache {
+            special_attributes: None,
             values: Arc::new(values),
             attacks: Arc::default(),
             array_counts: Arc::default(),
             program: None,
             profiles: Arc::default(),
             action_profiles: Arc::default(),
+            action_profiles_custom: Arc::default(),
             action_profiles_by_owner: Arc::default(),
             action_delay_fields: Arc::default(),
+            action_delay_fields_custom: Arc::default(),
             action_delay_fields_by_owner: Arc::default(),
             action_animation_loops: Arc::default(),
+            action_animation_loops_custom: Arc::default(),
             action_animation_loops_by_owner: Arc::default(),
             action_attacks_by_owner: Arc::default(),
             command_traces: Arc::default(),
             command_traces_by_owner: Arc::default(),
+            animation_event_masks: Arc::default(),
+            animation_event_masks_by_owner: Arc::default(),
             projectile_resources: Arc::default(),
+            articles: Arc::default(),
             action_events: Arc::new(ActionEventTable::compile(vec![], vec![], vec![]).unwrap()),
+            complete_animation_states: Arc::default(),
         };
         let rows = cache
             .compile_command_trace("neutral.script.start.ground")
@@ -1914,27 +2747,83 @@ mod tests {
     }
 
     #[test]
+    fn animation_event_masks_compile_with_zero_suffix_and_frame_bound() {
+        let mut values = BTreeMap::new();
+        values.insert("attack".into(), json!({"frames": [{}, {}, {}]}));
+        values.insert("trace".into(), json!({"animation_event_masks": [0, 1]}));
+        let mut cache = metadata_cache(values, FighterDefinition::default());
+        cache.array_counts = Arc::new(BTreeMap::from([(String::from("attack"), 3)]));
+        assert_eq!(
+            cache
+                .compile_animation_event_masks("trace", Some("attack"))
+                .unwrap()
+                .unwrap()
+                .as_ref(),
+            &[0, 1]
+        );
+
+        cache.values = Arc::new(BTreeMap::from([
+            (String::from("attack"), json!({"frames": [{}, {}, {}]})),
+            (
+                String::from("trace"),
+                json!({"animation_event_masks": [0, 1, 2, 3]}),
+            ),
+        ]));
+        assert!(
+            cache
+                .compile_animation_event_masks("trace", Some("attack"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn animation_event_masks_require_typed_u8_rows_and_attack() {
+        let mut cache = metadata_cache(
+            BTreeMap::from([(
+                String::from("trace"),
+                json!({"animation_event_masks": [256]}),
+            )]),
+            FighterDefinition::default(),
+        );
+        cache.array_counts = Arc::new(BTreeMap::from([(String::from("attack"), 1)]));
+        assert!(
+            cache
+                .compile_animation_event_masks("trace", Some("attack"))
+                .is_err()
+        );
+        assert!(cache.compile_animation_event_masks("trace", None).is_err());
+    }
+
+    #[test]
     fn command_trace_rejects_invalid_values_columns_and_frame_counts() {
         let make = |rows: serde_json::Value| {
             let mut values = BTreeMap::new();
             values.insert("trace".into(), json!({"cmd_vars": rows}));
             ResourceCache {
+                special_attributes: None,
                 values: Arc::new(values),
                 attacks: Arc::default(),
                 array_counts: Arc::default(),
                 program: None,
                 profiles: Arc::default(),
                 action_profiles: Arc::default(),
+                action_profiles_custom: Arc::default(),
                 action_profiles_by_owner: Arc::default(),
                 action_delay_fields: Arc::default(),
+                action_delay_fields_custom: Arc::default(),
                 action_delay_fields_by_owner: Arc::default(),
                 action_animation_loops: Arc::default(),
+                action_animation_loops_custom: Arc::default(),
                 action_animation_loops_by_owner: Arc::default(),
                 action_attacks_by_owner: Arc::default(),
                 command_traces: Arc::default(),
                 command_traces_by_owner: Arc::default(),
+                animation_event_masks: Arc::default(),
+                animation_event_masks_by_owner: Arc::default(),
                 projectile_resources: Arc::default(),
+                articles: Arc::default(),
                 action_events: Arc::new(ActionEventTable::compile(vec![], vec![], vec![]).unwrap()),
+                complete_animation_states: Arc::default(),
             }
         };
         assert!(
@@ -1969,7 +2858,7 @@ mod tests {
         let selected = super::selected_action_definitions(&definitions);
         assert_eq!(selected.len(), 1);
         assert!(
-            selected[&(crate::game::Action::SpecialNStart as u16)]
+            selected[&crate::game::Action::SpecialNStart]
                 .command_trace
                 .is_none()
         );
@@ -1985,7 +2874,7 @@ mod tests {
         let selected = super::selected_action_definitions(&definitions);
         assert_eq!(selected.len(), 1);
         assert_eq!(
-            selected[&(crate::game::Action::SpecialNStart as u16)]
+            selected[&crate::game::Action::SpecialNStart]
                 .command_trace
                 .as_deref(),
             Some("alias.trace")
@@ -2002,10 +2891,22 @@ mod tests {
         let resources = Resources::new(BTreeMap::from([
             ("root".into(), json!({"cmd_vars": rows})),
             ("owner".into(), json!({"cmd_vars": [[2, null, null, null]]})),
+            (
+                "mask-only".into(),
+                json!({
+                    "frames": [
+                        {"bones": [], "hitboxes": []},
+                        {"bones": [], "hitboxes": []}
+                    ]
+                }),
+            ),
         ]))
         .unwrap();
         data.specials = Some(crate::game::script::resources::Specials {
             character: "cache-test".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources,
         });
         let action = |trace: Option<&str>| ActionDefinition {
@@ -2127,6 +3028,7 @@ mod tests {
         let mut values = BTreeMap::new();
         values.insert("enabled".into(), json!({"present": true}));
         let mut cache = ResourceCache {
+            special_attributes: None,
             values: Arc::new(values),
             attacks: Arc::default(),
             array_counts: Arc::default(),
@@ -2147,16 +3049,23 @@ mod tests {
             })),
             profiles: Arc::default(),
             action_profiles: Arc::default(),
+            action_profiles_custom: Arc::default(),
             action_profiles_by_owner: Arc::default(),
             action_delay_fields: Arc::default(),
+            action_delay_fields_custom: Arc::default(),
             action_delay_fields_by_owner: Arc::default(),
             action_animation_loops: Arc::default(),
+            action_animation_loops_custom: Arc::default(),
             action_animation_loops_by_owner: Arc::default(),
             action_attacks_by_owner: Arc::default(),
             command_traces: Arc::default(),
             command_traces_by_owner: Arc::default(),
+            animation_event_masks: Arc::default(),
+            animation_event_masks_by_owner: Arc::default(),
             projectile_resources: Arc::default(),
+            articles: Arc::default(),
             action_events: Arc::new(ActionEventTable::compile(vec![], vec![], vec![]).unwrap()),
+            complete_animation_states: Arc::default(),
         };
         let error = cache.link_command_traces().unwrap_err();
         assert!(error.to_string().contains("unknown command trace resource"));
@@ -2240,9 +3149,9 @@ mod tests {
         ]))
         .unwrap();
         let links = ResourceCache::attack_links(&definition, &resources);
-        assert!(links.contains_key(&(0, crate::game::Action::SpecialNStart as u16)));
-        assert!(!links.contains_key(&(1, crate::game::Action::SpecialNStart as u16)));
-        assert!(!links.contains_key(&(usize::MAX, crate::game::Action::SpecialNStart as u16)));
+        assert!(links.contains_key(&(0, crate::game::Action::SpecialNStart)));
+        assert!(!links.contains_key(&(1, crate::game::Action::SpecialNStart)));
+        assert!(!links.contains_key(&(usize::MAX, crate::game::Action::SpecialNStart)));
     }
 
     #[test]
@@ -2259,6 +3168,9 @@ mod tests {
         .unwrap();
         fighter_data.specials = Some(crate::game::script::resources::Specials {
             character: "consumer-test".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: resources.clone(),
         });
         let definition = FighterDefinition {
@@ -2317,13 +3229,16 @@ mod tests {
         );
         assert!(
             fighter_data
-                .attack(crate::game::Action::SpecialNStart, None, false)
-                .is_some()
+                .script_resources
+                .get()
+                .expect("resource cache")
+                .attack_for_owner(Some(1), crate::game::Action::SpecialNStart)
+                .is_none()
         );
         assert!(
             fighter_data
-                .attack_for_owner(state_fighter, crate::game::Action::SpecialNStart, Some(1))
-                .is_none()
+                .attack(crate::game::Action::SpecialNStart, None, false)
+                .is_some()
         );
     }
 }

@@ -1,7 +1,5 @@
 use skirmish::fighter::tilt::{ForwardTilts, GroundAttack, GroundFrameFlags, Parameters, Rules};
-use skirmish::game::{
-    data::{Attack, AttackFrame, Hitbox, MatchData},
-};
+use skirmish::game::data::{Attack, AttackFrame, Hitbox, MatchData};
 
 /// Invented tilt rules; thresholds are radians for the folded stick angle.
 pub const RULES: Rules = Rules {
@@ -45,6 +43,8 @@ pub fn attack(
     GroundAttack {
         attack: Attack {
             move_id: Some(move_id),
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..frames)
                 .map(|frame| AttackFrame {
                     bones: bones.to_vec(),

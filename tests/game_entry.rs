@@ -6,7 +6,7 @@
 use skirmish::game::{
     Action, Controller, Match,
     data::MatchData,
-    entry::{EntryAnimation, EntryRules},
+    flow::entry::{EntryAnimation, EntryRules},
 };
 use skirmish_replay::{observation, slippi::Port};
 

@@ -5,11 +5,11 @@ mod escape_support;
 #[path = "support/grab.rs"]
 mod grab_support;
 
+use skirmish::fighter::shield;
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Event, Match, State,
     data::MatchData, grab::ShieldGrabRules,
 };
-use skirmish::fighter::shield;
 
 #[derive(serde::Deserialize)]
 struct ShieldProfile {

@@ -1,4 +1,7 @@
-//! Fresh-process acceptance for Fox loading with the verified Pon stdlib.
+//! Fresh-process acceptance for bundled fighter loading with the verified Pon
+//! stdlib.  The roster modules are deliberately loaded through the game
+//! `Definition` path: it must preserve each source file's private module
+//! identity when it builds the embedded Pon program.
 
 use std::{path::PathBuf, process::Command, time::SystemTime};
 
@@ -68,6 +71,44 @@ fn child() {
             "missing {action}"
         );
     }
+
+    // These two cases exercise the canonical filename boundary that a
+    // generic `fighter.py` root used to break.  Yoshi catches the ordinary
+    // filename/stem path, while Captain checks the filename-to-CSS alias.
+    let yoshi = Definition::load_registered(
+        include_str!("../scripts/fighters/yoshi.py"),
+        &AssetStore::builtins(),
+    )
+    .expect("full Yoshi definition must load with verified stdlib");
+    assert_eq!(yoshi.manifest.name, "yoshi");
+    assert_eq!(yoshi.manifest.external_ids, vec![17]);
+
+    let captain = Definition::load_registered(
+        include_str!("../scripts/fighters/captain.py"),
+        &AssetStore::builtins(),
+    )
+    .expect("full Captain definition must load with verified stdlib");
+    assert_eq!(captain.manifest.name, "captain-falcon");
+    assert_eq!(captain.manifest.external_ids, vec![0]);
+
+    // The provenance marker is an internal linker assignment, not an authoring
+    // escape hatch.  A non-builtin source that tries to claim Yoshi must still
+    // fail identity resolution rather than inheriting the roster entry.
+    let spoof = r#"
+from skirmish import Fighter
+__skirmish_canonical_module__ = "yoshi"
+class Spoof(Fighter):
+    pass
+"#;
+    let error = Definition::load_registered(spoof, &AssetStore::builtins())
+        .expect_err("external source must not spoof builtin roster identity");
+    assert!(
+        error
+            .to_string()
+            .contains("needs an explicit name or external_ids"),
+        "spoof should fail closed at identity resolution: {error}"
+    );
+
     println!("{SUCCESS}");
     std::fs::remove_dir_all(root).unwrap();
 }

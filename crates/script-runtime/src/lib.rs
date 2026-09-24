@@ -6,11 +6,14 @@ pub mod environment;
 pub mod hooks;
 pub mod value;
 
+mod builtin_roster;
 mod facade;
+pub mod native_math;
 mod stdlib_config;
 pub use environment::{Environment, ValueType};
 pub use facade::{CallbackHandle, CompiledProgram, embedded_sdk_identity};
 pub use hooks::{HookArgumentContract, HookKind, HookMetadata};
+pub use native_math::register as register_native_math;
 #[cfg(feature = "experimental-continuations")]
 pub use skirmish_pon_runtime::Error as PonError;
 pub use skirmish_pon_runtime::SourceBundle;

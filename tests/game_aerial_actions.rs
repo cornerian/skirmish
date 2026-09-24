@@ -80,10 +80,13 @@ fn held_or_opposite_cstick_does_not_repeat_after_attack_end_but_neutral_rearms()
 #[test]
 fn aerial_entry_reports_the_extra_animation_age_on_entry_and_follow_up() {
     let mut game = game();
-    let entry = step(&mut game, Controller {
-        cstick: [1.0, 0.0],
-        ..Default::default()
-    });
+    let entry = step(
+        &mut game,
+        Controller {
+            cstick: [1.0, 0.0],
+            ..Default::default()
+        },
+    );
     assert_eq!(entry.fighters[0].action, Action::AttackAirF);
     let observed = observation::observe(&game, [Port::P1, Port::P4], [2, 2]);
     assert_eq!(observed.fighters[0].action_state, Some(66));

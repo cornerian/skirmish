@@ -174,6 +174,9 @@ fn data(unowned_first: bool) -> skirmish::game::data::MatchData {
         fighter.script = Some(Program::new(source).unwrap());
         fighter.specials = Some(Specials {
             character: "owner_attack_test".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: resources.clone(),
         });
     }
@@ -199,6 +202,9 @@ fn reversed_data() -> skirmish::game::data::MatchData {
         fighter.script = Some(Program::new(SOURCE_REVERSED_BEHAVIORS).unwrap());
         fighter.specials = Some(Specials {
             character: "owner_attack_test".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: resources.clone(),
         });
     }

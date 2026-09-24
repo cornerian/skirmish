@@ -16,9 +16,7 @@ mod tilt_support;
 use skirmish::fighter::dash::Rules as DashRules;
 use skirmish::fighter::shield;
 use skirmish::game::{Action, BUTTON_A, BUTTON_L, BUTTON_X};
-use skirmish::game::{
-    Controller, Event, Match, State, data::MatchData, grab::ShieldGrabRules,
-};
+use skirmish::game::{Controller, Event, Match, State, data::MatchData, grab::ShieldGrabRules};
 
 use skirmish::fighter::dash::{apply_friction, transition_friction};
 use skirmish_replay::{observation, slippi::Port};
@@ -231,24 +229,30 @@ fn entering_a_smash_turn_from_dash_reports_the_replay_verified_age_of_one() {
     assert_eq!(observed.fighters[0].action_age, 1.0);
 }
 
-/// `ftCo_Turn_IASA` arms a smash conversion with `fn_800C9C2C`, but the
-/// pinned source gates the actual Dash entry on `turn.just_turned` as well.
-/// A strong reversal during the standing-turn countdown therefore remains in
-/// Turn until the animation callback flips facing; the next IASA pass can then
-/// enter Dash while preserving the source's input-to-observation ordering.
+/// `ftCo_Turn_IASA` arms a smash conversion with `fn_800C9C2C`, but native
+/// consumes that arm only on the animation callback's `just_turned` pulse.
+/// The held direction therefore remains Turn until the facing flip, even
+/// after the fresh dash window has expired.
 #[test]
-fn a_stronger_stick_mid_turn_waits_for_turn_completion_before_dash() {
+fn armed_turn_waits_for_just_turned_before_dashing_after_window_expires() {
     let mut game = Match::new(data(), 42).unwrap();
     let state = step(&mut game, stick(0, [-0.5, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Turn);
     assert_eq!(state.fighters[0].facing, 1.0, "not yet flipped");
+
+    // Arm with a fresh strong reversal.  It must not convert during the
+    // countdown, even though the direction remains held.
     let state = step(&mut game, stick(0, [-0.9, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Turn);
-    assert_eq!(state.fighters[0].facing, 1.0, "countdown still owns Turn");
-    let state = step(&mut game, stick(0, [-0.9, 0.0]));
-    assert_eq!(state.fighters[0].action, Action::Turn);
-    let state = step(&mut game, stick(0, [-0.9, 0.0]));
-    assert_eq!(state.fighters[0].action, Action::Turn);
+    for _ in 0..3 {
+        assert_eq!(
+            step(&mut game, stick(0, [-0.9, 0.0])).fighters[0].action,
+            Action::Turn
+        );
+    }
+
+    // The standing-turn animation has now flipped; the input is outside the
+    // fresh dash window, but the retained arm is consumed on just_turned.
     let state = step(&mut game, stick(0, [-0.9, 0.0]));
     assert_eq!(state.fighters[0].action, Action::Dash);
     assert_eq!(
@@ -264,9 +268,8 @@ fn armed_turn_does_not_dash_if_the_stick_is_released_before_completion() {
         step(&mut game, stick(0, [-0.5, 0.0])).fighters[0].action,
         Action::Turn
     );
-    // The strong reversal arms x8, then neutral input is held through the
-    // standing-turn countdown.  The source's conversion branch rechecks the
-    // current directional threshold after just_turned, so this remains Turn.
+    // Releasing the stick before the conversion's current directional
+    // threshold check keeps the standing turn from becoming Dash.
     for _ in 0..4 {
         let state = step(&mut game, Controller::default());
         assert_eq!(state.fighters[0].action, Action::Turn);

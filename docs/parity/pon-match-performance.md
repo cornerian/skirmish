@@ -167,22 +167,21 @@ guard_teardown     39,390 ns
 recovery_unbox         34 ns
 ```
 
-The retained raw callback was 871 ns in the compiled phase, so normal dispatch
-cost is split between the SDK wrapper and the per-call module/import scope. A
-safe architectural next step is a prepared-program callback batch scope.
-`dispatch_starlark` already creates one staged host and visits several
-callbacks for that host in declaration order; a batch scope can install one
-module/import guard, run that contiguous callback list, capture module
-mutations once at the end, and restore the guard once. Callback writes remain
-visible to later callbacks through the existing shared host.
+The retained raw callback was 871 ns in the compiled phase, so the historical
+normal-dispatch cost was split between the SDK wrapper and the per-call
+module/import scope. The prepared-program callback batching boundary described
+above is now implemented in `src/game/script.rs` and the script runtime. The
+runtime's invocation scope is reused by contiguous callbacks from one prepared
+program, while callback writes remain visible through the shared staged host.
+The scope closes on success or error and retains the existing policy lock,
+frozen import checks, module ownership checks, root snapshots, and restoration
+order. Scope ownership still prevents callbacks from another program,
+unrelated native work, or another match frame from sharing it.
 
-The scope must be limited to one prepared program and one synchronous callback
-list. It must close on success or error, capture changed modules before closing
-when possible, and retain the existing policy lock, frozen import checks,
-module ownership checks, root snapshots, and restoration order. It cannot span
-callbacks from another prepared program, unrelated native work, or match
-frames; leaving a bundle installed across those boundaries would break
-multi-module isolation and scope expiry. This removes repeated guard
-setup/teardown and root recapture for lists with multiple callbacks. Single
-callback hooks still need a separate safe fast path, such as reusing an
-unchanged owned module mapping after validating its identity.
+The 2026-09-15 figures in this document are retained historical measurements.
+There is no verified latest release Pon benchmark: the required verified Pon
+stdlib archive is currently unavailable in the benchmark environment. Until
+that archive is restored and the release command above completes, this
+document makes no current speed claim and provides no decomp-speed or complete
+behavioral-parity claim. The historical fixture establishes only the observed
+equivalence described at the top of this document.

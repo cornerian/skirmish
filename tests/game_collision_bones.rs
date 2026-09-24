@@ -1,4 +1,5 @@
 //! Synthetic integration checks for animation-driven environmental collision.
+use serde_json::Value;
 use skirmish::collision::{ecb, stage};
 use skirmish::game::{
     BUTTON_A, BUTTON_X, Controller, Error, Match,
@@ -22,6 +23,32 @@ fn data() -> MatchData {
         }
     }
     data
+}
+
+#[test]
+fn omitted_environment_collision_box_is_an_explicit_no_box_profile() {
+    let mut encoded: Value =
+        serde_json::from_str(include_str!("fixtures/game/integration-match.json")).unwrap();
+    encoded["fighters"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("collision_box");
+    let mut resource: MatchData = serde_json::from_value(encoded.clone()).unwrap();
+    assert_eq!(resource.fighters[0].collision_box, CollisionBox::None);
+    assert!(
+        serde_json::to_value(&resource.fighters[0])
+            .unwrap()
+            .get("collision_box")
+            .is_none()
+    );
+
+    resource.rules.countdown_frames = 0;
+    let game = Match::new(resource, 0).unwrap();
+    assert!(!game.state().fighters[0].grounded);
+    assert_eq!(
+        game.state().fighters[0].action,
+        skirmish::game::Action::Fall
+    );
 }
 
 fn wall(data: &mut MatchData, start: [f32; 2], end: [f32; 2]) {

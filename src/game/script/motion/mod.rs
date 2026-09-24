@@ -14,6 +14,7 @@
 
 use crate::fighter::{Movement, helpers};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// A native profile identifier.  The resource cache owns the corresponding
 /// immutable [`MotionProfile`]; rollback state only needs this small handle
@@ -305,6 +306,63 @@ pub struct Gravity {
     pub delay: f32,
 }
 
+/// Source-style horizontal stick control. Below `threshold` it selects the
+/// zero target; otherwise both acceleration and target are signed by the
+/// current stick X value. The direct movement helpers clamp the final step to
+/// the target, including direction reversals.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StickSteering {
+    pub threshold: f32,
+    pub acceleration: f32,
+    pub target: f32,
+}
+
+/// Base aerial gravity with an optional command-selected multiplier. The
+/// fallback multiplier is one, so an authored command row changes only the
+/// source-specific gravity scale and never disables ordinary falling.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GravityMultiplier {
+    pub index: usize,
+    pub value: u32,
+    pub multiplier: f32,
+}
+
+/// Mutually exclusive operations selected by one numeric action-state
+/// command.  The branch is linked once with the surrounding profile; runtime
+/// dispatch only performs a bounded slice lookup and applies the selected
+/// operations in authored order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommandBranch<T> {
+    pub index: usize,
+    pub cases: BTreeMap<u32, Vec<T>>,
+}
+
+impl<T> CommandBranch<T> {
+    pub fn new(index: usize, cases: BTreeMap<u32, Vec<T>>) -> Self {
+        Self { index, cases }
+    }
+}
+
+impl GravityMultiplier {
+    pub const fn new(index: usize, value: u32, multiplier: f32) -> Self {
+        Self {
+            index,
+            value,
+            multiplier,
+        }
+    }
+}
+
+impl StickSteering {
+    pub const fn new(threshold: f32, acceleration: f32, target: f32) -> Self {
+        Self {
+            threshold,
+            acceleration,
+            target,
+        }
+    }
+}
+
 impl Gravity {
     pub const fn new(acceleration: f32, terminal_velocity: f32, delay: f32) -> Self {
         Self {
@@ -320,6 +378,8 @@ impl Gravity {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AirOperation {
     Gravity(Gravity),
+    GravityMultiplier(GravityMultiplier),
+    StickSteering(StickSteering),
     Friction {
         amount: f32,
     },
@@ -349,6 +409,7 @@ pub enum AirOperation {
         value: u32,
         multiplier: f32,
     },
+    CommandBranch(CommandBranch<AirOperation>),
 }
 
 impl AirOperation {
@@ -358,6 +419,14 @@ impl AirOperation {
 
     pub const fn friction(amount: f32) -> Self {
         Self::Friction { amount }
+    }
+
+    pub const fn gravity_multiplier(index: usize, value: u32, multiplier: f32) -> Self {
+        Self::GravityMultiplier(GravityMultiplier::new(index, value, multiplier))
+    }
+
+    pub const fn stick_steering(threshold: f32, acceleration: f32, target: f32) -> Self {
+        Self::StickSteering(StickSteering::new(threshold, acceleration, target))
     }
 
     pub fn velocity_track(track: VelocityTrack) -> Self {
@@ -389,6 +458,10 @@ impl AirOperation {
             multiplier,
         }
     }
+
+    pub fn command_branch(index: usize, cases: BTreeMap<u32, Vec<Self>>) -> Self {
+        Self::CommandBranch(CommandBranch::new(index, cases))
+    }
 }
 
 /// Ground operation, applied in descriptor order.
@@ -397,17 +470,42 @@ pub enum GroundOperation {
     Friction {
         amount: f32,
     },
+    /// Ordinary native ground friction, including the shared multiplier used
+    /// once ground speed exceeds the fighter's walk maximum.
+    FrictionAboveWalk {
+        amount: f32,
+        walk_max_velocity: f32,
+        above_walk_multiplier: f32,
+    },
+    StickSteering(StickSteering),
     FrictionAfter {
         starts_at: f32,
         before: f32,
         after: f32,
     },
     TargetTrack(ScalarTrack),
+    CommandBranch(CommandBranch<GroundOperation>),
 }
 
 impl GroundOperation {
     pub const fn friction(amount: f32) -> Self {
         Self::Friction { amount }
+    }
+
+    pub const fn friction_above_walk(
+        amount: f32,
+        walk_max_velocity: f32,
+        above_walk_multiplier: f32,
+    ) -> Self {
+        Self::FrictionAboveWalk {
+            amount,
+            walk_max_velocity,
+            above_walk_multiplier,
+        }
+    }
+
+    pub const fn stick_steering(threshold: f32, acceleration: f32, target: f32) -> Self {
+        Self::StickSteering(StickSteering::new(threshold, acceleration, target))
     }
 
     pub const fn friction_after(starts_at: f32, before: f32, after: f32) -> Self {
@@ -420,6 +518,10 @@ impl GroundOperation {
 
     pub fn target_track(track: ScalarTrack) -> Self {
         Self::TargetTrack(track)
+    }
+
+    pub fn command_branch(index: usize, cases: BTreeMap<u32, Vec<Self>>) -> Self {
+        Self::CommandBranch(CommandBranch::new(index, cases))
     }
 }
 
@@ -448,10 +550,7 @@ impl MotionProfile {
     /// event engine uses this when constructing a fresh `MotionState`; a
     /// transition that preserves state can skip this and retain its timer.
     pub fn initial_gravity_delay(&self) -> Option<f32> {
-        self.air.iter().find_map(|operation| match operation {
-            AirOperation::Gravity(gravity) => Some(gravity.delay),
-            _ => None,
-        })
+        self.air.iter().find_map(initial_gravity_delay)
     }
 
     /// Apply one native physics callback.  The clock itself is not advanced.
@@ -492,16 +591,41 @@ impl MotionProfile {
         binding: &MotionBinding,
         command: &[i64],
     ) -> bool {
+        let stick_x = movement.stick_x;
+        self.apply_with_binding_command_and_stick(
+            state, movement, grounded, binding, command, stick_x,
+        )
+    }
+
+    /// Apply with an explicit controller stick X snapshot. The simulation
+    /// supplies this once per physics callback; profile operations never
+    /// query the script host or controller themselves.
+    pub fn apply_with_binding_command_and_stick(
+        &self,
+        state: &mut MotionState,
+        movement: &mut Movement,
+        grounded: bool,
+        binding: &MotionBinding,
+        command: &[i64],
+        stick_x: f32,
+    ) -> bool {
         if grounded {
             let mut applied = false;
             for operation in &self.ground {
-                applied |= apply_ground(operation, state.phase_frame, movement, binding);
+                applied |= apply_ground(
+                    operation,
+                    state.phase_frame,
+                    movement,
+                    binding,
+                    command,
+                    stick_x,
+                );
             }
             applied
         } else {
             let mut applied = false;
             for operation in &self.air {
-                applied |= apply_air(operation, state, movement, binding, command);
+                applied |= apply_air(operation, state, movement, binding, command, stick_x);
             }
             applied
         }
@@ -541,7 +665,10 @@ impl MotionProfile {
                 } else {
                     *before
                 }),
+                GroundOperation::FrictionAboveWalk { .. } => None,
+                GroundOperation::StickSteering(_) => None,
                 GroundOperation::TargetTrack(_) => None,
+                GroundOperation::CommandBranch(_) => None,
             })
     }
 
@@ -549,67 +676,121 @@ impl MotionProfile {
     /// profile then has no runtime data-error path or script callback.
     pub fn validate(&self) -> Result<(), MotionProfileError> {
         for operation in &self.air {
-            match operation {
-                AirOperation::Gravity(value) => {
-                    finite_nonnegative(value.acceleration, "gravity acceleration")?;
-                    finite_nonnegative(value.terminal_velocity, "terminal velocity")?;
-                    finite_nonnegative(value.delay, "gravity delay")?;
-                }
-                AirOperation::Friction { amount } => {
-                    finite_nonnegative(*amount, "air friction")?;
-                }
-                AirOperation::VelocityTrack(track) => validate_velocity_track(track)?,
-                AirOperation::DirectionalAcceleration {
-                    starts_at,
-                    magnitude,
-                } => {
-                    finite_nonnegative(*starts_at, "directional deadline")?;
-                    finite(*magnitude, "directional magnitude")?;
-                }
-                AirOperation::DriftClamp {
-                    maximum,
-                    acceleration,
-                } => {
-                    finite_nonnegative(*maximum, "drift maximum")?;
-                    finite_nonnegative(*acceleration, "drift clamp acceleration")?;
-                }
-                AirOperation::DriftOrFriction { recovery_step } => {
-                    finite_nonnegative(*recovery_step, "drift recovery step")?;
-                }
-                AirOperation::CommandVelocityScale {
-                    index,
-                    value,
-                    multiplier,
-                } => {
-                    if *index >= COMMAND_SLOTS {
-                        return Err(MotionProfileError::Invalid("command index"));
-                    }
-                    if *value > MAX_COMMAND_VALUE {
-                        return Err(MotionProfileError::Invalid("command value"));
-                    }
-                    finite(*multiplier, "command velocity multiplier")?;
-                }
-            }
+            validate_air_operation(operation)?;
         }
         for operation in &self.ground {
-            match operation {
-                GroundOperation::Friction { amount } => {
-                    finite_nonnegative(*amount, "ground friction")?;
-                }
-                GroundOperation::FrictionAfter {
-                    starts_at,
-                    before,
-                    after,
-                } => {
-                    finite_nonnegative(*starts_at, "ground friction deadline")?;
-                    finite_nonnegative(*before, "ground friction before")?;
-                    finite_nonnegative(*after, "ground friction after")?;
-                }
-                GroundOperation::TargetTrack(track) => validate_scalar_track(track)?,
-            }
+            validate_ground_operation(operation)?;
         }
         Ok(())
     }
+}
+
+fn initial_gravity_delay(operation: &AirOperation) -> Option<f32> {
+    match operation {
+        AirOperation::Gravity(gravity) => Some(gravity.delay),
+        AirOperation::CommandBranch(branch) => branch
+            .cases
+            .values()
+            .flat_map(|operations| operations.iter())
+            .find_map(initial_gravity_delay),
+        _ => None,
+    }
+}
+
+fn validate_air_operation(operation: &AirOperation) -> Result<(), MotionProfileError> {
+    match operation {
+        AirOperation::Gravity(value) => {
+            finite_nonnegative(value.acceleration, "gravity acceleration")?;
+            finite_nonnegative(value.terminal_velocity, "terminal velocity")?;
+            finite_nonnegative(value.delay, "gravity delay")?;
+        }
+        AirOperation::GravityMultiplier(value) => {
+            validate_command(value.index, value.value)?;
+            finite_nonnegative(value.multiplier, "gravity multiplier")?;
+        }
+        AirOperation::StickSteering(value) => validate_steering(value)?,
+        AirOperation::Friction { amount } => finite_nonnegative(*amount, "air friction")?,
+        AirOperation::VelocityTrack(track) => validate_velocity_track(track)?,
+        AirOperation::DirectionalAcceleration {
+            starts_at,
+            magnitude,
+        } => {
+            finite_nonnegative(*starts_at, "directional deadline")?;
+            finite(*magnitude, "directional magnitude")?;
+        }
+        AirOperation::DriftClamp {
+            maximum,
+            acceleration,
+        } => {
+            finite_nonnegative(*maximum, "drift maximum")?;
+            finite_nonnegative(*acceleration, "drift clamp acceleration")?;
+        }
+        AirOperation::DriftOrFriction { recovery_step } => {
+            finite_nonnegative(*recovery_step, "drift recovery step")?;
+        }
+        AirOperation::CommandVelocityScale {
+            index,
+            value,
+            multiplier,
+        } => {
+            validate_command(*index, *value)?;
+            finite(*multiplier, "command velocity multiplier")?;
+        }
+        AirOperation::CommandBranch(branch) => {
+            validate_branch(branch.index, &branch.cases, validate_air_operation)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_ground_operation(operation: &GroundOperation) -> Result<(), MotionProfileError> {
+    match operation {
+        GroundOperation::Friction { amount } => finite_nonnegative(*amount, "ground friction")?,
+        GroundOperation::FrictionAboveWalk {
+            amount,
+            walk_max_velocity,
+            above_walk_multiplier,
+        } => {
+            finite_nonnegative(*amount, "ground friction")?;
+            finite_nonnegative(*walk_max_velocity, "ground walk maximum")?;
+            finite_nonnegative(*above_walk_multiplier, "ground friction multiplier")?;
+        }
+        GroundOperation::StickSteering(value) => validate_steering(value)?,
+        GroundOperation::FrictionAfter {
+            starts_at,
+            before,
+            after,
+        } => {
+            finite_nonnegative(*starts_at, "ground friction deadline")?;
+            finite_nonnegative(*before, "ground friction before")?;
+            finite_nonnegative(*after, "ground friction after")?;
+        }
+        GroundOperation::TargetTrack(track) => validate_scalar_track(track)?,
+        GroundOperation::CommandBranch(branch) => {
+            validate_branch(branch.index, &branch.cases, validate_ground_operation)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_branch<T>(
+    index: usize,
+    cases: &BTreeMap<u32, Vec<T>>,
+    validate_operation: impl Fn(&T) -> Result<(), MotionProfileError> + Copy,
+) -> Result<(), MotionProfileError> {
+    validate_command(index, 0)?;
+    if cases.is_empty() {
+        return Err(MotionProfileError::Invalid("command branch cases"));
+    }
+    for (value, operations) in cases {
+        if *value > MAX_COMMAND_VALUE || operations.is_empty() {
+            return Err(MotionProfileError::Invalid("command branch cases"));
+        }
+        for operation in operations {
+            validate_operation(operation)?;
+        }
+    }
+    Ok(())
 }
 
 fn apply_air(
@@ -618,12 +799,37 @@ fn apply_air(
     movement: &mut Movement,
     binding: &MotionBinding,
     command: &[i64],
+    stick_x: f32,
 ) -> bool {
     match operation {
         AirOperation::Gravity(gravity) => {
             if !state.tick_gravity_delay() {
                 movement.fall(gravity.acceleration, gravity.terminal_velocity);
             }
+            true
+        }
+        AirOperation::GravityMultiplier(gravity) => {
+            // Command-selected gravity is still the same native fall
+            // continuation.  It must consume the phase's delayed-gravity
+            // window before applying its selected multiplier.
+            if state.tick_gravity_delay() {
+                return true;
+            }
+            let multiplier =
+                if command.get(gravity.index).copied() == Some(i64::from(gravity.value)) {
+                    gravity.multiplier
+                } else {
+                    1.0
+                };
+            movement.fall(
+                movement.attributes.gravity * multiplier,
+                movement.attributes.terminal_velocity,
+            );
+            true
+        }
+        AirOperation::StickSteering(steering) => {
+            movement.stick_x = stick_x;
+            movement.control_air_direct(steering.threshold, steering.acceleration, steering.target);
             true
         }
         AirOperation::Friction { amount } => {
@@ -677,6 +883,22 @@ fn apply_air(
             movement.self_velocity[1] *= *multiplier;
             true
         }
+        AirOperation::CommandBranch(branch) => {
+            let Some(value) = command
+                .get(branch.index)
+                .and_then(|value| u32::try_from(*value).ok())
+            else {
+                return false;
+            };
+            let Some(operations) = branch.cases.get(&value) else {
+                return false;
+            };
+            let mut applied = false;
+            for operation in operations {
+                applied |= apply_air(operation, state, movement, binding, command, stick_x);
+            }
+            applied
+        }
     }
 }
 
@@ -685,11 +907,37 @@ fn apply_ground(
     phase_frame: f32,
     movement: &mut Movement,
     binding: &MotionBinding,
+    command: &[i64],
+    stick_x: f32,
 ) -> bool {
     match operation {
         GroundOperation::Friction { amount } => {
             movement.friction_ground(*amount);
             movement.project_ground();
+            true
+        }
+        GroundOperation::FrictionAboveWalk {
+            amount,
+            walk_max_velocity,
+            above_walk_multiplier,
+        } => {
+            let amount = if movement.ground_velocity.abs() > *walk_max_velocity {
+                *amount * *above_walk_multiplier
+            } else {
+                *amount
+            };
+            movement.friction_ground(amount);
+            movement.project_ground();
+            true
+        }
+        GroundOperation::StickSteering(steering) => {
+            movement.stick_x = stick_x;
+            movement.control_ground_direct(
+                steering.threshold,
+                steering.acceleration,
+                steering.target,
+            );
+            movement.project_ground_with_friction();
             true
         }
         GroundOperation::FrictionAfter {
@@ -716,6 +964,23 @@ fn apply_ground(
                 false
             }
         }
+        GroundOperation::CommandBranch(branch) => {
+            let Some(value) = command
+                .get(branch.index)
+                .and_then(|value| u32::try_from(*value).ok())
+            else {
+                return false;
+            };
+            let Some(operations) = branch.cases.get(&value) else {
+                return false;
+            };
+            let mut applied = false;
+            for operation in operations {
+                applied |=
+                    apply_ground(operation, phase_frame, movement, binding, command, stick_x);
+            }
+            applied
+        }
     }
 }
 
@@ -741,6 +1006,22 @@ fn validate_velocity_track(track: &VelocityTrack) -> Result<(), MotionProfileErr
 fn validate_scalar_track(track: &ScalarTrack) -> Result<(), MotionProfileError> {
     for value in track.samples.iter().flatten() {
         finite(*value, "scalar track")?;
+    }
+    Ok(())
+}
+
+fn validate_steering(steering: &StickSteering) -> Result<(), MotionProfileError> {
+    finite_nonnegative(steering.threshold, "steering threshold")?;
+    finite_nonnegative(steering.acceleration, "steering acceleration")?;
+    finite_nonnegative(steering.target, "steering target")
+}
+
+fn validate_command(index: usize, value: u32) -> Result<(), MotionProfileError> {
+    if index >= COMMAND_SLOTS {
+        return Err(MotionProfileError::Invalid("command index"));
+    }
+    if value > MAX_COMMAND_VALUE {
+        return Err(MotionProfileError::Invalid("command value"));
     }
     Ok(())
 }
@@ -820,6 +1101,29 @@ mod tests {
     }
 
     #[test]
+    fn command_branch_gravity_preserves_initial_delay() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::command_branch(
+                2,
+                BTreeMap::from([(1, vec![AirOperation::gravity(0.25, 9.0, 2.0)])]),
+            )],
+            ground: Vec::new(),
+        };
+        assert_eq!(profile.initial_gravity_delay(), Some(2.0));
+        let mut state = profile.initial_state();
+        let mut value = movement();
+        profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 0, 1],
+        );
+        assert_eq!(state.gravity_delay.to_bits(), 1.0_f32.to_bits());
+        assert_eq!(value.self_velocity[1].to_bits(), 2.0_f32.to_bits());
+    }
+
+    #[test]
     fn partial_track_and_noop_end_match_optional_native_samples() {
         let profile = MotionProfile {
             air: vec![AirOperation::VelocityTrack(VelocityTrack::new(vec![
@@ -893,6 +1197,112 @@ mod tests {
     }
 
     #[test]
+    fn stick_steering_selects_zero_positive_and_reversal_targets() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::stick_steering(0.5, 0.5, 3.0)],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::default();
+        let mut value = movement();
+
+        value.stick_x = 0.0;
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.animation_velocity[0], -1.0);
+
+        value.self_velocity[0] = 1.0;
+        value.stick_x = 0.75;
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.animation_velocity[0], 0.375);
+
+        value.self_velocity[0] = 1.0;
+        value.stick_x = -1.0;
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.animation_velocity[0], -0.5);
+    }
+
+    #[test]
+    fn stick_steering_clamps_a_same_direction_step_to_target_on_both_surfaces() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::stick_steering(0.5, 1.0, 3.0)],
+            ground: vec![GroundOperation::stick_steering(0.5, 1.0, 3.0)],
+        };
+        let mut state = MotionState::default();
+        let mut value = movement();
+        value.self_velocity[0] = 2.5;
+        value.stick_x = 1.0;
+        profile.apply(&mut state, &mut value, false);
+        assert_eq!(value.animation_velocity[0], 0.5);
+
+        value.ground_velocity = 2.5;
+        value.ground_friction_multiplier = 0.5;
+        profile.apply(&mut state, &mut value, true);
+        assert_eq!(value.ground_acceleration, 0.25);
+    }
+
+    #[test]
+    fn gravity_multiplier_gates_base_gravity_by_command_value() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::gravity_multiplier(0, 0, 2.0)],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::default();
+        let mut value = movement();
+        value.attributes.gravity = 0.25;
+        value.attributes.terminal_velocity = 9.0;
+        value.self_velocity[1] = 2.0;
+
+        profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[1],
+        );
+        assert_eq!(value.self_velocity[1], 1.75);
+
+        value.self_velocity[1] = 2.0;
+        profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0],
+        );
+        assert_eq!(value.self_velocity[1], 1.5);
+    }
+
+    #[test]
+    fn gravity_multiplier_honors_delayed_gravity_continuation() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::gravity_multiplier(0, 0, 2.0)],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::new(0.0, 1.0);
+        let mut value = movement();
+        value.attributes.gravity = 0.25;
+        value.self_velocity[1] = 2.0;
+
+        assert!(profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0],
+        ));
+        assert_eq!(state.gravity_delay.to_bits(), 0.0_f32.to_bits());
+        assert_eq!(value.self_velocity[1].to_bits(), 2.0_f32.to_bits());
+
+        profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0],
+        );
+        assert_eq!(value.self_velocity[1].to_bits(), 1.5_f32.to_bits());
+    }
+
+    #[test]
     fn ground_target_projects_the_track_delta_on_the_floor() {
         let profile = MotionProfile {
             air: Vec::new(),
@@ -942,6 +1352,25 @@ mod tests {
     }
 
     #[test]
+    fn native_ground_friction_only_scales_above_walk_speed() {
+        let profile = MotionProfile {
+            air: Vec::new(),
+            ground: vec![GroundOperation::friction_above_walk(0.2, 1.5, 2.0)],
+        };
+        let mut state = MotionState::default();
+        let mut value = Movement {
+            ground_velocity: 1.5,
+            ..movement()
+        };
+        assert!(profile.apply(&mut state, &mut value, true));
+        assert_eq!(value.ground_acceleration.to_bits(), (-0.2_f32).to_bits());
+
+        value.ground_velocity = -1.5001;
+        profile.apply(&mut state, &mut value, true);
+        assert_eq!(value.ground_acceleration.to_bits(), 0.4_f32.to_bits());
+    }
+
+    #[test]
     fn validation_rejects_nonfinite_and_negative_profile_values() {
         let invalid = MotionProfile {
             air: vec![AirOperation::Gravity(Gravity {
@@ -963,6 +1392,15 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(MotionProfileError::Invalid("ground friction"))
+        );
+
+        let invalid = MotionProfile {
+            air: Vec::new(),
+            ground: vec![GroundOperation::friction_above_walk(0.2, 1.5, -1.0)],
+        };
+        assert_eq!(
+            invalid.validate(),
+            Err(MotionProfileError::Invalid("ground friction multiplier"))
         );
     }
 
@@ -1017,5 +1455,83 @@ mod tests {
             };
             assert_eq!(profile.validate(), Err(MotionProfileError::Invalid(error)));
         }
+    }
+
+    #[test]
+    fn command_branch_selects_one_ordered_case_and_unknown_is_noop() {
+        let profile = MotionProfile {
+            air: vec![AirOperation::command_branch(
+                1,
+                BTreeMap::from([
+                    (
+                        0,
+                        vec![
+                            AirOperation::gravity(0.25, 9.0, 0.0),
+                            AirOperation::friction(0.2),
+                        ],
+                    ),
+                    (1, vec![AirOperation::command_velocity_scale(1, 1, 0.5)]),
+                ]),
+            )],
+            ground: Vec::new(),
+        };
+        let mut state = MotionState::default();
+        let mut value = movement();
+        value.attributes.gravity = 0.25;
+        value.self_velocity = [1.0, 2.0, 0.0];
+        assert!(profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 0],
+        ));
+        assert_eq!(value.self_velocity[1].to_bits(), 1.75_f32.to_bits());
+
+        let mut value = movement();
+        value.self_velocity = [1.0, 2.0, 0.0];
+        assert!(profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 1],
+        ));
+        assert_eq!(value.self_velocity, [0.5, 1.0, 0.0]);
+
+        let mut value = movement();
+        let before = value.self_velocity;
+        assert!(!profile.apply_with_binding_and_command(
+            &mut state,
+            &mut value,
+            false,
+            &MotionBinding::default(),
+            &[0, 2],
+        ));
+        assert_eq!(value.self_velocity, before);
+    }
+
+    #[test]
+    fn command_branch_validation_rejects_bad_slot_and_empty_cases() {
+        let bad_slot = MotionProfile {
+            air: vec![AirOperation::command_branch(
+                COMMAND_SLOTS,
+                BTreeMap::from([(0, vec![AirOperation::friction(0.2)])]),
+            )],
+            ground: Vec::new(),
+        };
+        assert_eq!(
+            bad_slot.validate(),
+            Err(MotionProfileError::Invalid("command index"))
+        );
+
+        let empty_cases = MotionProfile {
+            air: vec![AirOperation::command_branch(0, BTreeMap::new())],
+            ground: Vec::new(),
+        };
+        assert_eq!(
+            empty_cases.validate(),
+            Err(MotionProfileError::Invalid("command branch cases"))
+        );
     }
 }

@@ -7,7 +7,10 @@
 use skirmish_cli::pack;
 use std::{env, path::PathBuf};
 
-const PAIRINGS: &[&str] = &["captain-marth-fd-initialization-compatible", "captain-marth-fd"];
+const PAIRINGS: &[&str] = &[
+    "captain-marth-fd-initialization-compatible",
+    "captain-marth-fd",
+];
 
 fn match_data_path(root: &str) -> Option<PathBuf> {
     PAIRINGS
@@ -65,5 +68,4 @@ fn real_export_contains_ground_and_air_dive_entries_and_capture_payload() {
     assert_eq!(capture["throw"]["release_frame"], 0);
     assert_eq!(capture["throw"]["hit"]["damage"], 12);
     assert_eq!(capture["throw"]["hit"]["element"], 1);
-
 }

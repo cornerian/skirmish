@@ -11,12 +11,6 @@ use skirmish_script_runtime::{CompiledProgram, NativeValue, SourceBundle};
 fn fox_bundle() -> SourceBundle {
     SourceBundle::new("fighter-api-fox-conformance-v1")
         .with_file("fox.py", include_str!("../../../scripts/fighters/fox.py"))
-        .and_then(|bundle| {
-            bundle.with_file(
-                "shared/common.py",
-                include_str!("../../../scripts/fighters/common.py"),
-            )
-        })
         .expect("Fox module path")
 }
 
@@ -89,11 +83,11 @@ fn fox_definition_loads_with_all_groups_typed_state_and_special_callbacks() {
 
     let parameters = dict(root.get("parameters").expect("parameters"), "parameters");
     assert_eq!(
-        string(
-            parameters.get("projectile_kind").expect("projectile_kind"),
-            "projectile_kind"
-        ),
-        "fox_laser"
+        parameters.get("article_id").and_then(|value| match value {
+            NativeValue::Int(value) => Some(*value),
+            _ => None,
+        }),
+        Some(54)
     );
 
     let action_state = dict(

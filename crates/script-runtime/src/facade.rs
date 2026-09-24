@@ -65,74 +65,18 @@ def __skirmish_export__():
 def __skirmish_callbacks__():
     return list(__skirmish_bundle__["callback_names"])
 def __skirmish_dispatch__(index, args):
-    return __skirmish_dispatch_impl(__skirmish_bundle__, index, tuple(args))
+    return __skirmish_dispatch_impl(__skirmish_bundle__, index, args)
 def __skirmish_move_args__(behavior_index, fighter, action):
     return __skirmish_move_args_impl(__skirmish_bundle__, behavior_index, fighter, action)
 def __skirmish_move_result__(value):
     return __skirmish_unwrap_impl(value)
 "#;
 
+include!(concat!(env!("OUT_DIR"), "/authoring_files.rs"));
+
 fn authoring_bundle() -> Result<skirmish_pon_runtime::SourceBundle, Error> {
-    let files = [
-        (
-            "fighter/actions.py",
-            include_str!("../../../scripts/api/fighter/actions.py"),
-        ),
-        (
-            "fighter/transitions.py",
-            include_str!("../../../scripts/api/fighter/transitions.py"),
-        ),
-        (
-            "fighter/__init__.py",
-            include_str!("../../../scripts/api/fighter/__init__.py"),
-        ),
-        (
-            "fighter/api.py",
-            include_str!("../../../scripts/api/fighter/api.py"),
-        ),
-        (
-            "fighter/compat.py",
-            include_str!("../../../scripts/api/fighter/compat.py"),
-        ),
-        (
-            "fighter/math.py",
-            include_str!("../../../scripts/api/fighter/math.py"),
-        ),
-        (
-            "fighter/events.py",
-            include_str!("../../../scripts/api/fighter/events.py"),
-        ),
-        (
-            "fighter/registry.py",
-            include_str!("../../../scripts/api/fighter/registry.py"),
-        ),
-        (
-            "skirmish/__init__.py",
-            include_str!("../../../scripts/api/skirmish/__init__.py"),
-        ),
-        (
-            "skirmish/_loader.py",
-            include_str!("../../../scripts/api/skirmish/_loader.py"),
-        ),
-        (
-            "skirmish/_native.py",
-            include_str!("../../../scripts/api/skirmish/_native.py"),
-        ),
-        (
-            "skirmish/api.py",
-            include_str!("../../../scripts/api/skirmish/api.py"),
-        ),
-        (
-            "skirmish/events.py",
-            include_str!("../../../scripts/api/skirmish/events.py"),
-        ),
-        (
-            "skirmish/registry.py",
-            include_str!("../../../scripts/api/skirmish/registry.py"),
-        ),
-    ];
     let mut bundle = skirmish_pon_runtime::SourceBundle::new("fighter-api-embedded-v1");
-    for (path, source) in files {
+    for &(path, source) in AUTHORING_FILES {
         bundle = bundle
             .with_file(path, source)
             .map_err(|error| Error::Compile(error.to_string()))?;
@@ -155,6 +99,7 @@ thread_local! {
 static NATIVE_MODULE: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
 
 fn ensure_native_module() -> Result<(), Error> {
+    crate::register_native_math().map_err(Error::Runtime)?;
     let result = NATIVE_MODULE.get_or_init(|| {
         register_native_module(
             "_skirmish_native",
@@ -317,13 +262,22 @@ impl CompiledProgram {
         bundle: Option<skirmish_pon_runtime::SourceBundle>,
     ) -> Result<Self, Error> {
         let root_source: Arc<str> = source.into();
-        let source = format!("{}\n{}", root_source, BOOTSTRAP);
-        if source.len() > 256 * 1024 {
-            return Err(Error::SourceTooLarge("Pon source".into()));
-        }
         let filename = filename.into();
         if filename.is_empty() {
             return Err(Error::Invalid("Pon filename cannot be empty".into()));
+        }
+        // Identity is loader provenance, never authored data.  Assign the
+        // private marker after the root body so an arbitrary script cannot
+        // spoof a roster entry by declaring the same global.  The trusted
+        // table matches the exact bundled source bytes and private filename;
+        // ordinary callers receive `None` and must declare explicit identity.
+        let canonical_module = crate::builtin_roster::module_for(&root_source, &filename)
+            .map_or_else(|| "None".to_owned(), |module| format!("{module:?}"));
+        let source = format!(
+            "{root_source}\n__skirmish_canonical_module__ = {canonical_module}\n{BOOTSTRAP}"
+        );
+        if source.len() > 256 * 1024 {
+            return Err(Error::SourceTooLarge("Pon source".into()));
         }
         let identity = NEXT_IDENTITY
             .get_or_init(|| std::sync::atomic::AtomicU64::new(1))
@@ -608,7 +562,7 @@ impl CompiledProgram {
     {
         self.require_prepared_for_current_thread()?;
         PREPARED.with(|cache| {
-            let callback_error = std::cell::RefCell::new(None);
+            let mut callback_error = None;
             let mut cache = cache
                 .try_borrow_mut()
                 .map_err(|_| Error::Runtime("Pon prepared cache is borrowed".into()))?;
@@ -626,16 +580,14 @@ impl CompiledProgram {
                         Err(error) => {
                             let message = error.to_string();
                             if !scope.inner.has_failed() {
-                                callback_error.replace(Some(error));
+                                callback_error = Some(error);
                             }
                             Err(skirmish_pon_runtime::Error::Runtime(message))
                         }
                     }
                 })
                 .map_err(|error| {
-                    callback_error
-                        .into_inner()
-                        .unwrap_or_else(|| Error::Runtime(error.to_string()))
+                    callback_error.unwrap_or_else(|| Error::Runtime(error.to_string()))
                 })
         })
     }
@@ -682,6 +634,14 @@ impl CompiledProgram {
         primary: HostRef,
         extra: &[NativeValue],
     ) -> Result<NativeValue, Error> {
+        // Reject a scope from another program before allocating the host
+        // proxy or converting arguments.  Dispatch is a frame hot path, and
+        // this also keeps the ownership check side effect free on errors.
+        if scope.owner != self.identity {
+            return Err(Error::Runtime(
+                "invocation scope belongs to another Pon program".into(),
+            ));
+        }
         let host_scope = HostScope::new(self.identity);
         let token_cell = std::rc::Rc::new(std::cell::Cell::new(0));
         let id = host_scope
@@ -695,17 +655,10 @@ impl CompiledProgram {
             .ok_or_else(|| Error::Runtime("native host token overflow".into()))?;
         token_cell.set(token);
         let _guard = host_scope.activate();
-        let mut args = vec![native_object_value(token, &primary.kind, &primary.path)];
-        args.extend(
-            extra
-                .iter()
-                .map(|value| native_to_pon(value, token))
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-        if scope.owner != self.identity {
-            return Err(Error::Runtime(
-                "invocation scope belongs to another Pon program".into(),
-            ));
+        let mut args = Vec::with_capacity(extra.len() + 1);
+        args.push(native_object_value(token, &primary.kind, &primary.path));
+        for value in extra {
+            args.push(native_to_pon(value, token)?);
         }
         scope
             .inner

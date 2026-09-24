@@ -137,7 +137,7 @@ pub fn resolve_pair(
     let mut next = fighters.clone();
     let mut candidates = *second_candidates;
     for side in [1, 0] {
-        if integers[side] - rules.damage_gap < integers[1 - side] {
+        if damage_beats(integers[side], integers[1 - side], rules.damage_gap) {
             let hit = next[side].hits[slots[side]];
             let opponent = next[1 - side].id;
             for (slot, same_group) in next[side].hits.iter_mut().enumerate() {
@@ -172,7 +172,14 @@ pub fn resolve_pair(
     }
     *fighters = next;
     *second_candidates = candidates;
-    Ok(integers[0] - rules.damage_gap < integers[1])
+    Ok(damage_beats(integers[0], integers[1], rules.damage_gap))
+}
+
+/// The decomp compares the cached integer damages with a strict subtraction.
+/// Keep that ordering in a wider type so a valid maximum gap cannot overflow
+/// the host Rust arithmetic before the comparison is made.
+fn damage_beats(damage: i32, opponent: i32, gap: i32) -> bool {
+    i64::from(damage) - i64::from(gap) < i64::from(opponent)
 }
 
 fn integer_damage(damage: f32) -> Result<i32, ClankError> {
@@ -595,7 +602,7 @@ fn physics(error: impl core::fmt::Display) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::Animation;
+    use super::{Animation, ClashFighter, Hit, Response, ResponseRules, resolve_pair};
 
     #[test]
     fn animation_metadata_defaults_for_older_json() {
@@ -616,6 +623,38 @@ mod tests {
         let json = serde_json::to_value(&animation).unwrap();
         assert_eq!(json["poses_blend_frames"], 7);
         assert_eq!(json["poses_dynamics_variant"], 9);
-        assert_eq!(serde_json::from_value::<Animation>(json).unwrap(), animation);
+        assert_eq!(
+            serde_json::from_value::<Animation>(json).unwrap(),
+            animation
+        );
+    }
+
+    #[test]
+    fn maximum_damage_gap_keeps_source_ordering_without_integer_overflow() {
+        let mut fighters = [
+            ClashFighter {
+                id: 1,
+                grounded: true,
+                x: 0.0,
+                hits: [Hit::default(); 4],
+                response: Response::default(),
+            },
+            ClashFighter {
+                id: 2,
+                grounded: true,
+                x: 1.0,
+                hits: [Hit::default(); 4],
+                response: Response::default(),
+            },
+        ];
+        let mut candidates = [true; 4];
+        let rules = ResponseRules {
+            damage_gap: i32::MAX,
+            duration_scale: 0.0,
+            duration_base: 0.0,
+        };
+
+        // Source ftColl_8007699C uses (int)dmg - x3CC < (int)other.
+        assert!(resolve_pair(&mut fighters, [0, 0], &mut candidates, &rules).unwrap());
     }
 }

@@ -30,6 +30,9 @@ pub fn profile(mut data: MatchData) -> MatchData {
     values.insert("side".to_owned(), fixture["parameters"].clone());
     let specials = Specials {
         character: "Fox".to_owned(),
+        special_attributes: None,
+        animations: None,
+        articles: None,
         resources: Resources::new(values).unwrap(),
     };
     for fighter in &mut data.fighters {

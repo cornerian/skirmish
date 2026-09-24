@@ -290,6 +290,7 @@ fn all_lines(count: usize) -> Joint {
     Joint {
         id: 3,
         flags: ENABLED,
+        enabled_at_start: true,
         bounds_min: [-100.0; 2],
         bounds_max: [100.0; 2],
         floor: 0..count,
@@ -796,7 +797,7 @@ proptest! {
         }).collect();
         let split = lines.len()/2;
         let joints = [
-            Joint { id: 5, flags: joint_flags[0], bounds_min: [-40.0;2], bounds_max: [40.0;2],
+            Joint { id: 5, flags: joint_flags[0], enabled_at_start: true, bounds_min: [-40.0;2], bounds_max: [40.0;2],
                 floor: 0..split, ceiling: 0..split, left_wall: 0..split, right_wall: 0..split,
                 dynamic: split..lines.len() },
             Joint { id: 2, flags: joint_flags[1], ..all_lines(lines.len()) },

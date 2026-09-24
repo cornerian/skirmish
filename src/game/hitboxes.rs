@@ -35,6 +35,13 @@ pub fn update_tracks(
         if frame.hitboxes.len() > tracks.len() {
             return Err(Error::Data("at most four hitbox slots per frame".into()));
         }
+        if frame.hitboxes.iter().any(|hit| hit.group >= 16) {
+            // HitCapsule hit records are a 16-bit mask in the native fighter
+            // state.  Reject malformed authored frames here as well as during
+            // upfront validation so replay/resource callers cannot panic on
+            // the shifts in simulation's activation path.
+            return Err(Error::Data("hitbox group must be below 16".into()));
+        }
         for (slot, hit) in frame.hitboxes.iter().enumerate() {
             let world = BoneCapsule::sphere(hit.bone, hit.center, hit.radius)
                 .transform(pose, 1.0)
@@ -110,10 +117,65 @@ pub fn refreshed_groups(tracks: &[Track; 4], frame: Option<&AttackFrame>) -> u16
     let mut refreshed = 0u16;
     if let Some(frame) = frame {
         for hit in &frame.hitboxes {
+            // `hit_groups` is a u16 native mask. Invalid groups are rejected
+            // by `update_tracks`; ignoring them here keeps this pre-pass total
+            // for callers that report the update error afterward.
+            if hit.group >= 16 {
+                continue;
+            }
             if !tracks.iter().any(|track| track.group == Some(hit.group)) {
                 refreshed |= 1 << hit.group;
             }
         }
     }
     refreshed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Track, refreshed_groups, update_tracks};
+    use crate::collision::bones::{Bone, LocalTransform, Pose};
+    use crate::game::Error;
+    use crate::game::data::{AttackFrame, Hitbox};
+
+    fn pose() -> Pose {
+        Pose::evaluate(&[Bone {
+            local: LocalTransform::default(),
+            ..Bone::default()
+        }])
+        .unwrap()
+    }
+
+    fn frame(group: u8) -> AttackFrame {
+        AttackFrame {
+            bones: vec![],
+            hitboxes: vec![Hitbox {
+                clank: false,
+                rebound: false,
+                element: Default::default(),
+                shield_damage: 0,
+                group,
+                bone: 0,
+                center: [0.0; 3],
+                radius: 1.0,
+                damage: 1,
+                angle_degrees: 0.0,
+                growth: 0,
+                fixed: 0,
+                base: 0,
+            }],
+            hurtbox_states: vec![],
+        }
+    }
+
+    #[test]
+    fn invalid_group_is_rejected_before_activation_and_refresh_is_total() {
+        let mut tracks = [Track::default(); 4];
+        assert!(matches!(
+            update_tracks(&mut tracks, Some(&frame(16)), &pose()),
+            Err(Error::Data(message)) if message.contains("group")
+        ));
+        assert_eq!(tracks, [Track::default(); 4]);
+        assert_eq!(refreshed_groups(&tracks, Some(&frame(16))), 0);
+    }
 }

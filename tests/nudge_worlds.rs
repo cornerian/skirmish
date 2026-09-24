@@ -7,10 +7,8 @@ use skirmish::{
         bones::{self, Bone, Pose},
         stage::{self, Line, Stage},
     },
-    fighter::{
-        combat,
-        nudge::{self, Body, Error, Neighbors},
-    },
+    fighter::combat,
+    game::nudge::{self, Body, Error, Neighbors},
 };
 use support::{body, floor, rules};
 

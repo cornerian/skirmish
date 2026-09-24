@@ -117,7 +117,11 @@ pub(crate) fn capture(
         fighter.ground_knockback = 0.0;
         fighter.ground_velocity = 0.0;
     }
-    state.fighters[victim].facing = -state.fighters[holder].facing;
+    // `ftCo_8009CA0C` flips the Captain holder to face away from the
+    // victim. The victim keeps its own facing; flipping that side instead
+    // produces the wrong orientation for both grounded and airborne Dive
+    // captures.
+    state.fighters[holder].facing = -state.fighters[victim].facing;
     crate::game::simulation::enter(&mut state.fighters[victim], Action::CaptureCaptain);
     if let Some(staled) = capture_damage {
         state.fighters[victim].percent =
@@ -249,8 +253,6 @@ fn release(
     victim: usize,
 ) -> Result<(), Error> {
     let resource = captain_dive_capture(data, holder).cloned();
-    state.fighters[holder].special_capture = State::default();
-    state.fighters[victim].special_capture = State::default();
 
     if let Some(capture) = resource {
         let hit = capture.throw.hit;
@@ -270,6 +272,16 @@ fn release(
             crate::game::hit_resolution::HitDirection::Throw,
             false,
         )?;
+        // The native release callback detaches the pair even when the
+        // release hit is rejected. Keep the relation until hit preparation
+        // succeeds so malformed hit resources leave the checkpoint intact;
+        // then use the ordinary no-hit release path for a rejected contact.
+        state.fighters[holder].special_capture = State::default();
+        state.fighters[victim].special_capture = State::default();
+        if !accepted {
+            release_without_hit(state, holder, victim);
+            return Ok(());
+        }
         if accepted && data.rules.staling.is_some() {
             state.fighters[holder]
                 .staling
@@ -365,7 +377,7 @@ pub(crate) fn validate_resource(data: &super::data::FighterData) -> Result<(), E
     let Some(specials) = &data.specials else {
         return Ok(());
     };
-    if specials.character_key() != "captain-falcon" {
+    if !specials.character_key_is("captain-falcon") {
         return Ok(());
     }
     let capture = specials.captain_dive_capture().ok_or_else(|| {
@@ -428,6 +440,13 @@ mod tests {
     }
 
     fn resource_fixture_with_damage(damage: Option<u32>) -> (Match, crate::game::data::MatchData) {
+        resource_fixture_with_damage_and_element(damage, 1)
+    }
+
+    fn resource_fixture_with_damage_and_element(
+        damage: Option<u32>,
+        element: u8,
+    ) -> (Match, crate::game::data::MatchData) {
         let mut data: crate::game::data::MatchData = serde_json::from_str(include_str!(
             "../../tests/fixtures/game/integration-match.json"
         ))
@@ -447,7 +466,7 @@ mod tests {
                     "growth": 82,
                     "fixed": 0,
                     "base": 40,
-                    "element": 1
+                    "element": element
                 }
             }
         });
@@ -499,6 +518,8 @@ mod tests {
         state.fighters[0].action = Action::SpecialHiCatch;
         state.fighters[1].action = Action::Fall;
         state.fighters[1].grounded = true;
+        state.fighters[0].facing = 1.0;
+        state.fighters[1].facing = 1.0;
         let positions = state.fighters.each_ref().map(|fighter| fighter.position);
 
         capture(&data, &mut state, 0, 1, true).expect("grounded Dive capture");
@@ -508,6 +529,8 @@ mod tests {
         );
         assert_eq!(state.fighters[1].special_capture.captor, Some(0));
         assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
+        assert_eq!(state.fighters[0].facing, -1.0);
+        assert_eq!(state.fighters[1].facing, 1.0);
         assert_eq!(
             state.fighters.each_ref().map(|fighter| fighter.position),
             positions
@@ -555,6 +578,8 @@ mod tests {
         state.fighters[0].action = Action::SpecialHiCatch;
         state.fighters[1].action = Action::Fall;
         state.fighters[1].grounded = false;
+        state.fighters[0].facing = -1.0;
+        state.fighters[1].facing = -1.0;
 
         capture(&data, &mut state, 0, 1, false).expect("airborne Dive capture");
         assert_eq!(
@@ -565,6 +590,8 @@ mod tests {
             state.fighters[1].special_capture.attachment,
             Attachment::AirborneVictimToHolder
         );
+        assert_eq!(state.fighters[0].facing, 1.0);
+        assert_eq!(state.fighters[1].facing, -1.0);
         assert!(valid_relationship(&state.fighters, 0));
         assert!(valid_relationship(&state.fighters, 1));
     }
@@ -638,6 +665,23 @@ mod tests {
         update_pairs(&data, &mut state).expect("released relation is inert");
         assert_eq!(state.fighters[1].percent, 12.0);
         assert_eq!(state.fighters[1].action, action);
+    }
+
+    #[test]
+    fn invalid_release_hit_keeps_pair_until_resource_error_is_reported() {
+        let (match_, data) = resource_fixture_with_damage_and_element(None, 2);
+        let mut state = match_.state().clone();
+        state.fighters[0].action = Action::SpecialHiCatch;
+        state.fighters[1].action = Action::Fall;
+        state.fighters[1].grounded = false;
+        capture(&data, &mut state, 0, 1, false).expect("Dive capture");
+        state.fighters[0].action = Action::SpecialHiThrow;
+
+        let error = update_pairs(&data, &mut state).expect_err("invalid release element");
+        assert!(matches!(error, crate::game::Error::Data(_)));
+        assert_eq!(state.fighters[0].special_capture.victim, Some(1));
+        assert_eq!(state.fighters[1].special_capture.captor, Some(0));
+        assert_eq!(state.fighters[1].action, Action::CaptureCaptain);
     }
 
     #[test]

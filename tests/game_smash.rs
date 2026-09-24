@@ -11,8 +11,8 @@ mod smash_support;
 mod tilt_support;
 
 use skirmish::fighter::damage::Armor;
-use skirmish::fighter::smash::{ChargeState, Rules};
 use skirmish::fighter::shield;
+use skirmish::fighter::smash::{ChargeState, Rules};
 use skirmish::game::{
     Action, BUTTON_A, BUTTON_L, BUTTON_X, BUTTON_Z, Controller, Match, State, data::MatchData,
 };

@@ -25,6 +25,7 @@ fn unpack(state: [f32; 23]) -> Movement {
         ground_acceleration: state[7],
         ground_knockback: state[8],
         shield_knockback: state[9],
+        ground_friction_multiplier: 1.0,
         stick_x: state[10],
         floor_normal: [state[11], state[12], state[13]],
         attributes: Attributes {

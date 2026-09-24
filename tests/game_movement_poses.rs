@@ -210,17 +210,13 @@ fn jump_stays_in_jump_after_apex_until_the_selected_motion_ends() {
             assert_eq!(before.action_frame, jump_frames as u32);
             assert_eq!(state.fighters[0].action_frame, 2);
             assert_eq!(
-                observation::observe(&game, [Port::P1, Port::P4], [2, 2])
-                    .fighters[0]
-                    .action_age,
+                observation::observe(&game, [Port::P1, Port::P4], [2, 2]).fighters[0].action_age,
                 1.0
             );
             let next = game.step(IDLE).unwrap();
             assert_eq!(next.fighters[0].action, Action::Fall);
             assert_eq!(
-                observation::observe(&game, [Port::P1, Port::P4], [2, 2])
-                    .fighters[0]
-                    .action_age,
+                observation::observe(&game, [Port::P1, Port::P4], [2, 2]).fighters[0].action_age,
                 2.0
             );
             saw_animation_end = true;
@@ -255,5 +251,8 @@ fn jump_without_a_selected_motion_keeps_the_legacy_physics_fallback() {
             break;
         }
     }
-    assert!(saw_fall, "resource-free Jump must still use the physics fallback");
+    assert!(
+        saw_fall,
+        "resource-free Jump must still use the physics fallback"
+    );
 }

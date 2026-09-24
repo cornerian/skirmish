@@ -88,6 +88,9 @@ fn data() -> MatchData {
         values.insert("down".into(), down.parameters.clone());
         fighter.specials = Some(Specials {
             character: "falco".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: Resources::new(values).unwrap(),
         });
     }

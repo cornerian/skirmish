@@ -7,11 +7,14 @@ mod special_resources;
 
 use skirmish::{
     collision::{ecb, stage},
-    fighter::damage::{DamageMotionRules, DamagePoseAttributes, FloorResponseRules, HurtHeight, SurfaceResponseAttributes, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules},
+    fighter::damage::{
+        DamageMotionRules, DamagePoseAttributes, FloorResponseRules, HurtHeight,
+        SurfaceResponseAttributes, SurfaceResponseRules, SurfaceTechAttributes, SurfaceTechRules,
+    },
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, BUTTON_X, Controller, Event, Match, State,
         data::{Bone, CollisionBox, MatchData, StageGeometry},
-        stage_motion::{Rules as MotionRules, Track, Transform},
+        flow::stage_motion::{Rules as MotionRules, Track, Transform},
         wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules},
     },
 };
@@ -71,8 +74,14 @@ fn tech_attributes(bones: &[Bone], profile: &SurfaceTechRules) -> SurfaceTechAtt
         wall_jump_vertical_velocity: 4.0,
         passive_ceiling_velocity: 3.0,
         passive_wall_poses: pose_track(bones, profile.wall_frames, [5.0, 0.0]),
+        passive_wall_poses_blend_frames: 0,
+        passive_wall_poses_dynamics_variant: 0,
         passive_wall_jump_poses: pose_track(bones, profile.wall_jump_frames, [6.0, 0.0]),
+        passive_wall_jump_poses_blend_frames: 0,
+        passive_wall_jump_poses_dynamics_variant: 0,
         passive_ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 8.0]),
+        passive_ceiling_poses_blend_frames: 0,
+        passive_ceiling_poses_dynamics_variant: 0,
     }
 }
 
@@ -85,6 +94,8 @@ fn response_attributes(
         wall_poses_blend_frames: 0,
         wall_poses_dynamics_variant: 0,
         ceiling_poses: pose_track(bones, profile.ceiling_frames, [0.0, 10.0]),
+        ceiling_poses_blend_frames: 0,
+        ceiling_poses_dynamics_variant: 0,
     }
 }
 
@@ -95,6 +106,7 @@ fn data(angle: f32) -> MatchData {
     data.rules.time_limit_frames = 9_999;
     data.rules.damage.floor_response = Some(FloorResponseRules {
         tumble_knockback_threshold: 1.0,
+        landing_knockback_threshold: None,
         tech_window: 20.0,
         tech_repeat_lockout: 40,
         tech_roll: None,
@@ -202,6 +214,8 @@ fn add_ordinary_wall_jump(data: &mut MatchData) {
             minimum_approach_speed: 0.2,
             horizontal_velocity: 3.0,
             vertical_velocity: 4.0,
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames,
         });
     }

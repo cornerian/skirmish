@@ -3,7 +3,9 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::damage::{GroundLaunchRules, ground_launch, vector_angle};
+use skirmish::fighter::damage::{
+    GroundLaunchParameters, GroundLaunchRules, ground_launch, vector_angle,
+};
 
 #[link(name = "skirmish_oracle", kind = "static")]
 unsafe extern "C" {
@@ -51,13 +53,19 @@ fn compare(
             flags.as_mut_ptr(),
         );
     }
+    let rules = GroundLaunchRules {
+        fly_bounce_angle_radians: bounce_angle,
+        fly_bounce_vertical_multiplier: bounce_multiplier,
+        // The pinned common x200 defaults to neutral friction scaling.
+        ground_knockback_friction_multiplier: 1.0,
+    };
     let actual = ground_launch(
         knockback,
         floor_normal,
         fly,
-        &GroundLaunchRules {
-            fly_bounce_angle_radians: bounce_angle,
-            fly_bounce_vertical_multiplier: bounce_multiplier,
+        &GroundLaunchParameters {
+            fly_bounce_angle_radians: rules.fly_bounce_angle_radians,
+            fly_bounce_vertical_multiplier: rules.fly_bounce_vertical_multiplier,
         },
     );
     let case = format!("{knockback:?} {floor_normal:?} fly={fly}");

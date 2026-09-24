@@ -1,6 +1,6 @@
 //! Stable identity bytes for script resources.
 
-use super::{bundled_source, definition::AssetStore};
+use super::definition::AssetStore;
 use crate::game::data::FighterData;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,7 +18,10 @@ pub(crate) fn append(resource_bytes: &mut Vec<u8>, fighters: &[FighterData]) {
 }
 
 fn append_with_assets(resource_bytes: &mut Vec<u8>, fighters: &[FighterData], assets: &AssetStore) {
-    let mut selected = BTreeMap::<String, String>::new();
+    // Source text is both the identity and the value written to the stream.
+    // Keep one ordered copy per source instead of storing an identical key and
+    // value in a map; ordering remains deterministic for resource hashes.
+    let mut selected = BTreeSet::<String>::new();
     let mut program_records = BTreeSet::<Vec<u8>>::new();
     let mut has_script = false;
     for fighter in fighters {
@@ -32,11 +35,11 @@ fn append_with_assets(resource_bytes: &mut Vec<u8>, fighters: &[FighterData], as
                 ));
                 program.source()
             })
-            .or_else(|| bundled_source(fighter.specials.as_ref()));
+            .or_else(|| super::bundled_source_for_fighter(fighter));
         if let Some(source) = source {
             has_script = true;
             if fighter.script.is_none() {
-                selected.insert(source.to_owned(), source.to_owned());
+                selected.insert(source.to_owned());
             }
         }
     }
@@ -44,7 +47,7 @@ fn append_with_assets(resource_bytes: &mut Vec<u8>, fighters: &[FighterData], as
         return;
     }
 
-    append_sources_with_dependencies(resource_bytes, selected.values(), assets, &program_records);
+    append_sources_with_dependencies(resource_bytes, selected.iter(), assets, &program_records);
 }
 
 #[cfg(test)]
@@ -205,5 +208,91 @@ fighter = character(
         append_identity_prefix(&mut incompatible, [0xA5; 32]);
         incompatible.extend_from_slice(&current[ABI_MARKER.len() + 9 + 32 + 1..]);
         assert_ne!(Sha256::digest(current), Sha256::digest(incompatible));
+    }
+
+    #[test]
+    fn canonical_fighter_name_selects_the_program_identity() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        data.fighters[0].name = "mario".into();
+        data.fighters[0].specials = None;
+        let mut mario = Vec::new();
+        append(&mut mario, &data.fighters);
+
+        data.fighters[0].name = "fox".into();
+        let mut fox = Vec::new();
+        append(&mut fox, &data.fighters);
+
+        assert_ne!(Sha256::digest(mario), Sha256::digest(fox));
+    }
+
+    #[test]
+    fn link_and_young_link_keep_distinct_source_action_namespaces() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        data.fighters[0].specials = None;
+
+        data.fighters[0].name = "link".into();
+        let mut link = Vec::new();
+        append(&mut link, &data.fighters);
+
+        data.fighters[0].name = "young-link".into();
+        let mut young_link = Vec::new();
+        append(&mut young_link, &data.fighters);
+
+        // Link's and CLink's source programs bind the same native motion
+        // states to different external ids (6 and 21). Their resource
+        // identities must therefore never collapse to one source namespace.
+        assert_ne!(Sha256::digest(link), Sha256::digest(young_link));
+    }
+
+    #[test]
+    fn marth_and_roy_keep_distinct_source_action_namespaces() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        data.fighters[0].specials = None;
+
+        data.fighters[0].name = "marth".into();
+        let mut marth = Vec::new();
+        append(&mut marth, &data.fighters);
+
+        data.fighters[0].name = "roy".into();
+        let mut roy = Vec::new();
+        append(&mut roy, &data.fighters);
+
+        // Both fighters use ftMars source states, but their authoring
+        // namespaces are external ids 17 and 23. Reusing one resource hash
+        // would bind callbacks and sidecars to the wrong fighter.
+        assert_ne!(Sha256::digest(marth), Sha256::digest(roy));
+    }
+
+    #[test]
+    fn legacy_specials_still_contribute_identity_when_name_is_absent() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        data.fighters[0].name.clear();
+        data.fighters[0].specials = Some(crate::game::script::resources::Specials {
+            character: "Fox".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
+            resources: crate::game::script::resources::Resources::default(),
+        });
+        let mut legacy = Vec::new();
+        append(&mut legacy, &data.fighters);
+
+        data.fighters[0].name = "fox".into();
+        let mut canonical = Vec::new();
+        append(&mut canonical, &data.fighters);
+
+        assert_eq!(legacy, canonical);
     }
 }

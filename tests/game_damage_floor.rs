@@ -1,7 +1,12 @@
 //! Native damage-floor scheduling with explicit synthetic state durations.
 use skirmish::{
     collision::ecb,
-    fighter::damage::{DamageMotionRules, DamagePoseAttributes, DownDamageRules, FloorTechAttributes, FloorTechFrame, FloorTechMotion, FloorTechRules, GroundLaunchRules, HurtHeight, KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules, ProneRecoveryAttributes, RecoveryInvincibilityRules},
+    fighter::damage::{
+        DamageMotionRules, DamagePoseAttributes, DownDamageRules, FloorTechAttributes,
+        FloorTechFrame, FloorTechMotion, FloorTechRules, GroundLaunchRules, HurtHeight,
+        KnockdownAttributes, KnockdownRules, ProneOrientation, ProneOrientationRules,
+        ProneRecoveryAttributes, RecoveryInvincibilityRules,
+    },
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_L, BUTTON_R, Controller, Event, Match, State,
         data::{Attack, AttackFrame, Bone, CollisionBox},
@@ -733,7 +738,10 @@ fn down_wait_clamps_short_pose_sequences_to_the_final_sample() {
         let state = step(&mut game, IDLE);
         if state.fighters[1].action_frame > 0 {
             sampled_after_first = true;
-            assert_eq!(state.fighters[1].ecb.current.left[0].to_bits(), initial.to_bits());
+            assert_eq!(
+                state.fighters[1].ecb.current.left[0].to_bits(),
+                initial.to_bits()
+            );
         }
     }
     assert!(sampled_after_first);

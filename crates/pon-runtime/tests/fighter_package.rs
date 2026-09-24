@@ -28,6 +28,11 @@ fn authoring_bundle() -> SourceBundle {
         )
         .unwrap()
         .with_file(
+            "fighter/roster.py",
+            include_str!("../../../scripts/api/fighter/roster.py"),
+        )
+        .unwrap()
+        .with_file(
             "fighter/__init__.py",
             include_str!("../../../scripts/api/fighter/__init__.py"),
         )
@@ -50,6 +55,11 @@ fn authoring_bundle() -> SourceBundle {
         .with_file(
             "fighter/registry.py",
             include_str!("../../../scripts/api/fighter/registry.py"),
+        )
+        .unwrap()
+        .with_file(
+            "fighter/standard.py",
+            include_str!("../../../scripts/api/fighter/standard.py"),
         )
         .unwrap()
         .with_file(

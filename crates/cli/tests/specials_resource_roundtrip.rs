@@ -5,6 +5,9 @@ use skirmish::game::script::resources::{Resources, Specials};
 fn fixture() -> Specials {
     Specials {
         character: "Fox".into(),
+        special_attributes: None,
+        animations: None,
+        articles: None,
         resources: Resources::new(BTreeMap::from([
             ("neutral".into(), serde_json::json!({"frames": []})),
             (

@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs, io::Write, process::Command};
 use tempfile::TempDir;
 
 const ARCHIVE: &str = "/tmp/skirmish-stdlib-release-proof/pon-stdlib-final-sorted.tar.gz";
@@ -123,6 +123,73 @@ class NativeFighter(Fighter):
         counters.len() == 300 && counters.iter().all(|counter| *counter == 1),
         "Pon callback counter was not exactly one for all frames: {counters:?}"
     );
+}
+
+#[test]
+#[ignore = "requires the finalized verified Pon stdlib release artifact"]
+fn run_match_loads_serialized_yoshi_with_canonical_module_identity() {
+    let (_stage, executable) = staged_release_with_archive(std::path::Path::new(ARCHIVE));
+    let cwd = tempfile::tempdir().unwrap();
+    let data = cwd.path().join("yoshi.json");
+    let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/game/integration-match.json"
+    ))
+    .unwrap();
+    fixture["rules"]["countdown_frames"] = serde_json::json!(0);
+    fixture["rules"]["time_limit_frames"] = serde_json::json!(1);
+    fixture["fighters"][0]["name"] = serde_json::json!("yoshi");
+    // The checked-in Yoshi declaration inherits the standard aerial action
+    // links.  Give this one-frame CLI smoke match the smallest valid native
+    // aerial resource so execution reaches the identity assertion instead of
+    // failing the unrelated move-destination gate.
+    let bones = fixture["fighters"][0]["bones"].clone();
+    let aerial_move = serde_json::json!({
+        "attack": {
+            "frames": [{"bones": bones, "hitboxes": []}],
+        },
+        "flags": [{"landing_lag": false, "allow_interrupt": false, "reverse_facing": false}],
+        "landing_lag": 1.0,
+        "landing_animation_end": 0.0,
+        "landing_poses": [fixture["fighters"][0]["bones"].clone()],
+    });
+    fixture["fighters"][0]["aerials"] = serde_json::json!({
+        "selection": {"thresholds": [0.5, 0.5], "vertical_angle": 0.5},
+        "l_cancel_window": 0,
+        "l_cancel_divisor": 1.0,
+        "moves": [aerial_move.clone(), aerial_move.clone(), aerial_move.clone(), aerial_move.clone(), aerial_move],
+    });
+    fixture["fighters"][0]["script"] = serde_json::json!({
+        "version": "pon-v2",
+        "source": include_str!("../../../scripts/fighters/yoshi.py"),
+        "dependencies": {},
+    });
+    fs::write(&data, serde_json::to_vec(&fixture).unwrap()).unwrap();
+
+    let mut child = Command::new(&executable)
+        .current_dir(cwd.path())
+        .env_clear()
+        .env("PON_STDLIB_PATH", cwd.path().join("missing-developer-root"))
+        .args(["run-match", "--data"])
+        .arg(&data)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"[{\"buttons\":0,\"stick\":[0.0,0.0]},{\"buttons\":0,\"stick\":[0.0,0.0]}]\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"kind\":\"end\""));
 }
 
 #[test]

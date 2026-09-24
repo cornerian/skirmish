@@ -53,13 +53,379 @@ pub const MAX_LOCAL_KEY_BYTES: usize = 64;
 pub const MAX_LOCAL_STRING_BYTES: usize = 256;
 pub const MAX_COMMANDS: usize = 16;
 
-/// Selects the bundled source owned by each fighter when its reflector exists.
+/// Every built-in fighter source and its resource identity.
+///
+/// Keep the compile-time source bundle in one place so source lookup, asset
+/// registration, and definition discovery cannot drift apart as the roster
+/// grows. The character key is the CSS resource key; the filename is the
+/// private import name exposed to the bundled source loader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BuiltinScript {
+    pub(crate) character_key: &'static str,
+    pub(crate) filename: &'static str,
+    pub(crate) source: &'static str,
+}
+
+pub(crate) static BUILTIN_SCRIPTS: [BuiltinScript; 26] = [
+    BuiltinScript {
+        character_key: "captain-falcon",
+        filename: "captain.py",
+        source: include_str!("../../scripts/fighters/captain.py"),
+    },
+    BuiltinScript {
+        character_key: "donkey-kong",
+        filename: "donkey_kong.py",
+        source: include_str!("../../scripts/fighters/donkey_kong.py"),
+    },
+    BuiltinScript {
+        character_key: "fox",
+        filename: "fox.py",
+        source: include_str!("../../scripts/fighters/fox.py"),
+    },
+    BuiltinScript {
+        character_key: "game-and-watch",
+        filename: "game_and_watch.py",
+        source: include_str!("../../scripts/fighters/game_and_watch.py"),
+    },
+    BuiltinScript {
+        character_key: "kirby",
+        filename: "kirby.py",
+        source: include_str!("../../scripts/fighters/kirby.py"),
+    },
+    BuiltinScript {
+        character_key: "bowser",
+        filename: "bowser.py",
+        source: include_str!("../../scripts/fighters/bowser.py"),
+    },
+    BuiltinScript {
+        character_key: "link",
+        filename: "link.py",
+        source: include_str!("../../scripts/fighters/link.py"),
+    },
+    BuiltinScript {
+        character_key: "luigi",
+        filename: "luigi.py",
+        source: include_str!("../../scripts/fighters/luigi.py"),
+    },
+    BuiltinScript {
+        character_key: "mario",
+        filename: "mario.py",
+        source: include_str!("../../scripts/fighters/mario.py"),
+    },
+    BuiltinScript {
+        character_key: "marth",
+        filename: "marth.py",
+        source: include_str!("../../scripts/fighters/marth.py"),
+    },
+    BuiltinScript {
+        character_key: "mewtwo",
+        filename: "mewtwo.py",
+        source: include_str!("../../scripts/fighters/mewtwo.py"),
+    },
+    BuiltinScript {
+        character_key: "ness",
+        filename: "ness.py",
+        source: include_str!("../../scripts/fighters/ness.py"),
+    },
+    BuiltinScript {
+        character_key: "peach",
+        filename: "peach.py",
+        source: include_str!("../../scripts/fighters/peach.py"),
+    },
+    BuiltinScript {
+        character_key: "pikachu",
+        filename: "pikachu.py",
+        source: include_str!("../../scripts/fighters/pikachu.py"),
+    },
+    BuiltinScript {
+        character_key: "ice-climbers",
+        filename: "ice_climbers.py",
+        source: include_str!("../../scripts/fighters/ice_climbers.py"),
+    },
+    BuiltinScript {
+        character_key: "jigglypuff",
+        filename: "jigglypuff.py",
+        source: include_str!("../../scripts/fighters/jigglypuff.py"),
+    },
+    BuiltinScript {
+        character_key: "samus",
+        filename: "samus.py",
+        source: include_str!("../../scripts/fighters/samus.py"),
+    },
+    BuiltinScript {
+        character_key: "yoshi",
+        filename: "yoshi.py",
+        source: include_str!("../../scripts/fighters/yoshi.py"),
+    },
+    BuiltinScript {
+        character_key: "zelda",
+        filename: "zelda.py",
+        source: include_str!("../../scripts/fighters/zelda.py"),
+    },
+    BuiltinScript {
+        character_key: "sheik",
+        filename: "sheik.py",
+        source: include_str!("../../scripts/fighters/sheik.py"),
+    },
+    BuiltinScript {
+        character_key: "falco",
+        filename: "falco.py",
+        source: include_str!("../../scripts/fighters/falco.py"),
+    },
+    BuiltinScript {
+        character_key: "young-link",
+        filename: "young_link.py",
+        source: include_str!("../../scripts/fighters/young_link.py"),
+    },
+    BuiltinScript {
+        character_key: "dr-mario",
+        filename: "dr_mario.py",
+        source: include_str!("../../scripts/fighters/dr_mario.py"),
+    },
+    BuiltinScript {
+        character_key: "roy",
+        filename: "roy.py",
+        source: include_str!("../../scripts/fighters/roy.py"),
+    },
+    BuiltinScript {
+        character_key: "pichu",
+        filename: "pichu.py",
+        source: include_str!("../../scripts/fighters/pichu.py"),
+    },
+    BuiltinScript {
+        character_key: "ganondorf",
+        filename: "ganondorf.py",
+        source: include_str!("../../scripts/fighters/ganondorf.py"),
+    },
+];
+
+/// Selects a bundled source by the canonical resource identity.
+///
+/// `FighterData.name` is the authoritative roster key.  The specials
+/// reflector predates script-backed fighter resources and is retained only
+/// for old resources that have no name yet; a non-empty, unknown name must
+/// not silently select a different fighter's program.
+pub fn bundled_source_for_name(
+    name: &str,
+    legacy_specials: Option<&resources::Specials>,
+) -> Option<&'static str> {
+    if !name.is_empty() {
+        // Keep the canonical resource key as the fast path, then accept the
+        // display names serialized by replay formats (for example `Fox` and
+        // `Game & Watch`).  Normalization is deliberately only used to match
+        // one of the bundled roster entries, so unknown names still fail
+        // closed instead of selecting a different fighter.
+        return BUILTIN_SCRIPTS
+            .iter()
+            .find(|builtin| builtin.character_key == name)
+            .or_else(|| {
+                let normalized_name = normalize_roster_name(name);
+                BUILTIN_SCRIPTS
+                    .iter()
+                    .find(|builtin| normalize_roster_name(builtin.character_key) == normalized_name)
+            })
+            .map(|builtin| builtin.source);
+    }
+    bundled_source(legacy_specials)
+}
+
+/// Converts canonical keys and serialized display names to a comparable
+/// roster spelling.  Ampersand is expanded because the display name for
+/// `game-and-watch` is commonly serialized as `Game & Watch`.
+fn normalize_roster_name(name: &str) -> String {
+    let mut normalized = String::with_capacity(name.len());
+    for character in name.chars() {
+        if character == '&' {
+            normalized.push_str("and");
+        } else if character.is_ascii_alphanumeric() {
+            normalized.push(character.to_ascii_lowercase());
+        }
+    }
+    // Slippi's display name includes the honorific, while the canonical
+    // resource key does not.
+    if normalized == "mrgameandwatch" {
+        "gameandwatch".into()
+    } else {
+        normalized
+    }
+}
+
+/// Selects the bundled source owned by a fighter resource.
+pub fn bundled_source_for_fighter(
+    fighter: &crate::game::data::FighterData,
+) -> Option<&'static str> {
+    bundled_source_for_name(fighter.name.as_str(), fighter.specials.as_ref())
+}
+
+/// Legacy source selection for resources written before `FighterData.name`
+/// became the canonical script identity.
 pub fn bundled_source(specials: Option<&resources::Specials>) -> Option<&'static str> {
-    match specials?.character_key().as_str() {
-        "captain-falcon" => Some(include_str!("../../scripts/fighters/captain.py")),
-        "fox" => Some(include_str!("../../scripts/fighters/fox.py")),
-        "falco" => Some(include_str!("../../scripts/fighters/falco.py")),
-        _ => None,
+    let specials = specials?;
+    BUILTIN_SCRIPTS
+        .iter()
+        .find(|builtin| specials.character_key_is(builtin.character_key))
+        .map(|builtin| builtin.source)
+}
+
+#[cfg(test)]
+mod builtin_source_tests {
+    use super::{BUILTIN_SCRIPTS, bundled_source_for_fighter, bundled_source_for_name};
+    use crate::game::script::resources::{Resources, Specials};
+
+    #[test]
+    fn roster_name_selects_script_without_special_resources() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        let fighter = &mut data.fighters[0];
+        fighter.name = "mario".into();
+        fighter.specials = None;
+
+        assert_eq!(
+            bundled_source_for_fighter(fighter),
+            BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.character_key == "mario")
+                .map(|builtin| builtin.source)
+        );
+    }
+
+    #[test]
+    fn serialized_display_name_selects_fox_script() {
+        assert_eq!(
+            bundled_source_for_name("Fox", None),
+            BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.character_key == "fox")
+                .map(|builtin| builtin.source)
+        );
+    }
+
+    #[test]
+    fn multiword_punctuation_display_name_selects_script() {
+        assert_eq!(
+            bundled_source_for_name("Mr. Game & Watch", None),
+            BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.character_key == "game-and-watch")
+                .map(|builtin| builtin.source)
+        );
+    }
+
+    #[test]
+    fn canonical_name_still_selects_script() {
+        assert_eq!(
+            bundled_source_for_name("fox", None),
+            BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.character_key == "fox")
+                .map(|builtin| builtin.source)
+        );
+    }
+
+    #[test]
+    fn unknown_name_stays_unresolved() {
+        assert_eq!(bundled_source_for_name("Not A Fighter", None), None);
+    }
+
+    #[test]
+    fn legacy_specials_identity_is_used_only_without_a_name() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        let fighter = &mut data.fighters[0];
+        fighter.name.clear();
+        fighter.specials = Some(Specials {
+            character: "Fox".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
+            resources: Resources::default(),
+        });
+
+        assert_eq!(
+            bundled_source_for_fighter(fighter),
+            BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.character_key == "fox")
+                .map(|builtin| builtin.source)
+        );
+    }
+
+    #[test]
+    fn unknown_name_does_not_fall_back_to_a_different_specials_identity() {
+        let mut data: crate::game::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .expect("integration fixture decodes");
+        let fighter = &mut data.fighters[0];
+        fighter.name = "not-a-roster-fighter".into();
+        fighter.specials = Some(Specials {
+            character: "Fox".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
+            resources: Resources::default(),
+        });
+
+        assert_eq!(bundled_source_for_fighter(fighter), None);
+    }
+
+    #[test]
+    fn complete_roster_inventory_has_unique_keys_and_private_modules() {
+        let expected = [
+            "captain-falcon",
+            "donkey-kong",
+            "fox",
+            "game-and-watch",
+            "kirby",
+            "bowser",
+            "link",
+            "luigi",
+            "mario",
+            "marth",
+            "mewtwo",
+            "ness",
+            "peach",
+            "pikachu",
+            "ice-climbers",
+            "jigglypuff",
+            "samus",
+            "yoshi",
+            "zelda",
+            "sheik",
+            "falco",
+            "young-link",
+            "dr-mario",
+            "roy",
+            "pichu",
+            "ganondorf",
+        ];
+        let keys = BUILTIN_SCRIPTS
+            .iter()
+            .map(|builtin| builtin.character_key)
+            .collect::<std::collections::BTreeSet<_>>();
+        let files = BUILTIN_SCRIPTS
+            .iter()
+            .map(|builtin| builtin.filename)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(BUILTIN_SCRIPTS.len(), expected.len());
+        assert_eq!(keys.len(), expected.len());
+        assert_eq!(files.len(), expected.len());
+        for key in expected {
+            assert!(
+                BUILTIN_SCRIPTS
+                    .iter()
+                    .any(|builtin| builtin.character_key == key),
+                "missing bundled fighter {key}"
+            );
+        }
+        for builtin in BUILTIN_SCRIPTS {
+            assert!(builtin.filename.ends_with(".py"));
+            assert!(!builtin.source.is_empty());
+        }
     }
 }
 
@@ -136,7 +502,19 @@ impl<'de> Deserialize<'de> for Program {
             }
             (wire.source, wire.dependencies)
         };
+        // A serialized bundled fighter loses its original source filename at
+        // the JSON boundary.  Restore only the matching authoritative builtin
+        // asset so canonical bytes recover their private module name
+        // (`yoshi.py`, `captain.py`, ...), without widening the import surface
+        // of arbitrary external programs. Those programs still fall back to
+        // `fighter.py` and must carry explicit identity.
         let mut assets = crate::game::script::definition::AssetStore::default();
+        if let Some(builtin) = BUILTIN_SCRIPTS
+            .iter()
+            .find(|builtin| builtin.source == source)
+        {
+            assets.register(builtin.filename, builtin.source);
+        }
         for (name, source) in dependencies {
             assets.register(name, source);
         }
@@ -324,6 +702,39 @@ mod program_wire_tests {
             error
                 .to_string()
                 .contains("unsupported Pon program version")
+        );
+    }
+}
+
+#[cfg(test)]
+mod builtin_identity_tests {
+    use super::Program;
+    use crate::game::script::definition::AssetStore;
+
+    #[test]
+    #[ignore = "requires the finalized verified Pon stdlib release artifact"]
+    fn registered_yoshi_identity_is_trusted_and_external_spoof_is_rejected() {
+        let yoshi = Program::new_registered(
+            include_str!("../../scripts/fighters/yoshi.py"),
+            &AssetStore::builtins(),
+        )
+        .expect("bundled Yoshi source must compile");
+        assert_eq!(yoshi.metadata().name, "yoshi");
+        assert_eq!(yoshi.metadata().external_ids, vec![17]);
+
+        let spoof = r#"
+from skirmish import Fighter
+__skirmish_canonical_module__ = "yoshi"
+class Spoof(Fighter):
+    pass
+"#;
+        let error = Program::new_registered(spoof, &AssetStore::builtins())
+            .expect_err("external source must not spoof builtin roster identity");
+        assert!(
+            error
+                .to_string()
+                .contains("needs an explicit name or external_ids"),
+            "spoof should fail closed at identity resolution: {error}"
         );
     }
 }
@@ -516,6 +927,7 @@ struct CombatHost {
 
 #[allow(dead_code)]
 impl CombatHost {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         fighter: &FighterView,
         hit: Option<&HitView>,
@@ -1048,9 +1460,34 @@ impl Program {
                 .with_file(name, dependency.as_str())
                 .map_err(|error| Error::Compile(error.to_string()))?;
         }
+        // Canonical bundled sources must execute under their own private
+        // module filename.  The authoring loader intentionally derives a
+        // fighter's identity from that module boundary; using the generic
+        // `fighter.py` root here makes an embedded roster script look like an
+        // arbitrary external program and loses its canonical identity.
+        let filename = assets
+            .filename_for_source(&source)
+            .or_else(|| {
+                BUILTIN_SCRIPTS
+                    .iter()
+                    .find(|builtin| builtin.source == source)
+                    .map(|builtin| builtin.filename)
+            })
+            .unwrap_or("fighter.py");
+        // Pon's diagnostic filename is not the module's `__name__`/`__file__`.
+        // Put trusted provenance in the root namespace after the fighter body
+        // has run.  Always assign the marker: an external program may not
+        // spoof a builtin roster module by declaring this private global.
+        let canonical_module = BUILTIN_SCRIPTS
+            .iter()
+            .find(|builtin| builtin.source == source)
+            .and_then(|builtin| builtin.filename.strip_suffix(".py"))
+            .map_or_else(|| "None".to_owned(), |module| format!("{module:?}"));
+        let runtime_source =
+            format!("{source}\n__skirmish_canonical_module__ = {canonical_module}");
         let compiled = starlark::CompiledProgram::new_with_bundle(
-            Arc::<str>::from(source.clone()),
-            Arc::<str>::from("fighter.py"),
+            Arc::<str>::from(runtime_source),
+            Arc::<str>::from(filename),
             std::iter::empty(),
             Some(bundle),
         )
@@ -1069,6 +1506,12 @@ impl Program {
         let manifest: crate::game::script::definition::FighterDefinition =
             serde_json::from_value(native_to_json(&exported)?)
                 .map_err(|error| Error::Invalid(format!("invalid fighter export: {error}")))?;
+        // Program is also a standalone resource boundary: embedded programs
+        // are deserialized and cached without passing through Definition.
+        // Link custom action identities before warming any derived indexes.
+        crate::game::script::definition::validate_custom_action_collisions(&manifest)?;
+        crate::game::script::definition::validate_custom_slippi_states(&manifest)?;
+        crate::game::script::definition::validate_action_animation_metadata(&manifest)?;
         manifest.prepare_runtime_indexes();
         manifest.state.validate_declaration()?;
         manifest.action_state.validate_declaration()?;
@@ -1288,12 +1731,28 @@ impl Program {
         context_state: CombatContext<'_>,
         baseline: Option<&HitPatch>,
     ) -> Result<ScriptResult, Error> {
+        // Resource loading precomputes whether each hook has any bindings.
+        // Most per-frame hooks are absent for a given fighter; skip context
+        // construction and selector scans while preserving the same neutral
+        // state and hit-baseline transaction.
+        if self.hook_indices[hook.index()].is_none() {
+            return Ok(neutral_script_result(
+                hit,
+                baseline,
+                context_state.persistent,
+                context_state.action_state,
+            ));
+        }
         let context = serde_json::json!({
             "event": {"kind": hook.name(), "action": fighter.action},
         });
         let current_action = parse_action(&fighter.action);
         let resource_ref = context_state.resources.as_deref();
-        let selected_root = self.callback_bindings(None, hook).iter().filter(|binding| {
+        // Root bindings are immutable after resource load. Keep one slice for
+        // both selection and the empty fast path; dispatch is a frame hot path
+        // and should not repeatedly resolve the same hook index.
+        let root_bindings = self.callback_bindings(None, hook);
+        let selected_root = root_bindings.iter().filter(|binding| {
             callback_routing::matches(
                 hook,
                 &binding.selector,
@@ -1327,25 +1786,14 @@ impl Program {
                     resource_ref,
                 )
             });
-        if self.callback_bindings(None, hook).is_empty()
-            && self
-                .behavior_bindings
-                .iter()
-                .all(|bindings| bindings[hook.index()].is_empty())
-        {
-            return Ok(ScriptResult {
-                locals: context_state.persistent.clone(),
-                action_state: context_state.action_state.clone(),
-                hit: baseline.cloned().or_else(|| {
-                    hit.map(|value| HitPatch {
-                        damage: value.damage,
-                        angle: value.angle,
-                        knockback: value.knockback,
-                        ..HitPatch::default()
-                    })
-                }),
-                ..ScriptResult::default()
-            });
+        let mut selected = selected_root.chain(selected_behaviors).peekable();
+        if selected.peek().is_none() {
+            return Ok(neutral_script_result(
+                hit,
+                baseline,
+                context_state.persistent,
+                context_state.action_state,
+            ));
         }
         let compiled = self
             .compiled
@@ -1370,11 +1818,23 @@ impl Program {
                 )))]
             })
             .unwrap_or_default();
-        for binding in selected_root.chain(selected_behaviors) {
-            compiled
-                .dispatch(&binding.callback, primary.clone(), &extra)
-                .map_err(|error| Error::Runtime(error.to_string()))?;
-        }
+        // Keep one prepared evaluator invocation scope for the complete
+        // callback batch. Each callback still receives its own native host
+        // registration inside `dispatch_in_scope`, while the expensive
+        // evaluator guards and thread-local preparation are shared.
+        compiled
+            .with_invocation_scope(|scope| {
+                for binding in selected {
+                    compiled.dispatch_in_scope(
+                        scope,
+                        &binding.callback,
+                        primary.clone(),
+                        &extra,
+                    )?;
+                }
+                Ok(())
+            })
+            .map_err(|error| Error::Runtime(error.to_string()))?;
         // The evaluator receives cloned host references for the primary
         // fighter and optional hit argument. Release those scoped handles
         // before recovering the staged host below.
@@ -1432,6 +1892,27 @@ impl Program {
             hit: Some(patch),
             ..result
         })
+    }
+}
+
+fn neutral_script_result(
+    hit: Option<&HitView>,
+    baseline: Option<&HitPatch>,
+    persistent: &LocalState,
+    action_state: &LocalState,
+) -> ScriptResult {
+    ScriptResult {
+        locals: persistent.clone(),
+        action_state: action_state.clone(),
+        hit: baseline.cloned().or_else(|| {
+            hit.map(|value| HitPatch {
+                damage: value.damage,
+                angle: value.angle,
+                knockback: value.knockback,
+                ..HitPatch::default()
+            })
+        }),
+        ..ScriptResult::default()
     }
 }
 
@@ -1549,7 +2030,66 @@ pub(crate) fn apply_commands(
     Ok(())
 }
 
+/// Hash a qualified source action using a fixed algorithm whose output is
+/// independent of process state, allocator state, or definition order.
+pub fn custom_action_id(namespace: &str, key: &str) -> crate::game::CustomActionId {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in namespace.bytes().chain([0]).chain(key.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    crate::game::CustomActionId::new(hash)
+}
+
+/// Stable ID for a native source action.  The two numeric identities are
+/// hashed directly, so equal Slippi states on different roster fighters never
+/// alias merely because their authored names happen to match.
+pub fn source_action_id(external_id: u8, slippi_state: u32) -> crate::game::CustomActionId {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in b"source"
+        .iter()
+        .copied()
+        .chain([0])
+        .chain(external_id.to_le_bytes())
+        .chain(slippi_state.to_le_bytes())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    crate::game::CustomActionId::new(hash)
+}
+
+/// Parse the canonical authoring reference `Custom.<namespace>:<key>`.
+/// Namespace and key are intentionally retained in the definition linker for
+/// collision diagnostics; the per-frame action only carries the stable ID.
+pub(crate) fn parse_custom_action(name: &str) -> Option<super::Action> {
+    let value = name.strip_prefix("Custom.")?;
+    let (namespace, key) = value.split_once(':')?;
+    if namespace.is_empty()
+        || key.is_empty()
+        || namespace.chars().any(char::is_whitespace)
+        || key.chars().any(char::is_whitespace)
+    {
+        return None;
+    }
+    Some(super::Action::Custom(custom_action_id(namespace, key)))
+}
+
+fn parse_source_action(name: &str) -> Option<super::Action> {
+    let value = name.strip_prefix("Source.")?;
+    let (external, state) = value.split_once(':')?;
+    let external = external.parse::<u8>().ok()?;
+    let state = state.parse::<u32>().ok()?;
+    Some(super::Action::Custom(source_action_id(external, state)))
+}
+
 pub(crate) fn parse_action(name: &str) -> Option<super::Action> {
+    if let Some(action) = parse_source_action(name) {
+        return Some(action);
+    }
+    if let Some(action) = parse_custom_action(name) {
+        return Some(action);
+    }
     // Authoring exports use enum-style references (`SPECIAL_HI`) while older
     // metadata uses Rust-style CamelCase (`SpecialHi`). Normalize the former
     // directly; inserting separators before every uppercase character would
@@ -1587,8 +2127,8 @@ pub(crate) fn parse_action(name: &str) -> Option<super::Action> {
 
 #[cfg(test)]
 mod action_name_tests {
-    use super::parse_action;
-    use crate::game::Action;
+    use super::{custom_action_id, parse_action, source_action_id};
+    use crate::game::{Action, CustomActionId};
 
     #[test]
     fn appeal_acronym_spellings_round_trip() {
@@ -1598,6 +2138,80 @@ mod action_name_tests {
         for spelling in ["appeal_sl", "APPEAL_SL", "AppealSL", "appeal_s_l"] {
             assert_eq!(parse_action(spelling), Some(Action::AppealSL), "{spelling}");
         }
+    }
+
+    #[test]
+    fn custom_action_ids_are_stable_and_qualified() {
+        let first = custom_action_id("fighter.training", "special.phase_a");
+        assert_eq!(
+            first,
+            custom_action_id("fighter.training", "special.phase_a")
+        );
+        assert_ne!(first, custom_action_id("fighter.other", "special.phase_a"));
+        assert_eq!(
+            parse_action("Custom.fighter.training:special.phase_a"),
+            Some(Action::Custom(first))
+        );
+        assert_eq!(parse_action("Custom.unqualified"), None);
+    }
+
+    #[test]
+    fn custom_action_serde_round_trip_is_checkpoint_safe() {
+        let action = Action::Custom(CustomActionId::new(0xfeed_beef));
+        let bytes = serde_json::to_vec(&action).unwrap();
+        assert_eq!(serde_json::from_slice::<Action>(&bytes).unwrap(), action);
+    }
+
+    #[test]
+    fn source_action_ids_are_stable_and_roster_scoped() {
+        let donkey = source_action_id(1, 381);
+        assert_eq!(donkey, source_action_id(1, 381));
+        assert_ne!(donkey, source_action_id(15, 381));
+        assert_eq!(parse_action("Source.1:381"), Some(Action::Custom(donkey)));
+        assert_eq!(
+            parse_action("Source.15:381"),
+            Some(Action::Custom(source_action_id(15, 381)))
+        );
+        assert_eq!(parse_action("Source.1"), None);
+    }
+}
+
+#[cfg(test)]
+mod dispatch_guard_tests {
+    use super::{HitPatch, HitView, LocalState, neutral_script_result};
+    use crate::game::script::Hook;
+    use crate::game::script::callback_routing::{CallbackSelector, matches};
+
+    #[test]
+    fn nonmatching_selector_is_a_neutral_transaction_with_baseline() {
+        let context = serde_json::json!({
+            "event": {"kind": "before_hit", "action": "Action.Wait"}
+        });
+        let selector = CallbackSelector {
+            action: Some(crate::game::Action::SpecialNStart),
+            ..CallbackSelector::default()
+        };
+        assert!(!matches(Hook::BeforeHit, &selector, &context, None, None));
+
+        let persistent =
+            LocalState::from([(String::from("charge"), super::LocalValue::Integer(3))]);
+        let action_state =
+            LocalState::from([(String::from("armed"), super::LocalValue::Bool(true))]);
+        let baseline = HitPatch {
+            cancelled: true,
+            damage: 7.0,
+            ..HitPatch::default()
+        };
+        let result = neutral_script_result(
+            Some(&HitView::default()),
+            Some(&baseline),
+            &persistent,
+            &action_state,
+        );
+        assert_eq!(result.locals, persistent);
+        assert_eq!(result.action_state, action_state);
+        assert_eq!(result.hit, Some(baseline));
+        assert!(result.commands.is_empty());
     }
 }
 
@@ -1618,18 +2232,23 @@ mod combat_resource_tests {
         .expect("integration fixture decodes");
         data.fighters[0].specials = Some(Specials {
             character: "captain-falcon".into(),
-            resources: Resources::new(BTreeMap::from([(
-                "side".into(),
-                serde_json::json!({
-                    "attributes": {
-                        "specials_gr_vel_x": 0.75,
-                        "specials_grav": 0.1,
-                        "specials_terminal_vel": 2.0,
-                        "specials_miss_landing_lag": 0.0,
-                        "specials_hit_landing_lag": 0.0,
-                    },
-                }),
-            ), (
+            special_attributes: None,
+            animations: None,
+            articles: None,
+            resources: Resources::new(BTreeMap::from([
+                (
+                    "side".into(),
+                    serde_json::json!({
+                        "attributes": {
+                            "specials_gr_vel_x": 0.75,
+                            "specials_grav": 0.1,
+                            "specials_terminal_vel": 2.0,
+                            "specials_miss_landing_lag": 0.0,
+                            "specials_hit_landing_lag": 0.0,
+                        },
+                    }),
+                ),
+                (
                     "up".into(),
                     serde_json::json!({
                         "capture": {
@@ -1661,11 +2280,9 @@ mod combat_resource_tests {
                 .expect("resource fixture builds"),
         );
         let assets = AssetStore::builtins();
-        let program = Program::new_registered(
-            include_str!("../../scripts/fighters/captain.py"),
-            &assets,
-        )
-        .expect("Captain source and registered shared assets compile");
+        let program =
+            Program::new_registered(include_str!("../../scripts/fighters/captain.py"), &assets)
+                .expect("Captain source and registered shared assets compile");
         let persistent = LocalState::new();
         let action_state = LocalState::new();
         let fighter = FighterView {

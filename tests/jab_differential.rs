@@ -10,7 +10,9 @@
 #![allow(unsafe_code)]
 
 use proptest::prelude::*;
-use skirmish::fighter::jab::{Stage, buffer_follow_up, decay, loop_check, rapid_count, wait_press};
+use skirmish::fighter::jab::{
+    Stage, buffer_follow_up, decay_window, loop_check, rapid_count, wait_press,
+};
 
 const WAIT: i32 = 14;
 const FIRST: i32 = 44;
@@ -106,14 +108,14 @@ fn enter_wait(state: &mut Local) {
 /// that selects no stage still decays, matching the pinned fallthrough.
 fn wait_dispatch(state: &mut Local, jab2: f32, jab3: f32, pressed: bool) {
     if !pressed {
-        decay(&mut state.window);
+        decay_window(&mut state.window);
         return;
     }
     match wait_press(state.window, state.follow_up, state.last) {
         Some(Stage::First) => enter_first(state, jab2),
         Some(Stage::Second) => enter_second(state, jab3),
         Some(Stage::Third) => enter_third(state),
-        None => decay(&mut state.window),
+        None => decay_window(&mut state.window),
     }
 }
 

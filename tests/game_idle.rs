@@ -14,11 +14,7 @@ use skirmish::{
     compat::math::random::HsdRng,
     fighter::idle::pick,
     fighter::idle::{IdleAnimations, IdleEntry},
-    game::{
-        Action, Controller, Match, State,
-        data::MatchData,
-        death::Kind,
-    },
+    game::{Action, Controller, Match, State, data::MatchData, flow::death::Kind},
 };
 
 const IDLE: [Controller; 2] = [Controller {

@@ -2,7 +2,7 @@
 
 use skirmish::game::{
     data::MatchData,
-    death::{Rules, ScreenRules, StarRules},
+    flow::death::{Rules, ScreenRules, StarRules},
 };
 
 pub fn profile(mut data: MatchData) -> MatchData {

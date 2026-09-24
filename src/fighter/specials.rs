@@ -115,7 +115,11 @@ fn command_trace_delta(
     let mut next = [None; 4];
     let mut events = Vec::new();
     for (index, value) in row.iter().copied().enumerate() {
-        next[index] = value;
+        // A nullable row means no SetCmdVar command at this frame. Native
+        // command variables persist until another command writes the slot;
+        // forward-fill the source cursor so callback consumption cannot make
+        // an absent row look like a native clear.
+        next[index] = value.or(previous[index]);
         if let Some(value) = value
             && previous[index] != Some(value)
         {
@@ -211,42 +215,84 @@ pub(crate) fn sample_command_trace(
     Ok(())
 }
 
-#[cfg(test)]
-mod command_trace_tests {
-    use super::command_trace_delta;
-
-    #[test]
-    fn emits_source_writes_without_rearming_from_consumed_state() {
-        let row = [Some(1), None, None, None];
-        let (source, events) = command_trace_delta([None; 4], &row);
-        assert_eq!(events, vec![(0, 1)]);
-
-        // The callback may consume command 0 in fighter state; source history
-        // remains the authored value, so an unchanged snapshot emits nothing.
-        let (source, events) = command_trace_delta(source, &row);
-        assert_eq!(source, [Some(1), None, None, None]);
-        assert!(events.is_empty());
-
-        let row = [None; 4];
-        let (source, events) = command_trace_delta(source, &row);
-        assert_eq!(source, [None; 4]);
-        assert!(events.is_empty());
-
-        let row = [Some(1), None, None, None];
-        let (_, events) = command_trace_delta(source, &row);
-        assert_eq!(events, vec![(0, 1)]);
+/// Deliver rising bits from the native per-frame animation-event sidecar.
+/// The exporter stores cumulative native flags, so a set bit is a source edge,
+/// not a per-frame deadline. A generation/sample cursor makes repeated
+/// snapshots idempotent and lets same-action re-entry fire again.
+pub(crate) fn sample_animation_event_masks(
+    f: &mut Fighter,
+    data: &FighterData,
+    rules: &MatchRules,
+) -> Result<(), Error> {
+    let owner = f
+        .script_events
+        .active_move
+        .filter(|owner| owner.matches(f.action, f.script_events.action_generation))
+        .map(|owner| owner.behavior_index);
+    let Some(cache) = data.script_resources.get() else {
+        return Ok(());
+    };
+    let generation = f.script_events.action_generation;
+    let action = f.action;
+    let mask = cache
+        .animation_event_masks(owner, action)
+        .and_then(|rows| rows.get(action_frame_index(f.action_frame)))
+        .copied()
+        .unwrap_or(0);
+    let new_bits = animation_event_delta(
+        &mut f.script_events,
+        generation,
+        action,
+        f.action_frame,
+        mask,
+    );
+    if new_bits == 0 {
+        return Ok(());
     }
-
-    #[test]
-    fn repeated_same_value_rows_are_snapshots_not_four_callbacks() {
-        let values = [None, None, Some(1), None];
-        let (source, first) = command_trace_delta([None; 4], &values);
-        let (source, second) = command_trace_delta(source, &values);
-        let (_, third) = command_trace_delta(source, &values);
-        assert_eq!(first, vec![(2, 1)]);
-        assert!(second.is_empty());
-        assert!(third.is_empty());
+    for event_index in 0..u8::BITS as u8 {
+        let bit = 1u8 << event_index;
+        if new_bits & bit == 0 {
+            continue;
+        }
+        let context = json!({
+            "event": {
+                "kind": Hook::AnimationEvent.name(),
+                "event_id": event_index,
+                "frame": f.action_frame,
+            }
+        });
+        invoke(Hook::AnimationEvent, f, data, Some(rules), context, None)?;
+        if f.action != action || f.script_events.action_generation != generation {
+            break;
+        }
     }
+    Ok(())
+}
+
+fn animation_event_delta(
+    state: &mut crate::game::script::events::NativeEventState,
+    generation: crate::game::script::scheduler::ActionGeneration,
+    action: crate::game::Action,
+    frame: u32,
+    mask: u8,
+) -> u8 {
+    let sample = (generation, action, frame);
+    if state.animation_event_sample == Some(sample) {
+        return 0;
+    }
+    if state.animation_event_generation != Some(generation) {
+        state.animation_event_generation = Some(generation);
+        state.animation_event_seen_mask = 0;
+    }
+    let new_bits = mask & !state.animation_event_seen_mask;
+    state.animation_event_seen_mask = mask;
+    state.animation_event_sample = Some(sample);
+    new_bits
+}
+
+#[inline]
+fn action_frame_index(frame: u32) -> usize {
+    usize::try_from(frame).unwrap_or(usize::MAX)
 }
 
 fn motion_cache(
@@ -299,14 +345,31 @@ fn current_action_command(f: &Fighter) -> [i64; crate::game::script::motion::COM
         {
             let mut command = [0; crate::game::script::motion::COMMAND_SLOTS];
             for (slot, value) in command.iter_mut().zip(values) {
-                *slot = match value {
-                    crate::game::script::LocalValue::Integer(value) => *value,
-                    _ => 0,
-                };
+                *slot = command_value(value);
             }
             command
         }
         _ => [0; crate::game::script::motion::COMMAND_SLOTS],
+    }
+}
+
+/// Command variables are native integers, but a host snapshot can carry an
+/// integral value through the generic numeric representation. Preserve that
+/// value instead of silently turning it into zero before command-sensitive
+/// Fox/Falco aerial motion runs.
+#[inline]
+fn command_value(value: &crate::game::script::LocalValue) -> i64 {
+    match value {
+        crate::game::script::LocalValue::Integer(value) => *value,
+        crate::game::script::LocalValue::Number(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value <= i64::MAX as f64 =>
+        {
+            *value as i64
+        }
+        _ => 0,
     }
 }
 
@@ -496,6 +559,7 @@ pub(crate) fn update_animation(
         return Ok(());
     }
     sample_command_trace(f, data, rules)?;
+    sample_animation_event_masks(f, data, rules)?;
     // Animation policy is an edge event.  Special action descriptors carry
     // the immutable attack frame table used by the native animation owner;
     // dispatch exactly when that phase reaches its terminal frame.  Using
@@ -504,13 +568,12 @@ pub(crate) fn update_animation(
     let Some(animation) = attack(f.action, data) else {
         return Ok(());
     };
-    if animation_loop(f.action, data) {
-        // A looping action has no terminal animation edge. Its deadline or
-        // action policy owns exit while the native action frame continues
-        // advancing, so this hook must never fire once per cycle.
-        return Ok(());
-    }
-    if f.action_frame as usize != animation.frames.len() || !f.script_events.animation_due() {
+    if !animation_end_due(
+        f.action_frame,
+        animation.frames.len(),
+        animation_loop(f.action, data),
+        f.script_events.animation_due(),
+    ) {
         return Ok(());
     }
     let generation = f.script_events.action_generation;
@@ -538,6 +601,18 @@ pub(crate) fn update_animation(
         // generation, so retain the captured generation as the delivered one.
         f.script_events.animation_delivered_generation = Some(generation);
     })
+}
+
+/// A terminal animation edge exists only for a non-looping, non-empty
+/// executable animation.  The `>=` comparison deliberately tolerates a
+/// retained action frame on entry: a custom phase can inherit a frame from
+/// its predecessor without losing its one terminal notification.
+#[inline]
+fn animation_end_due(frame: u32, length: usize, looping: bool, generation_due: bool) -> bool {
+    !looping
+        && length != 0
+        && usize::try_from(frame).is_ok_and(|frame| frame >= length)
+        && generation_due
 }
 pub(crate) fn ground_target_velocity(
     f: &mut Fighter,
@@ -888,6 +963,113 @@ pub(crate) fn emit_projectiles(
     state: &mut game::State,
 ) -> Result<(), Error> {
     for player in 0..state.fighters.len() {
+        let article_spawns = std::mem::take(&mut state.fighters[player].pending_article_spawns);
+        if !article_spawns.is_empty() {
+            let cache = data.fighters[player]
+                .script_resources
+                .get()
+                .ok_or_else(|| Error::Data("article resource cache is unavailable".into()))?;
+            for item in article_spawns {
+                let article = cache.article(item.article_id).ok_or_else(|| {
+                    Error::Data(format!("article {:?} is unavailable", item.article_id))
+                })?;
+                let (kind, behavior, angle, speed, lifetime, hitboxes, move_id, launch_facing) =
+                    match &article.behavior {
+                        crate::game::script::lifecycle_resources::ArticleBehavior::Ray {
+                            kind,
+                            lifetime,
+                            hitboxes,
+                            move_id,
+                        } => {
+                            let crate::game::projectile::ArticleLaunch::Explicit { angle, speed } =
+                                item.launch
+                            else {
+                                return Err(Error::Data(
+                                    "ray article requires an explicit launch".into(),
+                                ));
+                            };
+                            (
+                                *kind,
+                                crate::game::projectile::ProjectileBehavior::Ray,
+                                angle,
+                                speed,
+                                *lifetime,
+                                hitboxes.to_vec(),
+                                *move_id,
+                                None,
+                            )
+                        }
+                        crate::game::script::lifecycle_resources::ArticleBehavior::Gravity {
+                            speed,
+                            angle,
+                            lifetime,
+                            half_life,
+                            gravity,
+                            terminal_velocity,
+                            surface_multiplier,
+                            terrain_stop_speed,
+                            hitboxes,
+                            move_id,
+                            contact,
+                        } => {
+                            let crate::game::projectile::ArticleLaunch::Facing(facing) =
+                                item.launch
+                            else {
+                                return Err(Error::Data(
+                                    "gravity article requires a facing launch".into(),
+                                ));
+                            };
+                            (
+                                crate::game::projectile::ProjectileKind::Gravity(item.article_id),
+                                crate::game::projectile::ProjectileBehavior::Gravity(
+                                    crate::game::projectile::GravityProjectileState {
+                                        gravity: *gravity,
+                                        terminal_velocity: *terminal_velocity,
+                                        surface_multiplier: *surface_multiplier,
+                                        terrain_stop_speed: *terrain_stop_speed,
+                                        half_life: *half_life,
+                                        contact: *contact,
+                                    },
+                                ),
+                                *angle,
+                                *speed,
+                                *lifetime,
+                                hitboxes.to_vec(),
+                                *move_id,
+                                Some(if facing >= 0.0 { 1.0 } else { -1.0 }),
+                            )
+                        }
+                    };
+                let mut projectile = game::projectile::spawn(
+                    kind,
+                    behavior,
+                    player,
+                    item.position,
+                    angle,
+                    speed,
+                    lifetime,
+                    hitboxes,
+                    move_id,
+                    &mut state.attack_instances,
+                );
+                if let Some(facing) = launch_facing {
+                    // Native Mario fireballs keep the authored elevation and
+                    // mirror only their horizontal velocity component.
+                    projectile.velocity[0] *= facing;
+                    projectile.facing = if projectile.velocity[0] >= 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                }
+                let projectile_kind = projectile.kind;
+                state.projectiles.push(projectile);
+                state.events.push(game::Event::ProjectileSpawned {
+                    owner: player,
+                    projectile_kind,
+                });
+            }
+        }
         let pending = drain_pending(
             &mut state.fighters[player],
             &data.fighters[player],
@@ -896,6 +1078,7 @@ pub(crate) fn emit_projectiles(
         for item in pending {
             let projectile = game::projectile::spawn(
                 item.kind,
+                game::projectile::ProjectileBehavior::Ray,
                 player,
                 item.position,
                 item.angle,
@@ -914,4 +1097,103 @@ pub(crate) fn emit_projectiles(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod command_trace_tests {
+    use super::{animation_end_due, animation_event_delta, command_trace_delta, command_value};
+    use crate::game::script::scheduler::ActionGeneration;
+    use crate::game::{Action, script::LocalValue, script::events::NativeEventState};
+
+    #[test]
+    fn integral_numeric_command_values_reach_native_motion() {
+        assert_eq!(command_value(&LocalValue::Integer(4)), 4);
+        assert_eq!(command_value(&LocalValue::Number(4.0)), 4);
+        assert_eq!(command_value(&LocalValue::Number(4.5)), 0);
+        assert_eq!(command_value(&LocalValue::Number(f64::NAN)), 0);
+    }
+
+    #[test]
+    fn animation_end_is_one_shot_at_or_after_terminal_frame() {
+        assert!(!animation_end_due(2, 3, false, true));
+        assert!(animation_end_due(3, 3, false, true));
+        assert!(animation_end_due(4, 3, false, true));
+        assert!(!animation_end_due(3, 3, true, true));
+        assert!(!animation_end_due(3, 0, false, true));
+        assert!(!animation_end_due(3, 3, false, false));
+    }
+
+    #[test]
+    fn animation_event_mask_is_once_per_sample_and_rising_edge() {
+        let mut state = NativeEventState::default();
+        let generation = ActionGeneration::default().next().unwrap();
+        assert_eq!(
+            animation_event_delta(&mut state, generation, Action::Wait, 3, 1),
+            1
+        );
+        assert_eq!(
+            animation_event_delta(&mut state, generation, Action::Wait, 3, 1),
+            0
+        );
+        assert_eq!(
+            animation_event_delta(&mut state, generation, Action::Wait, 4, 1),
+            0
+        );
+        assert_eq!(
+            animation_event_delta(&mut state, generation, Action::Wait, 5, 0),
+            0
+        );
+        assert_eq!(
+            animation_event_delta(&mut state, generation, Action::Wait, 6, 1),
+            1
+        );
+    }
+
+    #[test]
+    fn animation_event_mask_reentry_resets_delivered_bits() {
+        let mut state = NativeEventState::default();
+        let first = ActionGeneration::default().next().unwrap();
+        let second = first.next().unwrap();
+        assert_eq!(
+            animation_event_delta(&mut state, first, Action::Wait, 3, 1),
+            1
+        );
+        assert_eq!(
+            animation_event_delta(&mut state, second, Action::Wait, 0, 1),
+            1
+        );
+    }
+
+    #[test]
+    fn emits_source_writes_without_rearming_from_consumed_state() {
+        let row = [Some(1), None, None, None];
+        let (source, events) = command_trace_delta([None; 4], &row);
+        assert_eq!(events, vec![(0, 1)]);
+
+        // The callback may consume command 0 in fighter state; source history
+        // remains the authored value, so an unchanged snapshot emits nothing.
+        let (source, events) = command_trace_delta(source, &row);
+        assert_eq!(source, [Some(1), None, None, None]);
+        assert!(events.is_empty());
+
+        let row = [None; 4];
+        let (source, events) = command_trace_delta(source, &row);
+        assert_eq!(source, [Some(1), None, None, None]);
+        assert!(events.is_empty());
+
+        let row = [Some(1), None, None, None];
+        let (_, events) = command_trace_delta(source, &row);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn repeated_same_value_rows_are_snapshots_not_four_callbacks() {
+        let values = [None, None, Some(1), None];
+        let (source, first) = command_trace_delta([None; 4], &values);
+        let (source, second) = command_trace_delta(source, &values);
+        let (_, third) = command_trace_delta(source, &values);
+        assert_eq!(first, vec![(2, 1)]);
+        assert!(second.is_empty());
+        assert!(third.is_empty());
+    }
 }

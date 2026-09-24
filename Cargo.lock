@@ -3327,6 +3327,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "skirmish-compat-math",
  "skirmish-equivalence",
  "skirmish-pon-runtime",
  "skirmish-replay",
@@ -3353,6 +3354,10 @@ dependencies = [
  "skirmish-script-runtime",
  "tempfile",
 ]
+
+[[package]]
+name = "skirmish-compat-math"
+version = "0.1.0"
 
 [[package]]
 name = "skirmish-equivalence"
@@ -3402,6 +3407,7 @@ dependencies = [
  "anyhow",
  "serde",
  "serde_json",
+ "skirmish-compat-math",
  "skirmish-pon-runtime",
  "thiserror 2.0.20",
 ]

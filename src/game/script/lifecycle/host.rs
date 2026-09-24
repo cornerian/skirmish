@@ -50,6 +50,10 @@ pub(crate) struct LifecycleHost {
     pub persistent_schema: Option<StateSchema>,
     pub action_schema: Option<StateSchema>,
     pub bone_count: Option<usize>,
+    /// The already-sampled current fighter pose.  Lifecycle callbacks are
+    /// transactional, so retaining this private snapshot cannot observe or
+    /// mutate live match state.
+    pub pose: Option<crate::collision::bones::Pose>,
 }
 
 impl LifecycleHost {
@@ -89,6 +93,7 @@ impl LifecycleHost {
             persistent_schema: None,
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
+            pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
         })
     }
 
@@ -129,6 +134,7 @@ impl LifecycleHost {
             persistent_schema: None,
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
+            pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
         }
     }
 
@@ -244,7 +250,10 @@ impl LifecycleHost {
         }
         match path {
             "fighter.action" => {
-                return Ok(NativeValue::String(format!("{:?}", self.fighter.action)));
+                return Ok(NativeValue::String(action_reference(
+                    self.fighter.action,
+                    &self.resources,
+                )));
             }
             "fighter.action_frame" => {
                 return Ok(NativeValue::Int(i64::from(self.fighter.action_frame)));
@@ -555,6 +564,20 @@ impl LifecycleHost {
                         StarError::Host("locomotion.jumps_used is out of range".into())
                     })?
             }
+            // These ages are native input latches.  They are exposed to
+            // fighter callbacks for source-style command bookkeeping, so
+            // writes must round-trip through the same transactional host.
+            "fighter.locomotion.side_special_b_age" => {
+                self.fighter.locomotion.side_special_b_age =
+                    u8_value(value, "locomotion.side_special_b_age")?
+            }
+            "fighter.locomotion.up_special_b_age" => {
+                self.fighter.locomotion.up_special_b_age =
+                    u8_value(value, "locomotion.up_special_b_age")?
+            }
+            "fighter.locomotion.tilt_y_age" => {
+                self.fighter.locomotion.tilt_y_age = u8_value(value, "locomotion.tilt_y_age")?
+            }
             "fighter.locomotion.jump_input" => {
                 self.fighter.locomotion.jump_input = match value {
                     NativeValue::String(value) => match value.to_ascii_lowercase().as_str() {
@@ -588,6 +611,90 @@ impl LifecycleHost {
 
     fn call_fighter(&mut self, path: &str, args: &[NativeValue]) -> Result<NativeValue, StarError> {
         match path {
+            "fighter.part_position" => {
+                if args.len() != 1 {
+                    return Err(StarError::Host(
+                        "part_position expects one numeric fighter-part ordinal".into(),
+                    ));
+                }
+                let part = match args[0] {
+                    NativeValue::Int(value) => usize::try_from(value).map_err(|_| {
+                        StarError::Host("fighter part ordinal must be non-negative".into())
+                    })?,
+                    _ => {
+                        return Err(StarError::Host(
+                            "fighter part ordinal must be an integer".into(),
+                        ));
+                    }
+                };
+                if self.bone_count.is_some_and(|count| part >= count) {
+                    return Err(StarError::Host(
+                        "fighter part ordinal is outside the loaded skeleton".into(),
+                    ));
+                }
+                let pose = self
+                    .pose
+                    .as_ref()
+                    .ok_or_else(|| StarError::Host("fighter pose is unavailable".into()))?;
+                let matrix = pose
+                    .world_matrix(part)
+                    .map_err(|error| StarError::Host(error.to_string()))?;
+                Ok(list(crate::collision::bones::transform_point(
+                    matrix, [0.0; 3],
+                ))?)
+            }
+            "fighter.spawn_article" => {
+                if !(3..=4).contains(&args.len()) {
+                    return Err(StarError::Host(
+                        "spawn_article expects article_id, position, and facing, or angle and speed".into(),
+                    ));
+                }
+                if self.fighter.pending_article_spawns.len()
+                    + self.fighter.pending_projectiles.len()
+                    >= crate::game::projectile::MAX_PENDING_PROJECTILES
+                {
+                    return Err(StarError::Host("article emission queue is full".into()));
+                }
+                let article_id = match args[0] {
+                    NativeValue::Int(value) => {
+                        let value = u16::try_from(value).map_err(|_| {
+                            StarError::Host("article_id must be a non-negative u16".into())
+                        })?;
+                        crate::game::script::resources::ArticleId(value)
+                    }
+                    NativeValue::String(_) => {
+                        return Err(StarError::Host(
+                            "spawn_article article_id must be numeric, not a string".into(),
+                        ));
+                    }
+                    _ => return Err(StarError::Host("article_id must be an integer".into())),
+                };
+                if self.resources.article(article_id).is_none() {
+                    return Err(StarError::Host(format!(
+                        "article {article_id:?} is unavailable or invalid"
+                    )));
+                }
+                let position = vec3(args[1].clone(), "article position")?;
+                let launch = if args.len() == 3 {
+                    crate::game::projectile::ArticleLaunch::Facing(f32_value(
+                        args[2].clone(),
+                        "article facing",
+                    )?)
+                } else {
+                    crate::game::projectile::ArticleLaunch::Explicit {
+                        angle: f32_value(args[2].clone(), "article angle")?,
+                        speed: f32_value(args[3].clone(), "article speed")?,
+                    }
+                };
+                self.fighter.pending_article_spawns.push(
+                    crate::game::projectile::PendingArticleSpawn {
+                        article_id,
+                        position,
+                        launch,
+                    },
+                );
+                Ok(NativeValue::None)
+            }
             "fighter.emit_projectile" => {
                 if args.len() != 7 {
                     return Err(StarError::Host(
@@ -595,6 +702,7 @@ impl LifecycleHost {
                     ));
                 }
                 if self.fighter.pending_projectiles.len()
+                    + self.fighter.pending_article_spawns.len()
                     >= crate::game::projectile::MAX_PENDING_PROJECTILES
                 {
                     return Err(StarError::Host("projectile emission queue is full".into()));
@@ -646,17 +754,33 @@ impl LifecycleHost {
                         ));
                     }
                 };
-                self.fighter
-                    .pending_projectiles
-                    .push(crate::game::projectile::PendingProjectile {
-                        kind,
-                        position,
-                        angle,
-                        speed,
-                        lifetime,
-                        hitboxes,
-                        move_id,
-                    });
+                if let Some(article_id) =
+                    self.resources
+                        .legacy_article(kind, hitbox_path, lifetime, move_id)
+                {
+                    self.fighter.pending_article_spawns.push(
+                        crate::game::projectile::PendingArticleSpawn {
+                            article_id,
+                            position,
+                            launch: crate::game::projectile::ArticleLaunch::Explicit {
+                                angle,
+                                speed,
+                            },
+                        },
+                    );
+                } else {
+                    self.fighter.pending_projectiles.push(
+                        crate::game::projectile::PendingProjectile {
+                            kind,
+                            position,
+                            angle,
+                            speed,
+                            lifetime,
+                            hitboxes,
+                            move_id,
+                        },
+                    );
+                }
                 Ok(NativeValue::None)
             }
             "fighter.spawn_special_effect" => {
@@ -837,6 +961,46 @@ impl LifecycleHost {
                 self.set_fighter("fighter.velocity", NativeValue::Vec2(velocity))?;
                 Ok(NativeValue::None)
             }
+            "fighter.set_motion_angle" => {
+                if args.len() != 1 {
+                    return Err(StarError::Host("set_motion_angle expects one angle".into()));
+                }
+                let angle = f32_value(args[0].clone(), "motion angle")?;
+                let cosine = crate::compat::math::trig::cosf(angle);
+                let sine = crate::compat::math::trig::sinf(angle);
+                self.fighter.script_events.motion_binding =
+                    crate::game::script::motion::MotionBinding {
+                        facing: self.fighter.facing,
+                        cosine,
+                        sine,
+                        ground_scale: 1.0,
+                    };
+                Ok(NativeValue::None)
+            }
+            "fighter.launch_from_angle" => {
+                if args.len() != 2 {
+                    return Err(StarError::Host(
+                        "launch_from_angle expects speed and angle".into(),
+                    ));
+                }
+                let speed = f32_value(args[0].clone(), "launch speed")?;
+                let angle = f32_value(args[1].clone(), "launch angle")?;
+                let cosine = crate::compat::math::trig::cosf(angle);
+                let sine = crate::compat::math::trig::sinf(angle);
+                let facing = self.fighter.facing;
+                self.fighter.script_events.motion_binding =
+                    crate::game::script::motion::MotionBinding {
+                        facing,
+                        cosine,
+                        sine,
+                        ground_scale: 1.0,
+                    };
+                self.set_fighter(
+                    "fighter.velocity",
+                    NativeValue::Vec2(source_launch_velocity(speed, cosine, sine, facing)),
+                )?;
+                Ok(NativeValue::None)
+            }
             "fighter.set_motion_binding" => {
                 let Some(NativeValue::Dict(values)) = args.first() else {
                     return Err(StarError::Host(
@@ -900,6 +1064,13 @@ impl LifecycleHost {
                         StarError::Host("enter_fall_special requires fighter data".into())
                     })?;
                 crate::game::simulation::enter(&mut self.fighter, game::Action::FallSpecial);
+                let (grounded, ground_velocity) =
+                    fall_special_ground_state(self.fighter.grounded, self.fighter.ground_velocity);
+                self.fighter.grounded = grounded;
+                self.fighter.ground_velocity = ground_velocity;
+                if let Some(movement) = &mut self.movement {
+                    movement.ground_velocity = ground_velocity;
+                }
                 self.fighter.aerial.allow_interrupt = true;
                 self.fighter.aerial.mobility = mobility;
                 self.fighter.aerial.landing_lag = lag;
@@ -928,7 +1099,8 @@ impl LifecycleHost {
                         self.fighter.action_frame as u64 >= frame_count,
                     ));
                 }
-                let action = format!("{:?}", self.fighter.action).to_ascii_lowercase();
+                let action =
+                    action_reference(self.fighter.action, &self.resources).to_ascii_lowercase();
                 let paths = [
                     action.clone(),
                     format!("attacks.{action}"),
@@ -939,6 +1111,50 @@ impl LifecycleHost {
                     frames != 0 && self.fighter.action_frame as usize >= frames
                 });
                 Ok(NativeValue::Bool(finished))
+            }
+            "fighter.has_complete_animation" => {
+                if args.len() != 1 {
+                    return Err(StarError::Host(
+                        "has_complete_animation expects one motion state id".into(),
+                    ));
+                }
+                let state_id = match args[0] {
+                    NativeValue::Int(value) => u32::try_from(value).map_err(|_| {
+                        StarError::Host("motion state id must be a non-negative integer".into())
+                    })?,
+                    _ => {
+                        return Err(StarError::Host(
+                            "motion state id must be a non-negative integer".into(),
+                        ));
+                    }
+                };
+                Ok(NativeValue::Bool(
+                    self.resources.has_complete_animation(state_id),
+                ))
+            }
+            "fighter.special_attribute" => {
+                if args.len() != 1 {
+                    return Err(StarError::Host(
+                        "special_attribute expects one typed attribute id".into(),
+                    ));
+                }
+                let packed = match args[0] {
+                    NativeValue::Int(value) => u32::try_from(value).map_err(|_| {
+                        StarError::Host(
+                            "special attribute id must be a non-negative integer".into(),
+                        )
+                    })?,
+                    _ => {
+                        return Err(StarError::Host(
+                            "special attribute id must be an integer".into(),
+                        ));
+                    }
+                };
+                let layout = u8::try_from(packed >> 16).unwrap_or(0);
+                let field_id = packed as u16;
+                self.resources
+                    .special_attribute(layout, field_id)
+                    .map_or(Ok(NativeValue::None), |value| Ok(NativeValue::F32(value)))
             }
             _ => Err(StarError::Host(format!("unknown fighter method `{path}`"))),
         }
@@ -968,6 +1184,55 @@ impl LifecycleHost {
             movement.floor_normal = self.fighter.floor_normal;
         }
     }
+}
+
+fn action_reference(
+    action: crate::game::Action,
+    resources: &super::lifecycle_resources::ResourceCache,
+) -> String {
+    if let Some(program) = resources.program() {
+        if let Some(definition) = program.metadata().action(action)
+            && let Some(reference) = definition.action.as_deref()
+        {
+            return reference
+                .strip_prefix("Action.")
+                .unwrap_or(reference)
+                .to_owned();
+        }
+        if let Some(reference) = linked_action_reference(&program, action) {
+            return reference;
+        }
+    }
+    if let crate::game::Action::Custom(id) = action {
+        // A custom action without a linked definition is invalid at resource
+        // registration, but keep its wire shape deterministic for diagnostics.
+        return format!("Custom.unlinked:{:016x}", id.get());
+    }
+    format!("{action:?}")
+}
+
+fn linked_action_reference(
+    program: &super::Program,
+    action: crate::game::Action,
+) -> Option<String> {
+    let candidate = |name: &str, definition: &super::definition::ActionDefinition| {
+        let reference = definition.action.as_deref().unwrap_or(name);
+        let reference = reference.strip_prefix("Action.").unwrap_or(reference);
+        (crate::game::script::parse_action(reference) == Some(action)).then(|| reference.to_owned())
+    };
+    program
+        .metadata()
+        .actions
+        .iter()
+        .find_map(|(name, definition)| candidate(name, definition))
+        .or_else(|| {
+            program.metadata().behaviors.iter().find_map(|behavior| {
+                behavior
+                    .actions
+                    .iter()
+                    .find_map(|(name, definition)| candidate(name, definition))
+            })
+        })
 }
 
 impl NativeHost for LifecycleHost {
@@ -1025,6 +1290,41 @@ impl NativeHost for LifecycleHost {
         }
         let mut positional = args.to_vec();
         match path {
+            "fighter.spawn_article" => {
+                const NAMES: [&str; 5] = ["article_id", "position", "facing", "angle", "speed"];
+                for name in named.keys() {
+                    if !NAMES.contains(&name.as_str()) {
+                        return Err(StarError::Host(format!(
+                            "unknown spawn_article argument `{name}`"
+                        )));
+                    }
+                }
+                if !args.is_empty() {
+                    return Err(StarError::Host(
+                        "spawn_article expects named arguments".into(),
+                    ));
+                }
+                let compact = ["article_id", "position", "facing"];
+                let explicit = ["article_id", "position", "angle", "speed"];
+                let names = if named.keys().all(|name| compact.contains(&name.as_str()))
+                    && compact.iter().all(|name| named.contains_key(*name))
+                {
+                    &compact[..]
+                } else if explicit.iter().all(|name| named.contains_key(*name))
+                    && named.keys().all(|name| explicit.contains(&name.as_str()))
+                {
+                    &explicit[..]
+                } else {
+                    return Err(StarError::Host(
+                        "spawn_article requires article_id, position, facing or angle and speed"
+                            .into(),
+                    ));
+                };
+                positional = names
+                    .iter()
+                    .map(|name| named.get(*name).cloned().expect("checked above"))
+                    .collect();
+            }
             "fighter.change_action" => {
                 for name in named.keys() {
                     if !matches!(
@@ -1493,6 +1793,17 @@ fn action_state_after_change(
     state
 }
 
+/// `ftCo_80096900` calls `ftCommon_8007D60C` when FallSpecial is entered from
+/// the ground; that native branch clears the grounded flag and gr_vel. Air
+/// entries retain their existing ground velocity bookkeeping.
+fn fall_special_ground_state(grounded: bool, ground_velocity: f32) -> (bool, f32) {
+    if grounded {
+        (false, 0.0)
+    } else {
+        (false, ground_velocity)
+    }
+}
+
 fn state_get(path: &str, root: &str, state: &LocalState) -> Option<NativeValue> {
     let key = path.strip_prefix(&format!("{root}."))?;
     state.get(key).map(local_to_native)
@@ -1590,6 +1901,13 @@ fn action_arg(value: Option<&NativeValue>) -> Result<String, StarError> {
         _ => Err(StarError::Host("action must be a string".into())),
     }
 }
+
+/// The source launch expression is `facing * (speed * cosf(angle))`.
+/// Keeping this grouping explicit matters because these are binary32 values.
+fn source_launch_velocity(speed: f32, cosine: f32, sine: f32, facing: f32) -> [f32; 2] {
+    [facing * (speed * cosine), speed * sine]
+}
+
 fn f32_value(value: NativeValue, name: &str) -> Result<f32, StarError> {
     let value = match value {
         NativeValue::F32(x) => x,
@@ -1603,6 +1921,10 @@ fn int_value(value: NativeValue, name: &str) -> Result<i64, StarError> {
         NativeValue::Int(x) => Ok(x),
         _ => Err(StarError::Host(format!("{name} must be an integer"))),
     }
+}
+fn u8_value(value: NativeValue, name: &str) -> Result<u8, StarError> {
+    u8::try_from(int_value(value, name)?)
+        .map_err(|_| StarError::Host(format!("{name} is out of range")))
 }
 fn bool_value(value: NativeValue, name: &str) -> Result<bool, StarError> {
     match value {
@@ -1902,6 +2224,36 @@ mod tests {
             NativeValue::F32(1.5)
         );
         assert!(project_parameter_path(&parameters, "missing").is_none());
+    }
+
+    #[test]
+    fn launch_velocity_keeps_source_binary32_grouping() {
+        let speed = 44_126.313_f32;
+        let cosine = 0.15130243_f32;
+        let sine = 0.25_f32;
+        let facing = 14338.76_f32;
+        let velocity = super::source_launch_velocity(speed, cosine, sine, facing);
+        assert_eq!(velocity[0].to_bits(), 95731552.0_f32.to_bits());
+        assert_ne!(
+            velocity[0].to_bits(),
+            (speed * (facing * cosine)).to_bits(),
+            "the associative rewrite must remain observably different"
+        );
+        assert_eq!(velocity[1], speed * sine);
+    }
+
+    #[test]
+    fn native_input_age_writes_accept_u8_and_reject_signed_overflow() {
+        assert_eq!(super::u8_value(NativeValue::Int(254), "age").unwrap(), 254);
+        for value in [NativeValue::Int(-1), NativeValue::Int(256)] {
+            assert!(super::u8_value(value, "age").is_err());
+        }
+    }
+
+    #[test]
+    fn fall_special_clears_ground_velocity_only_for_ground_entry() {
+        assert_eq!(super::fall_special_ground_state(true, 2.5), (false, 0.0));
+        assert_eq!(super::fall_special_ground_state(false, 2.5), (false, 2.5));
     }
 
     #[test]

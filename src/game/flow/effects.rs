@@ -44,6 +44,31 @@ impl EffectState {
     pub fn clear(&mut self) {
         self.owned.clear();
     }
+
+    /// Remove one effect by its stable ownership handle.
+    ///
+    /// Source callbacks often tear down one fighter-owned effect while other
+    /// effects remain active.  Retaining vector order keeps checkpoints and
+    /// rollback serialization deterministic; IDs remain monotonic so a stale
+    /// handle can never refer to a later effect.
+    pub fn despawn(&mut self, id: u32) -> bool {
+        let Some(index) = self.owned.iter().position(|effect| effect.id == id) else {
+            return false;
+        };
+        self.owned.remove(index);
+        true
+    }
+
+    /// Remove every instance of one resource while retaining other effects.
+    ///
+    /// This models source cleanup paths that destroy all instances of one
+    /// effect family before replacing it, without requiring callers to retain
+    /// every individual handle.
+    pub fn clear_resource(&mut self, resource: &str) -> usize {
+        let before = self.owned.len();
+        self.owned.retain(|effect| effect.resource != resource);
+        before - self.owned.len()
+    }
 }
 
 impl OwnedEffect {
@@ -79,5 +104,49 @@ mod tests {
             state.spawn("effects/test".into(), None),
             Err("too many owned effects")
         );
+    }
+
+    #[test]
+    fn despawn_removes_only_the_requested_effect_and_keeps_handles_monotonic() {
+        let mut state = EffectState::default();
+        let first = state
+            .spawn("effects/pk-thunder-trail".into(), Some(1))
+            .unwrap();
+        let second = state
+            .spawn("effects/pk-thunder-gfx".into(), Some(2))
+            .unwrap();
+        let third = state.spawn("effects/other".into(), None).unwrap();
+
+        assert!(state.despawn(second));
+        assert!(!state.despawn(second));
+        assert_eq!(
+            state
+                .owned
+                .iter()
+                .map(|effect| effect.id)
+                .collect::<Vec<_>>(),
+            vec![first, third]
+        );
+        assert_eq!(state.spawn("effects/new".into(), None), Ok(4));
+    }
+
+    #[test]
+    fn clear_resource_removes_all_matching_instances_only() {
+        let mut state = EffectState::default();
+        state
+            .spawn("effects/pk-thunder-gfx".into(), Some(1))
+            .unwrap();
+        state
+            .spawn("effects/pk-thunder-trail".into(), Some(2))
+            .unwrap();
+        state
+            .spawn("effects/pk-thunder-gfx".into(), Some(3))
+            .unwrap();
+
+        assert_eq!(state.clear_resource("effects/pk-thunder-gfx"), 2);
+        assert_eq!(state.owned.len(), 1);
+        assert_eq!(state.owned[0].resource, "effects/pk-thunder-trail");
+        assert_eq!(state.clear_resource("effects/missing"), 0);
+        assert_eq!(state.spawn("effects/replacement".into(), None), Ok(4));
     }
 }

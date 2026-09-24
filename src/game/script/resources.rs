@@ -1,6 +1,6 @@
 //! Generic, dotted-path lookup for character resources.
 
-use crate::game::data::{Attack, HitElement};
+use crate::game::data::{Attack, HitElement, Hitbox};
 use crate::game::grab::Attachment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -115,11 +115,252 @@ impl PartialEq for Resources {
     }
 }
 
+/// Stable native article identity.  Article ids are the game's numeric item
+/// kinds; keeping them typed prevents script callbacks from selecting an
+/// article through an ad-hoc string name.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct ArticleId(pub u16);
+
+impl ArticleId {
+    pub const MARIO_FIRE: Self = Self(48);
+    pub const DR_MARIO_VITAMIN: Self = Self(49);
+    pub const FOX_LASER: Self = Self(54);
+    pub const FALCO_LASER: Self = Self(55);
+    pub const SAMUS_CHARGE: Self = Self(94);
+    pub const SAMUS_MISSILE: Self = Self(95);
+    pub const LUIGI_FIRE: Self = Self(105);
+    pub const GAMEWATCH_GREENHOUSE: Self = Self(114);
+    pub const GAMEWATCH_MANHOLE: Self = Self(115);
+    pub const GAMEWATCH_FIRE: Self = Self(116);
+    pub const GAMEWATCH_PARACHUTE: Self = Self(117);
+    pub const GAMEWATCH_TURTLE: Self = Self(118);
+    pub const GAMEWATCH_BREATH: Self = Self(119);
+    pub const GAMEWATCH_JUDGE: Self = Self(120);
+    pub const GAMEWATCH_PANIC: Self = Self(121);
+    pub const GAMEWATCH_CHEF: Self = Self(122);
+    pub const GAMEWATCH_RESCUE: Self = Self(124);
+
+    /// Character article kinds currently exposed by native fighter data.
+    /// These are the pinned `ItemKind` ordinals from `melee/it/forward.h`.
+    pub const FIGHTER_ARTICLE_IDS: [Self; 17] = [
+        Self::MARIO_FIRE,
+        Self::DR_MARIO_VITAMIN,
+        Self::FOX_LASER,
+        Self::FALCO_LASER,
+        Self::SAMUS_CHARGE,
+        Self::SAMUS_MISSILE,
+        Self::LUIGI_FIRE,
+        Self::GAMEWATCH_GREENHOUSE,
+        Self::GAMEWATCH_MANHOLE,
+        Self::GAMEWATCH_FIRE,
+        Self::GAMEWATCH_PARACHUTE,
+        Self::GAMEWATCH_TURTLE,
+        Self::GAMEWATCH_BREATH,
+        Self::GAMEWATCH_JUDGE,
+        Self::GAMEWATCH_PANIC,
+        Self::GAMEWATCH_CHEF,
+        Self::GAMEWATCH_RESCUE,
+    ];
+}
+
+/// The small set of article families currently consumed by the simulation.
+/// This is deliberately a discriminated resource, not a generic article VM:
+/// each family is linked to one native engine path at registration time.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ArticleResource {
+    Ray {
+        lifetime: f32,
+        hitboxes: Vec<Hitbox>,
+        move_id: u16,
+    },
+    GravityProjectile {
+        speed: f32,
+        angle: f32,
+        lifetime: f32,
+        half_life: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        surface_multiplier: f32,
+        terrain_stop_speed: f32,
+        hitboxes: Vec<Hitbox>,
+        move_id: u16,
+        contact: ProjectileContactPolicy,
+    },
+}
+
+/// Article-owned contact behavior.  These are closed native policies rather
+/// than script-selected strings; unsupported policy combinations are rejected
+/// at resource registration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectileReflection {
+    None,
+    ReverseOwner,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectileShield {
+    Despawn,
+    Bounce,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectilePersistence {
+    Despawn,
+    Persist,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectileContactPolicy {
+    pub reflection: ProjectileReflection,
+    pub shield: ProjectileShield,
+    pub persistence: ProjectilePersistence,
+}
+
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub struct Specials {
     pub character: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub special_attributes: Option<SpecialAttributes>,
+    /// Native animation resources keyed by their numeric animation id.  This
+    /// is optional so older packs retain their legacy resource shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animations: Option<BTreeMap<u32, NativeAnimationResource>>,
+    /// Native article resources keyed by numeric article kind.  JSON object
+    /// keys are necessarily strings on the wire, but deserialize directly to
+    /// `ArticleId` so scripts and runtime code never carry article names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub articles: Option<BTreeMap<ArticleId, ArticleResource>>,
     #[serde(flatten)]
     pub resources: Resources,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpecialAttributes {
+    pub layout: u8,
+    words: Vec<SpecialAttributeWord>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SpecialAttributeWord {
+    field_id: u16,
+    value: f32,
+}
+
+impl SpecialAttributes {
+    pub fn get(&self, field_id: u16) -> Option<f32> {
+        self.words
+            .binary_search_by_key(&field_id, |word| word.field_id)
+            .ok()
+            .map(|index| self.words[index].value)
+    }
+}
+
+impl Serialize for SpecialAttributes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut output = serializer.serialize_struct("SpecialAttributes", 2)?;
+        output.serialize_field("layout", &self.layout)?;
+        let words: Vec<[u32; 2]> = self
+            .words
+            .iter()
+            .map(|word| [u32::from(word.field_id), word.value.to_bits()])
+            .collect();
+        output.serialize_field("words", &words)?;
+        output.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SpecialAttributes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            layout: u8,
+            words: Vec<[u64; 2]>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if !(1..=5).contains(&wire.layout) {
+            return Err(serde::de::Error::custom("unknown special attribute layout"));
+        }
+        let mut words = Vec::with_capacity(wire.words.len());
+        for [field_id, raw] in wire.words {
+            let field_id = u16::try_from(field_id).map_err(|_| {
+                serde::de::Error::custom("special attribute field id is out of range")
+            })?;
+            let raw = u32::try_from(raw)
+                .map_err(|_| serde::de::Error::custom("special attribute word is out of range"))?;
+            let value = f32::from_bits(raw);
+            if !value.is_finite() {
+                return Err(serde::de::Error::custom("special attribute must be finite"));
+            }
+            if words
+                .last()
+                .is_some_and(|word: &SpecialAttributeWord| word.field_id >= field_id)
+            {
+                return Err(serde::de::Error::custom(
+                    "special attribute field ids must be strictly increasing",
+                ));
+            }
+            words.push(SpecialAttributeWord { field_id, value });
+        }
+        Ok(Self {
+            layout: wire.layout,
+            words,
+        })
+    }
+}
+
+/// Resource status emitted by the native animation exporter.  Pose-only and
+/// unsupported entries are deliberately not attacks: gameplay may use their
+/// metadata for diagnostics, but it must never invent hitboxes or a terminal
+/// animation edge from them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimationResourceStatus {
+    Complete,
+    PoseOnly,
+    Unsupported,
+}
+
+/// One deduplicated native animation resource.  `resource` remains a JSON
+/// value because the exporter uses the same wrapper for complete attack
+/// samples and pose-only samples; complete entries are decoded once into the
+/// private attack cache when `Specials` is loaded.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeAnimationResource {
+    pub animation_id: u32,
+    pub state_ids: Vec<u32>,
+    pub status: AnimationResourceStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip)]
+    attack: Option<Attack>,
+}
+
+impl PartialEq for NativeAnimationResource {
+    fn eq(&self, other: &Self) -> bool {
+        self.animation_id == other.animation_id
+            && self.state_ids == other.state_ids
+            && self.status == other.status
+            && self.resource == other.resource
+            && self.reason == other.reason
+    }
 }
 
 /// Resource-backed semantic description of Falcon Dive's dedicated capture.
@@ -183,11 +424,33 @@ impl<'de> Deserialize<'de> for Specials {
             }
             None => return Err(serde::de::Error::missing_field("character")),
         };
+        let animations = fields
+            .remove("animations")
+            .map(serde_json::from_value::<BTreeMap<u32, NativeAnimationResource>>)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        let articles = fields
+            .remove("articles")
+            .map(serde_json::from_value::<BTreeMap<ArticleId, ArticleResource>>)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        let special_attributes = fields
+            .remove("special_attributes")
+            .map(serde_json::from_value::<SpecialAttributes>)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
         let resources = Resources::new(fields).map_err(serde::de::Error::custom)?;
-        Ok(Self {
+        let mut result = Self {
             character,
+            special_attributes,
+            animations,
+            articles,
             resources,
-        })
+        };
+        result
+            .prepare_animations()
+            .map_err(serde::de::Error::custom)?;
+        Ok(result)
     }
 }
 
@@ -198,11 +461,334 @@ impl Specials {
     pub fn attack(&self, path: &str) -> Option<&Attack> {
         self.resources.attack(path)
     }
+
+    /// Return a complete native animation attack, if one was exported for
+    /// `animation_id`.  Pose-only and unsupported entries intentionally return
+    /// no attack resource.
+    pub(crate) fn animation_attack(&self, animation_id: u32) -> Option<&Attack> {
+        self.animations
+            .as_ref()?
+            .get(&animation_id)
+            .and_then(|resource| resource.attack.as_ref())
+    }
+
+    pub(crate) fn complete_animation_attacks(&self) -> impl Iterator<Item = (u32, &Attack)> {
+        self.animations
+            .iter()
+            .flat_map(|animations| animations.iter())
+            .filter_map(|(id, resource)| resource.attack.as_ref().map(|attack| (*id, attack)))
+    }
+
+    /// Decode complete native animation resources once at the resource
+    /// boundary.  Runtime pose and collision paths then borrow the typed
+    /// attack without reparsing JSON.
+    pub(crate) fn prepare_animations(&mut self) -> Result<(), String> {
+        let Some(animations) = self.animations.as_mut() else {
+            return Ok(());
+        };
+        for (key, resource) in animations {
+            if resource.animation_id != *key {
+                return Err(format!(
+                    "animation resource key {key} disagrees with animation_id {}",
+                    resource.animation_id
+                ));
+            }
+            if resource.state_ids.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(format!(
+                    "animation {key} state_ids must be strictly increasing"
+                ));
+            }
+            resource.attack = match resource.status {
+                AnimationResourceStatus::Complete => {
+                    let value = resource
+                        .resource
+                        .as_ref()
+                        .ok_or_else(|| format!("complete animation {key} is missing resource"))?;
+                    Some(serde_json::from_value(value.clone()).map_err(|error| {
+                        format!("invalid complete animation {key} resource: {error}")
+                    })?)
+                }
+                AnimationResourceStatus::PoseOnly => {
+                    if resource.resource.is_none() {
+                        return Err(format!("pose-only animation {key} is missing resource"));
+                    }
+                    None
+                }
+                AnimationResourceStatus::Unsupported => {
+                    if resource.resource.is_some() {
+                        return Err(format!(
+                            "unsupported animation {key} must not include resource"
+                        ));
+                    }
+                    None
+                }
+            };
+        }
+        Ok(())
+    }
+
+    /// Validate the numeric wrapper's linkage to the native motion-state
+    /// table. Every character-specific state must appear under the animation
+    /// id selected by its profile, and no wrapper entry may claim a different
+    /// state or an unrelated animation.
+    pub(crate) fn validate_animation_states(
+        &self,
+        motion_states: Option<&[super::super::data::MotionStateProfile]>,
+    ) -> Result<(), String> {
+        let Some(animations) = self.animations.as_ref() else {
+            return Ok(());
+        };
+        let states = motion_states
+            .ok_or_else(|| "specials.animations requires motion_states metadata".to_string())?;
+        let mut expected = BTreeMap::<u32, Vec<u32>>::new();
+        for profile in states.iter().filter(|profile| profile.state_id >= 341) {
+            if profile.animation_id < 0 {
+                continue;
+            }
+            expected
+                .entry(profile.animation_id as u32)
+                .or_default()
+                .push(profile.state_id);
+        }
+        if expected.len() != animations.len() {
+            return Err(format!(
+                "specials.animations has {} entries, expected {} from motion states",
+                animations.len(),
+                expected.len()
+            ));
+        }
+        for (animation_id, resource) in animations {
+            let Some(states) = expected.get(animation_id) else {
+                return Err(format!(
+                    "animation {animation_id} is not selected by a motion state"
+                ));
+            };
+            if resource.state_ids != *states {
+                return Err(format!(
+                    "animation {animation_id} state_ids do not match motion states"
+                ));
+            }
+        }
+        Ok(())
+    }
     pub fn character_key(&self) -> String {
         self.character.to_ascii_lowercase()
     }
 
+    /// Compare a character key without allocating a normalized copy.
+    pub(crate) fn character_key_is(&self, expected: &str) -> bool {
+        self.character.eq_ignore_ascii_case(expected)
+    }
+
     pub(crate) fn captain_dive_capture(&self) -> Option<&CaptainDiveCapture> {
         self.resources.captain_dive_capture.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnimationResourceStatus, ArticleId, Resources, Specials};
+    use crate::game::data::MotionStateProfile;
+    use serde_json::json;
+
+    #[test]
+    fn special_attributes_decode_wire_words_once_and_query_by_id() {
+        let specials: Specials = serde_json::from_value(json!({
+            "character": "donkey-kong",
+            "special_attributes": {
+                "layout": 3,
+                "words": [[6, 1065353216], [300, 1073741824]]
+            }
+        }))
+        .unwrap();
+        let attributes = specials.special_attributes.as_ref().unwrap();
+        assert_eq!(attributes.get(6), Some(1.0));
+        assert_eq!(attributes.get(300), Some(2.0));
+        assert_eq!(
+            serde_json::to_value(attributes).unwrap()["words"][1],
+            json!([300, 1073741824])
+        );
+    }
+
+    #[test]
+    fn special_attributes_reject_bad_layout_order_and_non_finite_words() {
+        for value in [
+            json!({"layout": 9, "words": []}),
+            json!({"layout": 3, "words": [[2, 0], [1, 0]]}),
+            json!({"layout": 3, "words": [[1, 2143289344]]}),
+        ] {
+            assert!(serde_json::from_value::<super::SpecialAttributes>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn numeric_article_catalog_round_trips_without_string_identity() {
+        let specials: Specials = serde_json::from_value(json!({
+            "character": "fox",
+            "articles": {
+                "54": {
+                    "kind": "ray",
+                    "lifetime": 35.0,
+                    "move_id": 20,
+                    "hitboxes": [{
+                        "group": 0,
+                        "bone": 0,
+                        "center": [0.0, 0.0, 0.0],
+                        "radius": 0.5,
+                        "damage": 3,
+                        "angle_degrees": 0.0,
+                        "growth": 0,
+                        "fixed": 0,
+                        "base": 0
+                    }]
+                }
+            }
+        }))
+        .expect("numeric article catalog");
+        assert!(
+            specials
+                .articles
+                .as_ref()
+                .unwrap()
+                .contains_key(&ArticleId::FOX_LASER)
+        );
+        let wire = serde_json::to_value(&specials).expect("article catalog serialization");
+        assert_eq!(wire["articles"]["54"]["kind"], "ray");
+        assert!(wire["articles"].get("fox_laser").is_none());
+    }
+
+    #[test]
+    fn fighter_article_ids_match_pinned_item_kind_values() {
+        assert_eq!(
+            ArticleId::FIGHTER_ARTICLE_IDS.map(|id| id.0),
+            [
+                48, 49, 54, 55, 94, 95, 105, 114, 115, 116, 117, 118, 119, 120, 121, 122, 124
+            ]
+        );
+    }
+
+    #[test]
+    fn gravity_article_catalog_round_trips_typed_contact_policy() {
+        let specials: Specials = serde_json::from_value(json!({
+            "character": "mario",
+            "articles": {
+                "48": {
+                    "kind": "gravity_projectile",
+                    "speed": 1.5,
+                    "angle": 0.0,
+                    "lifetime": 60.0,
+                    "half_life": 30.0,
+                    "gravity": 0.08,
+                    "terminal_velocity": 2.4,
+                    "surface_multiplier": 0.5,
+                    "terrain_stop_speed": 0.2,
+                    "move_id": 20,
+                    "hitboxes": [{
+                        "group": 0,
+                        "bone": 0,
+                        "center": [0.0, 0.0, 0.0],
+                        "radius": 0.5,
+                        "damage": 3,
+                        "angle_degrees": 45.0,
+                        "growth": 20,
+                        "fixed": 0,
+                        "base": 10
+                    }],
+                    "contact": {
+                        "reflection": "none",
+                        "shield": "bounce",
+                        "persistence": "despawn"
+                    }
+                }
+            }
+        }))
+        .expect("gravity article catalog");
+        let wire = serde_json::to_value(&specials).expect("gravity catalog serialization");
+        assert_eq!(wire["articles"]["48"]["kind"], "gravity_projectile");
+        assert_eq!(wire["articles"]["48"]["contact"]["shield"], "bounce");
+        let mut missing_half_life = wire;
+        missing_half_life["articles"]["48"]
+            .as_object_mut()
+            .expect("gravity article object")
+            .remove("half_life");
+        assert!(serde_json::from_value::<Specials>(missing_half_life).is_err());
+    }
+
+    #[test]
+    fn character_key_is_case_insensitive_without_changing_public_key() {
+        let specials = Specials {
+            character: "Captain-Falcon".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
+            resources: Resources::default(),
+        };
+
+        assert!(specials.character_key_is("captain-falcon"));
+        assert!(specials.character_key_is("CAPTAIN-FALCON"));
+        assert!(!specials.character_key_is("falco"));
+        assert_eq!(specials.character_key(), "captain-falcon");
+    }
+
+    #[test]
+    fn samus_article_ids_match_native_item_kinds() {
+        assert_eq!(ArticleId::SAMUS_CHARGE.0, 94);
+        assert_eq!(ArticleId::SAMUS_MISSILE.0, 95);
+    }
+
+    #[test]
+    fn numeric_animation_wrapper_links_dk_state_to_complete_attack() {
+        let specials: Specials = serde_json::from_value(serde_json::json!({
+            "character": "donkey-kong",
+            "animations": {
+                "331": {
+                    "animation_id": 331,
+                    "state_ids": [381],
+                    "status": "complete",
+                    "resource": {"frames": [{"bones": [], "hitboxes": []}]}
+                }
+            }
+        }))
+        .expect("typed native animation wrapper");
+        let states = [MotionStateProfile {
+            state_id: 381,
+            animation_id: 331,
+            move_id: 20,
+            flags: 0,
+        }];
+
+        specials
+            .validate_animation_states(Some(&states))
+            .expect("state 381 linkage");
+        let attack = specials
+            .animation_attack(331)
+            .expect("complete animation attack");
+        assert_eq!(attack.frames.len(), 1);
+        assert_eq!(
+            specials.animations.as_ref().unwrap()[&331].status,
+            AnimationResourceStatus::Complete
+        );
+    }
+
+    #[test]
+    fn animation_terminal_delivery_is_one_shot_for_dk_resource() {
+        let specials: Specials = serde_json::from_value(serde_json::json!({
+            "character": "donkey-kong",
+            "animations": {
+                "331": {
+                    "animation_id": 331,
+                    "state_ids": [381],
+                    "status": "complete",
+                    "resource": {"frames": [{"bones": [], "hitboxes": []}]}
+                }
+            }
+        }))
+        .expect("typed native animation wrapper");
+        let animation = specials.animation_attack(331).expect("animation 331");
+        assert_eq!(animation.frames.len(), 1);
+        let mut events = crate::game::script::events::NativeEventState::default();
+        assert!(events.animation_due());
+        events.mark_animation_delivered();
+        assert!(!events.animation_due());
     }
 }

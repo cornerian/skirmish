@@ -13,7 +13,7 @@ use crate::game::{
     script::scheduler::{OwnerId, ScheduleError, SchedulerState, TimerId, TimerSpec},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_MARKERS: usize = 64;
 pub const MAX_COUNTDOWNS: usize = 32;
@@ -59,7 +59,7 @@ pub struct CountdownSpec {
     pub phase: CountdownPhase,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CountdownPhase {
     Animation,
@@ -123,13 +123,52 @@ pub struct FrameBinding {
     pub token: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ActionEventTable {
     markers: Vec<ActionMarker>,
     countdowns: Vec<CountdownBinding>,
     clocks: Vec<ClockBinding>,
     frames: Vec<FrameBinding>,
+    /// Registration-time dispatch indexes. Values remain binding indexes so
+    /// iteration keeps authored callback order at equal action frames.
+    #[serde(skip)]
+    marker_actions: BTreeMap<Action, Vec<usize>>,
+    #[serde(skip)]
+    countdown_actions: BTreeMap<(CountdownPhase, Action), Vec<usize>>,
+    #[serde(skip)]
+    clock_actions: BTreeMap<Action, Vec<usize>>,
+    #[serde(skip)]
+    frame_actions: BTreeMap<Action, Vec<usize>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActionEventTableWire {
+    markers: Vec<ActionMarker>,
+    countdowns: Vec<CountdownBinding>,
+    clocks: Vec<ClockBinding>,
+    frames: Vec<FrameBinding>,
+}
+
+impl<'de> Deserialize<'de> for ActionEventTable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = ActionEventTableWire::deserialize(deserializer)?;
+        let mut table = Self {
+            markers: wire.markers,
+            countdowns: wire.countdowns,
+            clocks: wire.clocks,
+            frames: wire.frames,
+            marker_actions: BTreeMap::new(),
+            countdown_actions: BTreeMap::new(),
+            clock_actions: BTreeMap::new(),
+            frame_actions: BTreeMap::new(),
+        };
+        table.rebuild_indexes();
+        Ok(table)
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -290,12 +329,18 @@ impl ActionEventTable {
                 })
             })
             .collect::<Result<Vec<_>, ActionEventError>>()?;
-        Ok(Self {
+        let mut table = Self {
             markers,
             countdowns,
             clocks,
             frames,
-        })
+            marker_actions: BTreeMap::new(),
+            countdown_actions: BTreeMap::new(),
+            clock_actions: BTreeMap::new(),
+            frame_actions: BTreeMap::new(),
+        };
+        table.rebuild_indexes();
+        Ok(table)
     }
 
     pub fn markers(&self) -> &[ActionMarker] {
@@ -314,6 +359,33 @@ impl ActionEventTable {
         &self.frames
     }
 
+    fn rebuild_indexes(&mut self) {
+        self.marker_actions = index_actions(
+            self.markers
+                .iter()
+                .enumerate()
+                .map(|(index, marker)| (index, &marker.actions)),
+        );
+        self.countdown_actions = index_phased_actions(
+            self.countdowns
+                .iter()
+                .enumerate()
+                .map(|(index, binding)| (index, binding.phase, &binding.actions)),
+        );
+        self.clock_actions = index_actions(
+            self.clocks
+                .iter()
+                .enumerate()
+                .map(|(index, binding)| (index, &binding.actions)),
+        );
+        self.frame_actions = index_single_actions(
+            self.frames
+                .iter()
+                .enumerate()
+                .map(|(index, frame)| (index, frame.action)),
+        );
+    }
+
     /// Native host operation performed once when an action generation starts.
     /// It schedules the table's finite authored rising edges and is
     /// transactional if any individual record exceeds scheduler bounds.
@@ -325,10 +397,8 @@ impl ActionEventTable {
     ) -> Result<Vec<TimerId>, ActionEventError> {
         let mut candidate = scheduler.clone();
         let mut ids = Vec::new();
-        for marker in &self.markers {
-            if !marker.actions.contains(&action) {
-                continue;
-            }
+        for &marker_index in self.marker_actions.get(&action).into_iter().flatten() {
+            let marker = &self.markers[marker_index];
             for &frame in &marker.true_edges {
                 ids.push(candidate.schedule(
                     owner,
@@ -352,10 +422,8 @@ impl ActionEventTable {
     ) -> Result<Vec<TimerId>, ActionEventError> {
         let mut candidate = scheduler.clone();
         let mut ids = Vec::new();
-        for frame in &self.frames {
-            if frame.action != action {
-                continue;
-            }
+        for &frame_index in self.frame_actions.get(&action).into_iter().flatten() {
+            let frame = &self.frames[frame_index];
             ids.push(candidate.schedule(
                 owner,
                 TimerSpec::AtActionFrame {
@@ -388,10 +456,13 @@ impl ActionEventTable {
         phase: CountdownPhase,
     ) -> Result<Vec<u64>, ActionEventError> {
         let mut tokens = Vec::new();
-        for binding in &self.countdowns {
-            if binding.phase != phase || !binding.actions.contains(&action) {
-                continue;
-            }
+        for &binding_index in self
+            .countdown_actions
+            .get(&(phase, action))
+            .into_iter()
+            .flatten()
+        {
+            let binding = &self.countdowns[binding_index];
             let value = action_state
                 .get_mut(&binding.field)
                 .ok_or_else(|| ActionEventError::MissingCountdownField(binding.field.clone()))?;
@@ -425,10 +496,8 @@ impl ActionEventTable {
         action: Action,
         action_state: &mut LocalState,
     ) -> Result<(), ActionEventError> {
-        for binding in &self.clocks {
-            if !binding.actions.contains(&action) {
-                continue;
-            }
+        for &binding_index in self.clock_actions.get(&action).into_iter().flatten() {
+            let binding = &self.clocks[binding_index];
             let value = action_state
                 .get_mut(&binding.field)
                 .ok_or_else(|| ActionEventError::MissingClockField(binding.field.clone()))?;
@@ -443,6 +512,46 @@ impl ActionEventTable {
         }
         Ok(())
     }
+}
+
+fn index_actions<'a, I>(entries: I) -> BTreeMap<Action, Vec<usize>>
+where
+    I: IntoIterator<Item = (usize, &'a Vec<Action>)>,
+{
+    let mut index = BTreeMap::new();
+    for (binding, actions) in entries {
+        for &action in actions {
+            index.entry(action).or_insert_with(Vec::new).push(binding);
+        }
+    }
+    index
+}
+
+fn index_phased_actions<'a, I>(entries: I) -> BTreeMap<(CountdownPhase, Action), Vec<usize>>
+where
+    I: IntoIterator<Item = (usize, CountdownPhase, &'a Vec<Action>)>,
+{
+    let mut index = BTreeMap::new();
+    for (binding, phase, actions) in entries {
+        for &action in actions {
+            index
+                .entry((phase, action))
+                .or_insert_with(Vec::new)
+                .push(binding);
+        }
+    }
+    index
+}
+
+fn index_single_actions<I>(entries: I) -> BTreeMap<Action, Vec<usize>>
+where
+    I: IntoIterator<Item = (usize, Action)>,
+{
+    let mut index = BTreeMap::new();
+    for (binding, action) in entries {
+        index.entry(action).or_insert_with(Vec::new).push(binding);
+    }
+    index
 }
 
 fn validate_marker(
@@ -605,6 +714,149 @@ mod tests {
         assert!(scheduler.advance(100).unwrap().is_empty());
         assert_eq!(scheduler.advance_action(owner, 1).unwrap().len(), 1);
         assert_eq!(scheduler.advance_action(owner, 3).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn same_frame_markers_keep_registration_order() {
+        let mut first = marker(vec![false, true]);
+        first.token = 11;
+        let mut second = marker(vec![false, true]);
+        second.id = MarkerId::new(2);
+        second.token = 12;
+        let table = ActionEventTable::compile(vec![first, second], vec![], vec![]).unwrap();
+        let owner = OwnerId::new(4);
+        let mut scheduler = SchedulerState::new();
+        scheduler
+            .enter_action(owner, Action::SpecialHiBound)
+            .unwrap();
+        table
+            .schedule_action_markers(&mut scheduler, owner, Action::SpecialHiBound)
+            .unwrap();
+        let events = scheduler.advance_action(owner, 1).unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                Event::ScheduledDeadline { token: 11, .. },
+                Event::ScheduledDeadline { token: 12, .. },
+            ]
+        ));
+    }
+
+    #[test]
+    fn animation_marker_precedes_frame_deadline_at_same_action_frame() {
+        let table = ActionEventTable::compile_with_frames(
+            vec![marker(vec![false, true])],
+            vec![],
+            vec![],
+            vec![FrameSpec {
+                action: Action::SpecialHiBound,
+                frame: 1,
+                token: 41,
+            }],
+        )
+        .unwrap();
+        let owner = OwnerId::new(7);
+        let mut scheduler = SchedulerState::new();
+        scheduler
+            .enter_action(owner, Action::SpecialHiBound)
+            .unwrap();
+        table
+            .schedule_action_markers(&mut scheduler, owner, Action::SpecialHiBound)
+            .unwrap();
+        table
+            .schedule_action_frames(&mut scheduler, owner, Action::SpecialHiBound)
+            .unwrap();
+        let events = scheduler.advance_action(owner, 1).unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                Event::ScheduledDeadline { token: 11, .. },
+                Event::ScheduledDeadline { token: 41, .. },
+            ]
+        ));
+    }
+
+    #[test]
+    fn restarting_an_action_clock_rearms_marker_edges_once() {
+        let table =
+            ActionEventTable::compile(vec![marker(vec![false, true])], vec![], vec![]).unwrap();
+        let owner = OwnerId::new(5);
+        let mut scheduler = SchedulerState::new();
+        scheduler
+            .enter_action(owner, Action::SpecialHiBound)
+            .unwrap();
+        table
+            .schedule_action_markers(&mut scheduler, owner, Action::SpecialHiBound)
+            .unwrap();
+        assert_eq!(scheduler.advance_action(owner, 1).unwrap().len(), 1);
+        scheduler
+            .restart_action_clock(owner, Action::SpecialHiBound)
+            .unwrap();
+        table
+            .schedule_action_markers(&mut scheduler, owner, Action::SpecialHiBound)
+            .unwrap();
+        assert_eq!(scheduler.advance_action(owner, 1).unwrap().len(), 1);
+        assert!(scheduler.advance_action(owner, 2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn serde_round_trip_rebuilds_all_dispatch_indexes() {
+        let table = ActionEventTable::compile_with_frames(
+            vec![marker(vec![false, true])],
+            vec![CountdownSpec {
+                field: "lag".into(),
+                actions: vec![Action::SpecialHiBound],
+                token: 21,
+                phase: CountdownPhase::Physics,
+            }],
+            vec![ClockSpec {
+                field: "clock".into(),
+                actions: vec![Action::SpecialHiBound],
+            }],
+            vec![FrameSpec {
+                action: Action::SpecialHiBound,
+                frame: 1,
+                token: 41,
+            }],
+        )
+        .unwrap();
+        let encoded = serde_json::to_string(&table).unwrap();
+        let restored: ActionEventTable = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(restored, table);
+
+        let owner = OwnerId::new(6);
+        let mut scheduler = SchedulerState::new();
+        scheduler
+            .enter_action(owner, Action::SpecialHiBound)
+            .unwrap();
+        assert_eq!(
+            restored
+                .schedule_action_markers(&mut scheduler, owner, Action::SpecialHiBound)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            restored
+                .schedule_action_frames(&mut scheduler, owner, Action::SpecialHiBound)
+                .unwrap()
+                .len(),
+            1
+        );
+        let mut state = LocalState::from([
+            ("lag".into(), LocalValue::Number(1.0)),
+            ("clock".into(), LocalValue::Number(0.0)),
+        ]);
+        assert_eq!(
+            restored
+                .advance_countdowns(Action::SpecialHiBound, &mut state)
+                .unwrap(),
+            vec![21]
+        );
+        restored
+            .advance_clocks(Action::SpecialHiBound, &mut state)
+            .unwrap();
+        assert_eq!(state["clock"], LocalValue::Number(1.0));
     }
 
     #[test]

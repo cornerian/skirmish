@@ -763,9 +763,7 @@ pub(crate) fn update_animation(f: &mut Fighter, data: &FighterData, input: Contr
 /// runtime. `None` deliberately means "duration unavailable", allowing the
 /// legacy physics fallback to preserve behavior for older packs.
 pub(crate) fn jump_animation_duration(f: &Fighter, data: &FighterData) -> Option<usize> {
-    let Some(poses) = data.movement_poses.as_ref() else {
-        return None;
-    };
+    let poses = data.movement_poses.as_ref()?;
     let frames = if f.locomotion.jump_backward {
         poses.jump_b.as_ref()
     } else {
@@ -775,8 +773,7 @@ pub(crate) fn jump_animation_duration(f: &Fighter, data: &FighterData) -> Option
 }
 
 fn jump_animation_complete(f: &Fighter, data: &FighterData) -> bool {
-    jump_animation_duration(f, data)
-        .is_some_and(|duration| f.action_frame as usize >= duration)
+    jump_animation_duration(f, data).is_some_and(|duration| f.action_frame as usize >= duration)
 }
 
 /// `ftCo_Run_Enter_Full` (`ftCo_Run.c:66-74`) with `anim_start = 0.0`, the

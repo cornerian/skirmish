@@ -1,11 +1,11 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
 use skirmish::{
+    fighter::escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
     game::clank as clank_math,
     game::{
         clank,
         data::{Attack, AttackFrame, Bone, Hitbox, MatchData},
-        escape_air::{Parameters as EscapeAirParameters, Rules as EscapeAirRules},
         script::resources::{Resources, Specials},
     },
 };
@@ -53,6 +53,9 @@ pub fn profile(mut data: MatchData) -> MatchData {
         values.insert("up".into(), fixture.parameters.clone());
         fighter.specials = Some(Specials {
             character: "fox".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: Resources::new(values).unwrap(),
         });
     }
@@ -166,6 +169,8 @@ pub fn travel_hitbox() -> Hitbox {
 pub fn hold_attack_with_pack_hitboxes(bones: &[Bone]) -> Attack {
     Attack {
         move_id: Some(20),
+        blend_frames: 0,
+        dynamics_variant: 0,
         frames: (0..44)
             .map(|index| AttackFrame {
                 bones: bones.to_vec(),

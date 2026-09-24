@@ -100,7 +100,7 @@ fn equal_grounded_jabs_clank_instead_of_damaging_both_players() {
     // Explicit invented common coefficients and sampled recovery resources.
     data.rules.clank = Some(skirmish::game::clank::Rules {
         profile: skirmish::game::clank::Profile::OrdinaryGroundedNonSlash,
-        response: skirmish::game::clank::Rules {
+        response: skirmish::game::clank::ResponseRules {
             damage_gap: 9,
             duration_scale: 0.5,
             duration_base: 2.0,
@@ -269,6 +269,7 @@ fn downward_hit() -> Match {
     let mut data = close_data();
     data.rules.damage.floor_response = Some(skirmish::fighter::damage::FloorResponseRules {
         tumble_knockback_threshold: 20.0,
+        landing_knockback_threshold: None,
         tech_window: 20.0,
         tech_repeat_lockout: 40,
         tech_roll: None,

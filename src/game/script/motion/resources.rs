@@ -14,9 +14,11 @@
 
 use super::lifecycle_resources::ResourceCache;
 use super::motion::{
-    AirOperation, GroundOperation, MotionProfile, ScalarTrack, TrackEnd, TrackTransform,
-    VelocitySample, VelocityTrack, COMMAND_SLOTS, MAX_COMMAND_VALUE,
+    AirOperation, COMMAND_SLOTS, CommandBranch, GravityMultiplier, GroundOperation,
+    MAX_COMMAND_VALUE, MotionProfile, ScalarTrack, StickSteering, TrackEnd, TrackTransform,
+    VelocitySample, VelocityTrack,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -44,6 +46,10 @@ impl FieldRef {
     }
 }
 
+fn standard_parameter(path: &'static str) -> ScalarRef {
+    ScalarRef::Parameter(FieldRef(path.to_owned()))
+}
+
 impl TryFrom<String> for FieldRef {
     type Error = MotionLinkError;
 
@@ -60,7 +66,23 @@ impl TryFrom<&str> for FieldRef {
     }
 }
 
-/// A scalar in a motion declaration.  `Resource` resolves through the
+/// A typed native fighter-specific attribute slot. The layout is part of the
+/// identity so a profile cannot accidentally read an offset from another
+/// fighter's packed attribute record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpecialAttributeRef {
+    pub layout: u8,
+    pub field_id: u16,
+}
+
+impl SpecialAttributeRef {
+    pub const fn new(layout: u8, field_id: u16) -> Self {
+        Self { layout, field_id }
+    }
+}
+
+/// A scalar in a motion declaration. `Resource` resolves through the
 /// immutable animation/resource cache, while `Parameter` resolves through a
 /// native parameter view (for example a fighter's movement attributes).
 #[derive(Clone, Debug, PartialEq)]
@@ -68,6 +90,7 @@ pub enum ScalarRef {
     Literal(f32),
     Resource(FieldRef),
     Parameter(FieldRef),
+    SpecialAttribute(SpecialAttributeRef),
 }
 
 impl ScalarRef {
@@ -81,6 +104,10 @@ impl ScalarRef {
 
     pub fn parameter(path: impl Into<String>) -> Result<Self, MotionLinkError> {
         Ok(Self::Parameter(FieldRef::new(path)?))
+    }
+
+    pub const fn special_attribute(reference: SpecialAttributeRef) -> Self {
+        Self::SpecialAttribute(reference)
     }
 }
 
@@ -99,6 +126,26 @@ impl AirOperationDescriptor {
 
     pub fn friction(amount: ScalarRef) -> Self {
         Self::Friction { amount }
+    }
+
+    pub fn gravity_multiplier(index: usize, value: u32, multiplier: ScalarRef) -> Self {
+        Self::GravityMultiplier {
+            index,
+            value,
+            multiplier,
+        }
+    }
+
+    pub fn stick_steering(
+        threshold: ScalarRef,
+        acceleration: ScalarRef,
+        target: ScalarRef,
+    ) -> Self {
+        Self::StickSteering {
+            threshold,
+            acceleration,
+            target,
+        }
     }
 
     pub fn velocity_track(track: VelocityTrackDescriptor) -> Self {
@@ -130,11 +177,47 @@ impl AirOperationDescriptor {
             multiplier,
         }
     }
+
+    pub fn command_branch(index: usize, cases: BTreeMap<u32, Vec<Self>>) -> Self {
+        Self::CommandBranch(CommandBranchDescriptor::new(index, cases))
+    }
 }
 
 impl GroundOperationDescriptor {
     pub fn friction(amount: ScalarRef) -> Self {
         Self::Friction { amount }
+    }
+
+    pub fn friction_above_walk(
+        amount: ScalarRef,
+        walk_max_velocity: ScalarRef,
+        above_walk_multiplier: ScalarRef,
+    ) -> Self {
+        Self::FrictionAboveWalk {
+            amount,
+            walk_max_velocity,
+            above_walk_multiplier,
+        }
+    }
+
+    pub fn native_ground_friction() -> Self {
+        Self::friction_above_walk(
+            standard_parameter("movement.ground_friction"),
+            standard_parameter("movement.walk_max_velocity"),
+            standard_parameter("rules.friction_above_walk"),
+        )
+    }
+
+    pub fn stick_steering(
+        threshold: ScalarRef,
+        acceleration: ScalarRef,
+        target: ScalarRef,
+    ) -> Self {
+        Self::StickSteering {
+            threshold,
+            acceleration,
+            target,
+        }
     }
 
     pub fn friction_after(starts_at: ScalarRef, before: ScalarRef, after: ScalarRef) -> Self {
@@ -147,6 +230,10 @@ impl GroundOperationDescriptor {
 
     pub fn target_track(track: ScalarTrackDescriptor) -> Self {
         Self::TargetTrack(track)
+    }
+
+    pub fn command_branch(index: usize, cases: BTreeMap<u32, Vec<Self>>) -> Self {
+        Self::CommandBranch(CommandBranchDescriptor::new(index, cases))
     }
 }
 
@@ -199,6 +286,21 @@ impl ScalarTrackDescriptor {
     }
 }
 
+/// Descriptor form of a mutually exclusive numeric command branch. Cases are
+/// ordinary operation lists, so each scalar is linked and validated through
+/// the same path as an operation authored directly in the profile.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommandBranchDescriptor<T> {
+    pub index: usize,
+    pub cases: BTreeMap<u32, Vec<T>>,
+}
+
+impl<T> CommandBranchDescriptor<T> {
+    pub fn new(index: usize, cases: BTreeMap<u32, Vec<T>>) -> Self {
+        Self { index, cases }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AirOperationDescriptor {
     Gravity {
@@ -206,8 +308,18 @@ pub enum AirOperationDescriptor {
         terminal_velocity: ScalarRef,
         delay: ScalarRef,
     },
+    GravityMultiplier {
+        index: usize,
+        value: u32,
+        multiplier: ScalarRef,
+    },
     Friction {
         amount: ScalarRef,
+    },
+    StickSteering {
+        threshold: ScalarRef,
+        acceleration: ScalarRef,
+        target: ScalarRef,
     },
     VelocityTrack(VelocityTrackDescriptor),
     DirectionalAcceleration {
@@ -226,6 +338,7 @@ pub enum AirOperationDescriptor {
         value: u32,
         multiplier: ScalarRef,
     },
+    CommandBranch(CommandBranchDescriptor<AirOperationDescriptor>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -233,12 +346,23 @@ pub enum GroundOperationDescriptor {
     Friction {
         amount: ScalarRef,
     },
+    FrictionAboveWalk {
+        amount: ScalarRef,
+        walk_max_velocity: ScalarRef,
+        above_walk_multiplier: ScalarRef,
+    },
+    StickSteering {
+        threshold: ScalarRef,
+        acceleration: ScalarRef,
+        target: ScalarRef,
+    },
     FrictionAfter {
         starts_at: ScalarRef,
         before: ScalarRef,
         after: ScalarRef,
     },
     TargetTrack(ScalarTrackDescriptor),
+    CommandBranch(CommandBranchDescriptor<GroundOperationDescriptor>),
 }
 
 /// Generic descriptor emitted by the class-contract/static motion parser.
@@ -288,6 +412,10 @@ impl MotionResourceSource for ResourceCache {
 /// the resource tree or perform a dynamic lookup during simulation.
 pub trait MotionParameterSource {
     fn number_path(&self, path: &str) -> Option<f32>;
+
+    fn special_attribute(&self, _reference: SpecialAttributeRef) -> Option<f32> {
+        None
+    }
 }
 
 /// Convenience adapter for JSON-backed native parameter records. The native
@@ -350,6 +478,8 @@ pub enum MotionLinkError {
     UntypedScalarReference,
     #[error("motion scalar reference constructor is malformed")]
     MalformedScalarReference,
+    #[error("special attribute layout {layout} field {field_id} is missing or mismatched")]
+    MissingSpecialAttribute { layout: u8, field_id: u16 },
 }
 
 /// Keep resource input bounded even when a resource pack contains a very
@@ -409,10 +539,30 @@ fn parse_air_operation(value: &Value) -> Result<AirOperationDescriptor, MotionLi
                 required_scalar(&keywords, &constructor, "delay")?,
             ))
         }
+        "motion.gravity_multiplier" => {
+            reject_unknown(&constructor, &keywords, &["index", "value", "multiplier"])?;
+            Ok(AirOperationDescriptor::gravity_multiplier(
+                required_command_index(&keywords, &constructor, "index")?,
+                required_command_value(&keywords, &constructor, "value")?,
+                required_scalar(&keywords, &constructor, "multiplier")?,
+            ))
+        }
         "motion.friction" | "motion.air_friction" => {
             reject_unknown(&constructor, &keywords, &["amount", "path"])?;
             let amount = scalar_keyword_or_path(&keywords, &constructor, "amount", "path")?;
             Ok(AirOperationDescriptor::friction(amount))
+        }
+        "motion.stick_steering" => {
+            reject_unknown(
+                &constructor,
+                &keywords,
+                &["threshold", "acceleration", "target"],
+            )?;
+            Ok(AirOperationDescriptor::stick_steering(
+                required_scalar(&keywords, &constructor, "threshold")?,
+                required_scalar(&keywords, &constructor, "acceleration")?,
+                required_scalar(&keywords, &constructor, "target")?,
+            ))
         }
         "motion.velocity_track" => {
             let track = parse_velocity_track(&constructor, &keywords)?;
@@ -448,6 +598,22 @@ fn parse_air_operation(value: &Value) -> Result<AirOperationDescriptor, MotionLi
                 required_scalar(&keywords, &constructor, "multiplier")?,
             ))
         }
+        "motion.command_branch" => {
+            reject_unknown(&constructor, &keywords, &["index", "cases"])?;
+            Ok(AirOperationDescriptor::command_branch(
+                required_command_index(&keywords, &constructor, "index")?,
+                parse_command_cases(
+                    &constructor,
+                    keywords
+                        .get("cases")
+                        .ok_or_else(|| MotionLinkError::MissingKeyword {
+                            constructor: constructor.clone(),
+                            keyword: "cases".to_owned(),
+                        })?,
+                    parse_air_operation,
+                )?,
+            ))
+        }
         _ => Err(MotionLinkError::UnknownConstructor(constructor)),
     }
 }
@@ -458,6 +624,10 @@ fn parse_ground_operation(value: &Value) -> Result<GroundOperationDescriptor, Mo
         return Err(MotionLinkError::InvalidArgumentCount { constructor });
     }
     match constructor.as_str() {
+        "motion.ground_friction_above_walk" => {
+            reject_unknown(&constructor, &keywords, &[])?;
+            Ok(GroundOperationDescriptor::native_ground_friction())
+        }
         "motion.friction" | "motion.ground_friction" => {
             reject_unknown(&constructor, &keywords, &["amount", "path"])?;
             Ok(GroundOperationDescriptor::friction(scalar_keyword_or_path(
@@ -466,6 +636,18 @@ fn parse_ground_operation(value: &Value) -> Result<GroundOperationDescriptor, Mo
                 "amount",
                 "path",
             )?))
+        }
+        "motion.stick_steering" => {
+            reject_unknown(
+                &constructor,
+                &keywords,
+                &["threshold", "acceleration", "target"],
+            )?;
+            Ok(GroundOperationDescriptor::stick_steering(
+                required_scalar(&keywords, &constructor, "threshold")?,
+                required_scalar(&keywords, &constructor, "acceleration")?,
+                required_scalar(&keywords, &constructor, "target")?,
+            ))
         }
         "motion.friction_after" | "motion.ground_friction_after" => {
             reject_unknown(&constructor, &keywords, &["starts_at", "before", "after"])?;
@@ -479,8 +661,59 @@ fn parse_ground_operation(value: &Value) -> Result<GroundOperationDescriptor, Mo
             &constructor,
             &keywords,
         )?)),
+        "motion.command_branch" => {
+            reject_unknown(&constructor, &keywords, &["index", "cases"])?;
+            Ok(GroundOperationDescriptor::command_branch(
+                required_command_index(&keywords, &constructor, "index")?,
+                parse_command_cases(
+                    &constructor,
+                    keywords
+                        .get("cases")
+                        .ok_or_else(|| MotionLinkError::MissingKeyword {
+                            constructor: constructor.clone(),
+                            keyword: "cases".to_owned(),
+                        })?,
+                    parse_ground_operation,
+                )?,
+            ))
+        }
         _ => Err(MotionLinkError::UnknownConstructor(constructor)),
     }
+}
+
+fn parse_command_cases<T>(
+    constructor: &str,
+    value: &Value,
+    parse_operation: impl Fn(&Value) -> Result<T, MotionLinkError>,
+) -> Result<BTreeMap<u32, Vec<T>>, MotionLinkError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid_type(constructor, "cases"))?;
+    if object.is_empty() {
+        return Err(invalid_type(constructor, "cases"));
+    }
+    let mut cases = BTreeMap::new();
+    for (raw_value, operations) in object {
+        let value = raw_value
+            .parse::<u32>()
+            .ok()
+            .filter(|value| *value <= MAX_COMMAND_VALUE)
+            .ok_or_else(|| invalid_type(constructor, "cases"))?;
+        let operations = operations
+            .as_array()
+            .ok_or_else(|| invalid_type(constructor, "cases"))?;
+        if operations.is_empty() {
+            return Err(invalid_type(constructor, "cases"));
+        }
+        let operations = operations
+            .iter()
+            .map(&parse_operation)
+            .collect::<Result<Vec<_>, _>>()?;
+        if cases.insert(value, operations).is_some() {
+            return Err(invalid_type(constructor, "cases"));
+        }
+    }
+    Ok(cases)
 }
 
 fn parse_velocity_track(
@@ -583,20 +816,22 @@ fn optional_transform(
         })
         .transpose()?;
     match (transform, boolean) {
-        (Some(transform), Some(true)) if transform != TrackTransform::BindingScale => {
-            Err(MotionLinkError::InvalidKeywordType {
-                constructor: constructor.to_owned(),
-                keyword: boolean_key.to_owned(),
-            })
+        (Some(transform), Some(true)) => {
+            if transform == TrackTransform::BindingScale {
+                Ok(TrackTransform::BindingScale)
+            } else {
+                Err(MotionLinkError::InvalidKeywordType {
+                    constructor: constructor.to_owned(),
+                    keyword: boolean_key.to_owned(),
+                })
+            }
         }
         (Some(_), Some(false)) => Err(MotionLinkError::InvalidKeywordType {
             constructor: constructor.to_owned(),
             keyword: boolean_key.to_owned(),
         }),
-        (Some(_), Some(true)) => Err(MotionLinkError::InvalidKeywordType {
-            constructor: constructor.to_owned(),
-            keyword: boolean_key.to_owned(),
-        }),
+        // The long-form transform and legacy boolean are aliases. Permit
+        // them together when they express the same binding-scale mode.
         (Some(transform), None) => Ok(transform),
         (None, Some(true)) => Ok(TrackTransform::BindingScale),
         (None, Some(false)) | (None, None) => Ok(default),
@@ -715,8 +950,16 @@ fn parse_scalar(value: &Value) -> Result<ScalarRef, MotionLinkError> {
     }
     let (constructor, args, keywords) =
         constructor_parts(value).map_err(|_| MotionLinkError::UntypedScalarReference)?;
-    if !args.iter().all(Value::is_string) || !keywords.is_empty() || args.len() != 1 {
+    if !keywords.is_empty() || args.len() != 1 {
         return Err(MotionLinkError::MalformedScalarReference);
+    }
+    if constructor == "special_attribute" || constructor == "motion.special_attribute" {
+        let reference: SpecialAttributeRef = serde_json::from_value(args[0].clone())
+            .map_err(|_| MotionLinkError::MalformedScalarReference)?;
+        return Ok(ScalarRef::SpecialAttribute(reference));
+    }
+    if !args.iter().all(Value::is_string) {
+        return Err(MotionLinkError::UntypedScalarReference);
     }
     let path = FieldRef::new(args[0].as_str().unwrap_or_default())?;
     match constructor.as_str() {
@@ -906,9 +1149,27 @@ fn link_air<R: MotionResourceSource, P: MotionParameterSource>(
             terminal_velocity: resolve(terminal_velocity, resources, parameters)?,
             delay: resolve(delay, resources, parameters)?,
         }),
+        AirOperationDescriptor::GravityMultiplier {
+            index,
+            value,
+            multiplier,
+        } => AirOperation::GravityMultiplier(GravityMultiplier::new(
+            *index,
+            *value,
+            resolve(multiplier, resources, parameters)?,
+        )),
         AirOperationDescriptor::Friction { amount } => AirOperation::Friction {
             amount: resolve(amount, resources, parameters)?,
         },
+        AirOperationDescriptor::StickSteering {
+            threshold,
+            acceleration,
+            target,
+        } => AirOperation::StickSteering(StickSteering::new(
+            resolve(threshold, resources, parameters)?,
+            resolve(acceleration, resources, parameters)?,
+            resolve(target, resources, parameters)?,
+        )),
         AirOperationDescriptor::VelocityTrack(track) => {
             AirOperation::VelocityTrack(link_velocity_track(track, resources)?)
         }
@@ -940,6 +1201,22 @@ fn link_air<R: MotionResourceSource, P: MotionParameterSource>(
             value: *value,
             multiplier: resolve(multiplier, resources, parameters)?,
         },
+        AirOperationDescriptor::CommandBranch(branch) => {
+            let cases = branch
+                .cases
+                .iter()
+                .map(|(value, operations)| {
+                    Ok((
+                        *value,
+                        operations
+                            .iter()
+                            .map(|operation| link_air(operation, resources, parameters))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>, MotionLinkError>>()?;
+            AirOperation::CommandBranch(CommandBranch::new(branch.index, cases))
+        }
     })
 }
 
@@ -952,6 +1229,24 @@ fn link_ground<R: MotionResourceSource, P: MotionParameterSource>(
         GroundOperationDescriptor::Friction { amount } => GroundOperation::Friction {
             amount: resolve(amount, resources, parameters)?,
         },
+        GroundOperationDescriptor::FrictionAboveWalk {
+            amount,
+            walk_max_velocity,
+            above_walk_multiplier,
+        } => GroundOperation::FrictionAboveWalk {
+            amount: resolve(amount, resources, parameters)?,
+            walk_max_velocity: resolve(walk_max_velocity, resources, parameters)?,
+            above_walk_multiplier: resolve(above_walk_multiplier, resources, parameters)?,
+        },
+        GroundOperationDescriptor::StickSteering {
+            threshold,
+            acceleration,
+            target,
+        } => GroundOperation::StickSteering(StickSteering::new(
+            resolve(threshold, resources, parameters)?,
+            resolve(acceleration, resources, parameters)?,
+            resolve(target, resources, parameters)?,
+        )),
         GroundOperationDescriptor::FrictionAfter {
             starts_at,
             before,
@@ -963,6 +1258,22 @@ fn link_ground<R: MotionResourceSource, P: MotionParameterSource>(
         },
         GroundOperationDescriptor::TargetTrack(track) => {
             GroundOperation::TargetTrack(link_scalar_track(track, resources)?)
+        }
+        GroundOperationDescriptor::CommandBranch(branch) => {
+            let cases = branch
+                .cases
+                .iter()
+                .map(|(value, operations)| {
+                    Ok((
+                        *value,
+                        operations
+                            .iter()
+                            .map(|operation| link_ground(operation, resources, parameters))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>, MotionLinkError>>()?;
+            GroundOperation::CommandBranch(CommandBranch::new(branch.index, cases))
         }
     })
 }
@@ -991,6 +1302,15 @@ fn resolve<R: MotionResourceSource, P: MotionParameterSource>(
                 }
             })?;
             return checked_number(path.as_str(), value);
+        }
+        ScalarRef::SpecialAttribute(reference) => {
+            let value = parameters.special_attribute(*reference).ok_or({
+                MotionLinkError::MissingSpecialAttribute {
+                    layout: reference.layout,
+                    field_id: reference.field_id,
+                }
+            })?;
+            return checked_number("special attribute", value);
         }
     };
     Ok(result)
@@ -1057,16 +1377,29 @@ fn velocity_sample(
     }
     let x = values.first().and_then(number);
     let y = values.get(1).and_then(number);
-    if x.is_none() || y.is_none() {
-        return Err(MotionLinkError::InvalidSample {
-            path: path.to_owned(),
-            index,
-        });
-    }
     Ok(match component {
-        TrackComponent::X => VelocitySample::x(x.unwrap_or_default()),
-        TrackComponent::Y => VelocitySample::y(y.unwrap_or_default()),
-        TrackComponent::Both => VelocitySample::xy(x.unwrap_or_default(), y.unwrap_or_default()),
+        TrackComponent::X => {
+            VelocitySample::x(x.ok_or_else(|| MotionLinkError::InvalidSample {
+                path: path.to_owned(),
+                index,
+            })?)
+        }
+        TrackComponent::Y => {
+            VelocitySample::y(y.ok_or_else(|| MotionLinkError::InvalidSample {
+                path: path.to_owned(),
+                index,
+            })?)
+        }
+        TrackComponent::Both => VelocitySample::xy(
+            x.ok_or_else(|| MotionLinkError::InvalidSample {
+                path: path.to_owned(),
+                index,
+            })?,
+            y.ok_or_else(|| MotionLinkError::InvalidSample {
+                path: path.to_owned(),
+                index,
+            })?,
+        ),
     })
 }
 
@@ -1198,6 +1531,32 @@ mod tests {
         json!({"callee": "parameter", "args": [path], "kwargs": {}})
     }
 
+    fn special_attribute(layout: u8, field_id: u16) -> Value {
+        json!({
+            "callee": "special_attribute",
+            "args": [{"layout": layout, "field_id": field_id}],
+            "kwargs": {}
+        })
+    }
+
+    #[derive(Default)]
+    struct SyntheticParameters {
+        values: BTreeMap<String, f32>,
+        attribute: Option<(SpecialAttributeRef, f32)>,
+    }
+
+    impl MotionParameterSource for SyntheticParameters {
+        fn number_path(&self, path: &str) -> Option<f32> {
+            self.values.get(path).copied()
+        }
+
+        fn special_attribute(&self, reference: SpecialAttributeRef) -> Option<f32> {
+            self.attribute
+                .filter(|(actual, _)| *actual == reference)
+                .map(|(_, value)| value)
+        }
+    }
+
     #[test]
     fn links_generic_numeric_operations_without_character_names() {
         let resources = SyntheticResources(BTreeMap::from([(
@@ -1252,6 +1611,45 @@ mod tests {
             }
             operation => panic!("unexpected operation {operation:?}"),
         }
+    }
+
+    #[test]
+    fn component_specific_velocity_tracks_allow_null_unused_axes() {
+        let resources = SyntheticResources(BTreeMap::from([
+            ("x.track".into(), json!([[2.0, null], [3.0, null]])),
+            ("y.track".into(), json!([[null, -1.0], [null, -2.0]])),
+        ]));
+        let descriptor = MotionDescriptor::profile(
+            [
+                AirOperationDescriptor::VelocityTrack(VelocityTrackDescriptor {
+                    path: field("x.track"),
+                    component: TrackComponent::X,
+                    end: TrackEnd::NoOp,
+                    x_transform: TrackTransform::Absolute,
+                    y_transform: TrackTransform::Absolute,
+                }),
+                AirOperationDescriptor::VelocityTrack(VelocityTrackDescriptor {
+                    path: field("y.track"),
+                    component: TrackComponent::Y,
+                    end: TrackEnd::NoOp,
+                    x_transform: TrackTransform::Absolute,
+                    y_transform: TrackTransform::Absolute,
+                }),
+            ],
+            [],
+        );
+        let profile = link_profile(&descriptor, &resources, &BTreeMap::new())
+            .expect("component-specific tracks link");
+        assert!(matches!(
+            &profile.air[0],
+            AirOperation::VelocityTrack(track)
+                if track.samples == vec![VelocitySample::x(2.0), VelocitySample::x(3.0)]
+        ));
+        assert!(matches!(
+            &profile.air[1],
+            AirOperation::VelocityTrack(track)
+                if track.samples == vec![VelocitySample::y(-1.0), VelocitySample::y(-2.0)]
+        ));
     }
 
     #[test]
@@ -1323,6 +1721,182 @@ mod tests {
     }
 
     #[test]
+    fn parses_and_links_native_ground_friction_without_script_paths() {
+        let profile = constructor(
+            "motion.profile",
+            json!({
+                "ground": [constructor("motion.ground_friction_above_walk", json!({}))]
+            }),
+        );
+        let descriptor = MotionDescriptor::from_compiled_constructor(&profile).expect("decode");
+        assert!(matches!(
+            descriptor.ground.first(),
+            Some(GroundOperationDescriptor::FrictionAboveWalk {
+                amount: ScalarRef::Parameter(amount),
+                walk_max_velocity: ScalarRef::Parameter(walk_max),
+                above_walk_multiplier: ScalarRef::Parameter(multiplier),
+            }) if amount.as_str() == "movement.ground_friction"
+                && walk_max.as_str() == "movement.walk_max_velocity"
+                && multiplier.as_str() == "rules.friction_above_walk"
+        ));
+
+        let parameters = BTreeMap::from([
+            (String::from("movement.ground_friction"), 0.2),
+            (String::from("movement.walk_max_velocity"), 1.5),
+            (String::from("rules.friction_above_walk"), 2.0),
+        ]);
+        let linked =
+            link_profile(&descriptor, &SyntheticResources::default(), &parameters).expect("link");
+        assert!(matches!(
+            linked.ground.first(),
+            Some(GroundOperation::FrictionAboveWalk {
+                amount,
+                walk_max_velocity,
+                above_walk_multiplier,
+            }) if (*amount, *walk_max_velocity, *above_walk_multiplier) == (0.2, 1.5, 2.0)
+        ));
+    }
+
+    #[test]
+    fn native_ground_friction_rejects_invalid_linked_values() {
+        let descriptor =
+            MotionDescriptor::profile([], [GroundOperationDescriptor::native_ground_friction()]);
+        let parameters = BTreeMap::from([
+            (String::from("movement.ground_friction"), 0.2),
+            (String::from("movement.walk_max_velocity"), 1.5),
+            (String::from("rules.friction_above_walk"), -1.0),
+        ]);
+        assert!(matches!(
+            link_profile(&descriptor, &SyntheticResources::default(), &parameters),
+            Err(MotionLinkError::InvalidProfile(message))
+                if message.contains("ground friction multiplier")
+        ));
+    }
+
+    #[test]
+    fn special_attribute_reference_is_typed_and_resolved_once() {
+        let reference = SpecialAttributeRef::new(3, 6);
+        assert_eq!(
+            serde_json::to_value(reference).expect("serialize typed reference"),
+            json!({"layout": 3, "field_id": 6})
+        );
+        let descriptor = MotionDescriptor::profile(
+            [AirOperationDescriptor::Gravity {
+                acceleration: ScalarRef::special_attribute(reference),
+                terminal_velocity: ScalarRef::literal(9.0),
+                delay: ScalarRef::literal(0.0),
+            }],
+            [],
+        );
+        let value = constructor(
+            "motion.gravity",
+            json!({
+                "acceleration": special_attribute(3, 6),
+                "terminal_velocity": 9.0,
+                "delay": 0.0,
+            }),
+        );
+        let parsed = MotionDescriptor::from_compiled_constructor(&constructor(
+            "motion.profile",
+            json!({"air": [value]}),
+        ))
+        .expect("typed special attribute descriptor");
+        assert!(matches!(
+            parsed.air.first(),
+            Some(AirOperationDescriptor::Gravity {
+                acceleration: ScalarRef::SpecialAttribute(actual),
+                ..
+            }) if *actual == reference
+        ));
+        let parameters = SyntheticParameters {
+            attribute: Some((reference, 0.75)),
+            ..SyntheticParameters::default()
+        };
+        let profile = link_profile(&descriptor, &SyntheticResources::default(), &parameters)
+            .expect("special attribute links");
+        assert_eq!(profile.initial_gravity_delay(), Some(0.0));
+        assert!(
+            matches!(profile.air.first(), Some(AirOperation::Gravity(gravity)) if gravity.acceleration == 0.75)
+        );
+    }
+
+    #[test]
+    fn special_attribute_missing_or_mismatched_layout_fails_closed() {
+        let descriptor = MotionDescriptor::profile(
+            [AirOperationDescriptor::Friction {
+                amount: ScalarRef::special_attribute(SpecialAttributeRef::new(4, 2)),
+            }],
+            [],
+        );
+        let absent = SyntheticParameters::default();
+        assert!(matches!(
+            link_profile(&descriptor, &SyntheticResources::default(), &absent),
+            Err(MotionLinkError::MissingSpecialAttribute {
+                layout: 4,
+                field_id: 2
+            })
+        ));
+        let mismatched = SyntheticParameters {
+            attribute: Some((SpecialAttributeRef::new(3, 2), 1.0)),
+            ..SyntheticParameters::default()
+        };
+        assert!(matches!(
+            link_profile(&descriptor, &SyntheticResources::default(), &mismatched),
+            Err(MotionLinkError::MissingSpecialAttribute {
+                layout: 4,
+                field_id: 2
+            })
+        ));
+    }
+
+    #[test]
+    fn gravity_multiplier_decodes_gates_and_links_typed_multiplier() {
+        let reference = SpecialAttributeRef::new(3, 3);
+        let operation = constructor(
+            "motion.gravity_multiplier",
+            json!({
+                "index": 0,
+                "value": 0,
+                "multiplier": special_attribute(3, 3),
+            }),
+        );
+        let descriptor = MotionDescriptor::from_compiled_constructor(&constructor(
+            "motion.profile",
+            json!({"air": [operation]}),
+        ))
+        .expect("gravity multiplier descriptor");
+        assert!(matches!(
+            descriptor.air.first(),
+            Some(AirOperationDescriptor::GravityMultiplier {
+                index: 0,
+                value: 0,
+                multiplier: ScalarRef::SpecialAttribute(actual),
+            }) if *actual == reference
+        ));
+        let parameters = SyntheticParameters {
+            attribute: Some((reference, 1.5)),
+            ..SyntheticParameters::default()
+        };
+        let profile = link_profile(&descriptor, &SyntheticResources::default(), &parameters)
+            .expect("gravity multiplier links");
+        assert_eq!(
+            profile.air,
+            vec![AirOperation::GravityMultiplier(GravityMultiplier::new(
+                0, 0, 1.5
+            ))]
+        );
+
+        let missing = SyntheticParameters::default();
+        assert!(matches!(
+            link_profile(&descriptor, &SyntheticResources::default(), &missing),
+            Err(MotionLinkError::MissingSpecialAttribute {
+                layout: 3,
+                field_id: 3
+            })
+        ));
+    }
+
+    #[test]
     fn compiled_constructor_rejects_unknown_keywords_and_untyped_scalars() {
         let bad_keyword = constructor("motion.profile", json!({"side": []}));
         assert!(matches!(
@@ -1341,6 +1915,26 @@ mod tests {
         assert!(matches!(
             MotionDescriptor::from_compiled_constructor(&profile),
             Err(MotionLinkError::UntypedScalarReference)
+        ));
+    }
+
+    #[test]
+    fn equivalent_transform_aliases_are_accepted_together() {
+        let operation = constructor(
+            "motion.velocity_track",
+            json!({
+                "path": "motion.velocity",
+                "transform": "binding_scale",
+                "multiply_x_by_facing": true,
+            }),
+        );
+        let profile = constructor("motion.profile", json!({"air": [operation]}));
+        let descriptor = MotionDescriptor::from_compiled_constructor(&profile)
+            .expect("equivalent transform aliases should agree");
+        assert!(matches!(
+            descriptor.air.first(),
+            Some(AirOperationDescriptor::VelocityTrack(track))
+                if track.x_transform == TrackTransform::BindingScale
         ));
     }
 
@@ -1383,11 +1977,77 @@ mod tests {
     }
 
     #[test]
+    fn decodes_and_links_numeric_command_branch_cases() {
+        let operation = constructor(
+            "motion.command_branch",
+            json!({
+                "index": 1,
+                "cases": {
+                    "0": [constructor("motion.gravity", json!({
+                        "acceleration": 0.25,
+                        "terminal_velocity": 9.0,
+                        "delay": 0.0,
+                    }))],
+                    "1": [constructor("motion.command_velocity_scale", json!({
+                        "index": 1,
+                        "value": 1,
+                        "multiplier": 0.5,
+                    }))],
+                },
+            }),
+        );
+        let descriptor = MotionDescriptor::from_compiled_constructor(&constructor(
+            "motion.profile",
+            json!({"air": [operation]}),
+        ))
+        .expect("command branch descriptor");
+        let profile = link_profile(
+            &descriptor,
+            &SyntheticResources::default(),
+            &BTreeMap::new(),
+        )
+        .expect("command branch profile");
+        assert!(matches!(
+            profile.air.first(),
+            Some(AirOperation::CommandBranch(branch))
+                if branch.index == 1
+                    && branch.cases.len() == 2
+                    && matches!(branch.cases.get(&1).and_then(|ops| ops.first()),
+                        Some(AirOperation::CommandVelocityScale { value: 1, .. }))
+        ));
+    }
+
+    #[test]
+    fn command_branch_wire_validation_rejects_non_numeric_and_empty_cases() {
+        for cases in [json!({"fast": []}), json!({"0": []})] {
+            let operation =
+                constructor("motion.command_branch", json!({"index": 0, "cases": cases}));
+            let profile = constructor("motion.profile", json!({"air": [operation]}));
+            assert!(matches!(
+                MotionDescriptor::from_compiled_constructor(&profile),
+                Err(MotionLinkError::InvalidKeywordType { keyword, .. }) if keyword == "cases"
+            ));
+        }
+
+        let operation = constructor(
+            "motion.command_branch",
+            json!({"index": COMMAND_SLOTS, "cases": {"0": [
+                constructor("motion.friction", json!({"amount": 0.2}))
+            ]}}),
+        );
+        let profile = constructor("motion.profile", json!({"air": [operation]}));
+        assert!(matches!(
+            MotionDescriptor::from_compiled_constructor(&profile),
+            Err(MotionLinkError::InvalidKeywordType { keyword, .. }) if keyword == "index"
+        ));
+    }
+
+    #[test]
     fn rejects_unbounded_command_constructor_values() {
-        for (field, value) in [("index", json!(COMMAND_SLOTS)), (
-            "value",
-            json!(u64::from(MAX_COMMAND_VALUE) + 1),
-        )] {
+        for (field, value) in [
+            ("index", json!(COMMAND_SLOTS)),
+            ("value", json!(u64::from(MAX_COMMAND_VALUE) + 1)),
+        ] {
             let operation = constructor(
                 "motion.command_velocity_scale",
                 json!({

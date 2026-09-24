@@ -1,108 +1,17 @@
 //! Stateless Pon ABI bridge for the game's source-compatible fighter math.
 
-use crate::compat::math::kinematics;
-use crate::compat::math::trig;
-use skirmish_script_runtime::{Value, register_native_value_module};
-use std::sync::OnceLock;
-
-fn number(value: &Value, name: &str) -> Result<f32, String> {
-    match value {
-        Value::Int(value) => Ok(*value as f32),
-        Value::F32(value) => Ok(*value),
-        _ => Err(format!("fighter.math.{name} expects a number")),
-    }
-}
-
-fn unary(args: &[Value], name: &str, operation: fn(f32) -> f32) -> Result<Value, String> {
-    if args.len() != 1 {
-        return Err(format!("fighter.math.{name} expects one argument"));
-    }
-    (|| {
-        let value = args.first().expect("arity checked");
-        let value = number(value, name)?;
-        Ok(Value::F32(operation(value)))
-    })()
-}
-
-pub fn sin(args: &[Value]) -> Result<Value, String> {
-    unary(args, "sin", trig::sinf)
-}
-
-pub fn cos(args: &[Value]) -> Result<Value, String> {
-    unary(args, "cos", trig::cosf)
-}
-
-pub fn atan2(args: &[Value]) -> Result<Value, String> {
-    if args.len() != 2 {
-        return Err("fighter.math.atan2 expects two arguments".into());
-    }
-    Ok(Value::F32(trig::atan2f(
-        number(&args[0], "atan2")?,
-        number(&args[1], "atan2")?,
-    )))
-}
-
-pub fn angle_xy(args: &[Value]) -> Result<Value, String> {
-    if args.len() != 2 {
-        return Err("fighter.math.angle_xy expects two vectors".into());
-    }
-    (|| {
-        let first = args.first().expect("arity checked");
-        let second = &args[1];
-        let Value::List(first) = first else {
-            return Err("fighter.math.angle_xy expects a 3-element first vector".into());
-        };
-        let Value::List(second) = second else {
-            return Err("fighter.math.angle_xy expects a 2-element second vector".into());
-        };
-        if first.len() != 3 || second.len() != 2 {
-            return Err("fighter.math.angle_xy expects 3- and 2-element vectors".into());
-        }
-        let first = [
-            number(&first[0], "angle_xy")?,
-            number(&first[1], "angle_xy")?,
-            number(&first[2], "angle_xy")?,
-        ];
-        let second = [
-            number(&second[0], "angle_xy")?,
-            number(&second[1], "angle_xy")?,
-        ];
-        let result = kinematics::angle_xy(first, second);
-        Ok::<_, String>(Value::F32(result))
-    })()
-}
-
-pub fn facing(args: &[Value]) -> Result<Value, String> {
-    if args.len() != 1 {
-        return Err("fighter.math.facing expects one argument".into());
-    }
-    let value = number(&args[0], "facing")?;
-    Ok(Value::F32(if value >= 0.0 { 1.0 } else { -1.0 }))
-}
+#[allow(unused_imports)]
+pub use skirmish_script_runtime::native_math::{angle_xy, atan2, cos, facing, sin};
 
 pub fn register() -> Result<(), String> {
-    static REGISTERED: OnceLock<Result<(), String>> = OnceLock::new();
-    REGISTERED
-        .get_or_init(|| {
-            register_native_value_module(
-                "_skirmish_math",
-                [
-                    ("sin", sin, 1),
-                    ("cos", cos, 1),
-                    ("atan2", atan2, 2),
-                    ("angle_xy", angle_xy, 2),
-                    ("facing", facing, 1),
-                ],
-            )
-            .map_err(|error| error.to_string())
-        })
-        .clone()
+    skirmish_script_runtime::register_native_math()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skirmish_pon_runtime::{Program, SourceBundle, StandardLibrary};
+    use crate::compat::math::{kinematics, trig};
+    use skirmish_pon_runtime::{Program, SourceBundle, StandardLibrary, Value};
     use std::sync::Mutex;
 
     static PON_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -173,7 +82,7 @@ mod tests {
         );
         assert_eq!(
             f32_value(facing(&[Value::F32(f32::NAN)])).to_bits(),
-            (-1.0_f32).to_bits()
+            1.0_f32.to_bits()
         );
     }
 
@@ -194,6 +103,16 @@ mod tests {
             )
             .unwrap()
             .with_file(
+                "fighter/roster.py",
+                include_str!("../../../scripts/api/fighter/roster.py"),
+            )
+            .unwrap()
+            .with_file(
+                "fighter/standard.py",
+                include_str!("../../../scripts/api/fighter/standard.py"),
+            )
+            .unwrap()
+            .with_file(
                 "fighter/__init__.py",
                 include_str!("../../../scripts/api/fighter/__init__.py"),
             )
@@ -201,6 +120,11 @@ mod tests {
             .with_file(
                 "fighter/api.py",
                 include_str!("../../../scripts/api/fighter/api.py"),
+            )
+            .unwrap()
+            .with_file(
+                "fighter/helpers.py",
+                include_str!("../../../scripts/api/fighter/helpers.py"),
             )
             .unwrap()
             .with_file(

@@ -11,7 +11,7 @@ use skirmish::{
     game::{
         Action, BUTTON_A, BUTTON_B, BUTTON_X, Controller, Event, Match, State,
         data::{CollisionBox, MatchData, StageGeometry},
-        stage_motion::{Rules as MotionRules, Track, Transform},
+        flow::stage_motion::{Rules as MotionRules, Track, Transform},
         wall_jump::{Attributes, Rules},
     },
 };

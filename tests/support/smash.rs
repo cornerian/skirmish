@@ -1,7 +1,8 @@
-use skirmish::fighter::{smash::{ChargeCommand, ForwardSmashes, Parameters, Rules, SmashAttack}, tilt::GroundFrameFlags};
-use skirmish::game::{
-    data::{Attack, AttackFrame, Hitbox, MatchData},
+use skirmish::fighter::{
+    smash::{ChargeCommand, ForwardSmashes, Parameters, Rules, SmashAttack},
+    tilt::GroundFrameFlags,
 };
+use skirmish::game::data::{Attack, AttackFrame, Hitbox, MatchData};
 
 /// Invented smash rules; forward thresholds are radians for the folded stick
 /// angle, the forward magnitude and window come from locomotion.
@@ -58,6 +59,8 @@ pub fn attack(
     SmashAttack {
         attack: Attack {
             move_id: Some(move_id),
+            blend_frames: 0,
+            dynamics_variant: 0,
             frames: (0..frames)
                 .map(|frame| AttackFrame {
                     bones: bones.to_vec(),

@@ -401,14 +401,14 @@ impl Recording {
             next_frame: FIRST,
             state: game.checkpoint(),
         };
-        Ok(replay_match::validate_with_comparison_ports(
+        replay_match::validate_with_comparison_ports(
             &replay,
             &mut game,
             &checkpoint,
             PORTS,
             Timeline::LastRecorded,
             comparison_ports,
-        )?)
+        )
     }
 }
 
@@ -2606,7 +2606,10 @@ fn cli_runs_real_file_comparison_and_exits_unsuccessfully_on_a_late_difference()
         report["diagnostic"]["last_simulated_frame"],
         FIRST + recording.inputs.len() as i32 - 1
     );
-    assert_eq!(report["diagnostic"]["simulated_frames"], recording.inputs.len());
+    assert_eq!(
+        report["diagnostic"]["simulated_frames"],
+        recording.inputs.len()
+    );
     assert_eq!(report["diagnostic"]["terminal"], "end_of_replay");
     assert_eq!(report["diagnostic"]["error"], Value::Null);
 }

@@ -1129,10 +1129,7 @@ mod tests {
         assert_eq!(decoded, motion);
         let encoded = serde_json::to_value(&motion).unwrap();
         assert_eq!(encoded["phase2_blend_frames"], 5);
-        assert_eq!(
-            encoded["phase2_dynamics_variant"],
-            7,
-        );
+        assert_eq!(encoded["phase2_dynamics_variant"], 7,);
     }
 
     #[test]

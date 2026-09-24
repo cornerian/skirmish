@@ -65,6 +65,7 @@ fn geometry(lines: Vec<stage::Line>) -> StageGeometry {
     let joint = stage::Joint {
         id: 0,
         flags: stage::ENABLED,
+        enabled_at_start: true,
         bounds_min: [-50.0, -20.0],
         bounds_max: [50.0, 80.0],
         floor: range(stage::FLOOR),

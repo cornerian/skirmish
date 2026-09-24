@@ -321,7 +321,10 @@ fn damage_entry_advances_once_but_hitlag_keeps_that_age_frozen() {
         game.step(IDLE).unwrap();
         let fighter = &game.state().fighters[1];
         assert_eq!(fighter.action, Action::Damage);
-        assert_eq!(fighter.action_frame, if fighter.hitlag > 0.0 { 1 } else { 2 });
+        assert_eq!(
+            fighter.action_frame,
+            if fighter.hitlag > 0.0 { 1 } else { 2 }
+        );
         if fighter.hitlag == 0.0 {
             assert_ne!(fighter.position, hitlag_start_position);
         }

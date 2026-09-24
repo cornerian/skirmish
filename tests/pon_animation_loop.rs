@@ -71,6 +71,9 @@ fn data(looping: bool) -> skirmish::game::data::MatchData {
         );
         fighter.specials = Some(Specials {
             character: "test_fighter".into(),
+            special_attributes: None,
+            animations: None,
+            articles: None,
             resources: resources.clone(),
         });
     }

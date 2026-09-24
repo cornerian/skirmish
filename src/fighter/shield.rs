@@ -6,6 +6,11 @@ use crate::collision::bones;
 use crate::game::{Action, Controller, Error, Fighter, data::FighterData};
 use serde::{Deserialize, Serialize};
 
+#[inline]
+const fn registered_shield_entry_actions() -> (Action, Action) {
+    (Action::Guard, Action::GuardOn)
+}
+
 fn blend(amount: f32, endpoints: [f32; 2]) -> f32 {
     amount * (endpoints[1] - endpoints[0]) + endpoints[0]
 }
@@ -622,12 +627,18 @@ pub(crate) fn enter_from_neutral(
     f.shield.release_latched = false;
     f.shield.raise_progress = 0.0;
     clear_powershield(f);
-    let selected = crate::game::script::move_selection::select_native_move(
+    // A registered ordinary shield move is canonically `Guard`, but native
+    // entry still has to expose the distinct `GuardOn` raise phase. Custom
+    // registrations remain authoritative through the selector's
+    // `default_entry`/`native_variant` comparison.
+    let (default_entry, native_variant) = registered_shield_entry_actions();
+    let selected = crate::game::script::move_selection::select_native_move_variant(
         f,
         data,
         crate::game::script::move_registry::MoveGroup::Defense,
         crate::game::script::move_registry::MoveSlot::Shield,
-        Action::GuardOn,
+        default_entry,
+        native_variant,
     );
     if matches!(
         selected,
@@ -818,7 +829,43 @@ pub(crate) fn geometry(
 
 #[cfg(test)]
 mod tests {
-    use super::powershield_tick;
+    use super::{Attributes, Rules, powershield_tick};
+    use crate::game::{Action, Controller, Match};
+
+    #[test]
+    fn neutral_shield_enters_guard_on_then_progresses_to_guard() {
+        #[derive(serde::Deserialize)]
+        struct ShieldFixture {
+            rules: Rules,
+            attributes: Attributes,
+        }
+
+        let mut data: crate::game::data::MatchData = serde_json::from_str(include_str!(
+            "../../tests/fixtures/game/integration-match.json"
+        ))
+        .unwrap();
+        let shield: ShieldFixture =
+            serde_json::from_str(include_str!("../../tests/fixtures/game/shield.json")).unwrap();
+        data.rules.countdown_frames = 0;
+        data.rules.shield = Some(shield.rules);
+        data.fighters[0].shield = Some(shield.attributes);
+
+        let mut game = Match::new(data, 0).unwrap();
+        let held = Controller {
+            trigger: 1.0,
+            ..Controller::default()
+        };
+        let first = game.step([held, Controller::default()]).unwrap();
+        assert_eq!(first.fighters[0].action, Action::GuardOn);
+
+        let second = game.step([held, Controller::default()]).unwrap();
+        assert!(matches!(
+            second.fighters[0].action,
+            Action::GuardOn | Action::Guard
+        ));
+        let third = game.step([held, Controller::default()]).unwrap();
+        assert_eq!(third.fighters[0].action, Action::Guard);
+    }
 
     #[test]
     fn zero_windows_remain_active_on_entry_and_clear_on_the_first_tick() {

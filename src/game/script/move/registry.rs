@@ -189,6 +189,11 @@ pub enum MoveRegistryError {
         id: String,
         action: String,
     },
+    SourceActionNamespaceMismatch {
+        id: String,
+        action: String,
+        external_id: u8,
+    },
 }
 
 impl fmt::Display for MoveRegistryError {
@@ -214,6 +219,14 @@ impl fmt::Display for MoveRegistryError {
                 formatter,
                 "behavior {id:?} references unknown entry action {action:?}"
             ),
+            Self::SourceActionNamespaceMismatch {
+                id,
+                action,
+                external_id,
+            } => write!(
+                formatter,
+                "behavior {id:?} references source action {action:?} for external id {external_id}, which is not owned by the fighter"
+            ),
         }
     }
 }
@@ -231,6 +244,15 @@ impl MoveRegistry {
                 .entry_action
                 .as_deref()
                 .map(|name| {
+                    if let Some(external_id) = source_action_external_id(name)
+                        && !definition.external_ids.contains(&external_id)
+                    {
+                        return Err(MoveRegistryError::SourceActionNamespaceMismatch {
+                            id: behavior.id.as_deref().unwrap_or("<unnamed>").to_owned(),
+                            action: name.to_owned(),
+                            external_id,
+                        });
+                    }
                     super::parse_action(name.strip_prefix("Action.").unwrap_or(name)).ok_or_else(
                         || MoveRegistryError::UnknownEntryAction {
                             id: behavior.id.as_deref().unwrap_or("<unnamed>").to_owned(),
@@ -325,6 +347,13 @@ impl MoveRegistry {
     }
 }
 
+fn source_action_external_id(name: &str) -> Option<u8> {
+    let name = name.strip_prefix("Action.").unwrap_or(name);
+    let value = name.strip_prefix("Source.")?;
+    let (external_id, _) = value.split_once(':')?;
+    external_id.parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,6 +367,7 @@ mod tests {
         );
         FighterDefinition {
             name: "test".into(),
+            external_ids: vec![8],
             movesets,
             behaviors: vec![BehaviorDefinition {
                 id: Some("move_0".into()),
@@ -377,6 +407,42 @@ mod tests {
     fn unknown_entry_action_is_rejected() {
         let mut definition = definition();
         definition.behaviors[0].entry_action = Some("Action.NoSuchAction".into());
+        assert!(matches!(
+            MoveRegistry::compile(&definition),
+            Err(MoveRegistryError::UnknownEntryAction { .. })
+        ));
+    }
+
+    #[test]
+    fn source_entry_actions_resolve_to_custom_native_actions() {
+        let mut definition = definition();
+        definition.behaviors[0].entry_action = Some("Action.Source.8:341".into());
+        let registry = MoveRegistry::compile(&definition).unwrap();
+        let action = registry.resolve("specials", "neutral").unwrap().canonical;
+        assert_eq!(
+            action.and_then(Action::custom_id).map(|id| id.get()),
+            Some(crate::game::script::source_action_id(8, 341).get())
+        );
+    }
+
+    #[test]
+    fn source_entry_action_must_use_the_definition_namespace() {
+        let mut definition = definition();
+        definition.external_ids = vec![21];
+        definition.behaviors[0].entry_action = Some("Action.Source.6:344".into());
+        assert!(matches!(
+            MoveRegistry::compile(&definition),
+            Err(MoveRegistryError::SourceActionNamespaceMismatch { external_id: 6, .. })
+        ));
+
+        definition.behaviors[0].entry_action = Some("Action.Source.21:344".into());
+        assert!(MoveRegistry::compile(&definition).is_ok());
+    }
+
+    #[test]
+    fn malformed_source_entry_actions_are_rejected() {
+        let mut definition = definition();
+        definition.behaviors[0].entry_action = Some("Action.Source.bad".into());
         assert!(matches!(
             MoveRegistry::compile(&definition),
             Err(MoveRegistryError::UnknownEntryAction { .. })

@@ -52,6 +52,40 @@ pub(crate) enum NativeMoveSelection {
     Unbound(Action),
 }
 
+/// A move resource is an enable gate for both callback-only moves and
+/// canonical actions.  Callback dispatch applies the same rule later, but a
+/// selector must apply it before consuming input: otherwise a missing
+/// resource produces `CallbackDriven` and callers report the input handled
+/// without entering either the authored move or its native fallback.
+fn resource_enabled(resource: Option<&str>, has_resource: impl FnOnce(&str) -> bool) -> bool {
+    resource.is_none_or(has_resource)
+}
+
+fn behavior_enabled(
+    program: &super::Program,
+    data: &crate::game::data::FighterData,
+    behavior_index: usize,
+) -> bool {
+    let Some(behavior) = program.metadata().behaviors.get(behavior_index) else {
+        return false;
+    };
+    resource_enabled(behavior.resource.as_deref(), |resource| {
+        data.script_resources
+            .get()
+            .is_some_and(|cache| cache.value(resource).is_some())
+    })
+}
+
+/// Entering a native fallback invalidates any owner staged by an earlier
+/// callback-driven selection.  Leaving that pending owner in place lets the
+/// next unrelated action consume it at `begin_action`, routing callbacks to a
+/// stale behavior.  This is especially visible when an article-backed Link
+/// move loses its resource between frames.
+fn enter_native_fallback(fighter: &mut crate::game::Fighter, action: Action) {
+    fighter.script_events.take_pending_move_selection();
+    crate::game::simulation::enter(fighter, action);
+}
+
 /// Select a registered move and stage its owner before native entry. The
 /// pending owner is consumed atomically by `NativeEventState::begin_action`.
 pub(crate) fn select_native_move(
@@ -77,13 +111,17 @@ pub(crate) fn select_native_move_variant(
     native_variant: Action,
 ) -> NativeMoveSelection {
     let Some(program) = super::definition::cached_program(data) else {
-        crate::game::simulation::enter(fighter, native_variant);
+        enter_native_fallback(fighter, native_variant);
         return NativeMoveSelection::Unbound(native_variant);
     };
     let Some(entry) = program.moves().resolve_typed(&group, &slot) else {
-        crate::game::simulation::enter(fighter, native_variant);
+        enter_native_fallback(fighter, native_variant);
         return NativeMoveSelection::Unbound(native_variant);
     };
+    if !behavior_enabled(&program, data, entry.behavior_index) {
+        enter_native_fallback(fighter, native_variant);
+        return NativeMoveSelection::Unbound(native_variant);
+    }
     let Some(action) = entry.canonical else {
         if let Err(error) = fighter
             .script_events
@@ -144,5 +182,17 @@ impl SelectedMove {
 
     pub fn matches(self, action: Action, generation: ActionGeneration) -> bool {
         self.action == action && self.generation == generation
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resource_enabled;
+
+    #[test]
+    fn resource_gate_keeps_unqualified_moves_enabled_and_blocks_missing_roots() {
+        assert!(resource_enabled(None, |_| false));
+        assert!(!resource_enabled(Some("specials.neutral"), |_| false));
+        assert!(resource_enabled(Some("specials.neutral"), |_| true));
     }
 }
