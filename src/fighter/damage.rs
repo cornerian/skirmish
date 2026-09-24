@@ -1076,6 +1076,30 @@ pub struct SurfaceTechAttributes {
     pub passive_ceiling_poses_dynamics_variant: u8,
 }
 
+impl SurfaceTechAttributes {
+    fn wall_frames(&self) -> u32 {
+        self.passive_wall_poses.len() as u32
+    }
+
+    fn wall_jump_frames(&self) -> u32 {
+        self.passive_wall_jump_poses.len() as u32
+    }
+
+    fn ceiling_frames(&self) -> u32 {
+        self.passive_ceiling_poses.len() as u32
+    }
+}
+
+impl SurfaceResponseAttributes {
+    fn wall_frames(&self) -> u32 {
+        self.wall_poses.len() as u32
+    }
+
+    fn ceiling_frames(&self) -> u32 {
+        self.ceiling_poses.len() as u32
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SurfaceTechState {
     pub timer: u32,
@@ -1133,38 +1157,40 @@ pub(crate) fn validate_surface_tech_attributes(
             "invalid fighter damage-surface tech attributes".into(),
         ));
     }
-    for (poses, frames) in [
-        (&attributes.passive_wall_poses, profile.wall_frames),
-        (
-            &attributes.passive_wall_jump_poses,
-            profile.wall_jump_frames,
-        ),
-        (&attributes.passive_ceiling_poses, profile.ceiling_frames),
+    for poses in [
+        &attributes.passive_wall_poses,
+        &attributes.passive_wall_jump_poses,
+        &attributes.passive_ceiling_poses,
     ] {
-        if poses.len() != frames as usize {
+        if poses.is_empty() {
             return Err(Error::Data(
-                "damage-surface tech poses must match the configured duration".into(),
+                "damage-surface tech pose tracks must be nonempty".into(),
             ));
         }
         for pose in poses {
             crate::game::validation::validate_animation_pose(pose, fighter)?;
         }
     }
+    if profile.wall_freeze_frames >= attributes.wall_frames()
+        || profile.wall_freeze_frames >= attributes.wall_jump_frames()
+        || profile.ceiling_horizontal_frame >= attributes.ceiling_frames()
+    {
+        return Err(Error::Data(
+            "damage-surface tech timing exceeds a fighter pose track".into(),
+        ));
+    }
     Ok(())
 }
 
 pub(crate) fn validate_surface_response_attributes(
     attributes: &SurfaceResponseAttributes,
-    profile: &SurfaceResponseRules,
+    _profile: &SurfaceResponseRules,
     fighter: &FighterData,
 ) -> Result<(), Error> {
-    for (poses, frames) in [
-        (&attributes.wall_poses, profile.wall_frames),
-        (&attributes.ceiling_poses, profile.ceiling_frames),
-    ] {
-        if poses.len() != frames as usize {
+    for poses in [&attributes.wall_poses, &attributes.ceiling_poses] {
+        if poses.is_empty() {
             return Err(Error::Data(
-                "damage-surface response poses must match the configured duration".into(),
+                "damage-surface response pose tracks must be nonempty".into(),
             ));
         }
         for pose in poses {
@@ -1695,9 +1721,9 @@ pub(crate) fn update_animation(
                     }
                 }
                 Some(if fighter.action == Action::PassiveWall {
-                    profile.wall_frames
+                    attributes.wall_frames()
                 } else {
-                    profile.wall_jump_frames
+                    attributes.wall_jump_frames()
                 })
             }
             Action::PassiveCeiling => {
@@ -1707,7 +1733,7 @@ pub(crate) fn update_animation(
                     fighter.velocity[0] = input.stick[0] * attributes.passive_ceiling_velocity;
                     fighter.surface_tech.ceiling_velocity_applied = true;
                 }
-                Some(profile.ceiling_frames)
+                Some(attributes.ceiling_frames())
             }
             _ => None,
         };
@@ -1719,11 +1745,20 @@ pub(crate) fn update_animation(
     let surface_next = rules
         .surface_response
         .as_ref()
-        .and_then(|response| match fighter.action {
-            Action::FlyReflectWall if fighter.action_frame >= response.wall_frames => {
+        .and_then(|_| match fighter.action {
+            Action::FlyReflectWall
+                if data
+                    .surface_response
+                    .as_ref()
+                    .is_some_and(|attributes| fighter.action_frame >= attributes.wall_frames()) =>
+            {
                 Some(Action::DamageFall)
             }
-            Action::FlyReflectCeiling if fighter.action_frame >= response.ceiling_frames => {
+            Action::FlyReflectCeiling
+                if data.surface_response.as_ref().is_some_and(|attributes| {
+                    fighter.action_frame >= attributes.ceiling_frames()
+                }) =>
+            {
                 Some(Action::DamageFall)
             }
             _ => None,

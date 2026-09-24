@@ -1,15 +1,18 @@
 # Damage wall and ceiling response profile
 
 `rules.damage.surface_response` enables ordinary headless wall and ceiling
-reflection during tumbling damage. The resource explicitly supplies the strict
-directional knockback threshold, reflected-velocity multiplier, repeat lockout
-and wall/ceiling action durations. Each paired fighter `surface_response`
-resource supplies one complete sampled bone pose per reflected action frame.
+reflection during tumbling damage. The resource supplies the strict directional
+knockback threshold, reflected-velocity multiplier, repeat lockout and common
+wall/ceiling timing metadata. Each paired fighter `surface_response` resource
+supplies one complete sampled bone pose per reflected action frame; each pose
+track length determines that fighter's corresponding action duration.
 Optional
-`rules.damage.surface_tech` supplies wall freeze, wall and ceiling action timing,
-the upward-stick threshold and the scripted ceiling-input frame. Each fighter
-then supplies its wall, wall-jump and ceiling launch speeds plus one complete
-sampled bone pose per action frame in `surface_tech`. Omitting both profiles
+`rules.damage.surface_tech` supplies the common wall freeze, input thresholds
+and scripted ceiling-input frame. Each fighter then supplies its wall,
+wall-jump and ceiling launch speeds plus one complete sampled bone pose per
+action frame in `surface_tech`; each of those pose track lengths determines
+that fighter's corresponding action duration. The rule duration fields remain
+common-data bounds and compatibility metadata. Omitting both profiles
 retains ordinary solid-surface stopping and does not infer common-data values.
 Either profile requires `floor_response` because that profile defines the
 explicit tumble threshold and physical-L/R tech window.

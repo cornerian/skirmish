@@ -1484,7 +1484,7 @@ fn malformed_surface_tech_resources_are_rejected() {
         .as_mut()
         .unwrap()
         .passive_wall_poses
-        .pop();
+        .clear();
     cases.push(bad);
     let mut bad = tech_data(0.0);
     bad.fighters[0]
@@ -1508,4 +1508,45 @@ fn malformed_surface_tech_resources_are_rejected() {
     for resource in cases {
         assert!(Match::new(resource, 0).is_err());
     }
+}
+
+#[test]
+fn fighter_specific_surface_tracks_set_their_action_durations() {
+    let mut response = data(0.0);
+    response.fighters[1]
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .wall_poses
+        .pop();
+    response.fighters[1]
+        .surface_response
+        .as_mut()
+        .unwrap()
+        .ceiling_poses
+        .pop();
+    let mut game = hit(response);
+    until(&mut game, |state| {
+        state.fighters[1].action == Action::FlyReflectWall
+    });
+    let mut wall_samples = 1;
+    while game.state().fighters[1].action == Action::FlyReflectWall {
+        step(&mut game);
+        wall_samples += usize::from(game.state().fighters[1].action == Action::FlyReflectWall);
+    }
+    assert_eq!(wall_samples, 2);
+
+    let mut tech = tech_data(0.0);
+    let attributes = tech.fighters[1].surface_tech.as_mut().unwrap();
+    attributes.passive_wall_poses.pop();
+    attributes.passive_wall_jump_poses.pop();
+    attributes.passive_ceiling_poses.pop();
+    let mut game = released_neutral_wall_tech(tech);
+    let mut last_wall_frame = game.state().fighters[1].action_frame;
+    while game.state().fighters[1].action == Action::PassiveWall {
+        last_wall_frame = game.state().fighters[1].action_frame;
+        step(&mut game);
+    }
+    assert_eq!(last_wall_frame, 5);
+    assert_eq!(game.state().fighters[1].action, Action::Fall);
 }
