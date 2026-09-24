@@ -26,7 +26,15 @@ fn data() -> MatchData {
         fighter.locomotion =
             Some(serde_json::from_str(include_str!("fixtures/game/locomotion.json")).unwrap());
     }
-    escape_air_support::profile(data)
+    let mut data = escape_air_support::profile(data);
+    // The native pose path applies the fighter-facing Y root rotation before
+    // hitbox sampling. Player 1 faces -X, so the synthetic jab must use local
+    // +Z to place its bone in world -X and reach player 0 at the opposite spawn.
+    for frame in &mut data.fighters[1].jab.frames {
+        frame.bones[1].translation[0] = 0.0;
+        frame.bones[1].translation[2] = 4.0;
+    }
+    data
 }
 
 fn buttons(buttons: u16) -> Controller {
