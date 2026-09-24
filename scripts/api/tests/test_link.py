@@ -158,10 +158,10 @@ class LinkTests(unittest.TestCase):
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [])
         context.input.stick = (1.0, 0.0)
-        fighter.action_frame = 3
+        fighter.action_frame = 4
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [])
-        fighter.action_frame = 2
+        fighter.action_frame = 3
         move.boomerang_release(fighter, context)
         self.assertEqual(fighter.trajectory_events, [context])
 

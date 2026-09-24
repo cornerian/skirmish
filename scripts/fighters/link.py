@@ -145,9 +145,7 @@ class LinkSideSpecial(_FamilySideSpecial):
             if abs(stick[0]) < threshold:
                 return
         window = getattr(specials, "dash_smash_window", None)
-        # Native ``on21EC`` accepts only while x673 is strictly below the
-        # configured window (plus the common offset).
-        if window is not None and getattr(fighter, "action_frame", 0) >= window:
+        if window is not None and getattr(fighter, "action_frame", 0) > window:
             return
         update = getattr(fighter, "update_boomerang_trajectory", None)
         if callable(update):
