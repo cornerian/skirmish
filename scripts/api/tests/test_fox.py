@@ -23,8 +23,14 @@ class FoxBlasterTests(unittest.TestCase):
     def test_falco_directly_uses_fighter_and_shares_fox_moves(self):
         self.assertEqual(Falco.__bases__, (Fighter,))
         self.assertFalse(issubclass(Falco, Fox))
-        self.assertIs(Falco.specials, Fox.specials)
-        self.assertIs(Falco.specials.side, Fox.specials.side)
+        # Falco shares the Fox callback objects for neutral, up, and down
+        # specials.  Side special keeps the shared implementation through a
+        # Falco-only wrapper that restores the grounded Phantasm end transition.
+        self.assertIsNot(Falco.specials, Fox.specials)
+        self.assertIs(Falco.specials.neutral, Fox.specials.neutral)
+        self.assertIs(Falco.specials.up, Fox.specials.up)
+        self.assertIs(Falco.specials.down, Fox.specials.down)
+        self.assertIsNot(Falco.specials.side, Fox.specials.side)
         self.assertIs(Falco.aerials, Fox.aerials)
         self.assertIs(Falco.grounded, Fox.grounded)
         self.assertEqual(Falco.parameters().article_id, ArticleId.FALCO_LASER)
