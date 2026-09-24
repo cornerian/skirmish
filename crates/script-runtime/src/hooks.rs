@@ -40,11 +40,13 @@ pub enum HookKind {
     GroundAirChanged,
     PlatformDropDecision,
     AnimationEvent,
+    Physics,
+    Collision,
 }
 
 impl HookKind {
     /// Number of callback slots in the stable native ABI.
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 21;
 
     /// Kinds in stable dispatch-table order.
     pub const ALL: &'static [Self] = &[
@@ -67,6 +69,8 @@ impl HookKind {
         Self::GroundAirChanged,
         Self::PlatformDropDecision,
         Self::AnimationEvent,
+        Self::Physics,
+        Self::Collision,
     ];
 
     /// Borrow the stable registry in APIs that prefer a method over a
@@ -102,6 +106,8 @@ impl HookKind {
             16 => Some(Self::GroundAirChanged),
             17 => Some(Self::PlatformDropDecision),
             18 => Some(Self::AnimationEvent),
+            19 => Some(Self::Physics),
+            20 => Some(Self::Collision),
             _ => None,
         }
     }
@@ -128,6 +134,8 @@ impl HookKind {
             Self::GroundAirChanged => "ground_air_changed",
             Self::PlatformDropDecision => "platform_drop_decision",
             Self::AnimationEvent => "animation_event",
+            Self::Physics => "physics",
+            Self::Collision => "collision",
         }
     }
 
@@ -160,6 +168,8 @@ impl HookKind {
             "ground_air_changed" => Self::GroundAirChanged,
             "platform_drop_decision" => Self::PlatformDropDecision,
             "animation_event" => Self::AnimationEvent,
+            "physics" => Self::Physics,
+            "collision" => Self::Collision,
             _ => return None,
         })
     }
@@ -185,7 +195,9 @@ impl HookKind {
             | Self::SurfaceContact
             | Self::GroundAirChanged
             | Self::PlatformDropDecision => HookArgumentContract::FighterContext,
-            Self::AnimationEvent => HookArgumentContract::FighterContext,
+            Self::AnimationEvent | Self::Physics | Self::Collision => {
+                HookArgumentContract::FighterContext
+            }
         }
     }
 
@@ -217,7 +229,9 @@ impl HookKind {
             | Self::AfterHit
             | Self::AfterReceiveHit
             | Self::ProjectileContact
-            | Self::GroundAirChanged => HookReturnContract::Unit,
+            | Self::GroundAirChanged
+            | Self::Physics
+            | Self::Collision => HookReturnContract::Unit,
         }
     }
 
@@ -243,6 +257,8 @@ impl HookKind {
             Self::GroundAirChanged => &["ground_air_changed"],
             Self::PlatformDropDecision => &["platform_drop_decision"],
             Self::AnimationEvent => &["animation_event"],
+            Self::Physics => &["physics"],
+            Self::Collision => &["collision"],
         }
     }
 
@@ -260,6 +276,8 @@ impl HookKind {
                 | Self::ScheduledDeadline
                 | Self::CommandTraceChanged
                 | Self::AnimationEvent
+                | Self::Physics
+                | Self::Collision
         )
     }
 }
@@ -461,7 +479,8 @@ fn metadata_for(kind: HookKind, source_name: &str) -> HookMetadata {
     };
     HookMetadata {
         requires_static_arguments: kind.requires_static_arguments(),
-        action_selection_filter: deadline_source.is_some(),
+        action_selection_filter: deadline_source.is_some()
+            || matches!(kind, HookKind::Physics | HookKind::Collision),
         deadline_source,
     }
 }
@@ -563,6 +582,16 @@ mod tests {
 
         let command = map_source_decorator("skirmish.hook", "command_changed").unwrap();
         assert_eq!(command.kind(), HookKind::CommandTraceChanged);
+
+        for (name, kind) in [
+            ("physics", HookKind::Physics),
+            ("collision", HookKind::Collision),
+        ] {
+            let phase = map_source_decorator("skirmish.hook", name).unwrap();
+            assert_eq!(phase.kind(), kind);
+            assert!(phase.requires_static_arguments());
+            assert!(phase.has_action_selection_filter());
+        }
     }
 
     #[test]
@@ -606,6 +635,8 @@ mod tests {
             HookKind::ProjectileContact,
             HookKind::GroundAirChanged,
             HookKind::AnimationEvent,
+            HookKind::Physics,
+            HookKind::Collision,
         ];
         assert_eq!(
             decision_hooks.len() + notification_and_combat_hooks.len(),

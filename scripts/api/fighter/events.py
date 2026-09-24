@@ -25,6 +25,8 @@ class Hook(str, Enum):
     GROUND_AIR_CHANGED = "ground_air_changed"
     PLATFORM_DROP_DECISION = "platform_drop_decision"
     ANIMATION_EVENT = "animation_event"
+    PHYSICS = "physics"
+    COLLISION = "collision"
 
 
 class AnimationEventId(IntEnum):
@@ -212,6 +214,14 @@ class _On:
     def surface_contact(self, *actions, **kwargs): return self._optional(Hook.SURFACE_CONTACT, None, actions=kwargs.get("actions", actions))
     def ground_air_changed(self, *actions, **kwargs): return self._optional(Hook.GROUND_AIR_CHANGED, None, actions=kwargs.get("actions", actions))
     def platform_drop(self, *actions, **kwargs): return self._optional(Hook.PLATFORM_DROP_DECISION, None, actions=kwargs.get("actions", actions))
+    def physics(self, *actions, **kwargs):
+        function = actions[0] if len(actions) == 1 and callable(actions[0]) else None
+        values = () if function is not None else actions
+        return self._optional(Hook.PHYSICS, function, actions=kwargs.get("actions", values))
+    def collision(self, *actions, **kwargs):
+        function = actions[0] if len(actions) == 1 and callable(actions[0]) else None
+        values = () if function is not None else actions
+        return self._optional(Hook.COLLISION, function, actions=kwargs.get("actions", values))
     def validate(self, function):
         function.__fighter_validate__ = True
         return function

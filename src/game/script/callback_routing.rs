@@ -446,6 +446,29 @@ mod tests {
     }
 
     #[test]
+    fn phase_hooks_use_explicit_action_snapshots() {
+        for hook in [Hook::Physics, Hook::Collision] {
+            let mut binding = binding(hook);
+            binding.actions = vec!["Wait".into()];
+            let selector = CallbackSelector::from_binding(&binding).unwrap();
+            assert!(matches(
+                hook,
+                &selector,
+                &json!({"event": {"kind": hook.name(), "action": "Wait"}}),
+                Some(Action::Fall),
+                None,
+            ));
+            assert!(!matches(
+                hook,
+                &selector,
+                &json!({"event": {"kind": hook.name(), "action": "Fall"}}),
+                Some(Action::Wait),
+                None,
+            ));
+        }
+    }
+
+    #[test]
     fn projectile_debug_action_spelling_matches_custom_filter() {
         let mut binding = binding(Hook::ProjectileContact);
         binding.action = Some("Custom.test:phase".into());

@@ -801,6 +801,20 @@ where
             player,
             &state.entities,
         )?;
+        dispatch_script_phase(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            crate::game::script::Hook::Physics,
+        )?;
+        drain_script_transitions(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
+            &state.entities,
+        )?;
         drain_script_deadlines(
             fighter,
             &data.fighters[player],
@@ -820,6 +834,20 @@ where
             player,
             &mut state.events,
             (&data.fighters[player], &data.rules, input),
+            &state.entities,
+        )?;
+        dispatch_script_phase(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            crate::game::script::Hook::Collision,
+        )?;
+        drain_script_transitions(
+            fighter,
+            &data.fighters[player],
+            &data.rules,
+            state.next_frame,
+            player,
             &state.entities,
         )?;
         staling::flush(
@@ -2201,6 +2229,27 @@ fn update_actions(
     if f.action == Action::JumpSquat && input.buttons & (BUTTON_X | BUTTON_Y) == 0 {
         f.short_hop = true;
     }
+    Ok(())
+}
+
+/// Deliver one generic source phase after the native phase has established the
+/// action visible to the callback. The callback registry performs the action
+/// filter, so fighters without a binding take the lifecycle fast path.
+fn dispatch_script_phase(
+    fighter: &mut Fighter,
+    data: &FighterData,
+    rules: &Rules,
+    hook: crate::game::script::Hook,
+) -> Result<(), Error> {
+    if data.script.is_none()
+        && crate::game::script::bundled_source(data.specials.as_ref()).is_none()
+    {
+        return Ok(());
+    }
+    let context = serde_json::json!({
+        "event": {"kind": hook.name(), "action": fighter.action},
+    });
+    crate::game::script::lifecycle::invoke(hook, fighter, Some(data), Some(rules), context, None)?;
     Ok(())
 }
 
