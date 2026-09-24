@@ -11,10 +11,20 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action
-from fighters.mario import Cape
+from fighters.mario import Cape, Fireball
 
 
-class MarioCapeReflectTests(unittest.TestCase):
+class MarioSpecialAuditTests(unittest.TestCase):
+    def test_fireball_entry_clears_source_throw_flags(self):
+        fighter = SimpleNamespace(
+            action=Action.WAIT,
+            action_state=SimpleNamespace(command=(4, 5, 6, 7)),
+            throw_flags=9,
+        )
+        Fireball().enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (0, 5, 6, 7))
+        self.assertEqual(fighter.throw_flags, 0)
+
     def test_entry_clears_fighter_reflect_latch(self):
         fighter = SimpleNamespace(
             action=Action.WAIT,

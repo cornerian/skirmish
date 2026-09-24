@@ -27,6 +27,19 @@ class Fireball(B0ArticleSpecial):
     article_id = ArticleId.MARIO_FIRE
     ground, air = b0_source_phases(343, 344)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset the source throw latch when the fireball motion starts.
+
+        ``ftMr_SpecialN_Enter`` clears ``cmd_vars[0]`` and ``throw_flags``
+        before selecting either the ground or aerial motion.  The shared B0
+        entry already clears the command slot; mirror the fighter-level reset
+        here so a stale throw cue cannot leak into a new fireball.
+        """
+        super().enter(fighter, ctx)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
 
 class _SourcePair(DirectionalSpecial):
     """Shared ground/air lifecycle for Mario's source special pairs."""
