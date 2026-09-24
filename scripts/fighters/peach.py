@@ -109,8 +109,10 @@ class PeachNeutralSpecial(NeutralSpecial, _PeachSpecial):
         """
         if fighter.action is self.ground:
             fighter.change_action(self.ground_hit)
+            fighter.action_frame = 9
         elif fighter.action is self.air:
             fighter.change_action(self.air_hit)
+            fighter.action_frame = 9
 
 
 class PeachSideSpecial(SideSpecial, _PeachSpecial):
