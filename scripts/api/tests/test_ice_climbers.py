@@ -130,7 +130,7 @@ class IceClimbersTests(unittest.TestCase):
         self.assertIsNone(follower.relation)
         self.assertEqual(follower.rotation, 0.0)
 
-    def test_nana_mutation_callback_is_reachable_but_fails_closed_without_host(self):
+    def test_nana_mutation_requires_joint_anchor_and_uses_entity_set_contract(self):
         export_definition(IceClimbers)
         move = IceClimbers.specials.side
         fighter = _Fighter(move.ground_start)
@@ -138,7 +138,7 @@ class IceClimbersTests(unittest.TestCase):
         fighter.facing = 1.0
         fighter.available = True
         partner = SimpleNamespace(
-            available=True, lifecycle="active", position=(0.0, 0.0),
+            available=True, lifecycle="active", position=(0.0, 0.0), handle=9,
         )
         resource = SimpleNamespace(attributes=SimpleNamespace(xD0=5.0))
         ctx = SimpleNamespace(
@@ -149,10 +149,16 @@ class IceClimbersTests(unittest.TestCase):
         self.assertFalse(hasattr(ctx, "mutation"))
 
         calls = []
-        ctx.mutate_entity = lambda ordinal, payload: calls.append((ordinal, payload))
+        ctx.entity_set = lambda *args: calls.append(args)
         move.sync_follower(fighter, ctx)
-        self.assertEqual(calls[0][0], 1)
-        self.assertEqual(calls[0][1]["action_state"], 359)
+        self.assertEqual(calls, [])
+
+        partner.anchor_position = (1.0, 2.0)
+        move.sync_follower(fighter, ctx)
+        self.assertEqual(calls[0], (9, 359, (1.0, 2.0), (1.0, 0.0), 1.0))
+
+        # Unknown native capabilities remain inert and do not raise.
+        move.sync_follower(fighter, SimpleNamespace(entity_at_index=lambda index: partner))
 
     def test_generic_entity_view_exposes_stable_identity_shape(self):
         view = MoveContext(None, None).entity_at_index(1)

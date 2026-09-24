@@ -194,29 +194,22 @@ def nana_lifecycle_reset(follower: Any) -> None:
 def _dispatch_nana_mutation(ctx: Any, frame: NanaFollowerFrame) -> bool:
     """Send a character-neutral partner mutation when the host exposes it."""
     entity_set = getattr(ctx, "entity_set", None)
-    target = getattr(ctx, "entity_at_index", lambda ordinal: None)(1)
-    if callable(entity_set) and frame.action_state is not None and frame.position is not None:
-        handle = getattr(target, "handle", _MISSING)
-        if isinstance(handle, int) and handle >= 0:
-            velocity = frame.velocity or (0.0, 0.0)
-            facing = frame.facing if frame.facing is not None else 1.0
-            entity_set(handle, frame.action_state, frame.position, velocity, facing)
-            return True
-    for name in ("mutate_entity", "update_entity"):
-        command = getattr(ctx, name, None)
-        if callable(command):
-            command(1, {
-                "action_state": frame.action_state,
-                "position": frame.position,
-                "velocity": frame.velocity,
-                "animation_velocity": frame.animation_velocity,
-                "ground_velocity": frame.ground_velocity,
-                "ground_acceleration": frame.ground_acceleration,
-                "facing": frame.facing,
-                "animation_frame": frame.animation_frame,
-                "animation_rate": frame.animation_rate,
-            })
-            return True
+    if not callable(entity_set) or frame.action_state is None or frame.position is None:
+        return False
+    try:
+        target = ctx.entity_at_index(1)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    handle = getattr(target, "handle", _MISSING)
+    if isinstance(handle, bool) or not isinstance(handle, int) or handle < 0:
+        return False
+    velocity = frame.velocity or (0.0, 0.0)
+    facing = frame.facing if frame.facing is not None else 1.0
+    try:
+        entity_set(handle, frame.action_state, frame.position, velocity, facing)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return True
     return False
 
 
@@ -258,7 +251,10 @@ def _sync_nana(
         leader_motion=state,
         grounded=grounded,
         partner_in_range=in_range,
-        anchor_position=getattr(partner, "anchor_position", getattr(partner, "position", None)),
+        # Retail placement uses Popo R4thNb and Nana XRotN.  The generic
+        # projection does not expose those joints, so position mutation is
+        # skipped unless the host supplies an explicit resolved anchor.
+        anchor_position=getattr(partner, "anchor_position", None),
     )
     if frame.action_state is None:
         return False

@@ -15,8 +15,10 @@ used on detach/death.
 The tests in `scripts/api/tests/test_ice_climbers.py` cover those decisions
 against the pinned decomp at revision `0bac93a5`.
 
-The current generic projection is read-only and has no joint lookup. To apply
-this policy in the host, the smallest character-neutral capability is a
+The current generic projection is read-only and has no joint lookup. The
+script therefore fails closed when no resolved joint anchor is present; it
+never reuses Nana's projected root position for Popo's joint placement. To
+apply this policy in the host, the smallest character-neutral capability is a
 validated secondary-entity mutation operation with these fields:
 
 * target entity handle and owner port/ordinal validation;
@@ -25,9 +27,10 @@ validated secondary-entity mutation operation with these fields:
 * lifecycle reset for source armor, visible parts, union fields, relation, and
   rotation.
 
-Script callbacks call `mutate_entity` or `update_entity` only when the host
-provides one. Missing mutation support leaves the callback inert, preserving
-the read-only projection's fail-closed behavior.
+Script callbacks call the generic `entity_set(handle, motion_state, position,
+velocity, facing)` command only when the host provides it and a resolved
+joint anchor exists. Missing mutation support or joint sampling leaves the
+callback inert.
 
 That interface belongs to the generic fighter host. It should consume the
 `NanaFollowerFrame` result and must not contain Ice Climbers state numbers or
