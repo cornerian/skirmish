@@ -40,10 +40,10 @@ class IceShot(NeutralSpecial, DirectionalSpecial):
 class SquallHammer(SideSpecial, DirectionalSpecial):
     """Squall Hammer's four Popo motion rows (ftPp special S1/S2).
 
-    The source collision callbacks rebound wall velocity, switch S1/S2 to
-    their aerial rows, and synchronize Nana's attached pose. Those operations
-    need collision normals, article hitlag state, and the companion object;
-    they remain native-host responsibilities here.
+    The source collision callbacks rebound wall velocity, preserve the active
+    S1/S2 row, and synchronize Nana's attached pose. Those operations need
+    collision normals, article hitlag state, and the companion object; they
+    remain native-host responsibilities here.
     """
 
     ground_start = source_phase(343)
@@ -64,32 +64,6 @@ class SquallHammer(SideSpecial, DirectionalSpecial):
     on_ground, on_air = frame_preserving_surface_pairs(
         ground_start, ground_partner, air_start, air_partner
     )
-
-    @on.surface_contact()
-    def wall_rebound(self, fighter: Any, ctx: MoveContext) -> bool:
-        """Advance Squall Hammer's S1 row after a source wall collision.
-
-        ``ftPp_SpecialS1_Coll`` selects the S2 animation on wall contact;
-        native collision code owns the normal and rebound velocity.  A floor
-        contact must not consume this transition.
-        """
-        wall = getattr(ctx, "wall", None)
-        if wall is None:
-            wall = getattr(ctx, "wall_contact", False)
-        if not wall:
-            return False
-        current = getattr(fighter.action, "action", fighter.action)
-        ground_start = getattr(self.ground_start, "action", self.ground_start)
-        air_start = getattr(self.air_start, "action", self.air_start)
-        if current == ground_start:
-            target = self.ground_partner
-        elif current == air_start:
-            target = self.air_partner
-        else:
-            return False
-        fighter.change_action(target, preserve_state=True, keep_frame=True)
-        return True
-
 
 class Belay(UpSpecial, DirectionalSpecial):
     """Belay's ten Popo rows; companion selection remains native-owned.

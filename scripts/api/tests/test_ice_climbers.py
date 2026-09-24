@@ -202,27 +202,28 @@ class IceClimbersTests(unittest.TestCase):
         self.assertIn((2, ("Source.14:347", "Source.14:352")), command_hooks)
         self.assertIn((1, ("Source.14:348", "Source.14:353")), command_hooks)
 
-    def test_squall_wall_contact_advances_s1_to_s2_rows(self):
+    def test_squall_wall_contact_stays_in_the_active_source_row(self):
+        """The source reverses velocity on walls; it does not change S1/S2.
+
+        ``ftPp_SpecialS1_Coll`` and ``ftPp_SpecialS2_Coll`` both keep their
+        current motion state.  The native collision host owns the velocity
+        rebound and Nana synchronization, so the Python declaration must not
+        invent a wall-driven action transition.
+        """
         export_definition(IceClimbers)
         side = IceClimbers.specials.side
-        for source, target in ((343, 344), (345, 346)):
-            fighter = _Fighter(f"Source.14:{source}")
-            self.assertTrue(
-                side.wall_rebound(
-                    fighter, SimpleNamespace(wall_contact=True)
-                )
-            )
-            self.assertEqual(fighter.action.action, f"Source.14:{target}")
-            self.assertEqual(
-                fighter.changes[-1][1],
-                {"preserve_state": True, "keep_frame": True},
-            )
-
-        fighter = _Fighter("Source.14:343")
-        self.assertFalse(
-            side.wall_rebound(fighter, SimpleNamespace(wall_contact=False))
+        definition = export_definition(IceClimbers).as_dict()
+        behavior_id = definition["movesets"]["specials"]["side"]
+        behavior = next(
+            item for item in definition["behaviors"] if item["id"] == behavior_id
         )
-        self.assertEqual(fighter.action, "Source.14:343")
+        self.assertFalse(any(
+            callback["hook"] == "surface_contact"
+            for callback in behavior["callbacks"]
+        ))
+        for source in (343, 344, 345, 346):
+            fighter = _Fighter(f"Source.14:{source}")
+            self.assertEqual(fighter.action, f"Source.14:{source}")
 
 
 if __name__ == "__main__":
