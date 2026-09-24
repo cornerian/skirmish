@@ -14,7 +14,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action, Button, export_definition
-from fighters.bowser import Bowser
+from fighters.bowser import Bowser, BowserActionState
 
 
 class _Input:
@@ -31,6 +31,7 @@ class _Fighter:
         self.grounded = True
         self.facing = 1.0
         self.changes = []
+        self.action_state = BowserActionState()
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -206,8 +207,14 @@ class BowserTests(unittest.TestCase):
         # Ground hit has already taken the native no-victim path; only the
         # aerial hit callback branches on the latched B state.
         fighter = _Fighter(side.air_hit)
-        side.finish_hit(fighter, _context(ground=False, held={Button.B}))
+        side.input_pressed(fighter, _context(ground=False, held=set()))
+        side.finish_hit(fighter, _context(ground=False, held=set()))
         self.assertEqual(fighter.action, side.air_hold)
+        self.assertFalse(fighter.action_state.klaw_b_held)
+
+        fighter = _Fighter(side.air_hit)
+        side.finish_hit(fighter, _context(ground=False, held={Button.B}))
+        self.assertEqual(fighter.action, side.air_wait)
 
         fighter = _Fighter(side.air_hit)
         side.finish_hit(fighter, _context(ground=False, held=0x100))

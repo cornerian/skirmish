@@ -12,6 +12,7 @@ from typing import Any
 
 from skirmish import (
     Action,
+    ActionState,
     Button,
     DownSpecial,
     Fighter,
@@ -28,6 +29,12 @@ from skirmish import (
     source_phase,
     start_open_special,
 )
+
+
+class BowserActionState(ActionState):
+    """Typed mirror of the native Klaw B edge latch."""
+
+    klaw_b_held: bool = False
 
 
 def _button_held(ctx: Any, button: Button) -> bool:
@@ -144,9 +151,20 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        state = getattr(fighter, "action_state", None)
+        if state is not None and fighter.action in (
+            self.ground_hit, self.air_hit, self.ground_wait, self.air_wait,
+        ):
+            state.klaw_b_held = True
         if fighter.action in (self.ground_wait, self.air_wait):
             return self.hold_capture(fighter, ctx)
         return super().input_pressed(fighter, ctx)
+
+    @hook.action_enter(ground_start, air_start)
+    def clear_latched_b(self, fighter: Any, ctx: Any) -> None:
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            state.klaw_b_held = False
 
     # The native hit/hold branch is selected by capture callbacks.  Those
     # callbacks require the victim archive and therefore cannot be represented
@@ -181,10 +199,14 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
     @hook.animation_end(air_hit)
     def finish_hit(self, fighter: Any, ctx: Any) -> None:
         """Keep a held capture latched when the hit animation completes."""
-        if _button_held(ctx, Button.B):
+        state = getattr(fighter, "action_state", None)
+        latched = bool(getattr(state, "klaw_b_held", False))
+        if latched:
             target = self.air_hold
         else:
             target = self.air_wait
+        if state is not None:
+            state.klaw_b_held = False
         fighter.change_action(target)
 
     def hold_capture(self, fighter: Any, ctx: Any) -> bool:
@@ -277,6 +299,7 @@ class Bomb(DownSpecial, _KoopaSpecial):
 
 
 class Bowser(Fighter):
+    action_state = BowserActionState
     specials = Fighter.specials.replace(
         neutral=FlameBreath(),
         side=KoopaKlaw(),
@@ -287,6 +310,7 @@ class Bowser(Fighter):
 
 __all__ = [
     "Bowser",
+    "BowserActionState",
     "FlameBreath",
     "KoopaKlaw",
     "WhirlingFortress",

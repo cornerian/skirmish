@@ -117,4 +117,5 @@ phase ranges:
 The Klaw hold check follows `ftKp_SpecialSWait_IASA`: native code tests
 `held_buttons & HSD_PAD_B`, where `HSD_PAD_B` is `1 << 9`. The portable
 adapter tests bit `0x200` for integer button masks, and its hit animation-end
-callback preserves a latched B press without requiring a second press.
+callback consumes the typed `BowserActionState.klaw_b_held` latch without
+sampling a potentially changed current mask.
