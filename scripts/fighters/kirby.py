@@ -10,7 +10,6 @@ from skirmish import (
     Action,
     ActionState,
     Button,
-    CommonParameter,
     DownSpecial,
     Fighter,
     KirbyAttribute,
@@ -24,8 +23,6 @@ from skirmish import (
     fresh_special_input,
     frame_preserving_surface_pairs,
     hook,
-    motion,
-    parameter,
     special_attribute,
     source_phase,
     start_action,
@@ -35,6 +32,7 @@ from skirmish import (
 class KirbyActionState(ActionState):
     """Native fighter-local fields used by Kirby's Stone callbacks."""
 
+    command: tuple[int, int, int, int] = (0, 0, 0, 0)
     stone_remaining: int = 0
 
 
@@ -282,24 +280,16 @@ class Stone(DownSpecial, _KirbySpecial):
     resource = "specials.special_attributes"
     _ATTRIBUTES = tuple(KirbyAttribute)
     ground_start = source_phase(393)
-    ground_hold = source_phase(
-        394,
-        animation_loop=True,
-        motion=motion.profile(ground=(motion.ground_friction_above_walk(),)),
-    )
+    # The source ground physics includes slope history and friction state that
+    # the current portable motion ABI cannot represent without inventing a
+    # generic approximation.  Keep the phase typed and let native collision
+    # ownership fill this in when that ABI is available.
+    ground_hold = source_phase(394, animation_loop=True)
     ground_end = source_phase(395)
     air_start = source_phase(396)
-    air_hold = source_phase(
-        397,
-        animation_loop=True,
-        motion=motion.profile(
-            air=(motion.gravity(
-                acceleration=special_attribute(KirbyAttribute.STONE_GRAVITY),
-                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
-                delay=0,
-            ),),
-        ),
-    )
+    # ftKb_SpecialAirLw_Phys writes ``self_vel.y = -gravity`` every frame;
+    # motion.gravity would accumulate that value and is therefore incorrect.
+    air_hold = source_phase(397, animation_loop=True)
     air_end = source_phase(398)
     ground, air = ground_start, air_start
     _ACTIVE = (ground_start, ground_hold, ground_end, air_start, air_hold, air_end)
@@ -315,9 +305,13 @@ class Stone(DownSpecial, _KirbySpecial):
     @hook.action_enter(ground_start, air_start)
     def enter(self, fighter: Fighter, ctx) -> None:
         """Mirror ``ftKb_SpecialLw[_Air]_Enter``'s timer initialization."""
+        state = self._state(fighter)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
         max_time = fighter.special_attribute(KirbyAttribute.STONE_MAX_TIME)
         if max_time is not None:
-            self._state(fighter).stone_remaining = int(max_time)
+            state.stone_remaining = int(max_time)
 
     @hook.countdown("stone_remaining", ground_hold, air_hold, phase="physics")
     def timeout(self, fighter: Fighter, ctx) -> None:

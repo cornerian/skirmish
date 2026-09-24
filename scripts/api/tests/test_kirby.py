@@ -253,6 +253,16 @@ class KirbySpecialTests(unittest.TestCase):
             "keep_frame": True,
         })
 
+    def test_stone_export_keeps_native_callback_ownership(self):
+        definition = export_definition(Kirby).as_dict()
+        behavior_id = definition["movesets"]["specials"]["down"]
+        behavior = next(item for item in definition["behaviors"] if item["id"] == behavior_id)
+        callbacks = {item["callback"].rsplit(".", 1)[-1] for item in behavior["callbacks"]}
+        self.assertIn("enter", callbacks)
+        self.assertIn("release", callbacks)
+        self.assertIn("timeout", callbacks)
+        self.assertEqual(behavior["resource"], "specials.special_attributes")
+
     def test_stone_timeout_releases_ground_and_air_variants(self):
         move = Stone()
         for source, target in (
@@ -263,6 +273,14 @@ class KirbySpecialTests(unittest.TestCase):
             fighter.action = source.action
             move.timeout(fighter, SimpleNamespace())
             self.assertIs(fighter.action, target)
+
+    def test_stone_entry_resets_source_command_slots(self):
+        move = Stone()
+        fighter = _Fighter()
+        fighter.action = move.ground_start.action
+        fighter.action_state.command = (3, 2, 1, 4)
+        move.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
     def test_hammer_air_landing_enters_fall_special_lag(self):
         move = Hammer()
