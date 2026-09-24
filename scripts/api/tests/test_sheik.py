@@ -44,10 +44,15 @@ class _Fighter:
         self.action = action
 
 
-def _context(*, ground: bool = True, resource: bool = True, buttons=(Button.B,), held=None):
+def _context(*, ground: bool = True, resource: bool = True, buttons=(Button.B,),
+             held=None, attributes=None):
+    resource_value = (
+        SimpleNamespace(attributes=attributes)
+        if attributes is not None else object()
+    )
     return SimpleNamespace(
         input=_Input(buttons=buttons, held=held),
-        resource=lambda path: object() if resource else None,
+        resource=lambda path: resource_value if resource else None,
         ground_open=ground,
         air_open=not ground,
         grounded=ground,
@@ -136,6 +141,31 @@ class SheikTests(unittest.TestCase):
             _context(buttons=(Button.L,), held=(Button.L,)),
         ))
         self.assertIs(fighter.action, move.ground_end)
+
+    def test_vanish_travel_uses_source_fall_special_attributes(self):
+        """State 360 calls FallSpecial with Sheik x58 and x5C."""
+        move = Vanish()
+        fighter = _Fighter(move.air_move)
+        fighter.fall_special = []
+        fighter.enter_fall_special = lambda **kwargs: fighter.fall_special.append(kwargs)
+        context = _context(
+            ground=False,
+            attributes=SimpleNamespace(x58=0.75, x5C=12.0),
+        )
+
+        self.assertTrue(move.enter_fall_special(fighter, context))
+        self.assertEqual(
+            fighter.fall_special,
+            [{"mobility": 0.75, "landing_lag": 12.0}],
+        )
+
+    def test_vanish_countdown_travel_states_do_not_advance_on_animation_end(self):
+        """States 356/359 use source countdown/collision callbacks."""
+        move = Vanish()
+        for state in (move.ground_start_1, move.air_start_1):
+            fighter = _Fighter(state)
+            move._transition_animation_end(fighter, _context())
+            self.assertIs(fighter.action, state)
 
     def test_chain_release_latches_without_bypassing_native_minimum_frame(self):
         move = Chain()

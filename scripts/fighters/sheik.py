@@ -12,6 +12,7 @@ from skirmish import (
     Action, ActionState, Button, DirectionalSpecial, DownSpecial, Fighter,
     NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
 )
+from fighter.helpers import resource_attributes
 
 
 def _button_held(ctx: Any, button: Button) -> bool:
@@ -207,10 +208,36 @@ class Vanish(UpSpecial, DirectionalSpecial):
     air = air_start
     _ACTIVE = (ground_start, ground_start_1, ground_move, air_start, air_start_1, air_move)
 
+    @on.animation_end(air_move)
+    def enter_fall_special(self, fighter: Fighter, ctx: Any) -> bool:
+        """Match ``ftSk_SpecialAirHi_Anim``'s FallSpecial handoff.
+
+        The source passes ``ftSeakAttributes.x58`` and ``x5C`` to
+        ``ftCo_80096900`` when state 360 ends.  Named resource fields are
+        accepted when available, with the source offsets retained as the
+        compatibility fallback until Sheik's attributes are typed.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "specialhi_freefall_mobility", getattr(attributes, "x58", None)),
+        )
+        landing_lag = getattr(
+            attributes,
+            "specialhi_landing_lag",
+            getattr(attributes, "x5C", getattr(attributes, "x5c", None)),
+        )
+        enter = getattr(fighter, "enter_fall_special", None)
+        if mobility is None or landing_lag is None or not callable(enter):
+            return False
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
+
     on_end = {
-        ground_start: Transition(ground_start_1), ground_start_1: Transition(ground_move),
-        ground_move: Transition(Action.WAIT), air_start: Transition(air_start_1),
-        air_start_1: Transition(air_move), air_move: Transition(Action.FALL),
+        ground_start: Transition(ground_start_1),
+        ground_move: Transition(Action.WAIT),
+        air_start: Transition(air_start_1),
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
