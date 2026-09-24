@@ -236,8 +236,13 @@ class Roll(NeutralSpecial):
         if not isinstance(velocity, (tuple, list)) or len(velocity) < 2:
             return False
         scale = self._attribute(
-            fighter, JigglypuffRolloutAttribute.WALL_SPEED_SCALE, 1.0
+            fighter, JigglypuffRolloutAttribute.WALL_SPEED_SCALE
         )
+        if scale is None:
+            # Native wall contact always reads ftPurinAttributes::xD4.  A
+            # lightweight host without that resource must leave the event to
+            # its native bridge rather than inventing a neutral multiplier.
+            return False
         if hasattr(fighter, "set_velocity"):
             fighter.set_velocity(-velocity[0] * scale, velocity[1])
         fighter.facing = -fighter.facing

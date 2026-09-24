@@ -177,6 +177,9 @@ class JigglypuffTests(unittest.TestCase):
         fighter = _Fighter(Roll.ground_release, facing=1.0)
         fighter.velocity = (3.0, 0.5)
         fighter.ground_velocity = 3.0
+        fighter.special_attribute = lambda attribute: {
+            JigglypuffRolloutAttribute.WALL_SPEED_SCALE: f32(1.0),
+        }.get(attribute)
         fighter.set_velocity = lambda x, y: setattr(fighter, "velocity", (x, y))
         self.assertTrue(roll.wall_bounce(fighter, SimpleNamespace(wall=object())))
         self.assertEqual(fighter.velocity, (-3.0, 0.5))
@@ -210,7 +213,7 @@ class JigglypuffTests(unittest.TestCase):
         roll.release(air, None)
         self.assertEqual(air.velocity, (f32(4.0), f32(-0.75)))
 
-    def test_roll_wall_callback_is_exported_and_tolerates_unmodeled_charge(self):
+    def test_roll_wall_callback_requires_native_scale_and_tolerates_unmodeled_charge(self):
         roll = Roll()
         exported = export_definition(Jigglypuff).as_dict()
         neutral = next(item for item in exported["behaviors"] if item["resource"] == "neutral")
@@ -221,8 +224,16 @@ class JigglypuffTests(unittest.TestCase):
         fighter.ground_velocity = 2.0
         fighter.action_state = SimpleNamespace()
         fighter.set_velocity = lambda x, y: setattr(fighter, "velocity", (x, y))
+        self.assertFalse(roll.wall_bounce(fighter, SimpleNamespace(wall=object())))
+        self.assertEqual(fighter.velocity, (2.0, 0.0))
+
+        fighter.attributes = {
+            JigglypuffRolloutAttribute.WALL_SPEED_SCALE: f32(0.5),
+        }
+        fighter.special_attribute = lambda attribute: fighter.attributes.get(attribute)
         self.assertTrue(roll.wall_bounce(fighter, SimpleNamespace(wall=object())))
-        self.assertEqual(fighter.velocity, (-2.0, 0.0))
+        self.assertEqual(fighter.velocity, (-1.0, 0.0))
+        self.assertEqual(fighter.ground_velocity, -1.0)
         self.assertFalse(hasattr(fighter.action_state, "charge"))
 
         landed = _Fighter(Roll.hit)
