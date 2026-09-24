@@ -804,7 +804,7 @@ impl Specials {
 
 #[cfg(test)]
 mod tests {
-    use super::{AnimationResourceStatus, ArticleId, ArticleResource, Resources, Specials};
+    use super::{AnimationResourceStatus, ArticleId, Resources, Specials};
     use crate::game::data::MotionStateProfile;
     use serde_json::json;
 

@@ -933,8 +933,9 @@ mod tests {
     use super::{
         ArticleHandle, ArticleLaunch, GravityProjectileState, ProjectileBehavior,
         ProjectileContactPolicy, ProjectileKind, ProjectilePersistence, ProjectileReflection,
-        ProjectileShield, dot, facing_from_velocity, gravity_step, normalize_angle,
-        reset_ray_after_terrain_contact, spawn, speed, surface_bounce, tick_lifetime,
+        ProjectileShield, dot, facing_from_velocity, gravity_step, luigi_fireball_terrain_despawns,
+        normalize_angle, reset_ray_after_terrain_contact, spawn, speed, surface_bounce,
+        tick_lifetime,
     };
     use crate::game::script::resources::ArticleId;
 
