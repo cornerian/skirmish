@@ -1,0 +1,18 @@
+{
+  "first_divergent_frame": -113,
+  "provenance": {
+    "exporter_git_revision": "044d67b7e871d3a11e4b3e21b7269fcd758ae57d",
+    "skirmish_git_revision": "41fb815764a44adc41653eacaf3dbffd246f93c6",
+    "replay_sha256": "2b5f3ac82834db50b69aca8cccea574254c3e156a1c34f6d4de741412d68fc0a",
+    "manifest_source_sha256": {
+      "PlMr.dat": "929cdf08c31bc75156ccef05238f2b16dc4d0b187ed1bb4f0a628a2466fb7f7a",
+      "PlMrAJ.dat": "4bd9593e6f0d980b4441891b62ea84a08c099471d695a614974c67223ab5872f",
+      "PlMrNr.dat": "518df5b1d1ce6775a636f4ca8e8e62fb24be65013cd586451c21a181824903ae",
+      "PlCo.dat": "63841336337eb5a7366b06ccc60ea4bd37c3604ab56e19939d78b9aa9cdd234c",
+      "PlDk.dat": "c6cd090eda7e96da6fbd6d5dd4296a91eab7cab99c5b007244b090f5de799d6f",
+      "PlDkAJ.dat": "320ad74918bd4f93c872b2cd396e730b2234ecaea96dbea3fdcf3287d8a636d6",
+      "PlDkNr.dat": "7e8a90c28adb183dca3a652eb3796b65ddecff07c8664705e31057a599b76cb6",
+      "GrNLa.dat": "2a295a733414fb65a7061a5c092144fb197570682562b87ba5567ff3f08abb02"
+    }
+  }
+}
