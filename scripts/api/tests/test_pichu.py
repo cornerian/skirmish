@@ -61,12 +61,40 @@ class PichuTests(unittest.TestCase):
         self.assertIs(Pichu.parameters, PichuParameters)
         self.assertTrue(PichuParameters().can_walljump)
         self.assertEqual(PichuParameters().data_file, "PlPc.dat")
+        self.assertEqual(PichuParameters().data_name, "ftDataPichu")
         self.assertEqual(PichuParameters().animation_data_file, "PlPcAJ.dat")
         self.assertFalse(PichuParameters().up_special_effects)
         self.assertEqual(PichuParameters().thunder_jolt_sound, 230067)
         self.assertEqual(
             Pichu.costume_files,
             ("PlPcNr.dat", "PlPcRe.dat", "PlPcBu.dat", "PlPcGr.dat"),
+        )
+        self.assertEqual(
+            Pichu.costume_joint_files,
+            (
+                "PlyPichu5K_Share_joint",
+                "PlyPichu5KRe_Share_joint",
+                "PlyPichu5KBu_Share_joint",
+                "PlyPichu5KGr_Share_joint",
+            ),
+        )
+        self.assertEqual(
+            Pichu.costume_material_animation_files,
+            (
+                "PlyPichu5K_Share_matanim_joint",
+                "PlyPichu5KRe_Share_matanim_joint",
+                "PlyPichu5KBu_Share_matanim_joint",
+                "PlyPichu5KGr_Share_matanim_joint",
+            ),
+        )
+        self.assertEqual(
+            Pichu.demo_motion_files,
+            (
+                "ftDemoResultMotionFilePichu",
+                "ftDemoIntroMotionFilePichu",
+                "ftDemoEndingMotionFilePichu",
+                "ftDemoViWaitMotionFilePichu",
+            ),
         )
 
     def test_shared_motion_table_declares_every_pichu_special_state(self):

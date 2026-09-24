@@ -30,6 +30,7 @@ class PichuParameters(Parameters):
 
     can_walljump: bool = True
     data_file: str = "PlPc.dat"
+    data_name: str = "ftDataPichu"
     animation_data_file: str = "PlPcAJ.dat"
     # ftPk_SpecialHiStart1_Anim and its aerial twin suppress Pikachu's
     # electric burst for FTKIND_PICHU.  Keep this as typed host metadata until
@@ -52,6 +53,27 @@ class Pichu(Fighter):
         "PlPcRe.dat",
         "PlPcBu.dat",
         "PlPcGr.dat",
+    )
+    # ftPc_Init_CostumeStrings stores one joint and one material-animation
+    # archive beside each costume model.  Keep the complete source tuple so
+    # native loaders do not have to reconstruct names from the model path.
+    costume_joint_files: ClassVar[tuple[str, ...]] = (
+        "PlyPichu5K_Share_joint",
+        "PlyPichu5KRe_Share_joint",
+        "PlyPichu5KBu_Share_joint",
+        "PlyPichu5KGr_Share_joint",
+    )
+    costume_material_animation_files: ClassVar[tuple[str, ...]] = (
+        "PlyPichu5K_Share_matanim_joint",
+        "PlyPichu5KRe_Share_matanim_joint",
+        "PlyPichu5KBu_Share_matanim_joint",
+        "PlyPichu5KGr_Share_matanim_joint",
+    )
+    demo_motion_files: ClassVar[tuple[str, ...]] = (
+        "ftDemoResultMotionFilePichu",
+        "ftDemoIntroMotionFilePichu",
+        "ftDemoEndingMotionFilePichu",
+        "ftDemoViWaitMotionFilePichu",
     )
     specials = ELECTRIC_SPECIALS
 
