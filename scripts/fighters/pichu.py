@@ -9,7 +9,7 @@ source constants in their roster loader.
 
 from typing import ClassVar
 
-from skirmish import Fighter, Parameters
+from skirmish import ArticleId, Fighter, Parameters
 from fighter.electric_family import (
     ELECTRIC_SPECIALS,
     ElectricAgility as Agility,
@@ -38,6 +38,16 @@ class PichuParameters(Parameters):
     up_special_effects: bool = False
     # ftPk_SpecialN_Anim selects Pichu's distinct Thunder Jolt sound.
     thunder_jolt_sound: int = 230067
+    # ``ftPc_Init_OnLoad`` registers xDC, x14, and x18 as the Pichu Thunder,
+    # ground Jolt, and air Jolt archives.  These identities are stable source
+    # data even though article spawning remains a native host boundary.
+    thunder_article_id: ArticleId = ArticleId.PICHU_THUNDER
+    thunder_jolt_ground_article_id: ArticleId = ArticleId.PICHU_TJOLT_GROUND
+    thunder_jolt_air_article_id: ArticleId = ArticleId.PICHU_TJOLT_AIR
+
+    # The shared neutral callback consumes command variable 0 at the command
+    # edge and uses command variable 1 as its one spawn latch.
+    neutral_spawn_command: int = 0
 
 
 class Pichu(Fighter):

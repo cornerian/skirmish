@@ -13,7 +13,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from fighter import Action, Button, export_definition
+from fighter import Action, ArticleId, Button, export_definition
 from fighters.pichu import Pichu, PichuParameters
 
 
@@ -65,6 +65,19 @@ class PichuTests(unittest.TestCase):
         self.assertEqual(PichuParameters().animation_data_file, "PlPcAJ.dat")
         self.assertFalse(PichuParameters().up_special_effects)
         self.assertEqual(PichuParameters().thunder_jolt_sound, 230067)
+        self.assertEqual(
+            (
+                PichuParameters().thunder_article_id,
+                PichuParameters().thunder_jolt_ground_article_id,
+                PichuParameters().thunder_jolt_air_article_id,
+            ),
+            (
+                ArticleId.PICHU_THUNDER,
+                ArticleId.PICHU_TJOLT_GROUND,
+                ArticleId.PICHU_TJOLT_AIR,
+            ),
+        )
+        self.assertEqual(PichuParameters().neutral_spawn_command, 0)
         self.assertEqual(
             Pichu.costume_files,
             ("PlPcNr.dat", "PlPcRe.dat", "PlPcBu.dat", "PlPcGr.dat"),

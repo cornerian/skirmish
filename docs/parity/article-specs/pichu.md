@@ -30,9 +30,11 @@ The item enum in `melee/it/forward.h` assigns these stable numeric kinds:
 `ftPk_Init_OnLoadForPichu`, and registers its fighter item archive entries from
 `ftPichuAttributes.xDC`, `.x14`, and `.x18`.  The shared Pikachu attribute
 layout supplies `specialn_itkind` and `specialairn_itkind` to the neutral
-special callbacks; Pichu's loaded data selects the ground and air Pichu Jolt
-kinds above.  `ftPk_Init_OnLoadForPichu` preserves the shared Pikachu special
-attribute layout while leaving the Pichu article archive entries distinct.
+special callbacks.  The portable Pichu parameters preserve the three source
+archive identities (`PICHU_THUNDER`, `PICHU_TJOLT_GROUND`, and
+`PICHU_TJOLT_AIR`) while leaving article construction to the native host.
+`ftPk_Init_OnLoadForPichu` preserves the shared Pikachu special attribute
+layout while leaving the Pichu article archive entries distinct.
 
 ## Neutral special emission
 
@@ -42,6 +44,9 @@ command variable 1, compute the owner-scaled spawn point from the relevant
 `special[n]spawn_offset`, and call
 `itPikachuThunderJolt_Spawn(owner, position, facing, specialn_itkind)`.
 For Pichu the callback then plays sound ID `230067`; Pikachu uses `240076`.
+The command-0 edge is the grounded and aerial spawn trigger; command 1 is the
+one-spawn latch and is represented by `neutral_spawn_command = 0` in the
+portable parameters.
 The ground and air callbacks end in the source's normal motion completion or
 landing-lag transition.
 
@@ -78,5 +83,5 @@ or invent an owner self-damage trigger from article data.  The portable host
 currently lacks article archive objects, owner-linked item lifecycle, native
 effect cleanup, article ECB/surface state, Thunder segment ownership, and
 article collision callbacks.  Those seams block full Pichu Jolt and Thunder
-parity; the existing fighter script can represent the source motion phases and
-Pichu sound identity only.
+parity; the existing fighter script can represent the source motion phases,
+Pichu sound identity, and archive-kind metadata only.
