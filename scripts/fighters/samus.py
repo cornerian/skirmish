@@ -43,7 +43,6 @@ class ChargeShot(NeutralSpecial, DirectionalSpecial):
         ground_cancel: Transition(Action.WAIT),
         ground_fire: Transition(Action.WAIT),
         air_start: Transition(air_fire),
-        air_fire: Transition(Action.FALL),
     }
     on_ground = {air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
                  air_fire: Transition(ground_fire, preserve_state=True, keep_frame=True)}
@@ -78,6 +77,21 @@ class ChargeShot(NeutralSpecial, DirectionalSpecial):
             fighter.change_action(self.ground_fire)
             return True
         return DirectionalSpecial.input_pressed(self, fighter, ctx)
+
+    @hook.animation_end(air_fire)
+    def finish_air_fire(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        """Match ``ftSs_SpecialAirN_Anim``'s landing-lag exit."""
+        lag = fighter.special_attribute(SamusAttribute.SPECIAL_N_AERIAL_LANDING_LAG)
+        if lag is None:
+            return False
+        if lag == 0:
+            fighter.change_action(Action.FALL)
+            return True
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            return False
+        enter(mobility=1, landing_lag=lag)
+        return True
 
 
 class Missile(SideSpecial, DirectionalSpecial):

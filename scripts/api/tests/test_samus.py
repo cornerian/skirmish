@@ -94,6 +94,21 @@ class SamusTests(unittest.TestCase):
             self.assertTrue(move.input_pressed(fighter, _context(pressed=(button,))))
             self.assertEqual(fighter.action, move.ground_cancel)
 
+    def test_charge_shot_aerial_fire_uses_source_landing_lag(self):
+        move = ChargeShot()
+        fighter = _Fighter(grounded=False)
+        fighter.action = move.air_fire
+        fighter.values[SamusAttribute.SPECIAL_N_AERIAL_LANDING_LAG] = 12.0
+
+        self.assertTrue(move.finish_air_fire(fighter, _context(grounded=False)))
+        self.assertEqual(fighter.fall_special, {"mobility": 1, "landing_lag": 12.0})
+
+        fighter = _Fighter(grounded=False)
+        fighter.action = move.air_fire
+        fighter.values[SamusAttribute.SPECIAL_N_AERIAL_LANDING_LAG] = 0.0
+        self.assertTrue(move.finish_air_fire(fighter, _context(grounded=False)))
+        self.assertEqual(fighter.action, Action.FALL)
+
     def test_definition_uses_source_states_and_typed_motion(self):
         self.assertEqual(ScrewAttack.ground.as_dict()["slippi_state"], 353)
         self.assertEqual(ScrewAttack.air.as_dict()["slippi_state"], 354)
