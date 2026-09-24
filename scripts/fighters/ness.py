@@ -192,6 +192,11 @@ class PKThunder(UpSpecial, _NessSpecial):
         The pinned ``ftnessspecialhi.c`` callbacks for states 364, 365, and
         366 use ``x70_PK_THUNDER_2_LANDING_LAG``: zero enters ordinary fall,
         while a nonzero value enters FallSpecial with full aerial mobility.
+        The source also supplies ``x6C_PK_THUNDER_2_FREEFALL_ANIM_BLEND``;
+        the current typed ``enter_fall_special`` host contract accepts only
+        mobility and landing lag, so that blend remains host-owned and is not
+        fabricated here.  The native host performs the source jump-budget and
+        ground-velocity reset while entering FallSpecial.
         """
         attributes = resource_attributes(ctx, self.resource)
         landing_lag = getattr(

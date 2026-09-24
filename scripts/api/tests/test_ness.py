@@ -246,6 +246,17 @@ class NessTests(unittest.TestCase):
         self.assertTrue(move.enter_fall_special(fighter, ctx))
         self.assertEqual(fighter.action, Action.FALL)
 
+    def test_pk_thunder_fall_special_callback_is_reachable_for_all_aerial_exits(self):
+        callbacks = [event.as_dict() for event in PKThunder().events()]
+        self.assertIn(
+            {
+                "hook": "animation_ended",
+                "callback": "enter_fall_special",
+                "actions": ["Source.364", "Source.365", "Source.366"],
+            },
+            callbacks,
+        )
+
     def test_pk_thunder_surface_changes_only_control_states(self):
         # ftNs_SpecialHi*_Coll has explicit ground/air pairs for startup,
         # control, and end. PK Thunder 2 launch/rebound collision is handled
