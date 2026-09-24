@@ -86,6 +86,12 @@ With `command[0]=0`, the same wall contact must leave the Wizard's Foot phase
 unchanged and must not enter state 363. The wall must be opposite the facing
 direction; a same-facing wall is not a rebound.
 
+The rebound branch is installed only on grounded Wizard's Foot state 357.
+The aerial state 359 uses `ftCa_SpecialAirLw_Coll`, which has no state-363
+wall branch. Before entering state 363, `ftCa_SpecialLw_Coll` clears command
+variables 0 through 2 and `throw_flags`; the authoring callback preserves
+command slot 3 because the host state model keeps the fourth slot separate.
+
 ## Source anchors and remaining boundary
 
 - `ftCaptain/ftcaptainspecialhi.c`: `ftCa_SpecialHi_Enter`,

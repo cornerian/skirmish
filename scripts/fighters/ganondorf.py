@@ -94,7 +94,15 @@ class WizardFoot(CaptainDownSpecial):
             fighter.throw_flags = 0
 
     def wall_rebound(self, fighter, ctx):
-        """Require the source wall-collision command cue before state 363."""
+        """Mirror the state-357-only source wall rebound branch.
+
+        ``ftCa_SpecialLw_Coll`` is installed on grounded Wizard's Foot
+        (state 357).  It clears the three command variables and
+        ``throw_flags`` before entering state 363; the air callback has no
+        equivalent rebound branch.
+        """
+        if fighter.action != self.ground:
+            return False
         command = getattr(getattr(fighter, "action_state", None), "command", ())
         if not command or not command[0]:
             return False
@@ -114,7 +122,14 @@ class WizardFoot(CaptainDownSpecial):
                     return False
             except (TypeError, IndexError):
                 return False
-        return super().wall_rebound(fighter, ctx)
+        if not super().wall_rebound(fighter, ctx):
+            return False
+        state = getattr(fighter, "action_state", None)
+        if state is not None and len(command) == 4:
+            state.command = (0, 0, 0, command[3])
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+        return True
 
 
 class Ganondorf(Fighter):
