@@ -272,11 +272,17 @@ class FinalCutter(UpSpecial, _KirbySpecial):
     on_ground, on_air = frame_preserving_surface_pairs(
         ground_start, ground_rise, air_start, air_rise
     )
-    _ground, _air = frame_preserving_surface_pairs(
-        ground_fall, ground_end, air_fall, air_end
-    )
-    on_ground.update(_ground)
-    on_air.update(_air)
+    # ftKb_SpecialAirHi2/3_Coll and ftKb_SpecialAirHiEnd_Coll switch to the
+    # ground SpecialHi4 row with a fresh motion state on landing.  The
+    # descent rows therefore do not retain their aerial frame here.
+    on_ground.update({
+        air_fall: Transition(ground_end),
+        air_end: Transition(ground_end),
+    })
+    on_air.update({
+        ground_fall: Transition(air_fall, preserve_state=True, keep_frame=True),
+        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+    })
 
 
 class Stone(DownSpecial, _KirbySpecial):

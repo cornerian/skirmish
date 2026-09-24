@@ -159,6 +159,20 @@ class KirbySpecialTests(unittest.TestCase):
             )
             self.assertIs(fighter.action, end.action)
 
+    def test_final_cutter_aerial_descent_lands_in_ground_end(self):
+        move = FinalCutter()
+        for source in (move.air_fall, move.air_end):
+            fighter = _Fighter()
+            fighter.action = source.action
+            move._transition_ground_air(
+                fighter, SimpleNamespace(grounded=True)
+            )
+            self.assertIs(fighter.action, move.ground_end.action)
+            self.assertEqual(fighter.changes[-1][1], {
+                "preserve_state": False,
+                "keep_frame": False,
+            })
+
     def test_inhale_release_matches_source_loop_iASA(self):
         inhale = Inhale()
         for loop, end in ((inhale.ground_loop, inhale.ground_end),
