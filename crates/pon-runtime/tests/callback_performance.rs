@@ -99,8 +99,9 @@ fn bundled_module_root_recapture_profile() {
 
     for index in 0..WARMUP {
         assert_eq!(
-            pon.invoke_index(callback, &[Value::Int(index as i64)]),
-            Ok(Value::Int(index as i64))
+            pon.invoke_index(callback, &[Value::Int(index as i64)])
+                .expect("bundled callback warmup"),
+            Value::Int(index as i64)
         );
     }
     let mut samples = Vec::with_capacity(SAMPLES);
