@@ -143,16 +143,17 @@ class NessTests(unittest.TestCase):
         for move, ground, air in (
             (PKFlash(), PKFlash.ground_end, PKFlash.air_end),
             (PKFire(), PKFire.ground, PKFire.air),
-            (PKThunder(), PKThunder.ground_end, PKThunder.air_end),
+            (PKThunder(), PKThunder.ground_end, None),
             (PSIMagnet(), PSIMagnet.ground_end, PSIMagnet.air_end),
         ):
             grounded = _Fighter(ground)
             move._transition_animation_end(grounded, SimpleNamespace(grounded=True))
             self.assertEqual(grounded.action, Action.WAIT)
 
-            airborne = _Fighter(air)
-            move._transition_animation_end(airborne, SimpleNamespace(grounded=False))
-            self.assertEqual(airborne.action, Action.FALL)
+            if air is not None:
+                airborne = _Fighter(air)
+                move._transition_animation_end(airborne, SimpleNamespace(grounded=False))
+                self.assertEqual(airborne.action, Action.FALL)
 
         fighter = _Fighter(PKFlash.air_hold)
         PKFlash()._transition_ground_air(fighter, SimpleNamespace(grounded=True))
@@ -209,8 +210,6 @@ class NessTests(unittest.TestCase):
                 PKThunder.ground_start: PKThunder.ground_hold,
                 PKThunder.air_start: PKThunder.air_hold,
                 PKThunder.ground_launch: PKThunder.ground_end,
-                PKThunder.air_launch: PKThunder.air_end,
-                PKThunder.air_rebound: Action.FALL,
             }),
             (PSIMagnet(), {
                 PSIMagnet.ground_start: PSIMagnet.ground_hold,
@@ -228,6 +227,24 @@ class NessTests(unittest.TestCase):
                     fighter, SimpleNamespace(grounded=source in move.on_ground)
                 )
                 self.assertEqual(fighter.action, target)
+
+    def test_pk_thunder_aerial_completion_uses_source_fall_special(self):
+        move = PKThunder()
+        resource = SimpleNamespace(attributes=SimpleNamespace(x70=18.0))
+        ctx = _context(resource="up", grounded=False)
+        ctx.resource = lambda path: resource if path == "up" else None
+        for phase in (move.air_end, move.air_launch, move.air_rebound):
+            fighter = _LandingFighter(phase)
+            self.assertTrue(move.enter_fall_special(fighter, ctx))
+            self.assertEqual(
+                fighter.fall_special,
+                {"mobility": 1, "landing_lag": 18.0},
+            )
+
+        resource.attributes.x70 = 0.0
+        fighter = _LandingFighter(move.air_launch)
+        self.assertTrue(move.enter_fall_special(fighter, ctx))
+        self.assertEqual(fighter.action, Action.FALL)
 
     def test_pk_thunder_surface_changes_only_control_states(self):
         # ftNs_SpecialHi*_Coll has explicit ground/air pairs for startup,

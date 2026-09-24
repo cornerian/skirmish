@@ -165,10 +165,7 @@ class PKThunder(UpSpecial, _NessSpecial):
         ground_start: Transition(ground_hold),
         air_start: Transition(air_hold),
         ground_launch: Transition(ground_end),
-        air_launch: Transition(air_end),
-        air_rebound: Transition(Action.FALL),
         ground_end: Transition(Action.WAIT),
-        air_end: Transition(Action.FALL),
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
@@ -187,6 +184,33 @@ class PKThunder(UpSpecial, _NessSpecial):
         # aerial launch motion when Ness loses the floor.
         ground_launch: Transition(air_launch, preserve_state=True, keep_frame=True),
     }
+
+    @hook.animation_end(air_end, air_launch, air_rebound)
+    def enter_fall_special(self, fighter: Fighter, ctx) -> bool:
+        """Match the source PK Thunder 2 FallSpecial exit.
+
+        The pinned ``ftnessspecialhi.c`` callbacks for states 364, 365, and
+        366 use ``x70_PK_THUNDER_2_LANDING_LAG``: zero enters ordinary fall,
+        while a nonzero value enters FallSpecial with full aerial mobility.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        landing_lag = getattr(
+            attributes,
+            "pkthunder2_landing_lag",
+            getattr(attributes, "specialhi_landing_lag", getattr(attributes, "x70", None)),
+        )
+        if landing_lag is None:
+            fighter.change_action(Action.FALL)
+            return True
+        if landing_lag == 0:
+            fighter.change_action(Action.FALL)
+            return True
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            fighter.change_action(Action.FALL)
+            return True
+        enter(mobility=1, landing_lag=landing_lag)
+        return True
 
 
 class PSIMagnet(DownSpecial, _NessSpecial):
