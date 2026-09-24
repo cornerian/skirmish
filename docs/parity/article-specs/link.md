@@ -31,6 +31,12 @@ the stage-specific IASA callbacks (`ftLk_SpecialNStart_IASA`,
 The release callback calls the arrow article's
 `itLinkArrow_802A850C` (around 252–314).
 
+At both neutral-special entry points, `ftLk_SpecialN_Enter` and
+`ftLk_SpecialAirN_Enter` clear `cmd_vars[0..3]` before the charge motion
+starts.  The script mirrors this at the `ground_start`/`air_start` action
+boundary so a command edge left by an earlier special cannot trigger the new
+charge state.
+
 Side special arms a dash-smash release through the command and boomerang
 checks in `ftlinkspecials.c` (31–57), spawns and updates the boomerang in the
 `onAccessory4` callback (133–198), and chooses ground/air state through the
