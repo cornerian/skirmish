@@ -80,7 +80,10 @@ trail links; reflection reverses the angle and rebuilds the history
 and radius from the ball and self-destruct when their link is cleared
 (`itnesspkthundertrail.c:77-155`). Fighter-side distance checks and PK
 Thunder 2 launch are in `ft/kinds/ftNess/ftnessspecialhi.c:116-249` and
-`ftnessspecialhi.c:687-758`.
+`ftnessspecialhi.c:687-758`. During PK Thunder 2, the grounded launch state
+switches to its aerial counterpart when Ness loses the floor, and the aerial
+launch state switches back on a valid landing
+(`ftnessspecialhi.c:1365-1476`, `ftnessspecialhi.c:1520-1588`).
 
 ## PSI Magnet absorption
 

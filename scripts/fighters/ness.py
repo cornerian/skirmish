@@ -174,11 +174,18 @@ class PKThunder(UpSpecial, _NessSpecial):
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
         air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+        # ``ftNs_SpecialAirHi_Coll`` uses AirToGroundStateChange to enter
+        # the grounded PK Thunder 2 motion when its launch path meets a
+        # valid floor.
+        air_launch: Transition(ground_launch, preserve_state=True, keep_frame=True),
     }
     on_air = {
         ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
         ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+        # ``ftNs_SpecialHi_Coll`` changes the grounded launch motion to the
+        # aerial launch motion when Ness loses the floor.
+        ground_launch: Transition(air_launch, preserve_state=True, keep_frame=True),
     }
 
 

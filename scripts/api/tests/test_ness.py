@@ -238,10 +238,15 @@ class NessTests(unittest.TestCase):
             (move.air_start, move.ground_start),
             (move.air_hold, move.ground_hold),
             (move.air_end, move.ground_end),
+            (move.air_launch, move.ground_launch),
         ):
             fighter = _Fighter(airborne)
             move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
             self.assertEqual(fighter.action, grounded)
+
+        fighter = _Fighter(move.ground_launch)
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, move.air_launch)
 
     def test_pk_flash_end_consumes_special_input_until_terminal_animation_finishes(self):
         # ftNs_SpecialNEnd_IASA is an empty callback.  The terminal release
