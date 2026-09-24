@@ -96,21 +96,6 @@ class PeachNeutralSpecial(NeutralSpecial, _PeachSpecial):
         """Match ``ftPe_SpecialN_Enter``/``reset``'s four-slot clear."""
         self._reset_command_slots(fighter)
 
-    @on.command_changed(1, actions=(ground, air))
-    def accessory_hit(self, fighter: Any, ctx: Any) -> None:
-        """Enter the source hit phases when the Toad command arms them.
-
-        ``ftPe_SpecialN`` uses command variable 1 to switch from the normal
-        animation into the hit animation.  The article and collision work
-        remains native, but this phase change is observable at the script
-        boundary and must not be left to a generic animation end.
-        """
-        value = getattr(getattr(ctx, "event", None), "value", 0)
-        if value != 1:
-            return
-        target = self.ground_hit if fighter.action is self.ground else self.air_hit
-        fighter.change_action(target)
-
     @on.before_hit(actions=(ground, air))
     def hit_contact(self, fighter: Any, hit: Any) -> None:
         """Enter the source hit motion on the Toad shield contact edge.
@@ -201,12 +186,13 @@ class PeachSideSpecial(SideSpecial, _PeachSpecial):
 
     @on.command_changed(3, actions=(air_jump,))
     def jump_end(self, fighter: Any, ctx: Any) -> None:
-        """End the jump when the native command-3 cue is reached.
+        """Mirror AirSJump's per-tick command-3 early exit.
 
-        ``ftPe_SpecialAirSJump_Anim`` checks ``cmd_vars[3]`` every frame and
-        enters ``SpecialAirSEnd``; command variable 2 has already selected
-        the wall-hit variant when that branch applies.  Bomber article
-        creation remains a native item callback after this transition.
+        The native animation callback checks ``cmd_vars[3]`` every tick and
+        enters AirSEnd before the animation expires.  The portable event
+        boundary reports that command transition as an edge, so this callback
+        provides the same early phase change while ``on_end`` retains the
+        animation-completion fallback.
         """
         value = getattr(getattr(ctx, "event", None), "value", 0)
         if value:

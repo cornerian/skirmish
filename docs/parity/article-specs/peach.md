@@ -75,14 +75,16 @@ The pinned fighter sources were audited alongside the article callbacks:
   FloatFall as a separate native motion family. The current script boundary
   has no float input, velocity, or aerial attack state, so it does not claim
   Float coverage.
-* `ftpeachspecials.c` enters AirSJump on an unblocked start, moves directly
-  to AirSEnd on command 3 or animation completion, and uses command 2 for the
-  wall end. Those branches are represented by the side-special callbacks.
-* `ftpeachspecialn.c` changes to SpecialNHit at animation frame 9 when the
-  Toad shield callback fires. The portable `before_hit` hook has no typed Toad
-  shield payload, so the script preserves the hit-phase transition while
-  leaving the frame-nine restart unsupported. Generic hits do not receive an
-  inferred frame offset.
+* `ftpeachspecials.c` enters AirSJump on an unblocked start, moves to AirSEnd
+  when command 3 is observed during AirSJump or when its animation completes,
+  and uses command 2 for the wall end. The portable script maps command 3 to
+  the available command edge and keeps the animation completion fallback.
+* `ftpeachspecialn.c` uses command variable 1 to arm the native shield
+  callback. The fighter changes to SpecialNHit only when the Toad shield
+  callback fires at animation frame 9. The portable `before_hit` hook has no
+  typed Toad shield payload, so its phase bridge is an intentionally broad
+  host approximation; it does not claim generic-hit or Toad-article parity,
+  and it leaves the frame-nine restart unsupported.
 * `ftpeachspeciallw.c` sends a held turnip to the common light throw and
   otherwise spawns an article; weighted turnip selection remains article
   host work.

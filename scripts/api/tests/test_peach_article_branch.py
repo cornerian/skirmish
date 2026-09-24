@@ -32,7 +32,7 @@ class _Fighter:
 
 
 class PeachArticleBranchTests(unittest.TestCase):
-    def test_air_jump_command_three_enters_end_phase(self):
+    def test_air_jump_command_three_enters_end_phase_early(self):
         move = Peach.specials.side
         fighter = _Fighter(move.air_jump)
 

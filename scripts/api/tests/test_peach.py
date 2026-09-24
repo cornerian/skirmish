@@ -159,21 +159,16 @@ class PeachSpecialTests(unittest.TestCase):
         up._transition_animation_end(fighter, _context())
         self.assertIs(fighter.action, Action.WAIT)
 
-    def test_native_command_branches_enter_hit_and_wall_end_phases(self):
+    def test_native_command_branches_only_select_wall_end_phase(self):
         neutral = Peach.specials.neutral
         fighter = _Fighter()
         fighter.action = neutral.ground
-        neutral.accessory_hit(
-            fighter, SimpleNamespace(event=SimpleNamespace(value=1))
-        )
-        self.assertIs(fighter.action, neutral.ground_hit)
-
-        fighter = _Fighter()
-        fighter.action = neutral.air
-        neutral.accessory_hit(
-            fighter, SimpleNamespace(event=SimpleNamespace(value=1))
-        )
-        self.assertIs(fighter.action, neutral.air_hit)
+        # Source cmd_vars[1] arms the native shield callback. The hit phase
+        # is entered only when that callback reports contact.
+        self.assertFalse(any(
+            action.callback == "accessory_hit"
+            for action in neutral.events()
+        ))
 
         side = Peach.specials.side
         fighter = _Fighter()
@@ -183,13 +178,15 @@ class PeachSpecialTests(unittest.TestCase):
         )
         self.assertIs(fighter.action, side.air_end1)
 
-        # Native command callbacks are edge-triggered and ignore cleared vars.
+
+    def test_side_air_jump_ends_on_animation_completion(self):
+        side = Peach.specials.side
         fighter = _Fighter()
-        fighter.action = neutral.ground
-        neutral.accessory_hit(
-            fighter, SimpleNamespace(event=SimpleNamespace(value=0))
-        )
-        self.assertEqual(fighter.changes, [])
+        fighter.action = side.air_jump
+
+        side._transition_animation_end(fighter, SimpleNamespace())
+
+        self.assertEqual(fighter.action, side.air_end0.action)
 
     def test_special_entries_clear_native_command_windows(self):
         for move, action, expected in (
