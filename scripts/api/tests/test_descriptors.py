@@ -7,6 +7,7 @@ from fighter.compat import (Action, ActionDescriptor, CommonParameter, CustomAct
                             action, bind_source_action, clock, custom_action, f32, motion, parameter, resource,
                             resolve_source_action, source_action, source_phase, special_attribute, validation)
 from fighter import DonkeyKongAttribute, SamusAttribute
+from fighter.special_attributes import SPECIAL_ATTRIBUTE_LAYOUTS, SpecialAttributeLayout
 
 
 class DescriptorTests(unittest.TestCase):
@@ -151,6 +152,15 @@ class DescriptorTests(unittest.TestCase):
         self.assertEqual(DonkeyKongAttribute.SPECIAL_HI_LANDING_LAG.layout, 3)
         self.assertEqual(int(DonkeyKongAttribute.SPECIAL_HI_LANDING_LAG), 0x30006)
         self.assertEqual(SamusAttribute.SCREW_ATTACK_LANDING_LAG.layout, 4)
+
+    def test_special_attribute_layout_registry_preserves_legacy_and_exporter_ids(self):
+        self.assertEqual(SpecialAttributeLayout.KIRBY_STONE, 6)
+        self.assertEqual(SpecialAttributeLayout.JIGGLYPUFF_ROLLOUT, 6)
+        self.assertEqual(SpecialAttributeLayout.GAME_AND_WATCH, 21)
+        self.assertEqual(
+            SPECIAL_ATTRIBUTE_LAYOUTS,
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21},
+        )
 
     def test_special_attribute_reference_preserves_typed_wire_shape(self):
         self.assertEqual(

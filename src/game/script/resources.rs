@@ -481,6 +481,104 @@ pub struct SpecialAttributes {
     words: Vec<SpecialAttributeWord>,
 }
 
+/// Native special-attribute table identities used by the resource wire
+/// format. The number is part of the typed reference ABI: changing an
+/// existing entry would make old resources read a different fighter table.
+///
+/// The word payload remains a `[field_id, f32::to_bits()]` pair. A raw word
+/// is accepted only when its bits decode to a finite `f32`; this registry does
+/// not make arbitrary bit patterns valid gameplay numbers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpecialAttributeLayout {
+    pub id: u8,
+    pub owner: &'static str,
+}
+
+/// Declared native table identities. IDs 1–6 are existing compatibility
+/// layouts; the later IDs are reserved for the corresponding raw asset
+/// exporters. Game & Watch intentionally uses 21 so layout 6 remains the
+/// established Jigglypuff Rollout/Kirby Stone identity.
+pub const SPECIAL_ATTRIBUTE_LAYOUTS: &[SpecialAttributeLayout] = &[
+    SpecialAttributeLayout {
+        id: 1,
+        owner: "legacy layout 1",
+    },
+    SpecialAttributeLayout {
+        id: 2,
+        owner: "legacy layout 2",
+    },
+    SpecialAttributeLayout {
+        id: 3,
+        owner: "Donkey Kong",
+    },
+    SpecialAttributeLayout {
+        id: 4,
+        owner: "Samus",
+    },
+    SpecialAttributeLayout {
+        id: 5,
+        owner: "Jigglypuff Pound",
+    },
+    SpecialAttributeLayout {
+        id: 6,
+        owner: "Jigglypuff Rollout / Kirby Stone",
+    },
+    SpecialAttributeLayout {
+        id: 7,
+        owner: "Link",
+    },
+    SpecialAttributeLayout {
+        id: 8,
+        owner: "Sheik",
+    },
+    SpecialAttributeLayout {
+        id: 9,
+        owner: "Marth / Roy",
+    },
+    SpecialAttributeLayout {
+        id: 10,
+        owner: "Mario",
+    },
+    SpecialAttributeLayout {
+        id: 11,
+        owner: "Pikachu",
+    },
+    SpecialAttributeLayout {
+        id: 12,
+        owner: "Mewtwo",
+    },
+    SpecialAttributeLayout {
+        id: 13,
+        owner: "Zelda",
+    },
+    SpecialAttributeLayout {
+        id: 14,
+        owner: "Yoshi",
+    },
+    SpecialAttributeLayout {
+        id: 15,
+        owner: "Kirby",
+    },
+    SpecialAttributeLayout {
+        id: 19,
+        owner: "Luigi",
+    },
+    SpecialAttributeLayout {
+        id: 20,
+        owner: "Dr. Mario",
+    },
+    SpecialAttributeLayout {
+        id: 21,
+        owner: "Game & Watch (reserved)",
+    },
+];
+
+fn is_declared_special_attribute_layout(id: u8) -> bool {
+    SPECIAL_ATTRIBUTE_LAYOUTS
+        .iter()
+        .any(|layout| layout.id == id)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SpecialAttributeWord {
     field_id: u16,
@@ -526,7 +624,7 @@ impl<'de> Deserialize<'de> for SpecialAttributes {
             words: Vec<[u64; 2]>,
         }
         let wire = Wire::deserialize(deserializer)?;
-        if !(1..=5).contains(&wire.layout) {
+        if !is_declared_special_attribute_layout(wire.layout) {
             return Err(serde::de::Error::custom("unknown special attribute layout"));
         }
         let mut words = Vec::with_capacity(wire.words.len());
@@ -847,11 +945,24 @@ mod tests {
     #[test]
     fn special_attributes_reject_bad_layout_order_and_non_finite_words() {
         for value in [
-            json!({"layout": 9, "words": []}),
+            json!({"layout": 16, "words": []}),
             json!({"layout": 3, "words": [[2, 0], [1, 0]]}),
             json!({"layout": 3, "words": [[1, 2143289344]]}),
         ] {
             assert!(serde_json::from_value::<super::SpecialAttributes>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn special_attribute_layout_registry_accepts_declared_exporter_ids() {
+        for layout in [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21,
+        ] {
+            let value = json!({"layout": layout, "words": [[0, 1065353216]]});
+            let attributes = serde_json::from_value::<super::SpecialAttributes>(value)
+                .expect("declared special attribute layout");
+            assert_eq!(attributes.layout, layout);
+            assert_eq!(attributes.get(0), Some(1.0));
         }
     }
 

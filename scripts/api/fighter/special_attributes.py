@@ -3,6 +3,37 @@
 from enum import IntEnum
 
 
+class SpecialAttributeLayout(IntEnum):
+    """Stable native special-attribute table ids used on the resource wire."""
+
+    LEGACY_1 = 1
+    LEGACY_2 = 2
+    DONKEY_KONG = 3
+    SAMUS = 4
+    JIGGLYPUFF_POUND = 5
+    # Rollout and Kirby Stone already share this identity in shipped packs.
+    JIGGLYPUFF_ROLLOUT = 6
+    KIRBY_STONE = 6
+    LINK = 7
+    SHEIK = 8
+    MARTH_ROY = 9
+    MARIO = 10
+    PIKACHU = 11
+    MEWTWO = 12
+    ZELDA = 13
+    YOSHI = 14
+    KIRBY = 15
+    LUIGI = 19
+    DR_MARIO = 20
+    # Reserved for the raw exporter; it must not reuse layout 6.
+    GAME_AND_WATCH = 21
+
+
+# Public immutable registry for exporter and validation code that needs the
+# complete declared set without depending on enum iteration aliases.
+SPECIAL_ATTRIBUTE_LAYOUTS = frozenset(int(layout) for layout in SpecialAttributeLayout)
+
+
 class _Attribute(IntEnum):
     def __new__(cls, field_id: int, layout: int):
         if isinstance(field_id, bool) or not isinstance(field_id, int):
