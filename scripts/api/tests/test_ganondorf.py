@@ -299,15 +299,15 @@ class GanondorfTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
         self.assertEqual(fighter.throw_flags, 0)
 
-    def test_wizard_foot_air_phase_uses_source_wall_rebound_branch(self):
+    def test_wizard_foot_air_phase_has_no_source_wall_rebound_branch(self):
         move = Ganondorf.specials.down
         fighter = _Fighter(move.air)
         fighter.action_state.command = (1, 0, 0, 0)
-        self.assertTrue(move.wall_rebound(
+        self.assertFalse(move.wall_rebound(
             fighter,
             SimpleNamespace(wall=SimpleNamespace(normal=(-1.0, 0.0))),
         ))
-        self.assertTrue(getattr(fighter.action, "reference", fighter.action).endswith(":363"))
+        self.assertEqual(fighter.changes, [])
 
     def test_wizard_foot_wall_rebound_requires_opposite_facing_wall(self):
         move = Ganondorf.specials.down

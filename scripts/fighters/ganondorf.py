@@ -94,14 +94,13 @@ class WizardFoot(CaptainDownSpecial):
             fighter.throw_flags = 0
 
     def wall_rebound(self, fighter, ctx):
-        """Mirror the source wall rebound branch for both Wizard's Foot phases.
+        """Mirror the grounded Wizard's Foot source wall rebound branch.
 
-        ``ftCa_SpecialLw_Coll`` checks the rebound cue after its grounded and
-        aerial collision branches, so either state 357 or 359 can enter state
-        363.  It clears the three command variables and ``throw_flags`` before
-        changing motion.
+        ``ftCa_SpecialLw_Coll`` clears the three command variables and
+        ``throw_flags`` before changing motion to state 363.  The separate
+        ``ftCa_SpecialAirLw_Coll`` callback only enters aerial end state 361.
         """
-        if fighter.action not in (self.ground, self.air):
+        if fighter.action != self.ground:
             return False
         command = getattr(getattr(fighter, "action_state", None), "command", ())
         if not command or not command[0]:
