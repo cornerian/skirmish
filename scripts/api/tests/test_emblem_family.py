@@ -60,14 +60,39 @@ class EmblemFamilyTests(unittest.TestCase):
             self.assertEqual(up.ground.action.reference, "Source.367")
             self.assertEqual(down.air_hit.action.reference, "Source.372")
 
-    def test_side_family_does_not_invent_dancing_blade_phase_transitions(self):
+    def test_side_family_exports_dancing_blade_terminal_transitions(self):
         marth = _load("marth")
         events = marth.Marth.specials.side.events()
-        self.assertFalse(any(event.hook.value == "animation_ended" for event in events))
+        self.assertTrue(any(event.hook.value == "animation_ended" for event in events))
         self.assertEqual(marth.Marth.specials.side.resource, "side")
         surface = [event for event in events if event.hook.value == "ground_air_changed"]
         self.assertEqual(len(surface), 1)
         self.assertEqual(len(surface[0].actions), 18)
+
+    def test_dancing_blade_all_phases_exit_to_ground_wait_or_air_fall(self):
+        for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
+            module = _load(module_name)
+            move = getattr(module, fighter_name).specials.side
+            ground = (
+                move.ground_start, move.ground_2_up, move.ground_2_down,
+                move.ground_3_up, move.ground_3_neutral, move.ground_3_down,
+                move.ground_4_up, move.ground_4_neutral, move.ground_4_down,
+            )
+            air = (
+                move.air_start, move.air_2_up, move.air_2_down,
+                move.air_3_up, move.air_3_neutral, move.air_3_down,
+                move.air_4_up, move.air_4_neutral, move.air_4_down,
+            )
+            for action in ground:
+                fighter = self._Fighter(action)
+                fighter.grounded = True
+                move._transition_animation_end(fighter, None)
+                self.assertEqual(fighter.action, Action.WAIT, (module_name, action))
+            for action in air:
+                fighter = self._Fighter(action)
+                fighter.grounded = False
+                move._transition_animation_end(fighter, None)
+                self.assertEqual(fighter.action, Action.FALL, (module_name, action))
 
     def test_dancing_blade_input_route_accepts_either_button_mask(self):
         marth = _load("marth")

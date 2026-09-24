@@ -179,6 +179,30 @@ class EmblemSideSpecial(SideSpecial, _EmblemFamilySpecial):
         ("ground_4_down", "air_4_down"),
     )
 
+    # ftMs_SpecialS{1,2,3,4}_Anim all use the same terminal callback shape:
+    # grounded phases return to Wait and aerial phases return to Fall when
+    # their animation completes without selecting another strike.
+    on_end = {
+        ground_start: Transition(Action.WAIT),
+        ground_2_up: Transition(Action.WAIT),
+        ground_2_down: Transition(Action.WAIT),
+        ground_3_up: Transition(Action.WAIT),
+        ground_3_neutral: Transition(Action.WAIT),
+        ground_3_down: Transition(Action.WAIT),
+        ground_4_up: Transition(Action.WAIT),
+        ground_4_neutral: Transition(Action.WAIT),
+        ground_4_down: Transition(Action.WAIT),
+        air_start: Transition(Action.FALL),
+        air_2_up: Transition(Action.FALL),
+        air_2_down: Transition(Action.FALL),
+        air_3_up: Transition(Action.FALL),
+        air_3_neutral: Transition(Action.FALL),
+        air_3_down: Transition(Action.FALL),
+        air_4_up: Transition(Action.FALL),
+        air_4_neutral: Transition(Action.FALL),
+        air_4_down: Transition(Action.FALL),
+    }
+
     @staticmethod
     def _ab_pressed(ctx: Any) -> bool:
         input_state = getattr(ctx, "input", None)
