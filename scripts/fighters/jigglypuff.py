@@ -254,10 +254,6 @@ class Roll(NeutralSpecial):
             state.charge = charge * scale
         return True
 
-    @hook.animation_end(hit)
-    def hit_end(self, fighter: Fighter, ctx) -> None:
-        fighter.change_action(Action.WAIT if fighter.grounded else Action.FALL)
-
     @hook.landed(hit)
     def hit_landed(self, fighter: Fighter, ctx) -> bool:
         """Match ``ftPr_SpecialNHit_Coll``'s floor-contact exit.

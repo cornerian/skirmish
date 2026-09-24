@@ -167,12 +167,15 @@ class JigglypuffTests(unittest.TestCase):
         roll.start_end(fighter, None)
         self.assertEqual(fighter.action, Roll.air_loop)
 
+        exported = export_definition(Jigglypuff).as_dict()
+        neutral = next(item for item in exported["behaviors"] if item["resource"] == "neutral")
+        self.assertFalse(
+            any(callback["callback"].endswith("hit_end") for callback in neutral["callbacks"])
+        )
+
         fighter = _Fighter(Roll.air_release)
         roll.after_roll_hit(fighter, None)
         self.assertEqual(fighter.action, Roll.hit)
-        fighter.grounded = False
-        roll.hit_end(fighter, None)
-        self.assertEqual(fighter.action, Action.FALL)
 
         fighter = _Fighter(Roll.ground_release, facing=1.0)
         fighter.velocity = (3.0, 0.5)
