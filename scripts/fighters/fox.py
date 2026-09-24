@@ -811,6 +811,10 @@ class FireFox(UpSpecial):
             if fighter.grounded:
                 fighter.change_action(Action.WAIT)
             else:
+                # ftFx_SpecialHiBound_Anim restores every jump on both the
+                # command-marked early exit and the ordinary clip end before
+                # entering FallSpecial.
+                fighter.max_jumps()
                 fighter.enter_fall_special(
                     mobility=attributes.freefall_mobility,
                     landing_lag=attributes.landing_lag,
@@ -823,6 +827,7 @@ class FireFox(UpSpecial):
         attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return
+        fighter.max_jumps()
         fighter.enter_fall_special(
             mobility=attributes.freefall_mobility,
             landing_lag=attributes.landing_lag,

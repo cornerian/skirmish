@@ -93,6 +93,14 @@ and ownership transferred to the reflecting fighter. This vector is exercised
 by `tests/fox_laser_differential.rs` (`compare_spawn` and
 `compare_reflected`) against `tests/oracle/original/itfoxlaser.c`.
 
+## Fire Fox Bound exit
+
+Fire Fox's native Bound exit restores all jumps before entering FallSpecial,
+both when the bound exit command marker fires and when the bound animation ends
+normally (`ftFx_SpecialHiBound_Anim` in
+`src/melee/ft/kinds/ftFox/ftfoxspecialhi.c`). The fighter hook mirrors that
+restoration on both exits.
+
 ## Current host gaps
 
 - The Illusion/Phantasm article's model, trailing four-slot GFX history, and

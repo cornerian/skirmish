@@ -180,6 +180,53 @@ class FoxShineTests(unittest.TestCase):
         self.assertEqual(fighter.velocity, [2.0, -2.0])
         self.assertEqual(fighter.action_state.command, (0, 8, 9, 10))
 
+    def test_firefox_bound_exit_restores_jumps_before_fallspecial(self):
+        move = Fox.specials.up
+        attributes = SimpleNamespace(freefall_mobility=0.5, landing_lag=3.0)
+        restored = []
+        entered = []
+        fighter = SimpleNamespace(
+            action=move.bound,
+            grounded=False,
+            max_jumps=lambda: restored.append(True),
+            enter_fall_special=lambda **kwargs: entered.append(kwargs),
+        )
+        context = SimpleNamespace(
+            resource=lambda path=None: SimpleNamespace(attributes=attributes),
+        )
+
+        move.bound_exit_marker(fighter, context)
+
+        self.assertEqual(restored, [True])
+        self.assertEqual(
+            entered,
+            [{"mobility": 0.5, "landing_lag": 3.0}],
+        )
+
+    def test_firefox_bound_clip_end_also_restores_jumps(self):
+        move = Fox.specials.up
+        restored = []
+        entered = []
+        fighter = SimpleNamespace(
+            action=move.bound,
+            grounded=False,
+            max_jumps=lambda: restored.append(True),
+            enter_fall_special=lambda **kwargs: entered.append(kwargs),
+        )
+        context = SimpleNamespace(
+            resource=lambda path=None: SimpleNamespace(
+                attributes=SimpleNamespace(freefall_mobility=0.25, landing_lag=2.0)
+            ),
+        )
+
+        move.terminal_animation_end(fighter, context)
+
+        self.assertEqual(restored, [True])
+        self.assertEqual(
+            entered,
+            [{"mobility": 0.25, "landing_lag": 2.0}],
+        )
+
     def test_illusion_entry_clears_ghost_command_var_two(self):
         move = Fox.specials.side
         attributes = SimpleNamespace(
@@ -300,7 +347,6 @@ class FoxShineTests(unittest.TestCase):
         rejected, fighter = attempt([0.0, -1.0, 0.0])
         self.assertFalse(rejected)
         self.assertEqual(fighter.action_state.travel_angle, 0.0)
-
 
 
 if __name__ == "__main__":
