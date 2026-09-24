@@ -128,9 +128,62 @@ impl ArticleId {
     pub const DR_MARIO_VITAMIN: Self = Self(49);
     pub const FOX_LASER: Self = Self(54);
     pub const FALCO_LASER: Self = Self(55);
+    pub const FOX_ILLUSION: Self = Self(56);
+    pub const FALCO_PHANTASM: Self = Self(57);
     pub const SAMUS_CHARGE: Self = Self(94);
     pub const SAMUS_MISSILE: Self = Self(95);
     pub const LUIGI_FIRE: Self = Self(105);
+    pub const LINK_BOMB: Self = Self(58);
+    pub const YOUNG_LINK_BOMB: Self = Self(59);
+    pub const LINK_BOOMERANG: Self = Self(60);
+    pub const YOUNG_LINK_BOOMERANG: Self = Self(61);
+    pub const LINK_HOOKSHOT: Self = Self(62);
+    pub const YOUNG_LINK_HOOKSHOT: Self = Self(63);
+    pub const LINK_ARROW: Self = Self(64);
+    pub const YOUNG_LINK_ARROW: Self = Self(65);
+    pub const NESS_PK_FIRE: Self = Self(66);
+    pub const NESS_PK_FIRE_FLAME: Self = Self(67);
+    pub const NESS_PK_FLASH: Self = Self(68);
+    pub const NESS_PK_THUNDER: Self = Self(69);
+    pub const NESS_PK_THUNDER_TRAIL_1: Self = Self(70);
+    pub const NESS_PK_THUNDER_TRAIL_2: Self = Self(71);
+    pub const NESS_PK_THUNDER_TRAIL_3: Self = Self(72);
+    pub const NESS_PK_THUNDER_TRAIL_4: Self = Self(73);
+    pub const LINK_BOW: Self = Self(76);
+    pub const YOUNG_LINK_BOW: Self = Self(77);
+    pub const NESS_PK_FLASH_EXPLOSION: Self = Self(78);
+    pub const SHEIK_NEEDLE_THROW: Self = Self(79);
+    pub const SHEIK_NEEDLE_HELD: Self = Self(80);
+    pub const SAMUS_BOMB: Self = Self(93);
+    pub const SAMUS_GRAPPLE: Self = Self(96);
+    pub const SHEIK_VANISH: Self = Self(85);
+    pub const SHEIK_CHAIN: Self = Self(97);
+    pub const BOWSER_FLAME: Self = Self(100);
+    pub const NESS_BAT: Self = Self(101);
+    pub const NESS_YOYO: Self = Self(102);
+    pub const YOSHI_EGG_THROW: Self = Self(86);
+    pub const YOSHI_EGG_LAY: Self = Self(87);
+    pub const YOSHI_STAR: Self = Self(88);
+    pub const PIKACHU_THUNDER: Self = Self(81);
+    pub const PIKACHU_TJOLT_GROUND: Self = Self(89);
+    pub const PIKACHU_TJOLT_AIR: Self = Self(90);
+    pub const PICHU_THUNDER: Self = Self(82);
+    pub const PICHU_TJOLT_GROUND: Self = Self(91);
+    pub const PICHU_TJOLT_AIR: Self = Self(92);
+    pub const ZELDA_DIN_FIRE: Self = Self(108);
+    pub const ZELDA_DIN_FIRE_EXPLOSION: Self = Self(109);
+    pub const MEWTWO_DISABLE: Self = Self(110);
+    pub const MEWTWO_SHADOW_BALL: Self = Self(112);
+    pub const ICE_CLIMBER_ICE: Self = Self(106);
+    pub const ICE_CLIMBER_BLIZZARD: Self = Self(107);
+    pub const ICE_CLIMBER_GUM_STRINGS: Self = Self(113);
+    pub const MARIO_CAPE: Self = Self(83);
+    pub const DR_MARIO_SHEET: Self = Self(84);
+    pub const PEACH_BOMBER: Self = Self(98);
+    pub const PEACH_TURNIP: Self = Self(99);
+    pub const PEACH_PARASOL: Self = Self(103);
+    pub const PEACH_TOAD: Self = Self(104);
+    pub const PEACH_TOAD_SPORE: Self = Self(111);
     pub const GAMEWATCH_GREENHOUSE: Self = Self(114);
     pub const GAMEWATCH_MANHOLE: Self = Self(115);
     pub const GAMEWATCH_FIRE: Self = Self(116);
@@ -144,13 +197,40 @@ impl ArticleId {
 
     /// Character article kinds currently exposed by native fighter data.
     /// These are the pinned `ItemKind` ordinals from `melee/it/forward.h`.
-    pub const FIGHTER_ARTICLE_IDS: [Self; 17] = [
+    pub const FIGHTER_ARTICLE_IDS: [Self; 70] = [
         Self::MARIO_FIRE,
         Self::DR_MARIO_VITAMIN,
         Self::FOX_LASER,
         Self::FALCO_LASER,
+        Self::LINK_BOMB,
+        Self::YOUNG_LINK_BOMB,
+        Self::LINK_BOOMERANG,
+        Self::YOUNG_LINK_BOOMERANG,
+        Self::LINK_HOOKSHOT,
+        Self::YOUNG_LINK_HOOKSHOT,
+        Self::LINK_ARROW,
+        Self::YOUNG_LINK_ARROW,
+        Self::NESS_PK_FIRE,
+        Self::NESS_PK_FIRE_FLAME,
+        Self::NESS_PK_FLASH,
+        Self::NESS_PK_THUNDER,
+        Self::NESS_PK_THUNDER_TRAIL_1,
+        Self::NESS_PK_THUNDER_TRAIL_2,
+        Self::NESS_PK_THUNDER_TRAIL_3,
+        Self::NESS_PK_THUNDER_TRAIL_4,
+        Self::LINK_BOW,
+        Self::YOUNG_LINK_BOW,
+        Self::NESS_PK_FLASH_EXPLOSION,
+        Self::SHEIK_NEEDLE_THROW,
+        Self::SHEIK_NEEDLE_HELD,
+        Self::SAMUS_BOMB,
         Self::SAMUS_CHARGE,
         Self::SAMUS_MISSILE,
+        Self::PEACH_BOMBER,
+        Self::PEACH_TURNIP,
+        Self::PEACH_PARASOL,
+        Self::PEACH_TOAD,
+        Self::PEACH_TOAD_SPORE,
         Self::LUIGI_FIRE,
         Self::GAMEWATCH_GREENHOUSE,
         Self::GAMEWATCH_MANHOLE,
@@ -162,7 +242,109 @@ impl ArticleId {
         Self::GAMEWATCH_PANIC,
         Self::GAMEWATCH_CHEF,
         Self::GAMEWATCH_RESCUE,
+        Self::FOX_ILLUSION,
+        Self::FALCO_PHANTASM,
+        Self::SHEIK_VANISH,
+        Self::YOSHI_EGG_THROW,
+        Self::YOSHI_EGG_LAY,
+        Self::YOSHI_STAR,
+        Self::MARIO_CAPE,
+        Self::DR_MARIO_SHEET,
+        Self::PIKACHU_THUNDER,
+        Self::PICHU_THUNDER,
+        Self::PIKACHU_TJOLT_GROUND,
+        Self::PIKACHU_TJOLT_AIR,
+        Self::PICHU_TJOLT_GROUND,
+        Self::PICHU_TJOLT_AIR,
+        Self::SAMUS_GRAPPLE,
+        Self::SHEIK_CHAIN,
+        Self::BOWSER_FLAME,
+        Self::NESS_BAT,
+        Self::NESS_YOYO,
+        Self::ICE_CLIMBER_ICE,
+        Self::ICE_CLIMBER_BLIZZARD,
+        Self::ZELDA_DIN_FIRE,
+        Self::ZELDA_DIN_FIRE_EXPLOSION,
+        Self::MEWTWO_DISABLE,
+        Self::MEWTWO_SHADOW_BALL,
+        Self::ICE_CLIMBER_GUM_STRINGS,
     ];
+
+    /// Articles whose state machines are owned by native fighter callbacks.
+    /// They are catalogued for identity and diagnostics; generic projectile
+    /// descriptors must not be used as a substitute for their behavior.
+    pub const NATIVE_CALLBACK_ARTICLE_IDS: [Self; 63] = [
+        Self::LINK_BOMB,
+        Self::YOUNG_LINK_BOMB,
+        Self::LINK_BOOMERANG,
+        Self::YOUNG_LINK_BOOMERANG,
+        Self::LINK_HOOKSHOT,
+        Self::YOUNG_LINK_HOOKSHOT,
+        Self::LINK_ARROW,
+        Self::YOUNG_LINK_ARROW,
+        Self::NESS_PK_FIRE,
+        Self::NESS_PK_FIRE_FLAME,
+        Self::NESS_PK_FLASH,
+        Self::NESS_PK_THUNDER,
+        Self::NESS_PK_THUNDER_TRAIL_1,
+        Self::NESS_PK_THUNDER_TRAIL_2,
+        Self::NESS_PK_THUNDER_TRAIL_3,
+        Self::NESS_PK_THUNDER_TRAIL_4,
+        Self::LINK_BOW,
+        Self::YOUNG_LINK_BOW,
+        Self::NESS_PK_FLASH_EXPLOSION,
+        Self::SHEIK_NEEDLE_THROW,
+        Self::SHEIK_NEEDLE_HELD,
+        Self::SAMUS_BOMB,
+        Self::PEACH_BOMBER,
+        Self::PEACH_TURNIP,
+        Self::PEACH_PARASOL,
+        Self::PEACH_TOAD,
+        Self::PEACH_TOAD_SPORE,
+        Self::GAMEWATCH_GREENHOUSE,
+        Self::GAMEWATCH_MANHOLE,
+        Self::GAMEWATCH_FIRE,
+        Self::GAMEWATCH_PARACHUTE,
+        Self::GAMEWATCH_TURTLE,
+        Self::GAMEWATCH_BREATH,
+        Self::GAMEWATCH_JUDGE,
+        Self::GAMEWATCH_PANIC,
+        Self::GAMEWATCH_CHEF,
+        Self::GAMEWATCH_RESCUE,
+        Self::FOX_ILLUSION,
+        Self::FALCO_PHANTASM,
+        Self::SHEIK_VANISH,
+        Self::SHEIK_CHAIN,
+        Self::BOWSER_FLAME,
+        Self::NESS_BAT,
+        Self::NESS_YOYO,
+        Self::YOSHI_EGG_THROW,
+        Self::YOSHI_EGG_LAY,
+        Self::YOSHI_STAR,
+        Self::PIKACHU_THUNDER,
+        Self::PIKACHU_TJOLT_GROUND,
+        Self::PIKACHU_TJOLT_AIR,
+        Self::PICHU_THUNDER,
+        Self::PICHU_TJOLT_GROUND,
+        Self::PICHU_TJOLT_AIR,
+        Self::SAMUS_GRAPPLE,
+        Self::ZELDA_DIN_FIRE,
+        Self::ZELDA_DIN_FIRE_EXPLOSION,
+        Self::MEWTWO_DISABLE,
+        Self::MEWTWO_SHADOW_BALL,
+        Self::ICE_CLIMBER_ICE,
+        Self::ICE_CLIMBER_BLIZZARD,
+        Self::ICE_CLIMBER_GUM_STRINGS,
+        Self::MARIO_CAPE,
+        Self::DR_MARIO_SHEET,
+    ];
+
+    pub const fn is_native_callback_owned(self) -> bool {
+        match self.0 {
+            56..=104 | 106..=124 => true,
+            _ => false,
+        }
+    }
 }
 
 /// The small set of article families currently consumed by the simulation.
@@ -662,9 +844,20 @@ mod tests {
         assert_eq!(
             ArticleId::FIGHTER_ARTICLE_IDS.map(|id| id.0),
             [
-                48, 49, 54, 55, 94, 95, 105, 114, 115, 116, 117, 118, 119, 120, 121, 122, 124
+                48, 49, 54, 55, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+                76, 77, 78, 79, 80, 93, 94, 95, 98, 99, 103, 104, 111, 105, 114, 115, 116, 117, 118, 119,
+                120, 121, 122, 124, 56, 57, 85, 86, 87, 88, 83, 84, 81, 82, 89, 90, 91, 92, 96,
+                97, 100, 101, 102, 106, 107, 108, 109, 110, 112, 113
             ]
         );
+    }
+
+    #[test]
+    fn callback_owned_article_catalog_is_explicit() {
+        assert!(ArticleId::LINK_BOMB.is_native_callback_owned());
+        assert!(ArticleId::SAMUS_BOMB.is_native_callback_owned());
+        assert!(ArticleId::PEACH_TURNIP.is_native_callback_owned());
+        assert!(!ArticleId::FOX_LASER.is_native_callback_owned());
     }
 
     #[test]

@@ -19,6 +19,8 @@ class ArticleId(IntEnum):
     DR_MARIO_VITAMIN = 49
     FOX_LASER = 54
     FALCO_LASER = 55
+    FOX_ILLUSION = 56
+    FALCO_PHANTASM = 57
     LINK_BOMB = 58
     YOUNG_LINK_BOMB = 59
     LINK_BOOMERANG = 60
@@ -38,23 +40,55 @@ class ArticleId(IntEnum):
     LINK_BOW = 76
     YOUNG_LINK_BOW = 77
     NESS_PK_FLASH_EXPLOSION = 78
+    SHEIK_NEEDLE_THROW = 79
+    SHEIK_NEEDLE_HELD = 80
     SAMUS_BOMB = 93
+    SAMUS_CHARGE = 94
+    SAMUS_MISSILE = 95
+    SAMUS_GRAPPLE = 96
+    SHEIK_VANISH = 85
+    SHEIK_CHAIN = 97
+    BOWSER_FLAME = 100
+    NESS_BAT = 101
+    NESS_YOYO = 102
+    YOSHI_EGG_THROW = 86
+    YOSHI_EGG_LAY = 87
+    YOSHI_STAR = 88
+    PIKACHU_THUNDER = 81
+    PIKACHU_TJOLT_GROUND = 89
+    PIKACHU_TJOLT_AIR = 90
+    PICHU_THUNDER = 82
+    PICHU_TJOLT_GROUND = 91
+    PICHU_TJOLT_AIR = 92
+    ZELDA_DIN_FIRE = 108
+    ZELDA_DIN_FIRE_EXPLOSION = 109
+    MEWTWO_DISABLE = 110
+    MEWTWO_SHADOW_BALL = 112
+    ICE_CLIMBER_ICE = 106
+    ICE_CLIMBER_BLIZZARD = 107
+    ICE_CLIMBER_GUM_STRINGS = 113
+    MARIO_CAPE = 83
+    DR_MARIO_SHEET = 84
     PEACH_BOMBER = 98
     PEACH_TURNIP = 99
     PEACH_PARASOL = 103
     PEACH_TOAD = 104
     LUIGI_FIRE = 105
     PEACH_TOAD_SPORE = 111
+    GAMEWATCH_GREENHOUSE = 114
+    GAMEWATCH_MANHOLE = 115
+    GAMEWATCH_FIRE = 116
+    GAMEWATCH_PARACHUTE = 117
+    GAMEWATCH_TURTLE = 118
+    GAMEWATCH_BREATH = 119
+    GAMEWATCH_JUDGE = 120
+    GAMEWATCH_PANIC = 121
+    GAMEWATCH_CHEF = 122
+    GAMEWATCH_RESCUE = 124
 
     @property
     def is_native_callback_owned(self) -> bool:
-        return (
-            58 <= self <= 73
-            or 76 <= self <= 78
-            or self in (93, 98, 99, 111, 124)
-            or 103 <= self <= 104
-            or 114 <= self <= 122
-        )
+        return 56 <= self <= 104 or 106 <= self <= 124
 
 
 def b0_source_phases(

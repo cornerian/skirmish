@@ -70,16 +70,21 @@ def _context(*, pressed=True, resource=True, grounded=True, stick=(0.0, 0.0)):
 class ArticleTests(unittest.TestCase):
     def test_source_article_ids_match_item_kind_enum(self):
         ids = {member.name: int(member) for member in ArticleId}
+        self.assertEqual(len(ids), 70)
         self.assertEqual(
             {name: ids[name] for name in (
                 "MARIO_FIRE", "DR_MARIO_VITAMIN", "FOX_LASER", "FALCO_LASER",
                 "LINK_BOMB", "YOUNG_LINK_BOMB", "NESS_PK_FLASH_EXPLOSION",
-                "SAMUS_BOMB", "PEACH_TOAD_SPORE", "LUIGI_FIRE",
+                "SHEIK_NEEDLE_THROW", "SHEIK_NEEDLE_HELD",
+                "SAMUS_BOMB", "SAMUS_CHARGE", "SAMUS_MISSILE",
+                "PEACH_TOAD_SPORE", "LUIGI_FIRE",
             )},
             {
                 "MARIO_FIRE": 48, "DR_MARIO_VITAMIN": 49, "FOX_LASER": 54,
                 "FALCO_LASER": 55, "LINK_BOMB": 58, "YOUNG_LINK_BOMB": 59,
                 "NESS_PK_FLASH_EXPLOSION": 78, "SAMUS_BOMB": 93,
+                "SAMUS_CHARGE": 94, "SAMUS_MISSILE": 95,
+                "SHEIK_NEEDLE_THROW": 79, "SHEIK_NEEDLE_HELD": 80,
                 "PEACH_TOAD_SPORE": 111, "LUIGI_FIRE": 105,
             },
         )
