@@ -1,9 +1,9 @@
 # Ice Climbers article and partner specification
 
-This is the Popo side of the pinned `ftPopo`/`ftNana` source.  Popo owns the
-special action rows; Nana is a paired fighter/article owner whose state is
-updated by native code.  The current script declaration mirrors Popo rows
-341–358 and exposes only decisions that can be made from callback context.
+This specification covers both sides of the pinned `ftPopo`/`ftNana` source.
+Popo owns special rows 341–358; Nana's paired rows are 359–366 and are driven
+by Popo's state. The Python script exports Popo's rows and exposes only
+decisions that can be made from callback context.
 
 ## Source anchors and IDs
 
@@ -13,6 +13,14 @@ updated by native code.  The current script declaration mirrors Popo rows
 | Squall Hammer S1/S2 | 343–346 | `ftPp_SpecialS1_Anim/Phys/Coll/IASA`, `ftPp_SpecialS2_Anim/Phys/Coll/IASA` | Popo phase and wall branch; collision and Nana sync native |
 | Belay with Nana | 347–356 | `ftPp_SpecialHiStart_0_Anim`, `ftPp_SpecialHiThrow_0_Anim`, `ftPp_SpecialHi_8012280C` | Popo command branches; rope and Nana movement native |
 | Blizzard | 357 ground, 358 air | `ftPp_SpecialLw_Anim`, `ftPp_SpecialLw_Phys`, `ftPp_SpecialLw_Coll` | Popo phase selection; blizzard article native |
+
+Nana's source rows are paired implementation rows rather than additional Popo
+special roots:
+
+| Nana behavior | Nana source rows | Pinned source anchors | Ownership |
+| --- | ---: | --- | --- |
+| Squall Hammer follow | 359 ground, 360 air | `ftNn_Init_80123B3C`, `ftPp_SpecialS_0_Anim/Phys/Coll` | Nana follows Popo motion and frame; native paired state |
+| Belay follow and launch | 361–366 | `ftNn_Init_801230D0`, `ftPp_SpecialHi_0..4_Anim/Phys/Coll` | Nana rope attachment, throw, launch, and terrain response native |
 
 The stable fighter identity is external ID `14` (`ice-climbers`).  The
 current article catalog does not publish numeric Ice Shot, Blizzard, or Belay
@@ -50,13 +58,15 @@ minimal native bridge is to add these booleans to the command event context.
 
 The Python phase graph has the following source transitions:
 
-* 343/345 (Squall S1) wall contact advances to 344/346 (S2), preserving the
-  action frame.  Native collision code supplies the wall normal and rebound
-  velocity.
+* 343–346 retain the active S1/S2 source row on wall contact. Native
+  collision code reverses velocity and synchronizes Nana; it does not select a
+  different Popo motion row.
 * 347/352 with command slot 2 and unavailable Nana advances to 350/355,
   preserving state and frame.
 * 348/353 with command slot 1 and Nana launching advances to row 354, as in
   `ftPp_SpecialHi_8012280C`.
+* 353, 354, and 356 end in source special fall; rows 354 and 356 landing on
+  ground enter the shared special landing action instead of rows 349/351.
 * Ordinary ground/air changes preserve the matching row and frame.
 
 ## Deterministic test vector
@@ -80,4 +90,4 @@ remains in `Source.14:348`.
 3. Belay rope creation, Nana teleport/throw, launch, hitlag, and wall/ceiling
    collision are native-only.
 4. Squall Hammer Nana synchronization and collision rebound physics remain
-   native-only even though the Popo S1→S2 action branch is expressible.
+   native-only even though Popo's active-row retention is expressible.

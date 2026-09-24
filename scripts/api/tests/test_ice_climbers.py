@@ -127,10 +127,10 @@ class IceClimbersTests(unittest.TestCase):
         fighter = _Fighter("Source.14:347")
         up._transition_animation_end(fighter, _context())
         self.assertEqual(fighter.action, "Source.14:348")
-        for state, expected in ((354, 349), (356, 351)):
+        for state in (354, 356):
             fighter = _Fighter(f"Source.14:{state}")
             up._transition_ground_air(fighter, SimpleNamespace(grounded=True))
-            self.assertEqual(fighter.action, f"Source.14:{expected}")
+            self.assertEqual(fighter.action, Action.SPECIAL_HI_LANDING)
 
     def test_belay_source_rows_follow_ground_air_pairs(self):
         export_definition(IceClimbers)
@@ -140,7 +140,12 @@ class IceClimbersTests(unittest.TestCase):
         ):
             fighter = _Fighter(f"Source.14:{air_state}")
             up._transition_ground_air(fighter, SimpleNamespace(grounded=True))
-            self.assertEqual(fighter.action, f"Source.14:{ground_state}")
+            expected = (
+                Action.SPECIAL_HI_LANDING
+                if air_state in (354, 356)
+                else f"Source.14:{ground_state}"
+            )
+            self.assertEqual(fighter.action, expected)
             fighter = _Fighter(f"Source.14:{ground_state}")
             up._transition_ground_air(fighter, SimpleNamespace(grounded=False))
             self.assertEqual(fighter.action, f"Source.14:{air_state}")
@@ -149,6 +154,22 @@ class IceClimbersTests(unittest.TestCase):
         fighter = _Fighter("Source.14:358")
         down._transition_animation_end(fighter, _context(grounded=False))
         self.assertEqual(fighter.action, Action.FALL)
+
+    def test_belay_aerial_throw_rows_use_source_fall_and_landing_exits(self):
+        export_definition(IceClimbers)
+        up = IceClimbers.specials.up
+
+        for state in (353, 354, 356):
+            fighter = _Fighter(f"Source.14:{state}")
+            up._transition_animation_end(fighter, _context(grounded=False))
+            self.assertEqual(fighter.action, Action.SPECIAL_HI_FALL)
+
+        # Rows 354 and 356 land into the shared special landing action,
+        # rather than becoming rows 349 and 351.
+        for state in (354, 356):
+            fighter = _Fighter(f"Source.14:{state}")
+            up._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+            self.assertEqual(fighter.action, Action.SPECIAL_HI_LANDING)
 
     def test_ice_shot_entry_clears_only_source_command_slot(self):
         export_definition(IceClimbers)

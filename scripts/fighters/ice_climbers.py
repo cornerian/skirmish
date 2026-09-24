@@ -121,10 +121,12 @@ class Belay(UpSpecial, DirectionalSpecial):
         ground_start_1: Transition(ground_throw_1),
         ground_throw_1: Transition(Action.WAIT),
         air_start_0: Transition(air_throw_0),
-        air_throw_0: Transition(Action.FALL),
-        air_throw_2: Transition(Action.FALL),
+        # ftPp_SpecialAirHiThrow{0,1,2}_Anim calls the source fall-special
+        # helper when the aerial animation ends.
+        air_throw_0: Transition(Action.SPECIAL_HI_FALL),
+        air_throw_2: Transition(Action.SPECIAL_HI_FALL),
         air_start_1: Transition(air_throw_1),
-        air_throw_1: Transition(Action.FALL),
+        air_throw_1: Transition(Action.SPECIAL_HI_FALL),
     }
     on_ground, on_air = frame_preserving_surface_pairs(
         ground_start_0, ground_throw_0, air_start_0, air_throw_0
@@ -139,6 +141,10 @@ class Belay(UpSpecial, DirectionalSpecial):
     )
     on_ground.update(final_ground)
     on_air.update(final_air)
+    # AirThrow1/AirThrow2 call ftCo_LandingFallSpecial_Enter on ground
+    # contact; they do not become the matching grounded source rows.
+    on_ground[air_throw_1] = Transition(Action.SPECIAL_HI_LANDING)
+    on_ground[air_throw_2] = Transition(Action.SPECIAL_HI_LANDING)
 
     @on.command_changed(2, actions=(ground_start_0, air_start_0))
     def partner_fallback(self, fighter: Any, ctx: MoveContext) -> None:
