@@ -70,8 +70,8 @@ set. All workflows share native SDL3/ALSA and Rust setup.
 The system suite covers Slippi parsing, command-line import, file-backed
 self-recorded replay regressions and first-divergence detection using synthetic
 recordings. It also checks hashes and import summaries for [ten original
-archived replays](../tests/fixtures/slippi/README.md), including explicit
-rejection of the unsupported 1.7.1 format. Import regressions do not establish
+archived replays](../tests/fixtures/slippi/README.md), including the legacy
+1.7.1 format. Import regressions do not establish
 native simulation parity against those recordings. `real_parity` additionally
 ratchets a real-replay comparison (`tests/fixtures/slippi/parity/fox-fd.slp`)
 against the published gameplay export when `SKIRMISH_GAMEPLAY_DATA` is set,

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::{fs, path::Path, process::Command};
 
 #[test]
-fn archived_replays_preserve_import_summaries_and_reject_unsupported_formats() {
+fn archived_replays_preserve_import_summaries() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/slippi");
     let manifest: Value =
         serde_json::from_slice(&fs::read(directory.join("manifest.json")).unwrap()).unwrap();

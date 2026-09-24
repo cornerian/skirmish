@@ -36,7 +36,7 @@ pub enum Error {
     Parse(#[from] peppi::io::Error),
     #[error("invalid or unsupported replay: {0}")]
     Invalid(String),
-    #[error("unsupported Slippi version {0}; supported range is 2.0.0 through 3.18.0")]
+    #[error("unsupported Slippi version {0}; supported range is 1.7.1 through 3.18.0")]
     UnsupportedVersion(Version),
     #[error("Peppi rejected malformed replay data with a panic")]
     ParserPanic,
@@ -153,7 +153,10 @@ impl Replay {
             return Err(Error::Invalid("content after the Slippi wrapper".into()));
         }
         let version = game.start.slippi.version;
-        if version < Version(2, 0, 0) || version > peppi::io::slippi::MAX_SUPPORTED_VERSION {
+        // Peppi 2.1.2 has version-gated readers for the 1.x GameStart and
+        // pre-2.0 frame/end layouts. Keep the lower bound aligned with that
+        // parser support so legacy 1.7 recordings retain their raw fields.
+        if version < Version(1, 7, 1) || version > peppi::io::slippi::MAX_SUPPORTED_VERSION {
             return Err(Error::UnsupportedVersion(version));
         }
         if game.end.is_none() {

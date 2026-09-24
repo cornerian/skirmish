@@ -39,7 +39,9 @@ pub(crate) fn check(bytes: &[u8]) -> Result<(), Error> {
         Some([major, minor, patch]) => Version(*major, *minor, *patch),
         _ => return invalid("GameStart lacks a format version"),
     };
-    if !(Version(2, 0, 0)..=slippi::MAX_SUPPORTED_VERSION).contains(&version) {
+    // The local Peppi parser has explicit 1.x GameStart and legacy frame/end
+    // layouts. Validate those same versions before parsing the event stream.
+    if !(Version(1, 7, 1)..=slippi::MAX_SUPPORTED_VERSION).contains(&version) {
         return Err(Error::UnsupportedVersion(version));
     }
     for code in [Event::FramePre, Event::FramePost, Event::GameEnd] {

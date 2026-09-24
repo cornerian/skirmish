@@ -118,7 +118,7 @@ fn stage_external_id(name: &str) -> Option<u16> {
 ///
 /// `seed_override`, when given, is used instead of the replay's own recorded
 /// `random_seed`. Peppi decodes `GameStart.random_seed` unconditionally for
-/// every Slippi version the importer accepts (2.0.0 through 3.18.0; see
+/// every Slippi version the importer accepts (1.7.1 through 3.18.0; see
 /// `peppi-adapter`'s `Replay::read`), so there is currently no in-range
 /// version for which the field is genuinely absent. `seed_override` exists
 /// for a future format that drops the field and for deliberately reproducing

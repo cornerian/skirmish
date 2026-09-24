@@ -23,14 +23,14 @@ Import errors exit unsuccessfully without a success summary.
 
 ## Accepted files and memory use
 
-The importer accepts completed Slippi **2.0.0 through 3.18.0** files up to
+The importer accepts completed Slippi **1.7.1 through 3.18.0** files up to
 **512 MiB**, with a nonzero declared raw-event length and a complete `GameEnd`.
 It checks the wrapper, event boundaries, actor routing, paired pre/post events,
 frame continuity and version-dependent columns. Future formats, live files,
 truncated events and unsupported event forms are errors. Recorded absent actors
 remain absent; nullable columns do not become zero-valued fighters.
 
-Legacy 2.0/2.1 files have no FrameStart records: a new pre-frame ID opens each
+Legacy 1.7 through 2.1 files have no FrameStart records: a new pre-frame ID opens each
 frame, and IDs must advance contiguously from -123 without rollback. Intermittent
 actor absence in these legacy files is rejected because Peppi would shift later
 rows; trailing absence is supported. FrameEnd and item records are absent before
@@ -162,7 +162,7 @@ It reads the replay's `GameStart` once:
   applied uniformly by `Match::new`.
 - **Seed**: `GameStart.random_seed`, unless `--seed` overrides it. Peppi
   decodes this field unconditionally for every Slippi version the importer
-  currently accepts (2.0.0 through 3.18.0), so there is no in-range version
+  currently accepts (1.7.1 through 3.18.0), so there is no in-range version
   for which it is genuinely absent; `--seed` exists for a hypothetical future
   format without the field, and for deliberately reproducing a match under a
   different seed.

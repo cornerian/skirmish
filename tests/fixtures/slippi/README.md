@@ -39,10 +39,9 @@ also contains four-player and sub-30-second recordings, both represented here.
 | 10 | Pichu / Roy | Battlefield | 2.0.1 | 11719 |
 
 `tests/slippi_corpus.rs` verifies byte identity and the CLI's complete import
-summary for nine supported files. The 1.7.1 file must fail explicitly with an
-unsupported-format error and no success output. Summary expectations were
-captured from the existing Peppi 2.1.2 import path; they are regression snapshots,
-not an independent simulator oracle. The system workflow runs this target in
+summary for all ten files. Summary expectations were captured from the Peppi
+2.1.2 import path; they are regression snapshots, not an independent simulator
+oracle. The system workflow runs this target in
 default debug, C-oracle debug and C-oracle release configurations.
 
 These files do not yet supply the native resources and initial checkpoints

@@ -8,6 +8,23 @@ use std::convert::Infallible;
 use support::*;
 
 #[test]
+fn imports_archived_slippi_171_samus_ganondorf_yoshis_story() {
+    let bytes =
+        include_bytes!("../../../tests/fixtures/slippi/04-samus-ganondorf-yoshis-story.slp");
+    let replay = Replay::read(bytes.as_slice()).unwrap();
+    let summary = replay.summary(Timeline::LastRecorded).unwrap();
+
+    assert_eq!(summary.version, Version(1, 7, 1));
+    assert_eq!(summary.stage, 8);
+    assert_eq!(summary.ports, [Port::P2, Port::P4]);
+    assert_eq!(summary.physical_frames, 15_959);
+    assert_eq!(summary.surviving_frames, 15_959);
+    assert_eq!(summary.discarded_frames, 0);
+    assert_eq!(summary.first_frame, Some(-123));
+    assert_eq!(summary.last_frame, Some(15_835));
+}
+
+#[test]
 fn parser_preserves_peppi_types_ports_versions_and_float_bits() {
     for version in [
         Version(2, 0, 0),

@@ -197,7 +197,23 @@
       "duration_bucket": "long (>=4m)",
       "stage": "yoshis-story",
       "file": "04-samus-ganondorf-yoshis-story.slp",
-      "expected_error": "unsupported Slippi version 1.7.1"
+      "expected_summary": {
+        "parser": "peppi 2.1.2",
+        "sha256": "65077313235c116e5c9b2b4aae85b769d6f13f8b54f882c0924576a5d0fd515b",
+        "bytes": 3256205,
+        "version": [1, 7, 1],
+        "stage": 8,
+        "ports": ["P2", "P4"],
+        "physical_frames": 15959,
+        "surviving_frames": 15959,
+        "discarded_frames": 0,
+        "selected_frames": 15959,
+        "first_frame": -123,
+        "last_frame": 15835,
+        "latest_finalized_frame": null,
+        "timeline": "last_recorded",
+        "end_method": "Resolved"
+      }
     },
     {
       "source_path": "PEACH/Game_20191009T220830.slp",
