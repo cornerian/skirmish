@@ -79,8 +79,10 @@ The pinned fighter sources were audited alongside the article callbacks:
   to AirSEnd on command 3 or animation completion, and uses command 2 for the
   wall end. Those branches are represented by the side-special callbacks.
 * `ftpeachspecialn.c` changes to SpecialNHit at animation frame 9 when the
-  Toad shield callback fires. The script sets `action_frame = 9` after that
-  phase change for both ground and air hit states.
+  Toad shield callback fires. The portable `before_hit` hook has no typed Toad
+  shield payload, so the script preserves the hit-phase transition while
+  leaving the frame-nine restart unsupported. Generic hits do not receive an
+  inferred frame offset.
 * `ftpeachspeciallw.c` sends a held turnip to the common light throw and
   otherwise spawns an article; weighted turnip selection remains article
   host work.
