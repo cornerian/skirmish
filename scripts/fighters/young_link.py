@@ -173,6 +173,13 @@ class YoungLinkUpSpecial(_FamilyUpSpecial):
     on_end = {ground: Transition(Action.WAIT)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
+    @on.action_enter(air)
+    def reset_aerial_jumps(self, fighter: Any, ctx: Any) -> None:
+        """Apply ``ftLk_SpecialAirHi_Enter``'s jump-budget reset."""
+        reset = getattr(fighter, "max_jumps", None)
+        if callable(reset):
+            reset()
+
     @on.animation_end(air)
     def enter_fall_special(self, fighter: Any, ctx: Any) -> bool:
         enter = getattr(fighter, "enter_fall_special", None)

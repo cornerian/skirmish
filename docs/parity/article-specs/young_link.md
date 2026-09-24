@@ -75,6 +75,14 @@ the native reflection and bounce callbacks. The fighter-side script only
 preserves the held-bomb reuse branch; item fuse, explosion, ownership, and
 contact remain native.
 
+## Spin Attack
+
+`ftLk_SpecialAirHi_Enter` restores Young Link's aerial jump budget before the
+airborne Spin Attack begins. The script exposes that entry callback. The
+animation-end FallSpecial transition and landing-fall-special collision path
+still require the native fighter host because their landing-lag inputs come
+from common fighter data.
+
 ## Hookshot
 
 The CLink hookshot uses item ID `63` and the shared `itlinkhookshot.c` state

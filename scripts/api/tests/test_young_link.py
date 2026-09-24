@@ -221,6 +221,16 @@ class YoungLinkTests(unittest.TestCase):
         self.assertTrue(move.enter_fall_special(missing, SimpleNamespace()))
         self.assertEqual(missing.action, Action.FALL)
 
+    def test_aerial_spin_attack_resets_jump_budget_on_entry(self):
+        move = YoungLinkUpSpecial()
+        fighter = _Fighter(move.air, grounded=False)
+        resets = []
+        fighter.max_jumps = lambda: resets.append(True)
+
+        move.reset_aerial_jumps(fighter, SimpleNamespace())
+
+        self.assertEqual(resets, [True])
+
     def test_held_bomb_branch_is_optional_and_reports_airborne_state(self):
         move = YoungLinkDownSpecial()
         fighter = _Fighter(move.air, grounded=False)
