@@ -878,8 +878,19 @@ class FireFox(UpSpecial):
         velocity = fighter.velocity
         fighter.set_velocity(velocity[0] * multiplier, velocity[1])
 
-    @hook.ground_air_changed(hold_ground, hold_air, travel_ground)
+    @hook.ground_air_changed(hold_ground, hold_air, travel_ground, landing)
     def ground_air_changed(self, fighter: Fighter, ctx: MoveContext) -> None:
+        # ftFx_SpecialHiLanding_Coll enters FallSpecial when the grounded
+        # landing phase loses its floor contact before its animation ends.
+        if fighter.action == self.landing and not ctx.grounded:
+            attributes = resource_attributes(ctx, self.resource)
+            if attributes is not None:
+                fighter.enter_fall_special(
+                    mobility=attributes.freefall_mobility,
+                    landing_lag=attributes.landing_lag,
+                )
+            return
+
         destination = None
         if fighter.action == self.hold_ground and not ctx.grounded:
             destination = self.hold_air

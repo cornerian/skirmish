@@ -18,6 +18,26 @@ from fighters.fox import Fox
 
 
 class FoxSourceAuditTests(unittest.TestCase):
+    def test_firefox_landing_leaving_ground_enters_fall_special(self):
+        move = Fox.specials.up
+        entered = []
+        fighter = SimpleNamespace(
+            action=move.landing,
+            enter_fall_special=lambda **kwargs: entered.append(kwargs),
+        )
+        attributes = SimpleNamespace(freefall_mobility=0.35, landing_lag=4.0)
+        context = SimpleNamespace(
+            grounded=False,
+            resource=lambda path=None: SimpleNamespace(attributes=attributes),
+        )
+
+        move.ground_air_changed(fighter, context)
+
+        self.assertEqual(
+            entered,
+            [{"mobility": 0.35, "landing_lag": 4.0}],
+        )
+
     def test_illusion_command_callback_consumes_only_source_marker_one(self):
         move = Fox.specials.side
         for marker in (0, 2, -1):
