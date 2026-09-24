@@ -37,10 +37,21 @@ use std::collections::BTreeMap;
 /// Handles are allocated by the match state and are never reused during a
 /// match.  They intentionally do not encode a projectile vector index, so a
 /// removal cannot make an old reference point at a different article.
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct ArticleHandle(u64);
+
+impl<'de> Deserialize<'de> for ArticleHandle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = u64::deserialize(deserializer)?;
+        if raw == 0 {
+            return Err(serde::de::Error::custom("article handles must be nonzero"));
+        }
+        Ok(Self(raw))
+    }
+}
 
 impl ArticleHandle {
     pub const INVALID: Self = Self(0);
@@ -151,7 +162,7 @@ pub enum ProjectileBehavior {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Projectile {
     /// Stable match-local identity, independent of the projectile vector slot.
-    pub handle: ArticleHandle,
+    handle: ArticleHandle,
     pub kind: ProjectileKind,
     pub behavior: ProjectileBehavior,
     /// Player index (0/1) this projectile currently belongs to. Flips on a
@@ -178,6 +189,12 @@ pub struct Projectile {
     /// One `staling::Entry` allocated at spawn, matching a fighter's own
     /// attack-instance allocation on first use of a distinct attack.
     pub staling_identity: crate::fighter::state::stale::Entry,
+}
+
+impl Projectile {
+    pub const fn handle(&self) -> ArticleHandle {
+        self.handle
+    }
 }
 
 impl Projectile {
@@ -1047,14 +1064,20 @@ mod tests {
             1,
             &mut crate::fighter::state::stale::InstanceCounter::default(),
         );
-        let first_handle = first.handle;
-        let second_handle = second.handle;
+        let first_handle = first.handle();
+        let second_handle = second.handle();
         let mut live = vec![first, second];
         live.remove(0);
-        assert_eq!(live.iter().find(|item| item.handle == first_handle), None);
-        assert_eq!(live[0].handle, second_handle);
+        assert_eq!(live.iter().find(|item| item.handle() == first_handle), None);
+        assert_eq!(live[0].handle(), second_handle);
 
         let encoded = serde_json::to_value(&live[0]).expect("projectile checkpoint encoding");
         assert_eq!(encoded["handle"], serde_json::json!(2));
+    }
+
+    #[test]
+    fn article_handle_deserialization_rejects_reserved_zero() {
+        let result = serde_json::from_value::<ArticleHandle>(serde_json::json!(0));
+        assert!(result.is_err());
     }
 }

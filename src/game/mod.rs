@@ -808,7 +808,7 @@ impl State {
     pub fn projectile(&self, handle: projectile::ArticleHandle) -> Option<&projectile::Projectile> {
         self.projectiles
             .iter()
-            .find(|projectile| projectile.handle == handle)
+            .find(|projectile| projectile.handle() == handle)
     }
 
     pub fn projectile_mut(
@@ -817,7 +817,7 @@ impl State {
     ) -> Option<&mut projectile::Projectile> {
         self.projectiles
             .iter_mut()
-            .find(|projectile| projectile.handle == handle)
+            .find(|projectile| projectile.handle() == handle)
     }
 }
 
