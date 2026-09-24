@@ -339,6 +339,8 @@ fn luigi_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
     speed <= threshold
 }
 
+const LUIGI_FIREBALL_TERRAIN_EFFECT_ID: u16 = 1288;
+
 /// Fox laser stage collision arms the native one-frame expiry timer instead
 /// of deleting the item from the collision callback (`itFoxlaser_UnkMotion1_Coll`:
 /// `it_80275158(item_gobj, 1.0F)`).  The host step returns immediately so the
@@ -561,7 +563,7 @@ fn step(
                 state.projectiles[index].position = contact.position;
                 state.events.push(Event::ProjectileTerrainEffect {
                     owner,
-                    effect_id: 1288,
+                    effect_id: LUIGI_FIREBALL_TERRAIN_EFFECT_ID,
                 });
                 return Ok(Outcome::Keep);
             }
@@ -966,6 +968,11 @@ mod tests {
         assert!(luigi_fireball_terrain_despawns(0.5, 0.5));
         assert!(luigi_fireball_terrain_despawns(0.25, 0.5));
         assert!(!luigi_fireball_terrain_despawns(0.5001, 0.5));
+    }
+
+    #[test]
+    fn luigi_fireball_terrain_contact_uses_source_effect() {
+        assert_eq!(LUIGI_FIREBALL_TERRAIN_EFFECT_ID, 1288);
     }
 
     #[test]

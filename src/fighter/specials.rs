@@ -1075,6 +1075,45 @@ pub(crate) fn emit_projectiles(
                             Some(if facing >= 0.0 { 1.0 } else { -1.0 }),
                         )
                     }
+                    crate::game::script::lifecycle_resources::ArticleBehavior::LuigiFireball {
+                        speed,
+                        angle,
+                        lifetime,
+                        half_life,
+                        gravity,
+                        terminal_velocity,
+                        surface_multiplier,
+                        terrain_stop_speed,
+                        hitboxes,
+                        move_id,
+                        contact,
+                    } => {
+                        let crate::game::projectile::ArticleLaunch::Facing(facing) = item.launch
+                        else {
+                            return Err(Error::Data(
+                                "Luigi fireball requires a facing launch".into(),
+                            ));
+                        };
+                        (
+                            crate::game::projectile::ProjectileKind::LuigiFire,
+                            crate::game::projectile::ProjectileBehavior::Gravity(
+                                crate::game::projectile::GravityProjectileState {
+                                    gravity: *gravity,
+                                    terminal_velocity: *terminal_velocity,
+                                    surface_multiplier: *surface_multiplier,
+                                    terrain_stop_speed: *terrain_stop_speed,
+                                    half_life: *half_life,
+                                    contact: *contact,
+                                },
+                            ),
+                            *angle,
+                            *speed,
+                            *lifetime,
+                            hitboxes.to_vec(),
+                            *move_id,
+                            Some(if facing >= 0.0 { 1.0 } else { -1.0 }),
+                        )
+                    }
                 };
                 let mut projectile = game::projectile::spawn(
                     state.allocate_article_handle()?,

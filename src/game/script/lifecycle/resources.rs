@@ -86,6 +86,19 @@ pub(crate) enum ArticleBehavior {
         move_id: u16,
         contact: ProjectileContactPolicy,
     },
+    LuigiFireball {
+        speed: f32,
+        angle: f32,
+        lifetime: f32,
+        half_life: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        surface_multiplier: f32,
+        terrain_stop_speed: f32,
+        hitboxes: Arc<[Hitbox]>,
+        move_id: u16,
+        contact: ProjectileContactPolicy,
+    },
 }
 
 /// Read-only resource data shared by all dispatches for one fighter.
@@ -1972,7 +1985,7 @@ fn link_article_resources(
                         hitboxes,
                         move_id: *move_id,
                     })?;
-                    ArticleBehavior::Gravity {
+                    ArticleBehavior::LuigiFireball {
                         speed: *speed,
                         angle: 0.0,
                         lifetime: *lifetime,
