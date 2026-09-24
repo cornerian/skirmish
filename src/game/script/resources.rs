@@ -485,9 +485,10 @@ pub struct SpecialAttributes {
 /// format. The number is part of the typed reference ABI: changing an
 /// existing entry would make old resources read a different fighter table.
 ///
-/// The word payload remains a `[field_id, f32::to_bits()]` pair. A raw word
-/// is accepted only when its bits decode to a finite `f32`; this registry does
-/// not make arbitrary bit patterns valid gameplay numbers.
+/// The word payload is a `[field_id, u32]` pair. The bits are retained
+/// losslessly because native tables can mix floats with integers, enums,
+/// colors, and flags. Callers that know a field is float-typed can use
+/// [`SpecialAttributes::get_f32`], which rejects nonfinite bit patterns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpecialAttributeLayout {
     pub id: u8,
@@ -582,15 +583,28 @@ fn is_declared_special_attribute_layout(id: u8) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SpecialAttributeWord {
     field_id: u16,
-    value: f32,
+    raw: u32,
 }
 
 impl SpecialAttributes {
-    pub fn get(&self, field_id: u16) -> Option<f32> {
+    /// Return the source word without interpreting its representation.
+    pub fn raw(&self, field_id: u16) -> Option<u32> {
         self.words
             .binary_search_by_key(&field_id, |word| word.field_id)
             .ok()
-            .map(|index| self.words[index].value)
+            .map(|index| self.words[index].raw)
+    }
+
+    /// Return a source word as a finite `f32` when the field is float-typed.
+    pub fn get_f32(&self, field_id: u16) -> Option<f32> {
+        self.raw(field_id)
+            .map(f32::from_bits)
+            .filter(|value| value.is_finite())
+    }
+
+    /// Backward-compatible finite-float lookup for existing script users.
+    pub fn get(&self, field_id: u16) -> Option<f32> {
+        self.get_f32(field_id)
     }
 }
 
@@ -605,7 +619,7 @@ impl Serialize for SpecialAttributes {
         let words: Vec<[u32; 2]> = self
             .words
             .iter()
-            .map(|word| [u32::from(word.field_id), word.value.to_bits()])
+            .map(|word| [u32::from(word.field_id), word.raw])
             .collect();
         output.serialize_field("words", &words)?;
         output.end()
@@ -634,10 +648,6 @@ impl<'de> Deserialize<'de> for SpecialAttributes {
             })?;
             let raw = u32::try_from(raw)
                 .map_err(|_| serde::de::Error::custom("special attribute word is out of range"))?;
-            let value = f32::from_bits(raw);
-            if !value.is_finite() {
-                return Err(serde::de::Error::custom("special attribute must be finite"));
-            }
             if words
                 .last()
                 .is_some_and(|word: &SpecialAttributeWord| word.field_id >= field_id)
@@ -646,7 +656,7 @@ impl<'de> Deserialize<'de> for SpecialAttributes {
                     "special attribute field ids must be strictly increasing",
                 ));
             }
-            words.push(SpecialAttributeWord { field_id, value });
+            words.push(SpecialAttributeWord { field_id, raw });
         }
         Ok(Self {
             layout: wire.layout,
@@ -943,14 +953,25 @@ mod tests {
     }
 
     #[test]
-    fn special_attributes_reject_bad_layout_order_and_non_finite_words() {
+    fn special_attributes_reject_bad_layout_and_order_but_preserve_raw_words() {
         for value in [
             json!({"layout": 16, "words": []}),
             json!({"layout": 3, "words": [[2, 0], [1, 0]]}),
-            json!({"layout": 3, "words": [[1, 2143289344]]}),
         ] {
             assert!(serde_json::from_value::<super::SpecialAttributes>(value).is_err());
         }
+        let attributes = serde_json::from_value::<super::SpecialAttributes>(json!({
+            "layout": 3,
+            "words": [[1, 2143289344], [2, 1065353216]]
+        }))
+        .unwrap();
+        assert_eq!(attributes.raw(1), Some(2143289344));
+        assert_eq!(attributes.get_f32(1), None);
+        assert_eq!(attributes.get(2), Some(1.0));
+        assert_eq!(
+            serde_json::to_value(attributes).unwrap()["words"][0],
+            json!([1, 2143289344])
+        );
     }
 
     #[test]
