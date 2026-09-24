@@ -234,7 +234,7 @@ class IceClimbersTests(unittest.TestCase):
 
         class Partner:
             available = False
-            launching = True
+            motion_state = 364
 
         fighter = _Fighter("Source.14:347")
         up.partner_fallback(
@@ -258,6 +258,33 @@ class IceClimbersTests(unittest.TestCase):
             SimpleNamespace(event=_Event(1), entity_at_index=lambda index: object()),
         )
         self.assertEqual(fighter.action, "Source.14:347")
+
+    def test_belay_partner_projection_failures_and_motion_range_fail_closed(self):
+        export_definition(IceClimbers)
+        up = IceClimbers.specials.up
+
+        for resolver in (
+            lambda index: None,
+            lambda index: (_ for _ in ()).throw(RuntimeError("host failure")),
+            lambda index: object(),
+        ):
+            fighter = _Fighter("Source.14:348")
+            up.partner_launch(
+                fighter,
+                SimpleNamespace(event=_Event(1), entity_at_index=resolver),
+            )
+            self.assertEqual(fighter.action, "Source.14:348")
+
+        class Partner:
+            available = True
+            motion_state = 361
+
+        fighter = _Fighter("Source.14:348")
+        up.partner_launch(
+            fighter,
+            SimpleNamespace(event=_Event(1), entity_at_index=lambda index: Partner()),
+        )
+        self.assertEqual(fighter.action, "Source.14:348")
 
     def test_belay_exports_native_command_branch_hooks(self):
         definition = export_definition(IceClimbers).as_dict()

@@ -29,29 +29,53 @@ from skirmish import (
 _MISSING = object()
 
 
-def _partner_fact(ctx: Any, name: str) -> bool | None:
-    """Read a generic host entity fact, failing closed when unavailable.
+def _partner_projection(ctx: Any) -> Any | None:
+    """Resolve the same-port partner projection, failing closed on host gaps.
 
     The native source resolves Nana through ``Player_GetEntityAtIndex``.  The
     current callback context does not promise that resolver, so the script
-    accepts the existing explicit projection first and otherwise probes only a
-    generic ``entity_at_index(1)`` capability.  It never treats a missing,
-    malformed, or foreign object as an available partner.
+    probes only a generic ``entity_at_index(1)`` capability.  Missing,
+    malformed, and foreign objects remain unavailable to source branches.
     """
-    explicit = getattr(ctx, f"partner_{name}", _MISSING)
-    if isinstance(explicit, bool):
-        return explicit
     resolve = getattr(ctx, "entity_at_index", None)
     if not callable(resolve):
         return None
     try:
         partner = resolve(1)
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+    except Exception:
         return None
-    if partner is None:
-        return False
-    value = getattr(partner, name, _MISSING)
-    return value if isinstance(value, bool) else None
+    return partner
+
+
+def _partner_available(ctx: Any) -> bool | None:
+    """Read partner availability from the generic projection.
+
+    ``partner_available`` remains an explicit legacy shim for older hosts;
+    current hosts should expose ``EntityProjection.available`` instead.
+    """
+    partner = _partner_projection(ctx)
+    if partner is not None:
+        value = getattr(partner, "available", _MISSING)
+        return value if isinstance(value, bool) else None
+    legacy = getattr(ctx, "partner_available", _MISSING)
+    return legacy if isinstance(legacy, bool) else None
+
+
+def _partner_launching(ctx: Any) -> bool | None:
+    """Derive Belay launch readiness from Nana's source motion state.
+
+    The decomp tests Nana's active Belay rows (362 through 366), not a named
+    ``launching`` flag.  ``partner_launching`` is accepted only as a legacy
+    compatibility shim when no generic projection exists.
+    """
+    partner = _partner_projection(ctx)
+    if partner is not None:
+        motion_state = getattr(partner, "motion_state", _MISSING)
+        if isinstance(motion_state, bool) or not isinstance(motion_state, int):
+            return None
+        return 362 <= motion_state <= 366
+    legacy = getattr(ctx, "partner_launching", _MISSING)
+    return legacy if isinstance(legacy, bool) else None
 
 
 class IceShot(NeutralSpecial, DirectionalSpecial):
@@ -184,7 +208,7 @@ class Belay(UpSpecial, DirectionalSpecial):
         than guessing from the command value alone.
         """
         event = getattr(ctx, "event", None)
-        if not getattr(event, "value", 0) or _partner_fact(ctx, "available") is not False:
+        if not getattr(event, "value", 0) or _partner_available(ctx) is not False:
             return
         current = getattr(fighter.action, "action", fighter.action)
         ground_start = getattr(self.ground_start_0, "action", self.ground_start_0)
@@ -195,7 +219,7 @@ class Belay(UpSpecial, DirectionalSpecial):
     def partner_launch(self, fighter: Any, ctx: MoveContext) -> None:
         """Enter AirHiThrow2 when native Nana launch state is observed."""
         event = getattr(ctx, "event", None)
-        if not getattr(event, "value", 0) or _partner_fact(ctx, "launching") is not True:
+        if not getattr(event, "value", 0) or _partner_launching(ctx) is not True:
             return
         # ftPp_SpecialHi_8012280C always selects motion state 354, including
         # when the command arrived on the ground throw row.
