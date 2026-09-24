@@ -22,12 +22,15 @@ class FalcoSourceParityTests(unittest.TestCase):
         fox = Fox.parameters()
         self.assertTrue(falco.can_walljump)
         self.assertEqual(falco.article_id, ArticleId.FALCO_LASER)
-        self.assertEqual(falco.phantasm_article_id, 57)
+        self.assertIs(falco.phantasm_article_id, ArticleId.FALCO_PHANTASM)
         self.assertNotEqual(falco.article_id, fox.article_id)
 
         exported = export_definition(Falco).as_dict()
         self.assertTrue(exported["parameters"]["can_walljump"])
-        self.assertEqual(exported["parameters"]["phantasm_article_id"], 57)
+        self.assertEqual(
+            exported["parameters"]["phantasm_article_id"],
+            ArticleId.FALCO_PHANTASM,
+        )
         self.assertEqual(exported["parameters"]["article_id"], ArticleId.FALCO_LASER)
 
 
