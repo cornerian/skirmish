@@ -8,6 +8,7 @@ Transformation likewise exposes no cross-character replacement policy.
 from __future__ import annotations
 
 from enum import Enum
+import math
 from typing import Any
 
 from skirmish import (
@@ -27,11 +28,28 @@ class Nayru(NeutralSpecial, DirectionalSpecial):
 
     @on.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx: object) -> None:
-        """Clear the source command slot and stale reflection latch."""
+        """Clear entry state and apply the source aerial velocity setup."""
         state = getattr(fighter, "action_state", None)
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and command:
             state.command = (0, *command[1:])
+        if fighter.action is self.air:
+            velocity = getattr(fighter, "velocity", None)
+            attributes = resource_attributes(ctx, self.resource)
+            divisor = getattr(
+                attributes,
+                "specialn_air_vel_x_decay",
+                getattr(attributes, "x8", None),
+            )
+            if (
+                isinstance(velocity, (tuple, list))
+                and len(velocity) >= 2
+                and isinstance(divisor, (int, float))
+                and not isinstance(divisor, bool)
+                and math.isfinite(float(divisor))
+                and float(divisor) > 0.0
+            ):
+                fighter.velocity = (float(velocity[0]) / float(divisor), 0.0)
         flags = getattr(fighter, "flags", None)
         if flags is not None and hasattr(flags, "reflecting"):
             flags.reflecting = False

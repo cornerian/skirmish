@@ -35,6 +35,7 @@ class _Fighter:
 
     def __init__(self, action=None):
         self.action = action
+        self.velocity = (4.0, 3.0)
         self.changes = []
         self.action_state = SimpleNamespace(command=(7, 2, 3, 4))
         self.flags = SimpleNamespace(reflecting=False)
@@ -130,6 +131,21 @@ class ZeldaSpecialTests(unittest.TestCase):
             and callback["actions"] == ["Source.18:341", "Source.18:342"]
             for callback in behavior["callbacks"]
         ))
+
+    def test_nayru_aerial_entry_applies_source_velocity_setup(self):
+        move = Zelda.specials.neutral
+        attributes = SimpleNamespace(x8=2.0)
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(attributes=attributes),
+        )
+
+        ground = _Fighter(move.ground)
+        move.enter(ground, context)
+        self.assertEqual(ground.velocity, (4.0, 3.0))
+
+        air = _Fighter(move.air)
+        move.enter(air, context)
+        self.assertEqual(air.velocity, (2.0, 0.0))
 
     def test_decomp_terminal_and_surface_transitions(self):
         cases = (
