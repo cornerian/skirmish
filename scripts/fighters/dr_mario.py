@@ -163,6 +163,26 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
             state.command = (0, command[1], command[2], command[3])
         if hasattr(fighter, "throw_flags"):
             fighter.throw_flags = 0
+        if fighter.action is self.air:
+            velocity = getattr(fighter, "velocity", None)
+            if not isinstance(velocity, (tuple, list)) or len(velocity) < 2:
+                return
+            attributes = resource_attributes(ctx, self.resource)
+            multiplier = getattr(attributes, "specialhi_vel_x", None)
+            if (
+                isinstance(multiplier, bool)
+                or not isinstance(multiplier, (int, float))
+                or not math.isfinite(float(multiplier))
+            ):
+                return
+            try:
+                horizontal = float(velocity[0]) * float(multiplier)
+            except (TypeError, ValueError):
+                return
+            if callable(getattr(fighter, "set_velocity", None)):
+                fighter.set_velocity(horizontal, 0.0)
+            else:
+                fighter.velocity = (horizontal, 0.0)
 
     @hook.animation_end(ground, air)
     def enter_fall_special(self, fighter: Fighter, ctx) -> bool:

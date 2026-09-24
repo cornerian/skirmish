@@ -193,6 +193,20 @@ class DrMarioSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
         self.assertEqual(fighter.throw_flags, 0)
 
+    def test_up_air_entry_applies_source_horizontal_scale_and_clears_vertical_velocity(self):
+        fighter = _Fighter()
+        fighter.action = DrMario.specials.up.air
+        attributes = type("Attributes", (), {"specialhi_vel_x": 0.5})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        DrMario.specials.up.enter(fighter, context)
+
+        self.assertEqual(fighter.velocity, (2.0, 0.0))
+
     def test_up_animation_end_enters_source_fall_special(self):
         move = DrMario.specials.up
         calls = []
