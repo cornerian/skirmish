@@ -45,6 +45,15 @@ class _AnimationAwareFighter(_Fighter):
         return self.available
 
 
+class _LandingFighter(_Fighter):
+    def __init__(self, action):
+        super().__init__(action)
+        self.fall_special = None
+
+    def enter_fall_special(self, *, mobility, landing_lag):
+        self.fall_special = {"mobility": mobility, "landing_lag": landing_lag}
+
+
 def _context(*, resource=None, stick=(0.0, 0.0), grounded=True, pressed=True):
     available = {resource} if resource is not None else set()
     return SimpleNamespace(
@@ -149,9 +158,29 @@ class NessTests(unittest.TestCase):
         PKFlash()._transition_ground_air(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, PKFlash.ground_hold)
 
+        fighter = _Fighter(PKFire.ground)
+        PKFire()._transition_ground_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, PKFire.ground)
+        self.assertEqual(PKFire().on_ground, {})
+        self.assertEqual(PKFire().on_air, {})
+
         fighter = _Fighter(PSIMagnet.ground_hold)
         self.assertTrue(PSIMagnet().release(fighter, SimpleNamespace()))
         self.assertEqual(fighter.action, PSIMagnet.ground_end)
+
+    def test_pk_fire_aerial_landing_uses_source_landing_lag(self):
+        move = PKFire()
+        fighter = _LandingFighter(move.air)
+        resource = SimpleNamespace(attributes=SimpleNamespace(x38=12.0))
+        ctx = _context(resource="side", grounded=False)
+        ctx.resource = lambda path: resource if path == "side" else None
+
+        self.assertTrue(move.landing(fighter, ctx))
+        self.assertEqual(fighter.action, move.air)
+        self.assertEqual(
+            fighter.fall_special,
+            {"mobility": 0, "landing_lag": 12.0},
+        )
 
     def test_psi_magnet_release_exits_absorb_and_turn_phases(self):
         move = PSIMagnet()

@@ -22,6 +22,7 @@ from skirmish import (
     directional_match,
     fresh_special_input,
     hook,
+    resource_attributes,
     source_phase,
     start_action,
 )
@@ -111,9 +112,28 @@ class PKFire(SideSpecial, _NessSpecial):
     air = _phase(357)
     _ACTIVE = (ground, air)
 
+    @hook.landed(actions=(air,))
+    def landing(self, fighter: Fighter, ctx) -> bool:
+        """Enter the source aerial PK Fire landing-fall-special state."""
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            return False
+        attributes = resource_attributes(ctx, self.resource)
+        if attributes is None:
+            return False
+        landing_lag = getattr(
+            attributes,
+            "pkfire_landing_lag",
+            getattr(attributes, "specials_landing_lag", getattr(attributes, "x38", None)),
+        )
+        if landing_lag is None:
+            return False
+        enter(mobility=0, landing_lag=landing_lag)
+        return True
+
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
-    on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
-    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+    on_ground = {}
+    on_air = {}
 
 
 class PKThunder(UpSpecial, _NessSpecial):

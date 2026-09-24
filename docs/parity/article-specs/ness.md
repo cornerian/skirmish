@@ -28,8 +28,9 @@ scale to its final scale, has the source's accidental always-air physics and
 collision assignment, and extends its life when damaged
 (`itnesspkfirepillar.c:67-145`). Reflection transfers ownership; shield
 bounce mirrors the visual rotation and velocity
-(`itnesspkfire.c:99-124`). Fighter landing lag uses `x38_PKFIRE_LANDING_LAG`
-(`ftnessspecials.c:146-165`).
+(`itnesspkfire.c:99-124`). Grounded PK Fire falls when it loses the floor;
+aerial PK Fire enters fall-special on contact with
+`x38_PKFIRE_LANDING_LAG` (`ftnessspecials.c:146-165`).
 
 ## PK Flash and explosion
 
