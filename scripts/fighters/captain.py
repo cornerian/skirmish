@@ -147,7 +147,16 @@ class FalconKick(CaptainDownSpecial):
                     return False
             except (TypeError, IndexError):
                 return False
-        return super().wall_rebound(fighter, ctx)
+        rebounded = super().wall_rebound(fighter, ctx)
+        if rebounded:
+            # ftCa_Special_Inline_SetFlags clears cmd_vars[0..2] before
+            # entering ftCa_MS_SpecialHiThrow1 (state 363).  Keep the cue
+            # from retriggering while the rebound motion is running.
+            state = getattr(fighter, "action_state", None)
+            command = getattr(state, "command", ())
+            if len(command) == 4:
+                state.command = (0, 0, 0, command[3])
+        return rebounded
 
 
 class CaptainFalcon(Fighter):

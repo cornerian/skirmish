@@ -576,6 +576,7 @@ class CaptainFalconTests(unittest.TestCase):
                 SimpleNamespace(wall=SimpleNamespace(normal=(-1.0, 0.0, 0.0))),
             )
         )
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
         self.assertIn(str(getattr(fighter.action, "reference", fighter.action)), {"Source.363", "Source.0:363"})
 
     def test_special_entries_consume_stale_command_slots(self):

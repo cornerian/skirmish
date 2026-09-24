@@ -37,6 +37,12 @@ selects `ftCo_MS_CaptureCaptain` (motion state 275).  The airborne path uses
 callback representation is native object state; the host may use a stable
 relation record as long as its observable owner/victim transitions match.
 
+The grounded low-special collision callback has one additional state rule:
+when command slot 0 is set and the wall is on Falcon's facing side,
+`ftCa_SpecialLw_Coll` clears command slots 0 through 2 before entering
+`ftCa_MS_SpecialHiThrow1` (state 363).  This prevents the same contact cue
+from retriggering during the rebound motion.
+
 When the catch animation reaches its throw command,
 `ftCa_SpecialHiCatch_Anim` calls `doCatchAnim` in
 `ftcaptainspecialhi.c`.  That function selects `ftCa_MS_SpecialHiThrow`
@@ -117,8 +123,8 @@ The authoring layer now exposes the deterministic terminal callback for
 motion 363: `ftCa_SpecialHiThrow1_Anim` transitions the holder to ordinary
 fall when the rebound animation ends.  The remaining gap is the native
 callback graph.  The host has no direct
-`accessory1_cb`/`accessory4_cb`, `HSD_GObj` pointer, command-variable, or
-effect-object lifecycle.  It uses resource-driven attachment helpers instead;
+`accessory1_cb`/`accessory4_cb`, `HSD_GObj` pointer, or effect-object
+lifecycle.  It uses resource-driven attachment helpers instead;
 missing XRotN/TransN2 pose data therefore prevents an exact pose snap.  Native
 special-hi physics, victim throw knockback/hitlag, visual effects, and the
 full `ftCo_AirCatchHit_Coll` wall-rebound collision behavior still require
