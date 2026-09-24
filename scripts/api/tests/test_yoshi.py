@@ -88,7 +88,10 @@ class YoshiSpecialTests(unittest.TestCase):
             self.assertTrue(move.input_pressed(fighter, _context(stick=stick)))
             self.assertIs(fighter.action, move.ground)
 
-        self.assertEqual(Yoshi.specials.side.ground, "Source.17:356")
+        # ftYs_SpecialS_Enter and ftYs_SpecialAirS_Enter both enter native
+        # motion 360; 356 is the post-landing continuation selected by the
+        # aerial start collision callback.
+        self.assertEqual(Yoshi.specials.side.ground, "Source.17:360")
         self.assertEqual(Yoshi.specials.side.air, "Source.17:360")
 
     def test_directional_specials_reject_wrong_axis(self):
@@ -115,7 +118,7 @@ class YoshiSpecialTests(unittest.TestCase):
         fighter = _Fighter("Source.17:356")
         move._transition_animation_end(fighter, _context())
         self.assertEqual(fighter.action, "Source.17:357")
-        fighter = _Fighter("Source.17:360")
+        fighter = _Fighter(move.air)
         move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, "Source.17:356")
 

@@ -19,3 +19,12 @@ def test_egg_roll_release_still_selects_terminal_phase():
     assert EggRoll.air_turn in EggRoll._ACTIVE
     assert EggRoll.on_end[EggRoll.ground_loop].target == EggRoll.ground_turn
     assert EggRoll.on_end[EggRoll.air_loop].target == EggRoll.air_turn
+
+
+def test_egg_roll_enters_native_start_then_lands_into_ground_start():
+    """Source enters 360; 356 is only the aerial-start landing handoff."""
+    assert EggRoll.ground == EggRoll.air
+    assert EggRoll.ground.action.slippi_state == 360
+    assert EggRoll.on_end[EggRoll.ground].target == EggRoll.air_loop
+    assert EggRoll.on_ground[EggRoll.air].target == EggRoll.ground_start
+    assert EggRoll.on_air[EggRoll.ground_start].target == EggRoll.ground

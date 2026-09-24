@@ -11,7 +11,7 @@ table entries in `src/melee/ft/kinds/ftYoshi/ftyoshi.c`.
 | --- | --- | --- | --- |
 | Egg Lay | 346–355 | Yoshi tongue, egg-lay egg | `ftyoshispecialn.c`: `ftYs_SpecialN_Enter`, `ftYs_SpecialAirN_Enter`, `inlineB0`, `ftYs_SpecialN2_0_Anim`; tongue attaches to the fighter and captures a victim; egg spawn is `it_802F2F34` |
 | Egg Toss | 364–365 | Yoshi egg throw | `ftyoshispecialhi.c`: `ftYs_SpecialHi_Enter`, `ftYs_SpecialAirHi_Enter`, `fn_8012E110`; throw egg is spawned by `it_802B2A10` and released by `it_802B28C8` |
-| Egg Roll | 356–363 | none | `ftyoshispecials.c`: `ftYs_SpecialS_Enter`/`ftYs_SpecialAirS_Enter`, loop IASA and collision callbacks; velocity, wall bounce, scale, and hit capsule remain fighter-native |
+| Egg Roll | 356–363 | none | `ftyoshispecials.c`: `ftYs_SpecialS_Enter`/`ftYs_SpecialAirS_Enter` both enter motion 360; `ftYs_SpecialAirSStart_1_Coll` selects motion 356 after aerial start lands; loop IASA and collision callbacks own the remaining phases; velocity, wall bounce, scale, and hit capsule remain fighter-native |
 | Ground Pound | 366–368 | Yoshi star pair | `ftyoshispeciallw.c`: `fn_8012E644` spawns two stars with `it_802B2FC8`; star owner is the pounder and item collision callbacks own destruction/reflect behavior |
 
 Egg Lay's state selection is command and victim dependent. The source uses
@@ -19,6 +19,14 @@ Egg Lay's state selection is command and victim dependent. The source uses
 `ftyoshispecialn.c:changeMotionState`, `inlineB0`, and `inlineA1`. A generic
 phase end must therefore not claim that every phase always advances to the
 next phase; article availability and victim capture select the branch.
+
+Egg Roll's grounded B entry also has a source-specific handoff. Both special
+entry functions call `Fighter_ChangeMotionState(..., 0x168, ...)`, which is
+motion 360 (`SpecialAirSStart_1`). Motion 356 (`SpecialAirSStart_0`) is chosen
+only by `ftYs_SpecialAirSStart_1_Coll` when that start phase reaches ground.
+The script therefore enters 360 for both ground and air input, then maps the
+ground contact callback to 356; mapping ground input directly to 356 skips the
+native start animation and command timing.
 
 ## Egg Lay and tongue
 

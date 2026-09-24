@@ -116,6 +116,11 @@ class EggLay(NeutralSpecial, _YoshiSpecial):
 class EggRoll(SideSpecial, _YoshiSpecial):
     """Egg Roll's ground and aerial source state machines."""
 
+    # Both ftYs_SpecialS_Enter and ftYs_SpecialAirS_Enter initially select
+    # motion 360 (SpecialAirSStart_1).  Motion 356 (SpecialAirSStart_0) is
+    # only selected by the aerial start collision callback after it lands.
+    # Keep that post-landing phase separate from the actual B entry so the
+    # start animation and its command timing are preserved on the ground.
     ground_start = source_phase(356)
     # ftYs_SpecialAirSLoop_0/1_Anim run as native hold phases: the source
     # freezes their motion rate and only leaves them when the release or
@@ -125,8 +130,8 @@ class EggRoll(SideSpecial, _YoshiSpecial):
     ground_loop = source_phase(357, animation_loop=True)
     ground_turn = source_phase(358, animation_loop=True)
     ground_end = source_phase(359)
-    ground = ground_start
-    air = source_phase(360)
+    ground = source_phase(360)
+    air = ground
     air_loop = source_phase(361, animation_loop=True)
     air_turn = source_phase(362, animation_loop=True)
     air_landing = source_phase(363)
@@ -141,7 +146,7 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         air_landing,
     )
     on_end = {
-        ground: Transition(ground_loop),
+        ground: Transition(air_loop),
         air: Transition(air_loop),
         air_loop: Transition(air_turn),
         air_turn: Transition(air_landing),
@@ -152,8 +157,7 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         ground_end: Transition(Action.WAIT),
     }
     on_ground = {
-        air: Transition(ground, preserve_state=True, keep_frame=True),
-        ground: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
         air_turn: Transition(ground_turn, preserve_state=True, keep_frame=True),
         air_landing: Transition(Action.WAIT),
