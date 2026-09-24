@@ -20,6 +20,32 @@ from fighters.falco import Falco
 
 
 class FoxBlasterTests(unittest.TestCase):
+    def test_blaster_entry_clears_source_planar_velocity_on_ground_and_air(self):
+        move = Fox.specials.neutral
+
+        for phase in (move.ground_start, move.air_start):
+            fighter = SimpleNamespace(
+                action=phase,
+                action_state=SimpleNamespace(
+                    command=(7, 6, 5, 4),
+                    repeat_armed=True,
+                    fire_pending=True,
+                ),
+                ground_velocity=3.5,
+                velocity=[2.0, -1.0],
+            )
+            fighter.set_velocity = lambda x, y: setattr(
+                fighter, "velocity", [x, y]
+            )
+
+            move.enter(fighter, SimpleNamespace())
+
+            self.assertEqual(fighter.ground_velocity, 0.0)
+            self.assertEqual(fighter.velocity, [0.0, 0.0])
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+            self.assertFalse(fighter.action_state.repeat_armed)
+            self.assertFalse(fighter.action_state.fire_pending)
+
     def test_falco_directly_uses_fighter_and_shares_fox_moves(self):
         self.assertEqual(Falco.__bases__, (Fighter,))
         self.assertFalse(issubclass(Falco, Fox))

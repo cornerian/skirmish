@@ -107,6 +107,10 @@ class Blaster(NeutralSpecial):
         fighter.action_state.command = (0, 0, 0, 0)
         fighter.action_state.repeat_armed = False
         fighter.action_state.fire_pending = False
+        # ftFx_SpecialN_Enter and ftFx_SpecialAirN_Enter clear gr_vel and
+        # both planar self-velocity components before spawning the blaster.
+        fighter.ground_velocity = 0.0
+        fighter.set_velocity(0.0, 0.0)
 
     @hook.input_pressed(Button.B)
     def press(self, fighter: Fighter, ctx: MoveContext) -> bool:
