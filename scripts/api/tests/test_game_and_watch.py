@@ -39,10 +39,12 @@ class _Fighter:
 
 def _context(*, grounded=True, resource=True, stick=(0.0, 0.0), pressed=True,
              judge_weights=None, judge_roll=None, judge_previous=(),
-             rescue_landing=None):
+             rescue_landing=None, panic_damage_mul=None, panic_damage_add=None,
+             panic_damage=None, panic_charge=None, chef_b_held=None):
     resource_value = SimpleNamespace(
         attributes=SimpleNamespace(
-            judge_roll=judge_weights, rescue_landing=rescue_landing
+            judge_roll=judge_weights, rescue_landing=rescue_landing,
+            panic_damage_mul=panic_damage_mul, panic_damage_add=panic_damage_add,
         )
     )
 
@@ -59,6 +61,9 @@ def _context(*, grounded=True, resource=True, stick=(0.0, 0.0), pressed=True,
         resource=lookup,
         judge_roll=judge_roll,
         judge_previous=judge_previous,
+        panic_damage=panic_damage,
+        panic_charge=panic_charge,
+        chef_b_held=chef_b_held,
         rules=SimpleNamespace(
             specials=SimpleNamespace(side_stick_threshold=0.5, vertical_threshold=0.5)
         ),
@@ -176,6 +181,41 @@ class GameAndWatchTests(unittest.TestCase):
         fighter = _Fighter(move.ground_shoot)
         move._transition_ground_air(fighter, _context(grounded=False))
         self.assertEqual(fighter.action, move.air_shoot)
+
+    def test_judge_records_the_source_previous_row_shift(self):
+        move = Judge()
+        fighter = _Fighter()
+        self.assertTrue(move.input_pressed(
+            fighter, _context(stick=(1.0, 0.0), judge_weights=(0, 0, 3, 0, 0, 0, 0, 0, 0), judge_roll=0)
+        ))
+        self.assertEqual(fighter.action_state.judge_current, 2)
+        self.assertEqual(fighter.action_state.judge_previous, -1)
+
+    def test_chef_release_disables_future_source_loops(self):
+        move = Chef()
+        fighter = _Fighter(move.ground)
+        self.assertTrue(move.release(fighter, _context()))
+        self.assertTrue(fighter.action_state.chef_loop_disabled)
+        self.assertTrue(move.input_pressed(
+            fighter, _context(chef_b_held=True)
+        ))
+        self.assertEqual(fighter.action_frame, 0)
+
+    def test_full_oil_panic_caches_source_release_damage(self):
+        move = OilPanic()
+        fighter = _Fighter()
+        self.assertTrue(move.input_pressed(
+            fighter,
+            _context(
+                stick=(0.0, -1.0),
+                panic_charge=3,
+                panic_damage=12.0,
+                panic_damage_mul=1.5,
+                panic_damage_add=4.0,
+            ),
+        ))
+        self.assertEqual(fighter.action_state.panic_release_damage, 22.0)
+        self.assertEqual(fighter.action_state.panic_damage, 0.0)
 
 
 if __name__ == "__main__":
