@@ -271,13 +271,19 @@ class EmblemSideSpecial(SideSpecial, _EmblemFamilySpecial):
 
 
 class EmblemUpSpecial(UpSpecial, _EmblemFamilySpecial):
-    """Dolphin Slash entry; landing/fall-special attributes stay native."""
+    """Dolphin Slash entry; collision and landing callbacks stay native.
+
+    The ftMars up-special collision callbacks do not change between source
+    motions 367 and 368.  Air-to-ground contact enters the common landing
+    fall-special callback instead, so the generic surface pairing used by the
+    other emblem specials would invent a 368 -> 367 transition.
+    """
 
     ground = source_phase(367)
     air = source_phase(368)
 
     _entry_names = ("ground", "air")
-    _surface_names = (("ground", "air"),)
+    _surface_names = ()
 
 
 class EmblemDownSpecial(DownSpecial, _EmblemFamilySpecial):

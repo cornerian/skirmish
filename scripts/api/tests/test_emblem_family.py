@@ -69,6 +69,20 @@ class EmblemFamilyTests(unittest.TestCase):
         self.assertEqual(len(surface), 1)
         self.assertEqual(len(surface[0].actions), 18)
 
+    def test_up_special_keeps_surface_collision_native_for_both_rosters(self):
+        for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
+            module = _load(module_name)
+            move = getattr(module, fighter_name).specials.up
+            self.assertFalse(any(
+                rule.event in {"on_ground", "on_air"}
+                for rule in move.__transition_rules__
+            ), module_name)
+            events = move.events()
+            self.assertFalse(any(
+                event.hook.value == "ground_air_changed"
+                for event in events
+            ), module_name)
+
     def test_dancing_blade_all_phases_exit_to_ground_wait_or_air_fall(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
             module = _load(module_name)
