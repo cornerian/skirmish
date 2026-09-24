@@ -233,6 +233,19 @@ class Hammer(SideSpecial, _KirbySpecial):
     air = source_phase(384)
     _ACTIVE = (ground, air)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Clear the source hammer article command latch on entry."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and command:
+            if isinstance(command, tuple):
+                state.command = (0, *command[1:])
+            else:
+                values = list(command)
+                values[0] = 0
+                state.command = values
+
     @hook.landed(actions=(air,))
     def landing(self, fighter: Fighter, ctx) -> bool:
         """Air Hammer lands into the source fall-special lag state."""

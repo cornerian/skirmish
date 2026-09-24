@@ -339,6 +339,15 @@ class KirbySpecialTests(unittest.TestCase):
         self.assertTrue(move.landing(fighter, ctx))
         self.assertEqual(fighter.fall_special, {"mobility": 0, "landing_lag": 12})
 
+    def test_hammer_entry_clears_source_article_command_slot(self):
+        move = Hammer()
+        for phase in (move.ground, move.air):
+            fighter = _Fighter()
+            fighter.action = phase
+            fighter.action_state.command = (7, 6, 5, 4)
+            move.enter(fighter, SimpleNamespace())
+            self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
+
     def test_hammer_has_one_landing_callback_owned_by_fall_special(self):
         landed = [event for event in Hammer.events() if event.hook.value == "landed"]
         self.assertEqual(len(landed), 1)
