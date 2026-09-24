@@ -217,6 +217,18 @@ class PeachSpecialTests(unittest.TestCase):
 
             self.assertEqual(fighter.action_state.command, expected)
 
+    def test_up_special_entry_clears_native_throw_flags(self):
+        move = Peach.specials.up
+        fighter = _Fighter()
+        fighter.action_state.command = (7, 6, 5, 8)
+        fighter.throw_flags = 0xFF
+        fighter.action = move.ground
+
+        move.reset_command_window(fighter, SimpleNamespace())
+
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 8))
+        self.assertEqual(fighter.throw_flags, 0)
+
     def test_side_start_waits_for_animation_end_then_selects_block_branch(self):
         side = Peach.specials.side
 

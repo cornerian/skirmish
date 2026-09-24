@@ -226,8 +226,16 @@ class PeachUpSpecial(UpSpecial, _PeachSpecial):
 
     @on.action_enter(ground, air)
     def reset_command_window(self, fighter: Any, ctx: Any) -> None:
-        """Match ``ftPe_SpecialHi``'s command 0/1/2 reset."""
+        """Match ``ftPe_SpecialHi``'s command and throw reset.
+
+        Both native up-special entry callbacks clear ``cmd_vars[0..2]`` and
+        ``throw_flags`` before selecting the parasol branch.  Article setup
+        remains native-owned, but the fighter-local throw latch is safe to
+        mirror when the host exposes it.
+        """
         self._reset_command_slots(fighter, count=3)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
 
 
 class PeachDownSpecial(DownSpecial, _PeachSpecial):
