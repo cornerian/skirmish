@@ -211,13 +211,38 @@ class Roll(NeutralSpecial):
 
     @hook.landed(hit)
     def hit_landed(self, fighter: Fighter, ctx) -> bool:
-        """Match SpecialNHit_Coll's immediate floor-contact exit."""
+        """Match ``ftPr_SpecialNHit_Coll``'s floor-contact exit.
+
+        The native callback enters landing-fall-special when Purin's ``xD8``
+        landing lag is nonzero. A lightweight host may omit that fighter
+        data; leave the hit state untouched instead of guessing an exit.
+        """
         if fighter.action != self.hit:
             return False
-        # ftPr_SpecialNHit_Coll calls the grounded exit when the hit capsule
-        # meets the floor.  The native callback enters WAIT for the grounded
-        # case and only uses FALL for an aerial hit; keeping this split also
-        # prevents a grounded Rollout hit from remaining in an aerial action.
+        specials = getattr(
+            getattr(getattr(ctx, "rules", None), "specials", None),
+            "jigglypuff_rollout_landing_lag",
+            None,
+        )
+        lag = getattr(fighter, "special_landing_lag", None)
+        if lag is None:
+            lag = specials
+        if lag is None:
+            lag = getattr(
+                getattr(getattr(ctx, "rules", None), "specials", None),
+                "landing_lag",
+                None,
+            )
+        if lag is None or not validation.finite(lag) or lag < 0:
+            return False
+        if lag > 0:
+            enter = getattr(fighter, "enter_fall_special", None)
+            if not callable(enter):
+                return False
+            enter(mobility=0, landing_lag=lag)
+            return True
+        # xD8 == 0 uses the ordinary grounded/falling exits in the native
+        # callback, after its shared ground-state update.
         fighter.change_action(Action.WAIT if fighter.grounded else Action.FALL)
         return True
 

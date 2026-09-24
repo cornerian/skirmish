@@ -199,13 +199,33 @@ class JigglypuffTests(unittest.TestCase):
         self.assertFalse(hasattr(fighter.action_state, "charge"))
 
         landed = _Fighter(Roll.hit)
+        landed.special_landing_lag = 0.0
         self.assertTrue(roll.hit_landed(landed, SimpleNamespace(grounded=True)))
         self.assertEqual(landed.action, Action.WAIT)
 
         landed = _Fighter(Roll.hit)
+        landed.special_landing_lag = 0.0
         landed.grounded = False
         self.assertTrue(roll.hit_landed(landed, SimpleNamespace(grounded=False)))
         self.assertEqual(landed.action, Action.FALL)
+
+    def test_roll_hit_landing_uses_source_special_lag_when_host_provides_it(self):
+        roll = Roll()
+        fighter = _Fighter(Roll.hit)
+        fighter.special_landing_lag = 12.0
+        fighter.fall_special = None
+        fighter.enter_fall_special = lambda **kwargs: setattr(
+            fighter, "fall_special", kwargs
+        )
+        self.assertTrue(roll.hit_landed(fighter, SimpleNamespace(grounded=True)))
+        self.assertEqual(fighter.fall_special, {"mobility": 0, "landing_lag": 12.0})
+        self.assertEqual(fighter.action, Roll.hit)
+
+    def test_roll_hit_landing_fails_closed_without_source_lag(self):
+        roll = Roll()
+        fighter = _Fighter(Roll.hit)
+        self.assertFalse(roll.hit_landed(fighter, SimpleNamespace(grounded=True)))
+        self.assertEqual(fighter.action, Roll.hit)
 
     def test_roll_ground_release_reverses_only_at_opposite_stick_threshold(self):
         roll = Roll()
