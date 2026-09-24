@@ -52,6 +52,20 @@ class ChargeShot(NeutralSpecial, DirectionalSpecial):
               ground_cancel: Transition(air_fire, preserve_state=True, keep_frame=True),
               ground_fire: Transition(air_fire, preserve_state=True, keep_frame=True)}
 
+    @hook.action_enter(ground_start, air_start)
+    def enter_start(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Clear the source command latches when Charge Shot starts.
+
+        ``ftSs_SpecialN_{,Air}N_Enter`` clears all four command variables
+        before the animation callbacks begin.  Leaving a stale command 0/1
+        or article event latched can otherwise make a newly started shot
+        skip its charge entry or re-run a previous callback.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
+
     @hook.input_pressed(Button.B, Button.L, Button.R)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         """Match the source B release and LR cancel paths while charging."""
