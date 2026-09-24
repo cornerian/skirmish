@@ -186,9 +186,9 @@ fn selected_actors<'a>(
     frame: &'a slippi::Frame,
     ports: &[Port],
 ) -> Result<Vec<&'a slippi::Actor>, String> {
-    if !(2..=4).contains(&ports.len()) {
+    if !(1..=4).contains(&ports.len()) {
         return Err(format!(
-            "actor selectors must include between two and four ports, found {}",
+            "actor selectors must include between one and four ports, found {}",
             ports.len()
         ));
     }

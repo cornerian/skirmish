@@ -257,8 +257,7 @@ fn actor_selective_observation_reads_captain_from_four_player_frame() {
 
     let mut missing_frame = frame.clone();
     missing_frame.actors.retain(|actor| actor.port != Port::P4);
-    let missing =
-        observation::expected_for_ports(&missing_frame, &[Port::P4, Port::P1]).unwrap_err();
+    let missing = observation::expected_for_ports(&missing_frame, &[Port::P4]).unwrap_err();
     assert!(missing.contains("missing leader P4"), "{missing}");
     let duplicate = observation::expected_for_ports(&frame, &[Port::P4, Port::P4]).unwrap_err();
     assert!(
