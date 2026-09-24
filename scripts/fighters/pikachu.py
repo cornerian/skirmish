@@ -154,6 +154,20 @@ def thunder_jolt_spawn_position(
     return (x + float(scale) * dx * float(facing), y + float(scale) * dy, 0.0)
 
 
+def thunder_jolt_article_id(*, aerial: bool = False) -> ArticleId:
+    """Select the article kind used by the native neutral callbacks.
+
+    ``ftPk_SpecialN_Anim`` and ``ftPk_SpecialAirN_Anim`` both pass
+    ``pika_attr->specialn_itkind`` to ``itPikachuThunderJolt_Spawn``.  The
+    aerial callback has a distinct spawn offset and a separately registered
+    archive slot, but the executable still selects the grounded Jolt kind.
+    Keep that source behavior explicit instead of silently selecting the air
+    registration when ``aerial`` is true.
+    """
+    del aerial
+    return PikachuParameters.thunder_jolt_ground_article_id
+
+
 SKULL_BASH_COMMAND_ENDS = {
     Thunder.ground_loop: Thunder.ground_end,
     Thunder.ground_hit: Thunder.ground_end,
@@ -256,6 +270,7 @@ __all__ = [
     "advance_quick_attack_hold",
     "quick_attack_effect_offset",
     "thunder_jolt_spawn_position",
+    "thunder_jolt_article_id",
     "SKULL_BASH_COMMAND_ENDS",
     "skull_bash_command_transition",
     "Agility",

@@ -22,6 +22,7 @@ from fighters.pikachu import (
     advance_quick_attack_hold,
     quick_attack_effect_offset,
     skull_bash_command_transition,
+    thunder_jolt_article_id,
     thunder_jolt_spawn_position,
 )
 
@@ -176,6 +177,20 @@ class PikachuScriptTests(unittest.TestCase):
         self.assertEqual(
             thunder_jolt_spawn_position((10, 5, 9), (3, 2), -1, 2),
             (4.0, 9.0, 0.0),
+        )
+
+    def test_aerial_thunder_jolt_keeps_native_ground_article_kind(self):
+        self.assertEqual(
+            thunder_jolt_article_id(aerial=False),
+            Pikachu.parameters.thunder_jolt_ground_article_id,
+        )
+        self.assertEqual(
+            thunder_jolt_article_id(aerial=True),
+            Pikachu.parameters.thunder_jolt_ground_article_id,
+        )
+        self.assertNotEqual(
+            Pikachu.parameters.thunder_jolt_ground_article_id,
+            Pikachu.parameters.thunder_jolt_air_article_id,
         )
 
 if __name__ == "__main__":
