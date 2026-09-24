@@ -136,6 +136,13 @@ class FalconKick(CaptainDownSpecial):
         attack="down.ground_end_air",
     )
 
+    @on.action_enter()
+    def action_enter(self, fighter, ctx):
+        """Clear Falcon Kick's source throw latch on either entry."""
+        super().action_enter(fighter, ctx)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
     @on.animation_end()
     def animation_end(self, fighter, ctx):
         if fighter.action is self.ground:

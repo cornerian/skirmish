@@ -844,6 +844,18 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(aerial.action_state.command, (0, 0, 0, 4))
         self.assertEqual(aerial.action, move.air_end)
 
+    def test_falcon_kick_entry_clears_source_throw_flags_on_ground_and_air(self):
+        captain = _load_captain()
+        move = captain.specials.down
+
+        for phase in (move.ground, move.air):
+            fighter = self.Fighter(phase)
+            fighter.throw_flags = 7
+            fighter.action_state.command = (7, 6, 5, 4)
+            move.action_enter(fighter, self.context())
+            self.assertEqual(fighter.throw_flags, 0)
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
     def test_falcon_kick_landing_uses_source_end_motion_then_waits(self):
         captain = _load_captain()
         move = captain.specials.down
