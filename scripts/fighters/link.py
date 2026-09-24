@@ -36,6 +36,20 @@ class LinkNeutralSpecial(_FamilyNeutralSpecial):
         ground_end: Transition(Action.WAIT), air_end: Transition(Action.FALL),
     }
 
+    @on.action_enter(ground_start, air_start)
+    def reset_command_window(self, fighter: Any, ctx: Any) -> None:
+        """Clear Link's four command slots when a fresh arrow starts.
+
+        ``ftLk_SpecialN_Enter`` and ``ftLk_SpecialAirN_Enter`` clear
+        ``cmd_vars[0..3]`` before installing the arrow callback.  Keeping
+        that reset at the script boundary prevents a command cue left by a
+        previous special from being consumed by the new charge motion.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
+
     @on.release(Button.B)
     def release(self, fighter: Any, ctx: Any) -> bool:
         """Release the drawn arrow when the source charge loop sees B up.

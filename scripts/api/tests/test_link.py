@@ -27,6 +27,7 @@ class _Input:
 class _Fighter:
     def __init__(self, *, used_boomerang=False):
         self.action = None
+        self.action_state = SimpleNamespace(command=(0, 0, 0, 0))
         self.action_frame = 0
         self.used_boomerang = used_boomerang
         self.boomerang_active = False
@@ -125,6 +126,14 @@ class LinkTests(unittest.TestCase):
         fighter.action = Action.WAIT
         self.assertFalse(move.release(fighter, SimpleNamespace()))
         self.assertEqual(fighter.arrow_releases, [])
+
+    def test_neutral_entry_clears_stale_native_command_slots(self):
+        move = Link.specials.neutral
+        for phase in (move.ground_start, move.air_start):
+            fighter = _Fighter()
+            fighter.action_state.command = (1, 2, 3, 4)
+            move.reset_command_window(fighter, SimpleNamespace())
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
     def test_side_command_forwards_boomerang_release_to_article_host(self):
         move = Link.specials.side
