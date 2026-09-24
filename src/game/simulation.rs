@@ -1556,6 +1556,7 @@ fn drain_script_transitions(
                 behavior_index,
                 frame,
                 player,
+                entities,
             )?;
         }
         let mut appended = fighter.script_events.take_pending_transitions();
@@ -1622,6 +1623,7 @@ fn drain_script_transitions(
             selection.behavior_index,
             frame,
             player,
+            entities,
         )?;
     }
     Ok(())
@@ -1727,7 +1729,7 @@ fn dispatch_script_deadlines(
         #[cfg(feature = "experimental-continuations")]
         if let Some(timer) = exact_timer {
             crate::game::script::lifecycle::invoke_async_move_resume(
-                fighter, data, frame, player, timer, token,
+                fighter, data, frame, player, timer, token, entities,
             )?;
         }
     }

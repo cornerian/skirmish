@@ -22,6 +22,7 @@ pub(crate) fn invoke_async_move_start(
     behavior_index: usize,
     frame: u32,
     player: usize,
+    entities: &game::entity::EntityStore,
 ) -> Result<(), game::Error> {
     let resources = data
         .script_resources
@@ -32,7 +33,12 @@ pub(crate) fn invoke_async_move_start(
         fighter,
         None,
         context,
-        NativeContext::empty(),
+        NativeContext {
+            pre_landing: None,
+            geometry: None,
+            entities: Some(entities),
+            entity_owner_port: u8::try_from(player).ok(),
+        },
         Some(data),
         Arc::clone(&resources),
     )
@@ -129,6 +135,7 @@ pub(crate) fn invoke_async_move_resume(
     player: usize,
     timer: super::scheduler::TimerId,
     token: u64,
+    entities: &game::entity::EntityStore,
 ) -> Result<(), game::Error> {
     if fighter.script_events.pending_move_timer != Some(timer) {
         return Ok(());
@@ -159,7 +166,12 @@ pub(crate) fn invoke_async_move_resume(
         fighter,
         None,
         context,
-        NativeContext::empty(),
+        NativeContext {
+            pre_landing: None,
+            geometry: None,
+            entities: Some(entities),
+            entity_owner_port: u8::try_from(player).ok(),
+        },
         Some(data),
         Arc::clone(&resources),
     )
