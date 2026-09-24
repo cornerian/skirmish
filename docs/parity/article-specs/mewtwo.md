@@ -43,9 +43,11 @@ The fighter attributes are defined in `ft/kinds/ftMewtwo/types.h`:
 | `x10_MEWTWO_SHADOWBALL_RELEASE_LAG` | initial release delay |
 | `x14_MEWTWO_SHADOWBALL_LANDING_LAG` | aerial release landing lag |
 
-Command variable 1 releases the held article. `ftMt_SpecialN_ReleaseShadowBall`
-calls `it_802C53F0`, resets the fighter charge, clears the held pointer, and
-applies ground or air recoil. Command variable 2 drives charge SFX through
+The B release input transitions Loop or LoopFull into the matching End state;
+it does not launch immediately. The End animation callback consumes command
+variable 1 and calls `ftMt_SpecialN_ReleaseShadowBall`, which calls
+`it_802C53F0`, resets the fighter charge, clears the held pointer, and applies
+ground or air recoil. Command variable 2 drives charge SFX through
 `ftMt_SpecialN_PlayChargeSFX`; command variable 3 is the held-article spawn
 marker. `ftMt_SpecialN_OnTakeDamage` removes an unfinished held ball.
 
@@ -97,7 +99,9 @@ Command variable 1 is consumed by `ftMt_SpecialS_ReflectThink`:
 
 The current script can expose command markers and a portable reflecting flag,
 but capture attachment, victim state, reflect hitbox lifetime, and the native
-`ReflectDesc` data remain host-owned.
+`ReflectDesc` data remain host-owned. Ground/air phase transitions preserve an
+active reflection in the source callback path; a fresh Confusion entry resets
+the latch before installing its callback.
 
 ## Disable
 
@@ -149,5 +153,7 @@ The authoring layer currently models Mewtwo's motion graph, command markers,
 reflecting flag, capture marker, and article-fired flags. Full parity still
 requires native article resources and an object bridge for bone attachment,
 hitboxes, interpolation attributes, owner cleanup, collision callbacks,
-victim capture, and Confusion's `ReflectDesc`. Those are intentionally not
-reimplemented as Python-only effects.
+victim capture, and Confusion's `ReflectDesc`. Shadow Ball release remains
+resource-gated because this host does not expose the source shoulder transform
+through `part_position_with_offset`; the script intentionally does not invent
+an origin-based fallback or modify the native Rust article path.

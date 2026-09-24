@@ -123,12 +123,28 @@ class MewtwoScriptTests(unittest.TestCase):
         fighter.action = move.ground_loop
         move.release_input(fighter, SimpleNamespace())
         self.assertEqual(fighter.changes[-1][0], move.ground_end)
-        self.assertTrue(fighter.action_state.shadow_ball_released)
+        # The source transitions into End first; its animation callback later
+        # consumes command 1 and performs the article release.
+        self.assertFalse(fighter.action_state.shadow_ball_released)
+        self.assertTrue(fighter.action_state.shadow_ball_held)
 
         fighter.action = move.ground_loop
         move.input_pressed(fighter, SimpleNamespace(input=_Input()))
         self.assertEqual(fighter.changes[-1][0], move.ground_cancel)
         self.assertFalse(fighter.action_state.shadow_ball_held)
+
+    def test_shadow_ball_release_marker_consumes_source_command_in_end_state(self):
+        move = self.module.ShadowBall()
+        fighter = _Fighter()
+        fighter.action = move.ground_end
+        fighter.action_state.shadow_ball_held = True
+
+        move.release_shadow(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+
+        # The Python boundary records the source command, but an actual launch
+        # remains native until the article bridge exists.
+        self.assertFalse(fighter.action_state.shadow_ball_held)
+        self.assertTrue(fighter.action_state.shadow_ball_released)
 
     def test_shadow_ball_aerial_entry_halves_vertical_momentum(self):
         move = self.module.ShadowBall()

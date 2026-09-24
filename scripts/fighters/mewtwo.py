@@ -134,7 +134,15 @@ class ShadowBall(NeutralSpecial, _MewtwoSpecial):
     _ENTRY = (ground_start, air_start)
     _STARTS = (ground_start, air_start)
     _LOOPS = (ground_loop, air_loop, ground_full, air_full)
-    _RELEASES = (ground_loop, air_loop, ground_full, air_full)
+    # The source only accepts B/A input in Loop and LoopFull.  The End
+    # animation callback performs the actual command-1 release, so End is
+    # also part of the command marker surface even though it cannot accept
+    # another input transition.
+    _RELEASES = (
+        ground_loop, air_loop, ground_full, air_full, ground_end, air_end,
+    )
+    _RELEASE_INPUTS = (ground_loop, air_loop, ground_full, air_full)
+    _ENDS = (ground_end, air_end)
     _CANCELS = (ground_loop, air_loop, ground_full, air_full)
 
     @hook.action_enter(*_STARTS)
@@ -164,7 +172,7 @@ class ShadowBall(NeutralSpecial, _MewtwoSpecial):
         if _event_value(ctx):
             _fighter_state(fighter).shadow_ball_held = True
 
-    @hook.command_changed(1, actions=_RELEASES + (ground_end, air_end))
+    @hook.command_changed(1, actions=_ENDS)
     def release_shadow(self, fighter: Any, ctx: Any) -> None:
         """Forward the source command marker to the native article host.
 
@@ -192,16 +200,15 @@ class ShadowBall(NeutralSpecial, _MewtwoSpecial):
         state.shadow_ball_released = False
         state.shadow_ball_charge = 0
 
-    @hook.input_released(Button.B, actions=_RELEASES)
+    @hook.input_released(Button.B, actions=_RELEASE_INPUTS)
     def release_input(self, fighter: Any, ctx: Any) -> bool:
         """ftMt_SpecialNLoop_IASA enters End when B is released."""
-        if fighter.action not in self._RELEASES:
+        if fighter.action not in self._RELEASE_INPUTS:
             return False
         fighter.change_action(
             self.ground_end if fighter.action in (self.ground_loop, self.ground_full)
             else self.air_end
         )
-        _fighter_state(fighter).shadow_ball_released = True
         return True
 
     def _cancel_input(self, fighter: Any, ctx: Any) -> bool:
