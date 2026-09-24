@@ -1455,6 +1455,28 @@ impl Program {
         Ok(self.hook_indices[hook.index()].is_some())
     }
 
+    /// Cheap registration check for action-scoped phase hooks. This keeps the
+    /// simulation from entering the lifecycle host when a program has a phase
+    /// hook for a different action (the common case for generic source hooks).
+    pub(crate) fn has_callback_for_action(
+        &self,
+        hook: Hook,
+        action: Action,
+        behavior_index: Option<usize>,
+        resources: Option<&crate::game::script::lifecycle_resources::ResourceCache>,
+    ) -> bool {
+        if self.hook_indices[hook.index()].is_none() {
+            return false;
+        }
+        let context = serde_json::json!({
+            "event": {"kind": hook.name(), "action": action},
+        });
+        !self
+            .metadata
+            .behavior_callbacks_for_owner(self, hook, action, behavior_index, resources, &context)
+            .is_empty()
+    }
+
     pub fn new(source: impl Into<String>) -> Result<Self, Error> {
         Self::new_registered(
             source,

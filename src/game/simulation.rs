@@ -806,6 +806,8 @@ where
             &data.fighters[player],
             &data.rules,
             crate::game::script::Hook::Physics,
+            &state.entities,
+            state.entities.fighter_port(player),
         )?;
         drain_script_transitions(
             fighter,
@@ -841,6 +843,8 @@ where
             &data.fighters[player],
             &data.rules,
             crate::game::script::Hook::Collision,
+            &state.entities,
+            state.entities.fighter_port(player),
         )?;
         drain_script_transitions(
             fighter,
@@ -2240,16 +2244,45 @@ fn dispatch_script_phase(
     data: &FighterData,
     rules: &Rules,
     hook: crate::game::script::Hook,
+    entities: &crate::game::entity::EntityStore,
+    entity_owner_port: Option<u8>,
 ) -> Result<(), Error> {
     if data.script.is_none()
         && crate::game::script::bundled_source(data.specials.as_ref()).is_none()
     {
         return Ok(());
     }
+    let Some(resources) = data.script_resources.get() else {
+        return Ok(());
+    };
+    let Some(program) = resources.program() else {
+        return Ok(());
+    };
+    let behavior_index = fighter
+        .script_events
+        .active_move
+        .filter(|owner| owner.matches(fighter.action, fighter.script_events.action_generation))
+        .map(|owner| owner.behavior_index);
+    if !program.has_callback_for_action(hook, fighter.action, behavior_index, Some(resources)) {
+        return Ok(());
+    }
     let context = serde_json::json!({
         "event": {"kind": hook.name(), "action": fighter.action},
     });
-    crate::game::script::lifecycle::invoke(hook, fighter, Some(data), Some(rules), context, None)?;
+    crate::game::script::lifecycle::invoke_with_native(
+        hook,
+        fighter,
+        Some(data),
+        Some(rules),
+        context,
+        None,
+        crate::game::script::lifecycle::NativeContext {
+            pre_landing: None,
+            geometry: None,
+            entities: Some(entities),
+            entity_owner_port,
+        },
+    )?;
     Ok(())
 }
 
