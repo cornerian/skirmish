@@ -121,6 +121,32 @@ class LuigiNeutralTests(unittest.TestCase):
         self.assertTrue(move.release_charge(fighter, _context(grounded=False, resources=("side",), stick=(1.0, 0.0), directional=True)))
         self.assertEqual(fighter.action, move.air)
 
+    def test_green_missile_launch_waits_for_source_command(self):
+        move = Luigi.specials.side
+        fighter = _Fighter()
+        fighter.action = move.ground
+        fighter.action_state.command = (0, 0, 0, 0)
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.ground)
+
+        fighter.action_state.command = (1, 0, 0, 0)
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.air_s2)
+
+        fighter = _Fighter()
+        fighter.action = move.ground
+        fighter.action_state.command = (0, 0, 0, 0)
+        move.launch_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=1), grounded=True),
+        )
+        self.assertEqual(fighter.action, move.air_s2)
+
+        fighter = _Fighter()
+        fighter.action = move.ground_s2
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.ground_s2)
+
     def test_cyclone_tap_uses_armed_command_window(self):
         move = Luigi.specials.down
         fighter = _Fighter()

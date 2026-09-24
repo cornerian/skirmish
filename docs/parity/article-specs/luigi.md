@@ -31,12 +31,14 @@ or below destroys it.
 | --- | --- |
 | 343/349 | Grounded/aerial start; `ftLg_SpecialSStart_Anim`, friction physics, and ground/air collision conversion. |
 | 344/350 | Grounded/aerial charge; release in `ftLg_SpecialSHold_IASA` or `ftLg_SpecialAirSHold_IASA`; charge auto-launches after `xC_LUIGI_GREENMISSILE_MAX_CHARGE_FRAMES`. |
-| 347/353 | Normal launch; charge-scaled hit damage and transition to flight. |
-| 348/354 | Misfire launch; selected by `HSD_Randi(x44_LUIGI_GREENMISSILE_MISFIRE_CHANCE)`. |
-| 345/351 | Flight; `ftLg_SpecialAirS2_Anim` enters end, while aerial landing or wall contact enters grounded end. |
+| 347/353 | Normal launch; charge-scaled hit damage and transition to flight only after command slot 0 is raised by the launch animation. |
+| 348/354 | Misfire launch; selected by `HSD_Randi(x44_LUIGI_GREENMISSILE_MISFIRE_CHANCE)` and using the same command-gated flight transition. |
+| 345/351 | Flight; the ground S2 callback is empty, while `ftLg_SpecialAirS2_Anim` enters end and aerial landing or wall contact enters grounded end. The native flight setup always selects aerial S2 (351). |
 | 346/352 | Grounded/aerial end; grounded end exits to wait, aerial end exits to fall. |
 
-`ftLg_SpecialSFly_Enter` clears command slot 0 and selects velocity from
+`ftLg_SpecialS_Anim` and `ftLg_SpecialAirS_Anim` poll command slot 0 every
+animation tick, so launch remains active when the animation ends before the
+native launch cue. `ftLg_SpecialSFly_Enter` then clears command slot 0 and selects velocity from
 either the charge fields (`x24`, `x28`, `x2C`) or misfire fields (`x48`, `x4C`).
 Flight gravity and horizontal deceleration use `x30`, `x34`, `x3C`, and
 `x40`; end physics uses `x3C` and `x40`. Damage uses
@@ -61,3 +63,21 @@ Green Missile RNG and attribute-scaled velocity/damage, and Cyclone held-B
 physics with character attributes still require host support. These effects
 must remain native-owned until the resource and callback interfaces expose
 the corresponding article and Luigi attribute data.
+
+## Timing audit
+
+The four move families retain their source timing at the script boundary:
+
+* Fireball 341/342 stays active until the B0 spawn callback raises command
+  slot 0; grounded and aerial exits then use wait and fall respectively.
+* Green Missile 343–354 advances start to charge on animation completion,
+  launches on B release or the native charge cap, and waits for command slot 0
+  before entering aerial flight. Its unused ground S2 row has no terminal
+  animation callback.
+* Super Jump Punch 355/356 runs its source fall-special landing path at
+  animation completion; the declared wait/fall targets are the host's
+  no-landing-lag fallback.
+* Cyclone 357/358 consumes aerial command slot 1 before its terminal callback,
+  and command slot 2 plus held B performs the tap physics branch. Ground/air
+  contact preserves the current frame, while terminal ground/air exits use
+  wait/fall when no native landing-lag descriptor is available.

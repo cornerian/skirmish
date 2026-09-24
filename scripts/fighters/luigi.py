@@ -69,6 +69,7 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         ground_misfire, air_start, air_hold, air_s2, air_end, air,
         air_misfire,
     )
+    _LAUNCH = (ground, ground_misfire, air, air_misfire)
 
     on_end = {
         ground_start: Transition(ground_hold),
@@ -105,6 +106,35 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         ground_s2: Transition(air_s2, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
     }
+
+    def _command_ready(self, fighter, ctx) -> bool:
+        """Read the source launch cue from the event or command trace."""
+        event = getattr(ctx, "event", None)
+        if event is not None and hasattr(event, "value"):
+            return bool(event.value)
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        return bool(command and command[0])
+
+    def _transition_animation_end(self, fighter, ctx) -> None:
+        """Keep launch and unused ground-flight phases source-gated.
+
+        ``ftLg_SpecialS_Anim`` and its misfire sibling enter flight only when
+        command slot 0 is raised by the launch animation.  The ground S2 row
+        has an empty source animation callback; only the aerial S2 callback
+        enters the end row.
+        """
+        if fighter.action in self._LAUNCH and not self._command_ready(fighter, ctx):
+            return
+        if fighter.action == self.ground_s2:
+            return
+        super()._transition_animation_end(fighter, ctx)
+
+    @hook.command_changed(0, actions=_LAUNCH)
+    def launch_command(self, fighter, ctx) -> None:
+        """Enter flight at the native command cue, before animation end."""
+        if self._command_ready(fighter, ctx):
+            self._transition_animation_end(fighter, ctx)
 
     @hook.action_enter(ground_start, air_start)
     def enter_start(self, fighter, ctx) -> None:
