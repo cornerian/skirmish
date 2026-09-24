@@ -62,7 +62,11 @@ class NanaFollowerFrame:
     action_state: int | None
     position: tuple[float, float] | None
     velocity: tuple[float, float] | None
+    animation_velocity: tuple[float, float] | None
+    ground_velocity: float | None
+    ground_acceleration: float | None
     facing: float | None
+    animation_frame: float | None
     animation_rate: float | None
 
 
@@ -85,7 +89,7 @@ def nana_state_for_leader(
         return None
     if leader_motion in (343, 344, 345, 346):
         return NANA_SIDE_GROUND if grounded else NANA_SIDE_AIR
-    if leader_motion in (347, 348, 349, 352, 353, 354):
+    if leader_motion in (347, 348, 349, 352):
         return NANA_BELAY_START
     return None
 
@@ -101,10 +105,11 @@ def nana_follow_frame(
 ) -> NanaFollowerFrame:
     """Compute source follower state from read-only generic entity facts.
 
-    Side-special Nana copies Popo's velocity, facing, and animation rate.
-    Belay startup follows the same source anchor while Popo remains in rows
-    347..352.  The optional anchor is the only way to represent the retail
-    joint placement without fabricating a screen-space offset.
+    Side-special Nana copies Popo's self velocity, animation velocity, ground
+    velocity, ground acceleration, facing, and animation frame. Belay startup
+    additionally copies the animation rate. The optional anchor is the only
+    way to represent the retail joint placement without fabricating a
+    screen-space offset.
     """
     available = getattr(follower, "available", False) is True
     action_state = nana_state_for_leader(
@@ -118,42 +123,146 @@ def nana_follow_frame(
         velocity = None
     else:
         velocity = (float(velocity[0]), float(velocity[1]))
+    animation_velocity = getattr(leader, "animation_velocity", None)
+    if not (isinstance(animation_velocity, (tuple, list)) and len(animation_velocity) >= 2):
+        animation_velocity = None
+    else:
+        animation_velocity = (float(animation_velocity[0]), float(animation_velocity[1]))
+    ground_velocity = getattr(leader, "ground_velocity", None)
+    if isinstance(ground_velocity, bool) or not isinstance(ground_velocity, (int, float)):
+        ground_velocity = None
+    else:
+        ground_velocity = float(ground_velocity)
+    ground_acceleration = getattr(leader, "ground_acceleration", None)
+    if isinstance(ground_acceleration, bool) or not isinstance(ground_acceleration, (int, float)):
+        ground_acceleration = None
+    else:
+        ground_acceleration = float(ground_acceleration)
     facing = getattr(leader, "facing", None)
     if isinstance(facing, bool) or not isinstance(facing, (int, float)):
         facing = None
     else:
         facing = float(facing)
+    animation_frame = getattr(leader, "animation_frame", None)
+    if isinstance(animation_frame, bool) or not isinstance(animation_frame, (int, float)):
+        animation_frame = None
+    else:
+        animation_frame = float(animation_frame)
     rate = getattr(leader, "animation_rate", None)
     if isinstance(rate, bool) or not isinstance(rate, (int, float)):
         rate = None
     else:
-        # ftNn's hitlag branch forces Nana's rate to zero; hosts expose that
-        # source flag as ``hitlag`` when they have it.
-        rate = 0.0 if getattr(leader, "hitlag", False) is True else float(rate)
+        rate = float(rate)
+    if leader_motion not in (347, 348, 349, 352):
+        rate = None
     return NanaFollowerFrame(
         action_state=action_state,
         position=anchor_position,
         velocity=velocity,
+        animation_velocity=animation_velocity,
+        ground_velocity=ground_velocity,
+        ground_acceleration=ground_acceleration,
         facing=facing,
+        animation_frame=animation_frame,
         animation_rate=rate,
     )
 
 
 def nana_lifecycle_reset(follower: Any) -> None:
-    """Apply the source Nana death/detach reset to an exposed mutable proxy.
+    """Apply only source-observed Nana death/detach resets.
 
-    Every assignment is capability-checked so this remains usable with the
-    current read-only ``EntityView``.  A native host can expose these fields
-    without adding character-specific Rust logic.
+    The source restores Nana armor from ``xC8``, hides parts 0 and 1, clears
+    the Ice Climbers union fields, and drops the bilateral relation/rotation.
+    Unknown proxies are left untouched rather than receiving invented article
+    or hitlag state.
     """
-    state = getattr(follower, "action_state", None)
-    command = getattr(state, "command", None)
-    if isinstance(command, (tuple, list)):
-        values = [0] * len(command)
-        state.command = type(command)(values) if isinstance(command, tuple) else values
-    for name, value in (("article", None), ("attached_to", None), ("hitlag", False)):
+    attrs = getattr(follower, "attributes", None)
+    armor = getattr(attrs, "xC8", _MISSING)
+    if armor is not _MISSING and hasattr(follower, "armor0"):
+        follower.armor0 = armor
+    if hasattr(follower, "parts_hidden"):
+        follower.parts_hidden = (0, 1)
+    for name in ("x2234", "x222C", "x2230_b0", "x2238", "x224C", "x2250"):
         if hasattr(follower, name):
-            setattr(follower, name, value)
+            setattr(follower, name, 0)
+    if hasattr(follower, "relation"):
+        follower.relation = None
+    if hasattr(follower, "rotation"):
+        follower.rotation = 0.0
+
+
+def _dispatch_nana_mutation(ctx: Any, frame: NanaFollowerFrame) -> bool:
+    """Send a character-neutral partner mutation when the host exposes it."""
+    entity_set = getattr(ctx, "entity_set", None)
+    target = getattr(ctx, "entity_at_index", lambda ordinal: None)(1)
+    if callable(entity_set) and frame.action_state is not None and frame.position is not None:
+        handle = getattr(target, "handle", _MISSING)
+        if isinstance(handle, int) and handle >= 0:
+            velocity = frame.velocity or (0.0, 0.0)
+            facing = frame.facing if frame.facing is not None else 1.0
+            entity_set(handle, frame.action_state, frame.position, velocity, facing)
+            return True
+    for name in ("mutate_entity", "update_entity"):
+        command = getattr(ctx, name, None)
+        if callable(command):
+            command(1, {
+                "action_state": frame.action_state,
+                "position": frame.position,
+                "velocity": frame.velocity,
+                "animation_velocity": frame.animation_velocity,
+                "ground_velocity": frame.ground_velocity,
+                "ground_acceleration": frame.ground_acceleration,
+                "facing": frame.facing,
+                "animation_frame": frame.animation_frame,
+                "animation_rate": frame.animation_rate,
+            })
+            return True
+    return False
+
+
+def _source_state(action: Any) -> int | None:
+    value = getattr(action, "slippi_state", _MISSING)
+    if isinstance(value, int):
+        return value
+    text = str(getattr(action, "action", action))
+    try:
+        return int(text.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _sync_nana(
+    fighter: Any,
+    ctx: Any,
+    *,
+    grounded: bool,
+    radius_attr: str,
+    resource_path: str,
+    scale_by_y: bool = False,
+) -> bool:
+    """Reach the follower mutation path while failing closed on old hosts."""
+    partner = _partner_projection(ctx)
+    if partner is _NO_RESOLVER or partner is None:
+        return False
+    state = _source_state(getattr(fighter, "action", None))
+    if state is None:
+        return False
+    in_range = _partner_in_range(
+        fighter, ctx, radius_attr, resource_path, scale_by_y=scale_by_y
+    )
+    if in_range is not True:
+        return False
+    frame = nana_follow_frame(
+        fighter,
+        partner,
+        leader_motion=state,
+        grounded=grounded,
+        partner_in_range=in_range,
+        anchor_position=getattr(partner, "anchor_position", getattr(partner, "position", None)),
+    )
+    if frame.action_state is None:
+        return False
+    return _dispatch_nana_mutation(ctx, frame)
 
 
 def _partner_projection(ctx: Any) -> Any | None:
@@ -362,6 +471,14 @@ class SquallHammer(SideSpecial, DirectionalSpecial):
             target = self.ground_partner if fighter.action is self.ground_start else self.air_partner
             fighter.change_action(target)
 
+    @on.action_enter(ground_start, ground_partner, air_start, air_partner)
+    def sync_follower(self, fighter: Fighter, ctx: MoveContext) -> None:
+        _sync_nana(
+            fighter, ctx,
+            grounded=fighter.action in (self.ground_start, self.ground_partner),
+            radius_attr="xD0", resource_path="side.attributes", scale_by_y=True,
+        )
+
 class Belay(UpSpecial, DirectionalSpecial):
     """Belay's ten Popo rows with source Nana range/lifecycle selection.
 
@@ -446,6 +563,21 @@ class Belay(UpSpecial, DirectionalSpecial):
             for index in range(min(3, len(values))):
                 values[index] = 0
             state.command = type(command)(values) if isinstance(command, tuple) else values
+
+    @on.action_enter(
+        ground_start_0, ground_throw_0, ground_throw_2, ground_start_1,
+        ground_throw_1, air_start_0, air_throw_0, air_throw_2, air_start_1,
+        air_throw_1,
+    )
+    def sync_follower(self, fighter: Fighter, ctx: MoveContext) -> None:
+        _sync_nana(
+            fighter, ctx,
+            grounded=fighter.action in (
+                self.ground_start_0, self.ground_throw_0, self.ground_throw_2,
+                self.ground_start_1, self.ground_throw_1,
+            ),
+            radius_attr="x7C", resource_path="up.attributes",
+        )
 
     @on.command_changed(2, actions=(ground_start_0, air_start_0))
     def partner_fallback(self, fighter: Any, ctx: MoveContext) -> None:

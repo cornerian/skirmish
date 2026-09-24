@@ -80,11 +80,15 @@ class IceClimbersTests(unittest.TestCase):
         self.assertEqual(
             [nana_state_for_leader(state, grounded=True, partner_in_range=True)
              for state in range(347, 357)],
-            [361, 361, 361, None, None, 361, 361, 361, None, None],
+            [361, 361, 361, None, None, 361, None, None, None, None],
         )
 
     def test_nana_follow_frame_copies_source_velocity_facing_rate_and_anchor(self):
-        leader = SimpleNamespace(velocity=(2.5, -1.0), facing=-1.0, animation_rate=0.75)
+        leader = SimpleNamespace(
+            velocity=(2.5, -1.0), animation_velocity=(0.25, 0.5),
+            ground_velocity=1.25, ground_acceleration=0.125,
+            facing=-1.0, animation_frame=4.0, animation_rate=0.75,
+        )
         follower = SimpleNamespace(available=True)
         frame = nana_follow_frame(
             leader,
@@ -97,27 +101,58 @@ class IceClimbersTests(unittest.TestCase):
         self.assertEqual(frame.action_state, 359)
         self.assertEqual(frame.position, (12.0, 8.0))
         self.assertEqual(frame.velocity, (2.5, -1.0))
+        self.assertEqual(frame.animation_velocity, (0.25, 0.5))
+        self.assertEqual(frame.ground_velocity, 1.25)
+        self.assertEqual(frame.ground_acceleration, 0.125)
         self.assertEqual(frame.facing, -1.0)
-        self.assertEqual(frame.animation_rate, 0.75)
+        self.assertEqual(frame.animation_frame, 4.0)
+        self.assertIsNone(frame.animation_rate)
 
         leader.hitlag = True
         self.assertEqual(
             nana_follow_frame(leader, follower, leader_motion=347, grounded=True).animation_rate,
-            0.0,
+            0.75,
         )
 
     def test_nana_lifecycle_reset_clears_source_command_and_attachment_fields(self):
         follower = SimpleNamespace(
             action_state=SimpleNamespace(command=(7, 6, 5, 4)),
-            article=11,
-            attached_to=42,
-            hitlag=True,
+            attributes=SimpleNamespace(xC8=3.5), armor0=0.0,
+            parts_hidden=(), x2234=1, x222C=2, x2230_b0=True,
+            x2238=3, x224C=4, x2250=5.0, relation=42, rotation=1.0,
         )
         nana_lifecycle_reset(follower)
-        self.assertEqual(follower.action_state.command, (0, 0, 0, 0))
-        self.assertIsNone(follower.article)
-        self.assertIsNone(follower.attached_to)
-        self.assertFalse(follower.hitlag)
+        self.assertEqual(follower.action_state.command, (7, 6, 5, 4))
+        self.assertEqual(follower.armor0, 3.5)
+        self.assertEqual(follower.parts_hidden, (0, 1))
+        self.assertEqual((follower.x2234, follower.x222C, follower.x2230_b0), (0, 0, 0))
+        self.assertEqual((follower.x2238, follower.x224C, follower.x2250), (0, 0, 0))
+        self.assertIsNone(follower.relation)
+        self.assertEqual(follower.rotation, 0.0)
+
+    def test_nana_mutation_callback_is_reachable_but_fails_closed_without_host(self):
+        export_definition(IceClimbers)
+        move = IceClimbers.specials.side
+        fighter = _Fighter(move.ground_start)
+        fighter.velocity = (1.0, 0.0)
+        fighter.facing = 1.0
+        fighter.available = True
+        partner = SimpleNamespace(
+            available=True, lifecycle="active", position=(0.0, 0.0),
+        )
+        resource = SimpleNamespace(attributes=SimpleNamespace(xD0=5.0))
+        ctx = SimpleNamespace(
+            entity_at_index=lambda index: partner,
+            resource=lambda path: resource,
+        )
+        move.sync_follower(fighter, ctx)
+        self.assertFalse(hasattr(ctx, "mutation"))
+
+        calls = []
+        ctx.mutate_entity = lambda ordinal, payload: calls.append((ordinal, payload))
+        move.sync_follower(fighter, ctx)
+        self.assertEqual(calls[0][0], 1)
+        self.assertEqual(calls[0][1]["action_state"], 359)
 
     def test_generic_entity_view_exposes_stable_identity_shape(self):
         view = MoveContext(None, None).entity_at_index(1)
