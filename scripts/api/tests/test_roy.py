@@ -111,6 +111,26 @@ class RoyTests(unittest.TestCase):
         self.assertIn("command_trace_changed", hooks)
         self.assertNotIn("before_hit", hooks)
 
+    def test_blazer_steering_requires_native_throw_projection(self):
+        move = _load_roy().Roy.specials.up
+        fighter = SimpleNamespace(
+            action=move.air,
+            lstick_angle=0.0,
+            action_state=SimpleNamespace(command=(0, 0, 0, 0)),
+        )
+        attributes = SimpleNamespace(x34=0.3, x38=45.0)
+        context = SimpleNamespace(
+            input=SimpleNamespace(stick=(0.8, 0.0)),
+            resource=lambda _path: SimpleNamespace(attributes=attributes),
+        )
+
+        self.assertFalse(move.steer(fighter, context))
+        self.assertEqual(fighter.lstick_angle, 0.0)
+
+        fighter.throw_flags_b3 = 0
+        self.assertTrue(move.steer(fighter, context))
+        self.assertNotEqual(fighter.lstick_angle, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

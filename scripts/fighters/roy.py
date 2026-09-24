@@ -112,7 +112,12 @@ class Blazer(EmblemUpSpecial):
 
     @on.stick(actions=(ground, air))
     def steer(self, fighter, ctx) -> bool:
-        """Mirror the shared Mars Dolphin Slash horizontal steering callback."""
+        """Mirror the Mars steering callback when its throw projection exists."""
+        # ftMs_SpecialHi_IASA gates this path through ftCheckThrowB3.  The
+        # portable host exposes that projection as a fighter capability; do
+        # not claim an angle update while it is unavailable.
+        if not hasattr(fighter, "throw_flags_b3"):
+            return False
         attributes = resource_attributes(ctx, self.resource)
         command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
         if attributes is None or command[0]:
