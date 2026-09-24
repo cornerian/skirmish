@@ -124,9 +124,10 @@ class DolphinSlash(EmblemUpSpecial):
     def steer(self, fighter, ctx) -> bool:
         """Apply angle sampling only when the native throw projection exists.
 
-        ``ftMs_SpecialHi_IASA`` also consumes ``ftCheckThrowB3``.  The host
-        does not currently project that ``throw_flags_b3`` bit, so an isolated
-        callback must not claim to reproduce the source turn or angle path.
+        ``ftMs_SpecialHi_IASA`` also consumes ``ftCheckThrowB3``.  When the
+        host projects that bit, apply the source-facing turn through the
+        fighter's existing facing field; angle sampling remains available on
+        hosts that only expose the movement attributes.
         """
         if not hasattr(fighter, "throw_flags_b3"):
             return False
@@ -141,18 +142,34 @@ class DolphinSlash(EmblemUpSpecial):
             horizontal = float(stick[0])
         except (IndexError, KeyError, TypeError, ValueError):
             return False
-        if threshold is None or maximum is None or abs(horizontal) <= threshold:
+        if threshold is None or maximum is None:
             return False
-        denominator = 1.0 - threshold
-        if denominator <= 0.0:
-            return False
-        angle = float(maximum) * (abs(horizontal) - threshold) / denominator
-        angle = math.radians(angle if horizontal < 0.0 else -angle)
         previous = float(getattr(fighter, "lstick_angle", 0.0))
-        if abs(angle) <= abs(previous):
-            return False
-        fighter.lstick_angle = angle
-        return True
+        changed = False
+        if abs(horizontal) > threshold:
+            denominator = 1.0 - threshold
+            if denominator > 0.0:
+                angle = float(maximum) * (abs(horizontal) - threshold) / denominator
+                angle = math.radians(angle if horizontal < 0.0 else -angle)
+                if abs(angle) > abs(previous):
+                    fighter.lstick_angle = angle
+                    changed = True
+
+        # ftCheckThrowB3 gates the native facing update independently of the
+        # angle command variable.  The portable fighter API exposes facing;
+        # keep the update capability guarded for authoring harnesses that do
+        # not project that field yet.
+        turn_threshold = getattr(
+            attributes, "specialhi_turn_threshold", getattr(attributes, "x30", None)
+        )
+        facing = getattr(fighter, "facing", None)
+        if fighter.throw_flags_b3 and turn_threshold is not None and facing is not None:
+            if abs(horizontal) > float(turn_threshold):
+                target = 1.0 if horizontal > 0.0 else -1.0
+                if float(facing) != target:
+                    fighter.facing = target
+                    changed = True
+        return changed
 
     @on.animation_end(ground, air)
     def enter_fall_special(self, fighter, ctx) -> bool:

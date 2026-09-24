@@ -57,6 +57,25 @@ class DolphinSlashTests(unittest.TestCase):
         context.input.stick = (0.31, 0.0)
         self.assertTrue(move.steer(fighter, context))
 
+    def test_throw_projection_turns_facing_at_source_x30_threshold(self):
+        move = _load_marth().Marth.specials.up
+        fighter = SimpleNamespace(
+            action=move.air,
+            facing=1.0,
+            lstick_angle=0.0,
+            throw_flags_b3=1,
+            action_state=SimpleNamespace(command=(0, 0, 0, 0)),
+        )
+        attrs = SimpleNamespace(x30=0.2, x34=0.8, x38=45.0)
+        context = SimpleNamespace(
+            input=SimpleNamespace(stick=(-0.3, 0.0)),
+            resource=lambda _path: SimpleNamespace(attributes=attrs),
+        )
+
+        self.assertTrue(move.steer(fighter, context))
+        self.assertEqual(fighter.facing, -1.0)
+        self.assertEqual(fighter.lstick_angle, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
