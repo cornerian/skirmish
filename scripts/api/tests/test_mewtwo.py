@@ -357,7 +357,7 @@ class MewtwoScriptTests(unittest.TestCase):
         move = self.module.Teleport()
         fighter = _Fighter()
         calls = []
-        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
+        fighter.enter_landing_special = lambda *args: calls.append(args)
         fighter.action = move.air_end
 
         move.enter_fall_special(
@@ -365,9 +365,10 @@ class MewtwoScriptTests(unittest.TestCase):
             SimpleNamespace(
                 resource=lambda path: {
                     "up.attributes.teleport_landing_lag": 12.5,
+                    "escape_air": SimpleNamespace(landing_animation_end=3.5),
                 }.get(path),
             ),
         )
 
-        self.assertEqual(calls, [{"mobility": 0, "landing_lag": 12.5}])
+        self.assertEqual(calls, [(3.5, 12.5)])
         self.assertFalse(fighter.action_state.teleport_active)

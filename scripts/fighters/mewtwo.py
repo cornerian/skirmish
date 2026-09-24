@@ -389,15 +389,23 @@ class Teleport(UpSpecial, _MewtwoSpecial):
     @hook.landed(actions=(air_end,))
     def enter_fall_special(self, fighter: Any, ctx: Any) -> bool:
         """Match ``ftMt_SpecialAirHi_Coll``'s landing-fall-special entry."""
-        # ``ftMt_SpecialAirHi_Coll`` passes the authored landing lag to the
-        # common fall-special entry.  Keep the legacy action fallback for
-        # small descriptor hosts that do not expose that entry point.
-        enter_fall_special = getattr(fighter, "enter_fall_special", None)
+        # ``ftCo_LandingFallSpecial_Enter(false, x74)`` maps to the native
+        # landing helper.  The false flag means the resulting landing state
+        # cannot be interrupted; the helper also needs the common escape-air
+        # landing animation end frame to derive its animation rate.
+        enter_landing_special = getattr(fighter, "enter_landing_special", None)
         landing_lag = _resource_float(
             ctx, "up.attributes.teleport_landing_lag", allow_zero=True
         )
-        if callable(enter_fall_special) and landing_lag is not None:
-            enter_fall_special(mobility=0, landing_lag=landing_lag)
+        lookup = getattr(ctx, "resource", None) if ctx is not None else None
+        escape_air = lookup("escape_air") if lookup is not None else None
+        animation_end = getattr(escape_air, "landing_animation_end", None)
+        if (
+            callable(enter_landing_special)
+            and landing_lag is not None
+            and animation_end is not None
+        ):
+            enter_landing_special(animation_end, landing_lag)
         else:
             fighter.change_action(Action.SPECIAL_HI_LANDING)
         _fighter_state(fighter).teleport_active = False
