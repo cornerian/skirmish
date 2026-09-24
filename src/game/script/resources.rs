@@ -368,6 +368,32 @@ pub enum ArticleResource {
         move_id: u16,
         contact: ProjectileContactPolicy,
     },
+    /// Mario's source-owned Fireball article.
+    MarioFireball {
+        speed: f32,
+        angle: f32,
+        lifetime: f32,
+        half_life: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        surface_multiplier: f32,
+        terrain_stop_speed: f32,
+        hitboxes: Vec<Hitbox>,
+        move_id: u16,
+        contact: ProjectileContactPolicy,
+    },
+    /// Luigi's source-owned Fireball article.
+    LuigiFireball {
+        speed: f32,
+        lifetime: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        terrain_stop_speed: f32,
+        effect_id: u16,
+        hitboxes: Vec<Hitbox>,
+        move_id: u16,
+        contact: LuigiFireballContactPolicy,
+    },
 }
 
 /// Article-owned contact behavior.  These are closed native policies rather

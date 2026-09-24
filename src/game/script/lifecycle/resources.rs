@@ -73,6 +73,19 @@ pub(crate) enum ArticleBehavior {
         move_id: u16,
         contact: ProjectileContactPolicy,
     },
+    MarioFireball {
+        speed: f32,
+        angle: f32,
+        lifetime: f32,
+        half_life: f32,
+        gravity: f32,
+        terminal_velocity: f32,
+        surface_multiplier: f32,
+        terrain_stop_speed: f32,
+        hitboxes: Arc<[Hitbox]>,
+        move_id: u16,
+        contact: ProjectileContactPolicy,
+    },
 }
 
 /// Read-only resource data shared by all dispatches for one fighter.
@@ -277,6 +290,7 @@ impl ResourceCache {
         let id = match kind {
             ProjectileKind::FoxLaser => ArticleId::FOX_LASER,
             ProjectileKind::FalcoLaser => ArticleId::FALCO_LASER,
+            ProjectileKind::LuigiFire => return None,
             ProjectileKind::Gravity(_) => return None,
         };
         let meta = self.article(id)?;
@@ -1923,6 +1937,60 @@ fn link_article_resources(
                         }
                     };
                     behavior
+                }
+                ArticleResource::LuigiFireball {
+                    speed,
+                    lifetime,
+                    gravity,
+                    terminal_velocity,
+                    terrain_stop_speed,
+                    effect_id,
+                    hitboxes,
+                    move_id,
+                    contact,
+                } => {
+                    if *id != ArticleId::LUIGI_FIRE || *effect_id != 1288 {
+                        return Err(Error::Invalid(
+                            "Luigi fireball requires article 105 and native effect 1288".into(),
+                        ));
+                    }
+                    if *contact != LuigiFireballContactPolicy::SourceLogic89 {
+                        return Err(Error::Invalid(
+                            "unsupported Luigi fireball contact policy".into(),
+                        ));
+                    }
+                    validate_gravity_projectile_fields(GravityProjectileFields {
+                        path: &path,
+                        speed: *speed,
+                        angle: 0.0,
+                        lifetime: *lifetime,
+                        half_life: *lifetime,
+                        gravity: *gravity,
+                        terminal_velocity: *terminal_velocity,
+                        surface_multiplier: 1.0,
+                        terrain_stop_speed: *terrain_stop_speed,
+                        hitboxes,
+                        move_id: *move_id,
+                    })?;
+                    ArticleBehavior::Gravity {
+                        speed: *speed,
+                        angle: 0.0,
+                        lifetime: *lifetime,
+                        half_life: *lifetime,
+                        gravity: *gravity,
+                        terminal_velocity: *terminal_velocity,
+                        surface_multiplier: 1.0,
+                        terrain_stop_speed: *terrain_stop_speed,
+                        hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                        move_id: *move_id,
+                        contact: ProjectileContactPolicy {
+                            reflection:
+                                crate::game::script::resources::ProjectileReflection::ReverseOwner,
+                            shield: crate::game::script::resources::ProjectileShield::Bounce,
+                            persistence:
+                                crate::game::script::resources::ProjectilePersistence::Despawn,
+                        },
+                    }
                 }
             };
             linked.insert(*id, ArticleMeta { behavior });

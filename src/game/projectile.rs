@@ -133,6 +133,7 @@ pub enum ProjectileKind {
     /// spawn was (matching a real recording's own distinct `FALCO_LASER`
     /// vs. `FOX_LASER` Slippi item type), not to change any behavior here.
     FalcoLaser,
+    LuigiFire,
     Gravity(ArticleId),
 }
 
@@ -550,6 +551,20 @@ fn step(
                 });
             }
         } else if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior {
+            if state.projectiles[index].kind == ProjectileKind::LuigiFire {
+                if luigi_fireball_terrain_despawns(
+                    speed(state.projectiles[index].velocity),
+                    gravity.terrain_stop_speed,
+                ) {
+                    return Ok(Outcome::Despawn);
+                }
+                state.projectiles[index].position = contact.position;
+                state.events.push(Event::ProjectileTerrainEffect {
+                    owner,
+                    effect_id: 1288,
+                });
+                return Ok(Outcome::Keep);
+            }
             let incoming = dot(
                 [
                     state.projectiles[index].velocity[0],

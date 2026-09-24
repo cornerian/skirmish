@@ -763,6 +763,10 @@ pub enum Event {
         projectile_kind: projectile::ProjectileKind,
         effect_id: u16,
     },
+    ProjectileTerrainEffect {
+        owner: usize,
+        effect_id: u16,
+    },
     Knockout {
         player: usize,
         stocks: u8,
