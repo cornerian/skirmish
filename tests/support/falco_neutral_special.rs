@@ -2,8 +2,8 @@
 
 use skirmish::fighter::specials::Rules;
 use skirmish::game::script::resources::{Resources, Specials};
-use skirmish::game::{Controller, Match, data::MatchData};
 use skirmish::game::wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules};
+use skirmish::game::{Controller, Match, data::MatchData};
 use std::collections::BTreeMap;
 
 /// Install the invented `tests/fixtures/game/falco-neutral-special.json`
