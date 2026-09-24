@@ -43,6 +43,8 @@ def _button_held(ctx: Any, button: Button) -> bool:
         return True
     if isinstance(held, (tuple, list, set, frozenset)):
         return button in held
+    if isinstance(held, int) and button is Button.B:
+        return bool(held & 0x200)
     return bool(held)
 
 

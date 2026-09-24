@@ -292,6 +292,11 @@ class KirbySpecialTests(unittest.TestCase):
         self.assertTrue(move.landing(fighter, ctx))
         self.assertEqual(fighter.fall_special, {"mobility": 0, "landing_lag": 12})
 
+    def test_hammer_has_one_landing_callback_owned_by_fall_special(self):
+        landed = [event for event in Hammer.events() if event.hook.value == "landed"]
+        self.assertEqual(len(landed), 1)
+        self.assertEqual(landed[0].callback, "landing")
+
 
 if __name__ == "__main__":
     unittest.main()

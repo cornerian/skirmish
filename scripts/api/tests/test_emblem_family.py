@@ -69,6 +69,15 @@ class EmblemFamilyTests(unittest.TestCase):
         self.assertEqual(len(surface), 1)
         self.assertEqual(len(surface[0].actions), 18)
 
+    def test_dancing_blade_input_route_requires_atomic_a_and_b_mask(self):
+        marth = _load("marth")
+        event = next(
+            event for event in marth.Marth.specials.side.events()
+            if event.hook.value == "input_pressed"
+        )
+        self.assertEqual(event.buttons, 0x300)
+        self.assertTrue(event.buttons_all)
+
     def test_dancing_blade_ab_selects_source_phase_tree(self):
         marth = _load("marth")
         move = marth.Marth.specials.side

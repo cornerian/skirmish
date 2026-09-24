@@ -184,9 +184,9 @@ class EmblemSideSpecial(SideSpecial, _EmblemFamilySpecial):
         input_state = getattr(ctx, "input", None)
         query = getattr(input_state, "just_pressed", None)
         if callable(query):
-            return bool(query(Button.A) or query(Button.B))
+            return bool(query(Button.A) and query(Button.B))
         buttons = getattr(input_state, "pressed_buttons", 0)
-        return bool(buttons & 0x300)
+        return (buttons & 0x300) == 0x300
 
     def _phase_choice(self, ctx: Any) -> str:
         rules = getattr(getattr(ctx, "rules", None), "specials", None)
@@ -198,7 +198,7 @@ class EmblemSideSpecial(SideSpecial, _EmblemFamilySpecial):
             return "down"
         return "neutral"
 
-    @on.input_pressed(Button.A, Button.B)
+    @on.input_pressed(Button.A, Button.B, require_all_buttons=True)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         # The shared B hook also receives A+B button masks.  Keep phase
         # selection on that single serialized input callback so roster

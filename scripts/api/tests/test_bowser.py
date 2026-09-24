@@ -194,6 +194,13 @@ class BowserTests(unittest.TestCase):
         ))
         self.assertEqual(fighter.action, side.ground_wait)
 
+        fighter = _Fighter(side.ground_wait)
+        self.assertTrue(side.hold_capture(fighter, _context(held=0x200)))
+        self.assertEqual(fighter.action, side.ground_hold)
+        fighter = _Fighter(side.ground_wait)
+        self.assertTrue(side.hold_capture(fighter, _context(held=0x100)))
+        self.assertEqual(fighter.action, side.ground_wait)
+
 
 if __name__ == "__main__":
     unittest.main()

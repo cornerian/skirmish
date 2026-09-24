@@ -210,7 +210,11 @@ class Hammer(SideSpecial, _KirbySpecial):
         return True
 
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
-    on_ground, on_air = frame_preserving_surface_pairs(ground, ground, air, air)
+    # The explicit landing callback owns the aerial landing path and enters
+    # fall-special lag.  Omitting the generated landed transition prevents a
+    # second callback from competing with that source handoff.
+    on_ground = {}
+    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
 
 class FinalCutter(UpSpecial, _KirbySpecial):

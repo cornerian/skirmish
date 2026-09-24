@@ -2,8 +2,6 @@
 
 import math
 
-import math
-
 from skirmish import Button, Fighter, source_phase
 from fighter.emblem_family import (
     EmblemDownSpecial,
