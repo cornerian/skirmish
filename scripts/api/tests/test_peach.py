@@ -148,6 +148,13 @@ class PeachSpecialTests(unittest.TestCase):
 
         up = Peach.specials.up
         fighter = _Fighter()
+        fighter.action = up.ground
+        up._transition_animation_end(fighter, _context())
+        # ftPe_SpecialHiStart_Anim (361) enters common FallSpecial directly;
+        # state 362 is reached by the landing collision callback instead.
+        self.assertIs(fighter.action, Action.FALL)
+
+        fighter = _Fighter()
         fighter.action = up.ground_end
         up._transition_animation_end(fighter, _context())
         self.assertIs(fighter.action, Action.WAIT)
