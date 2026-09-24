@@ -63,7 +63,9 @@ def _event_value(ctx: Any) -> int:
     return int(value or 0)
 
 
-def _resource_float(ctx: Any, path: str) -> float | None:
+def _resource_float(
+    ctx: Any, path: str, *, allow_zero: bool = False
+) -> float | None:
     """Read a finite authored move attribute through the host resource API."""
     lookup = getattr(ctx, "resource", None)
     value = lookup(path) if lookup is not None else None
@@ -73,7 +75,9 @@ def _resource_float(ctx: Any, path: str) -> float | None:
         value = float(value)
     except (TypeError, ValueError):
         return None
-    return value if math.isfinite(value) and value != 0.0 else None
+    if not math.isfinite(value) or (value == 0.0 and not allow_zero):
+        return None
+    return value
 
 
 def _set_reflecting(fighter: Any, value: bool) -> None:
