@@ -154,7 +154,7 @@ class ZeldaSpecialTests(unittest.TestCase):
         self.assertTrue(Zelda.specials.up.enter_fall_special(fighter, context))
         self.assertEqual(
             fighter.fall_special,
-            [{"mobility": 0.75, "landing_lag": 12.0}],
+            {"mobility": 0.75, "landing_lag": 12.0},
         )
 
         for move in (Zelda.specials.neutral, Zelda.specials.side,
