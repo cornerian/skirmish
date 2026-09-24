@@ -160,15 +160,29 @@ class Cyclone(DownSpecial, DirectionalSpecial):
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
 
-    @hook.animation_end(air)
-    def finish_air(self, fighter, ctx) -> None:
-        """Latch the native aerial charge marker before leaving Cyclone."""
+    def _consume_air_charge(self, fighter) -> None:
+        """Consume command variable 1 as soon as the native cue arrives.
+
+        ``ftLg_SpecialAirLw_Anim`` checks this slot on every animation tick,
+        rather than only at the terminal frame.  Routing the command event
+        directly keeps the persistent charge flag available to the next
+        aerial Cyclone entry without introducing a per-frame Python callback.
+        """
         state = getattr(fighter, "action_state", None)
         command = getattr(state, "command", ())
         if not isinstance(command, (tuple, list)) or len(command) < 4 or not command[1]:
             return
         state.command = (command[0], 0, command[2], command[3])
         state.cyclone_charge = True
+
+    @hook.command_changed(1, actions=(air,))
+    def charge_command(self, fighter, ctx) -> None:
+        self._consume_air_charge(fighter)
+
+    @hook.animation_end(air)
+    def finish_air(self, fighter, ctx) -> None:
+        """Consume a late command cue before the native move ends."""
+        self._consume_air_charge(fighter)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter, ctx) -> bool:
