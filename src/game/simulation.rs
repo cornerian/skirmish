@@ -410,6 +410,10 @@ where
         }
     }
 
+    // Generic secondary entities advance independently of fighter mechanics.
+    // The fixed-capacity store performs this pass without allocation.
+    state.entities.advance();
+
     // `docs/input-lock.md`: the pre-"GO" input lock. Confirmed against the
     // replay, decomp citation pending (see the doc): a held stick produces
     // no drift even in ordinary Fall during this window, so the gate is not
@@ -612,6 +616,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         dispatch_script_deadlines(
             &mut state.fighters[player],
@@ -619,6 +624,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         drain_script_transitions(
             &mut state.fighters[player],
@@ -626,6 +632,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         update_nudge(
             data,
@@ -681,6 +688,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         if let Some(velocity_y) = locomotion::pass_request_after_actions(
             fighter,
@@ -696,6 +704,7 @@ where
                 &data.rules,
                 state.next_frame,
                 player,
+                &state.entities,
             )?;
         } else {
             specials::platform_drop(
@@ -787,6 +796,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         drain_script_deadlines(
             fighter,
@@ -794,6 +804,7 @@ where
             &data.rules,
             state.next_frame,
             player,
+            &state.entities,
         )?;
         combat_history::push(fighter, &data.rules.damage.combo);
         stage_motion::carry(&data.stage, &state.stage, fighter)?;
@@ -1368,6 +1379,7 @@ fn drain_script_transitions(
     rules: &Rules,
     frame: u32,
     player: usize,
+    entities: &entity::EntityStore,
 ) -> Result<(), Error> {
     let mut pending = fighter.script_events.take_pending_transitions();
     let mut cursor = 0;
@@ -1473,7 +1485,12 @@ fn drain_script_transitions(
                     "player": player,
                 }),
                 None,
-                crate::game::script::lifecycle::NativeContext::empty(),
+                crate::game::script::lifecycle::NativeContext {
+                    pre_landing: None,
+                    geometry: None,
+                    entities: Some(entities),
+                    entity_owner_port: u8::try_from(player).ok(),
+                },
                 from,
                 old_behavior
                     .filter(|owner| owner.action == from)
@@ -1494,13 +1511,19 @@ fn drain_script_transitions(
         });
         let entered_action = fighter.action;
         let entered_generation = fighter.script_events.action_generation;
-        crate::game::script::lifecycle::invoke(
+        crate::game::script::lifecycle::invoke_with_native(
             crate::game::script::Hook::ActionEntered,
             fighter,
             Some(data),
             Some(rules),
             context,
             None,
+            crate::game::script::lifecycle::NativeContext {
+                pre_landing: None,
+                geometry: None,
+                entities: Some(entities),
+                entity_owner_port: u8::try_from(player).ok(),
+            },
         )?;
         // The native animation entry path samples the destination command row
         // at frame zero before the end-of-frame action-frame increment. This
@@ -1610,6 +1633,7 @@ fn drain_script_deadlines(
     rules: &Rules,
     frame: u32,
     player: usize,
+    entities: &entity::EntityStore,
 ) -> Result<(), Error> {
     let owner = crate::game::script::scheduler::OwnerId::new(player as u32);
     if fighter
@@ -1647,7 +1671,7 @@ fn drain_script_deadlines(
                 .map_err(|error| Error::Data(error.to_string()))?;
         }
     }
-    dispatch_script_deadlines(fighter, data, rules, frame, player)?;
+    dispatch_script_deadlines(fighter, data, rules, frame, player, entities)?;
     Ok(())
 }
 
@@ -1657,6 +1681,7 @@ fn dispatch_script_deadlines(
     rules: &Rules,
     frame: u32,
     player: usize,
+    entities: &entity::EntityStore,
 ) -> Result<(), Error> {
     let events = fighter.script_events.take_deadline_events();
     // Freeze ownership for this delivery batch. A preceding generic timer
@@ -1675,7 +1700,7 @@ fn dispatch_script_deadlines(
         // not also enter the generic authored deadline hook, where a numeric
         // token collision could run an unrelated callback.
         if !async_owned {
-            crate::game::script::lifecycle::invoke(
+            crate::game::script::lifecycle::invoke_with_native(
                 crate::game::script::Hook::ScheduledDeadline,
                 fighter,
                 Some(data),
@@ -1686,12 +1711,18 @@ fn dispatch_script_deadlines(
                     "player": player,
                 }),
                 None,
+                crate::game::script::lifecycle::NativeContext {
+                    pre_landing: None,
+                    geometry: None,
+                    entities: Some(entities),
+                    entity_owner_port: u8::try_from(player).ok(),
+                },
             )?;
             // A deadline callback may explicitly advance an owned move to a
             // retained native phase. Commit that transition before delivering
             // the move-owned continuation event so its generation/token pair
             // is rebound atomically rather than being rejected as stale.
-            drain_script_transitions(fighter, data, rules, frame, player)?;
+            drain_script_transitions(fighter, data, rules, frame, player, entities)?;
         }
         #[cfg(feature = "experimental-continuations")]
         if let Some(timer) = exact_timer {

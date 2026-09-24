@@ -867,6 +867,8 @@ pub(crate) fn land(
         NativeContext {
             pre_landing: Some(pre_landing),
             geometry: None,
+            entities: None,
+            entity_owner_port: None,
         },
     )?))
 }
@@ -943,6 +945,8 @@ pub(crate) fn platform_drop(
         NativeContext {
             pre_landing: None,
             geometry: Some(geometry),
+            entities: None,
+            entity_owner_port: None,
         },
     )?))
 }

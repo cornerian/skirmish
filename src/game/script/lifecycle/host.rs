@@ -97,8 +97,8 @@ impl LifecycleHost {
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
             pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
-            entities: None,
-            entity_owner_port: None,
+            entities: native.entities.cloned(),
+            entity_owner_port: native.entity_owner_port,
         })
     }
 
@@ -140,19 +140,9 @@ impl LifecycleHost {
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
             pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
-            entities: None,
-            entity_owner_port: None,
+            entities: native.entities.cloned(),
+            entity_owner_port: native.entity_owner_port,
         }
-    }
-
-    pub(crate) fn with_entities(
-        mut self,
-        entities: &game::entity::EntityStore,
-        owner_port: u8,
-    ) -> Self {
-        self.entities = Some(entities.clone());
-        self.entity_owner_port = Some(owner_port);
-        self
     }
 
     fn entity_path(&self, path: &str) -> Option<NativeValue> {

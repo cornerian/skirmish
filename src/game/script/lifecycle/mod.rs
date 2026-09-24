@@ -253,6 +253,8 @@ pub(crate) fn invoke_async_move_resume(
 pub(crate) struct NativeContext<'a> {
     pub pre_landing: Option<&'a game::Fighter>,
     pub geometry: Option<&'a StageGeometry>,
+    pub entities: Option<&'a game::entity::EntityStore>,
+    pub entity_owner_port: Option<u8>,
 }
 
 impl<'a> NativeContext<'a> {
@@ -260,6 +262,8 @@ impl<'a> NativeContext<'a> {
         Self {
             pre_landing: None,
             geometry: None,
+            entities: None,
+            entity_owner_port: None,
         }
     }
 }
