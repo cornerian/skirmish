@@ -232,6 +232,7 @@ def _sync_nana(
     radius_attr: str,
     resource_path: str,
     scale_by_y: bool = False,
+    allow_projected_position: bool = False,
 ) -> bool:
     """Reach the follower mutation path while failing closed on old hosts."""
     partner = _partner_projection(ctx)
@@ -254,7 +255,11 @@ def _sync_nana(
         # Retail placement uses Popo R4thNb and Nana XRotN.  The generic
         # projection does not expose those joints, so position mutation is
         # skipped unless the host supplies an explicit resolved anchor.
-        anchor_position=getattr(partner, "anchor_position", None),
+        anchor_position=(
+            getattr(partner, "anchor_position", None)
+            if not allow_projected_position
+            else getattr(partner, "anchor_position", getattr(partner, "position", None))
+        ),
     )
     if frame.action_state is None:
         return False
@@ -473,6 +478,7 @@ class SquallHammer(SideSpecial, DirectionalSpecial):
             fighter, ctx,
             grounded=fighter.action in (self.ground_start, self.ground_partner),
             radius_attr="xD0", resource_path="side.attributes", scale_by_y=True,
+            allow_projected_position=True,
         )
 
 class Belay(UpSpecial, DirectionalSpecial):

@@ -140,7 +140,7 @@ class IceClimbersTests(unittest.TestCase):
         partner = SimpleNamespace(
             available=True, lifecycle="active", position=(0.0, 0.0), handle=9,
         )
-        resource = SimpleNamespace(attributes=SimpleNamespace(xD0=5.0))
+        resource = SimpleNamespace(attributes=SimpleNamespace(xD0=5.0, x7C=5.0))
         ctx = SimpleNamespace(
             entity_at_index=lambda index: partner,
             resource=lambda path: resource,
@@ -151,14 +151,28 @@ class IceClimbersTests(unittest.TestCase):
         calls = []
         ctx.entity_set = lambda *args: calls.append(args)
         move.sync_follower(fighter, ctx)
-        self.assertEqual(calls, [])
+        self.assertEqual(calls[0], (9, 359, (0.0, 0.0), (1.0, 0.0), 1.0))
 
         partner.anchor_position = (1.0, 2.0)
         move.sync_follower(fighter, ctx)
-        self.assertEqual(calls[0], (9, 359, (1.0, 2.0), (1.0, 0.0), 1.0))
+        self.assertEqual(calls[1], (9, 359, (1.0, 2.0), (1.0, 0.0), 1.0))
 
         # Unknown native capabilities remain inert and do not raise.
         move.sync_follower(fighter, SimpleNamespace(entity_at_index=lambda index: partner))
+
+        up = IceClimbers.specials.up
+        belay = _Fighter(up.ground_start_0)
+        del partner.anchor_position
+        belay.position = (0.0, 0.0)
+        belay.velocity = (1.0, 0.0)
+        belay.facing = 1.0
+        belay_ctx = SimpleNamespace(
+            entity_at_index=lambda index: partner,
+            resource=lambda path: resource,
+            entity_set=lambda *args: calls.append(args),
+        )
+        up.sync_follower(belay, belay_ctx)
+        self.assertEqual(len(calls), 2)
 
     def test_generic_entity_view_exposes_stable_identity_shape(self):
         view = MoveContext(None, None).entity_at_index(1)
