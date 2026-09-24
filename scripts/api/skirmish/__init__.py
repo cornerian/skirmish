@@ -2,7 +2,7 @@
 
 from fighter import (
     ActionMove, AerialMoves, AnimationEventId, Attributes, DefenseMoves, EventBinding, Fighter, FighterBase, FighterDefinition, FighterPart,
-    GetupMoves, GrabMoves, GroundedMoves, Hook, LedgeMoves, Move, MoveContext, MoveWait, MoveError,
+    GetupMoves, GrabMoves, GroundedMoves, Hook, LedgeMoves, Move, MoveContext, EntityView, MoveWait, MoveError,
     SmashMoves, SpecialMoves, TauntMoves, ThrowMoves, TiltMoves, export_definition, on, register,
     Action, ActionDescriptor, ActionState, Button, CommonParameter, CustomAction, SourceAction, HitContext, MotionBinding, Parameters, SpecialMove, Transition,
     action, clock, motion, parameter, resource, special_attribute, validation, f32,
@@ -22,7 +22,7 @@ from fighter import velocity_from_angle
 __all__ = [
     "ActionMove", "AerialMoves", "AnimationEventId", "Attributes", "DefenseMoves", "EventBinding", "Fighter", "FighterBase", "FighterDefinition", "FighterPart",
     "GetupMoves", "GrabMoves", "GroundedMoves", "LedgeMoves", "SmashMoves", "TiltMoves",
-    "Hook", "Move", "MoveContext", "MoveWait", "MoveError", "SpecialMoves", "TauntMoves", "ThrowMoves", "export_definition",
+    "Hook", "Move", "MoveContext", "EntityView", "MoveWait", "MoveError", "SpecialMoves", "TauntMoves", "ThrowMoves", "export_definition",
     "Action", "ActionDescriptor", "ActionState", "Button", "CommonParameter", "CustomAction", "SourceAction", "HitContext", "MotionBinding", "Parameters", "SpecialMove", "Transition",
     "action", "clock", "motion", "parameter", "resource", "special_attribute", "validation", "f32", "custom_action", "source_action", "source_phase",
     "on", "hook", "math", "register", "registered_fighters", "validate_fighter", "resolve_identity",

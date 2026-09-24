@@ -49,6 +49,8 @@ pub struct EntityOwner {
 pub struct EntityPayload {
     pub position: [f32; 3],
     pub velocity: [f32; 3],
+    pub motion_state: u16,
+    pub facing: f32,
     /// Remaining simulation steps; `None` means explicit removal is required.
     pub lifetime: Option<u32>,
 }
@@ -173,6 +175,12 @@ impl EntityStore {
     pub fn payload_mut(&mut self, id: EntityId) -> Option<&mut EntityPayload> {
         let slot = self.slots.get_mut(id.index())?;
         (slot.generation == id.generation && slot.owner.is_some()).then_some(&mut slot.payload)
+    }
+
+    /// Read-only owner-scoped projection used by script hosts.
+    pub fn payload_for_owner(&self, port: u8, ordinal: u8) -> Option<EntityPayload> {
+        let id = self.find_owner(EntityOwner::new(port, u16::from(ordinal)))?;
+        self.payload(id)
     }
 
     /// Advance live entities in deterministic slot order without allocation.
@@ -312,6 +320,8 @@ mod tests {
                 EntityPayload {
                     position: [0.0, 1.0, 0.0],
                     velocity: [1.0, -1.0, 0.0],
+                    motion_state: 0,
+                    facing: 1.0,
                     lifetime: Some(2),
                 },
             )
@@ -322,6 +332,8 @@ mod tests {
                 EntityPayload {
                     position: [4.0, 0.0, 0.0],
                     velocity: [-1.0, 0.0, 0.0],
+                    motion_state: 0,
+                    facing: 1.0,
                     lifetime: None,
                 },
             )

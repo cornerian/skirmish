@@ -54,6 +54,9 @@ pub(crate) struct LifecycleHost {
     /// transactional, so retaining this private snapshot cannot observe or
     /// mutate live match state.
     pub pose: Option<crate::collision::bones::Pose>,
+    /// Immutable snapshot of generic entities visible to this callback.
+    pub entities: Option<game::entity::EntityStore>,
+    pub entity_owner_port: Option<u8>,
 }
 
 impl LifecycleHost {
@@ -94,6 +97,8 @@ impl LifecycleHost {
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
             pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
+            entities: None,
+            entity_owner_port: None,
         })
     }
 
@@ -135,6 +140,52 @@ impl LifecycleHost {
             action_schema: None,
             bone_count: data.map(|data| data.bones.len()),
             pose: data.and_then(|data| crate::game::simulation::pose(fighter, data).ok()),
+            entities: None,
+            entity_owner_port: None,
+        }
+    }
+
+    pub(crate) fn with_entities(
+        mut self,
+        entities: &game::entity::EntityStore,
+        owner_port: u8,
+    ) -> Self {
+        self.entities = Some(entities.clone());
+        self.entity_owner_port = Some(owner_port);
+        self
+    }
+
+    fn entity_path(&self, path: &str) -> Option<NativeValue> {
+        Self::project_entity_path(self.entities.as_ref()?, self.entity_owner_port?, path)
+    }
+
+    pub(crate) fn project_entity_path(
+        entities: &game::entity::EntityStore,
+        owner_port: u8,
+        path: &str,
+    ) -> Option<NativeValue> {
+        let rest = path.strip_prefix("context.entity_at_index[")?;
+        let (ordinal, field) = rest.split_once("]")?;
+        let ordinal = ordinal.parse::<u8>().ok()?;
+        let payload = entities.payload_for_owner(owner_port, ordinal)?;
+        match field {
+            "" => Some(NativeValue::Object(NativeObject {
+                kind: NativeKind::Value,
+                path: path.into(),
+            })),
+            ".available" => Some(NativeValue::Bool(true)),
+            ".lifecycle" => Some(NativeValue::String("active".into())),
+            ".motion_state" => Some(NativeValue::Int(i64::from(payload.motion_state))),
+            ".position" => Some(NativeValue::Vec2([
+                payload.position[0],
+                payload.position[1],
+            ])),
+            ".velocity" => Some(NativeValue::Vec2([
+                payload.velocity[0],
+                payload.velocity[1],
+            ])),
+            ".facing" => Some(NativeValue::F32(payload.facing)),
+            _ => None,
         }
     }
 
@@ -361,6 +412,9 @@ impl LifecycleHost {
         Some(NativeValue::Vec2(coordinate))
     }
     fn context_path(&self, path: &str) -> Result<NativeValue, StarError> {
+        if let Some(value) = self.entity_path(path) {
+            return Ok(value);
+        }
         // Async MoveContext fields are rebound for every pre/post step. Keep
         // them as scoped host objects so `action.fighter.state` and related
         // writes use the same transactional fighter host as ordinary hooks.
@@ -1446,6 +1500,27 @@ impl NativeHost for LifecycleHost {
             // through the same transactional native change_action path.
             return self.call_fighter("fighter.change_action", args);
         }
+        if path == "context.entity_at_index" || path == "entity_at_index" {
+            let Some(NativeValue::Int(ordinal)) = args.first() else {
+                return Ok(NativeValue::None);
+            };
+            let Ok(ordinal) = u8::try_from(*ordinal) else {
+                return Ok(NativeValue::None);
+            };
+            let Some(entities) = self.entities.as_ref() else {
+                return Ok(NativeValue::None);
+            };
+            if entities
+                .payload_for_owner(self.entity_owner_port.unwrap_or(u8::MAX), ordinal)
+                .is_none()
+            {
+                return Ok(NativeValue::None);
+            }
+            return Ok(NativeValue::Object(NativeObject {
+                kind: NativeKind::Value,
+                path: format!("context.entity_at_index[{ordinal}]"),
+            }));
+        }
         if path.starts_with("fighter.") {
             return self.call_fighter(path, args);
         }
@@ -2111,6 +2186,7 @@ mod tests {
     };
     use super::{action_state_after_change, decode_preserve_fields};
     use crate::collision::ecb::{Shape, State as EcbState};
+    use crate::game::entity::{EntityOwner, EntityPayload, EntityStore};
     use crate::game::script::{LocalState, LocalValue, StateField, StateSchema, StateType};
     use std::collections::BTreeMap;
 
@@ -2248,6 +2324,35 @@ mod tests {
         for value in [NativeValue::Int(-1), NativeValue::Int(256)] {
             assert!(super::u8_value(value, "age").is_err());
         }
+    }
+
+    #[test]
+    fn entity_projection_dispatches_by_owner_and_fails_closed() {
+        let mut entities = EntityStore::default();
+        entities
+            .insert_with_payload(
+                EntityOwner::new(0, 1),
+                EntityPayload {
+                    position: [3.0, 4.0, 0.0],
+                    velocity: [1.0, -2.0, 0.0],
+                    motion_state: 7,
+                    facing: -1.0,
+                    lifetime: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            LifecycleHost::project_entity_path(&entities, 0, "context.entity_at_index[1].position"),
+            Some(NativeValue::Vec2([3.0, 4.0]))
+        );
+        assert_eq!(
+            LifecycleHost::project_entity_path(&entities, 1, "context.entity_at_index[1].position"),
+            None
+        );
+        assert_eq!(
+            LifecycleHost::project_entity_path(&entities, 0, "context.entity_at_index[255]"),
+            None
+        );
     }
 
     #[test]

@@ -43,6 +43,29 @@ class MoveContext:
             raise ValueError("wait frames must be a non-negative integer")
         return MoveWait(frames)
 
+    def entity_at_index(self, ordinal: int) -> "EntityView":
+        """Read the host-owned secondary entity for this fighter's port.
+
+        Native dispatch supplies the concrete immutable view. The authoring
+        object returns the unavailable value so local tests and tooling remain
+        deterministic without pretending to simulate match state.
+        """
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or not 0 <= ordinal <= 255:
+            raise ValueError("entity ordinal must be an integer in 0..=255")
+        return EntityView()
+
+
+@dataclass(frozen=True, slots=True)
+class EntityView:
+    """Read-only shape returned by ``MoveContext.entity_at_index``."""
+
+    available: bool = False
+    lifecycle: str = "unavailable"
+    motion_state: int = 0
+    position: tuple[float, float] = (0.0, 0.0)
+    velocity: tuple[float, float] = (0.0, 0.0)
+    facing: float = 1.0
+
 
 @dataclass(frozen=True, slots=True)
 class MoveWait:
