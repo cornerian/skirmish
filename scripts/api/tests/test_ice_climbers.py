@@ -26,11 +26,13 @@ class _Input:
 
 
 class _Fighter:
-    def __init__(self, action=None):
+    def __init__(self, action=None, *, position=(0.0, 0.0), scale_y=1.0):
         self.action = action
         self.action_frame = 0
         self.changes = []
         self.action_state = SimpleNamespace(command=(7, 6, 5, 4))
+        self.position = position
+        self.scale_y = scale_y
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -196,6 +198,53 @@ class IceClimbersTests(unittest.TestCase):
             move.enter(fighter, _context())
             self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
+    def test_squall_selects_partner_row_only_with_source_range_facts(self):
+        export_definition(IceClimbers)
+        side = IceClimbers.specials.side
+        resource = SimpleNamespace(
+            attributes=SimpleNamespace(xD0=5.0, x7C=7.0),
+        )
+        partner = SimpleNamespace(
+            available=True,
+            lifecycle="active",
+            position=(3.0, 4.0),
+        )
+
+        # The source uses a strict distance comparison, so the boundary is
+        # still S1.  An interior point selects S2 through the script policy.
+        fighter = _Fighter(side.ground_start)
+        side.enter(
+            fighter,
+            SimpleNamespace(
+                entity_at_index=lambda index: partner,
+                resource=lambda path: resource,
+            ),
+        )
+        self.assertEqual(fighter.action, side.ground_start)
+
+        partner.position = (1.0, 0.0)
+        fighter = _Fighter(side.ground_start)
+        side.enter(
+            fighter,
+            SimpleNamespace(
+                entity_at_index=lambda index: partner,
+                resource=lambda path: resource,
+            ),
+        )
+        self.assertEqual(fighter.action.action, "Source.14:344")
+
+        # Missing lifecycle or scale facts fail closed rather than guessing.
+        partner.lifecycle = None
+        fighter = _Fighter(side.ground_start)
+        side.enter(
+            fighter,
+            SimpleNamespace(
+                entity_at_index=lambda index: partner,
+                resource=lambda path: resource,
+            ),
+        )
+        self.assertEqual(fighter.action, side.ground_start)
+
     def test_belay_entry_clears_only_source_command_slots(self):
         """Belay entry clears cmd_vars[0..2] and preserves slot 3."""
         export_definition(IceClimbers)
@@ -252,7 +301,9 @@ class IceClimbersTests(unittest.TestCase):
 
         class Partner:
             available = False
+            lifecycle = "active"
             motion_state = 364
+            position = (0.0, 0.0)
 
         fighter = _Fighter("Source.14:347")
         up.partner_fallback(
@@ -308,7 +359,9 @@ class IceClimbersTests(unittest.TestCase):
 
         class Partner:
             available = True
+            lifecycle = "active"
             motion_state = 361
+            position = (0.0, 0.0)
 
         fighter = _Fighter("Source.14:348")
         up.partner_launch(
@@ -316,6 +369,37 @@ class IceClimbersTests(unittest.TestCase):
             SimpleNamespace(event=_Event(1), entity_at_index=lambda index: Partner()),
         )
         self.assertEqual(fighter.action, "Source.14:348")
+
+    def test_belay_fallback_uses_partner_range_and_fails_closed(self):
+        export_definition(IceClimbers)
+        up = IceClimbers.specials.up
+        resource = SimpleNamespace(
+            attributes=SimpleNamespace(xD0=5.0, x7C=5.0),
+        )
+        partner = SimpleNamespace(
+            available=True,
+            lifecycle="active",
+            position=(7.0, 0.0),
+        )
+        context = lambda: SimpleNamespace(
+            event=_Event(1),
+            entity_at_index=lambda index: partner,
+            resource=lambda path: resource,
+        )
+
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(fighter, context())
+        self.assertEqual(fighter.action.action, "Source.14:350")
+
+        partner.position = (1.0, 0.0)
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(fighter, context())
+        self.assertEqual(fighter.action, "Source.14:347")
+
+        partner.lifecycle = None
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(fighter, context())
+        self.assertEqual(fighter.action, "Source.14:347")
 
     def test_belay_exports_native_command_branch_hooks(self):
         definition = export_definition(IceClimbers).as_dict()
