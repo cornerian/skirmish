@@ -117,13 +117,18 @@ class EggRoll(SideSpecial, _YoshiSpecial):
     """Egg Roll's ground and aerial source state machines."""
 
     ground_start = source_phase(356)
-    ground_loop = source_phase(357)
-    ground_turn = source_phase(358)
+    # ftYs_SpecialAirSLoop_0/1_Anim run as native hold phases: the source
+    # freezes their motion rate and only leaves them when the release or
+    # collision callback changes state.  Mark both looping resources so the
+    # authoring runtime does not consume a finite animation and apply its
+    # generic animation-end transition while Roll is still held.
+    ground_loop = source_phase(357, animation_loop=True)
+    ground_turn = source_phase(358, animation_loop=True)
     ground_end = source_phase(359)
     ground = ground_start
     air = source_phase(360)
-    air_loop = source_phase(361)
-    air_turn = source_phase(362)
+    air_loop = source_phase(361, animation_loop=True)
+    air_turn = source_phase(362, animation_loop=True)
     air_landing = source_phase(363)
     _ACTIVE = (
         ground,
