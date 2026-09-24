@@ -67,6 +67,27 @@ article animations from the source boolean. It does not implement a generic
 gravity trajectory; its observable behavior is lifetime, hitbox/effect state,
 owner cleanup, and persistence after damage.
 
+## Fighter callback audit
+
+The pinned fighter sources were audited alongside the article callbacks:
+
+* `ftpeachfloat.c` and `ftpeachfloatfall.c` keep Float, FloatAttack, and
+  FloatFall as a separate native motion family. The current script boundary
+  has no float input, velocity, or aerial attack state, so it does not claim
+  Float coverage.
+* `ftpeachspecials.c` enters AirSJump on an unblocked start, moves directly
+  to AirSEnd on command 3 or animation completion, and uses command 2 for the
+  wall end. Those branches are represented by the side-special callbacks.
+* `ftpeachspecialn.c` changes to SpecialNHit at animation frame 9 when the
+  Toad shield callback fires. The script sets `action_frame = 9` after that
+  phase change for both ground and air hit states.
+* `ftpeachspeciallw.c` sends a held turnip to the common light throw and
+  otherwise spawns an article; weighted turnip selection remains article
+  host work.
+* `ftpeachspecialhi.c` owns parasol attachment and fall-special handoff;
+  `itpeachexplode.c` owns the Bomber's 60-frame article lifetime. Their
+  object and effect callbacks remain outside the fighter script boundary.
+
 ## Current host boundary
 
 The host exposes numeric article IDs and a compact `spawn_article` command, but

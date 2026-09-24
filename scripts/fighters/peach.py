@@ -123,12 +123,12 @@ class PeachNeutralSpecial(NeutralSpecial, _PeachSpecial):
         this explicit collision edge.
         """
         if fighter.action is self.ground:
-            # The portable transition ABI currently has no authored frame
-            # offset; the native callback's frame-nine restart remains a
-            # documented bridge limitation.
+            # The native callback changes phase at animation frame nine.
             fighter.change_action(self.ground_hit)
+            fighter.action_frame = 9
         elif fighter.action is self.air:
             fighter.change_action(self.air_hit)
+            fighter.action_frame = 9
 
 
 class PeachSideSpecial(SideSpecial, _PeachSpecial):

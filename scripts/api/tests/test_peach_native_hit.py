@@ -19,6 +19,7 @@ class _Fighter:
     def __init__(self, action):
         self.action = action
         self.changes = []
+        self.action_frame = 1
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -33,6 +34,7 @@ class PeachNativeHitTests(unittest.TestCase):
         move.hit_contact(fighter, object())
 
         self.assertEqual(fighter.changes, [(move.ground_hit, {})])
+        self.assertEqual(fighter.action_frame, 9)
 
     def test_toad_contact_restarts_air_hit_at_source_frame(self):
         move = Peach.specials.neutral
@@ -41,6 +43,7 @@ class PeachNativeHitTests(unittest.TestCase):
         move.hit_contact(fighter, object())
 
         self.assertEqual(fighter.changes, [(move.air_hit, {})])
+        self.assertEqual(fighter.action_frame, 9)
 
     def test_unrelated_phase_does_not_enter_toad_hit(self):
         move = Peach.specials.neutral
