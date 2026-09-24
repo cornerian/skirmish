@@ -86,6 +86,22 @@ class WizardFoot(CaptainDownSpecial):
         command = getattr(getattr(fighter, "action_state", None), "command", ())
         if not command or not command[0]:
             return False
+        # ftCa_SpecialLw_Coll only takes the rebound branch for the wall on
+        # the side opposite the fighter's facing direction.  The shared
+        # family callback intentionally accepts legacy boolean wall events;
+        # when a host provides a normal, preserve the source-facing test here
+        # without changing the common Captain-family implementation.
+        wall = getattr(ctx, "wall", None)
+        if wall is None:
+            wall = getattr(ctx, "wall_contact", None)
+        normal = getattr(wall, "normal", None)
+        facing = getattr(fighter, "facing", None)
+        if normal is not None and facing is not None:
+            try:
+                if len(normal) < 1 or normal[0] * facing >= 0:
+                    return False
+            except (TypeError, IndexError):
+                return False
         return super().wall_rebound(fighter, ctx)
 
 
