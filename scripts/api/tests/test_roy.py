@@ -55,7 +55,8 @@ class RoyTests(unittest.TestCase):
             actual = [
                 int(phase.action.reference.removeprefix("Source."))
                 for phase in move.__dict__.values()
-                if hasattr(phase, "action") and phase.action.reference.startswith("Source.")
+                if hasattr(phase, "action")
+                and phase.action.reference.startswith("Source.")
             ]
             self.assertEqual(actual, list(states), move.__name__)
 
@@ -67,7 +68,8 @@ class RoyTests(unittest.TestCase):
         release_targets = {
             rule.source_name: rule.transition.target.action.reference
             for rule in move.__transition_rules__
-            if rule.event == "on_end" and rule.source_name in {"Source.341", "Source.345"}
+            if rule.event == "on_end"
+            and rule.source_name in {"Source.341", "Source.345"}
         }
         self.assertEqual(release_targets["Source.341"], "Source.342")
         self.assertEqual(release_targets["Source.345"], "Source.346")
@@ -88,9 +90,10 @@ class RoyTests(unittest.TestCase):
     def test_dancing_blade_requires_both_buttons_for_phase_choice(self):
         roy = _load_roy()
         move = roy.Roy.specials.side
-        ctx_a = SimpleNamespace(input=self._Input({roy.Button.A}))
-        ctx_b = SimpleNamespace(input=self._Input({roy.Button.B}))
-        for ctx in (ctx_a, ctx_b):
+        for ctx in (
+            SimpleNamespace(input=self._Input({roy.Button.A})),
+            SimpleNamespace(input=self._Input({roy.Button.B})),
+        ):
             fighter = self._Fighter(move.ground_start)
             self.assertFalse(move.choose_phase(fighter, ctx))
             self.assertEqual(fighter.action, move.ground_start)
@@ -100,6 +103,36 @@ class RoyTests(unittest.TestCase):
         both = SimpleNamespace(input=self._Input({roy.Button.A, roy.Button.B}))
         self.assertTrue(move.choose_phase(fighter, both))
         self.assertEqual(fighter.action_state.command[1], 1)
+
+    def test_counter_command_one_registers_shield_and_enters_matching_hit_phase(self):
+        move = _load_roy().Roy.specials.down
+        shield = object()
+        calls = []
+        for start, hit in ((move.ground, move.ground_hit), (move.air, move.air_hit)):
+            fighter = SimpleNamespace(
+                action=start,
+                register_counter_shield=calls.append,
+            )
+            fighter.change_action = lambda action, fighter=fighter: setattr(
+                fighter, "action", action
+            )
+            context = SimpleNamespace(
+                event=SimpleNamespace(value=1), shield_descriptor=shield
+            )
+            self.assertTrue(move.command_changed(fighter, context))
+            self.assertIs(fighter.action, hit)
+        self.assertEqual(calls, [shield, shield])
+
+    def test_counter_command_callback_rejects_other_values_and_non_entry_phases(self):
+        move = _load_roy().Roy.specials.down
+        fighter = SimpleNamespace(action=move.ground)
+        self.assertFalse(
+            move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=0)))
+        )
+        fighter.action = move.ground_hit
+        self.assertFalse(
+            move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        )
 
 
 if __name__ == "__main__":

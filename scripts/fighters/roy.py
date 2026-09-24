@@ -129,6 +129,32 @@ class Counter(EmblemDownSpecial):
     air = source_phase(371)
     air_hit = source_phase(372)
 
+    @on.command_changed(1, actions=(ground, air))
+    def command_changed(self, fighter, ctx) -> bool:
+        """Arm the source Counter shield and enter its hit phase.
+
+        ``ftMs_SpecialLw_Anim`` raises command variable one at the authored
+        shield frame.  The native callback then installs the counter shield
+        descriptor and changes 369/371 to 370/372.  Keep registration
+        optional so this callback remains usable by lightweight authoring
+        harnesses while native hosts can expose the real descriptor.
+        """
+        if getattr(getattr(ctx, "event", None), "value", 0) != 1:
+            return False
+        descriptor = getattr(ctx, "shield_descriptor", None)
+        if descriptor is None:
+            descriptor = getattr(ctx, "counter_shield", None)
+        register = getattr(fighter, "register_counter_shield", None)
+        if descriptor is not None and callable(register):
+            register(descriptor)
+        if fighter.action == self.ground:
+            fighter.change_action(self.ground_hit)
+            return True
+        if fighter.action == self.air:
+            fighter.change_action(self.air_hit)
+            return True
+        return False
+
 
 class Roy(Fighter):
     specials = Fighter.specials.replace(
