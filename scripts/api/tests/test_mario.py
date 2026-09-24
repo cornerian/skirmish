@@ -206,6 +206,17 @@ class MarioNeutralTests(unittest.TestCase):
         move.enter(fighter, _context())
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
 
+    def test_cape_ground_entry_zeros_vertical_velocity_like_source(self):
+        move = Cape()
+        fighter = SimpleNamespace(
+            action=move.ground,
+            action_state=SimpleNamespace(command=(7, 2, 3, 4)),
+            velocity=(2.0, -3.0),
+            set_velocity=lambda x, y: setattr(fighter, "velocity", (x, y)),
+        )
+        move.enter(fighter, _context())
+        self.assertEqual(fighter.velocity, (2.0, 0.0))
+
     def test_super_jump_punch_entry_clears_only_native_command_latch(self):
         move = SuperJumpPunch()
         fighter = _Fighter()

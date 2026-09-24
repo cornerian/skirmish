@@ -76,6 +76,9 @@ class Cape(SideSpecial, _SourcePair):
         slot is owned by the common command stream and is preserved here.
         """
         state = getattr(fighter, "action_state", None)
+        if fighter.action == self.ground and hasattr(fighter, "set_velocity"):
+            velocity = getattr(fighter, "velocity", (0.0, 0.0))
+            fighter.set_velocity(velocity[0], 0.0)
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
