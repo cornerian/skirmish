@@ -98,11 +98,12 @@ class SheikZeldaSpecialTests(unittest.TestCase):
                 terminal = getattr(move, "air_end", getattr(move, "air_move", move.air))
                 instance = _Fighter(terminal)
                 move._transition_animation_end(instance, _context(ground=False))
-                if fighter is Zelda and move in (Zelda.specials.up, Zelda.specials.down):
-                    # Farore state 354 enters FallSpecial through its native
-                    # callback when the Zelda attributes are available;
-                    # without that resource, the callback intentionally
-                    # leaves the terminal source action untouched.
+                if ((fighter is Sheik and move is Sheik.specials.up)
+                        or (fighter is Zelda and move in (Zelda.specials.up, Zelda.specials.down))):
+                    # Sheik state 360 and Zelda states 354/357 enter
+                    # FallSpecial through native callbacks when attributes
+                    # are available; without that resource, the callbacks
+                    # intentionally leave the terminal source action intact.
                     self.assertEqual(instance.action, terminal)
                 else:
                     self.assertEqual(instance.action, Action.FALL)
