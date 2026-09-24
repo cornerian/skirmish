@@ -98,7 +98,10 @@ class SheikZeldaSpecialTests(unittest.TestCase):
                 terminal = getattr(move, "air_end", getattr(move, "air_move", move.air))
                 instance = _Fighter(terminal)
                 move._transition_animation_end(instance, _context(ground=False))
-                self.assertEqual(instance.action, Action.FALL)
+                if fighter is Zelda and move is Zelda.specials.down:
+                    self.assertEqual(instance.action, terminal)
+                else:
+                    self.assertEqual(instance.action, Action.FALL)
 
 
 if __name__ == "__main__":

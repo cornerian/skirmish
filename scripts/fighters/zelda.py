@@ -177,6 +177,7 @@ class Transform(DownSpecial, DirectionalSpecial):
         if isinstance(command, (tuple, list)) and command:
             state.command = (0, *command[1:])
 
+    @on.animation_end(ground_end, air_end)
     def native_completion(self, fighter: Fighter, ctx: object) -> TransformOutcome:
         """Report the replacement seam until the host owns identity swapping.
 
@@ -188,10 +189,10 @@ class Transform(DownSpecial, DirectionalSpecial):
         """
         return TransformOutcome.UNSUPPORTED
 
-    on_end = {
-        ground: Transition(ground_end), ground_end: Transition(Action.WAIT),
-        air: Transition(air_end), air_end: Transition(Action.FALL),
-    }
+    # The terminal source states intentionally have no fallback transition.
+    # Until the native identity swap exists, animation end must preserve the
+    # source action instead of pretending Zelda completed as Zelda.
+    on_end = {ground: Transition(ground_end), air: Transition(air_end)}
     on_ground = {
         air: Transition(ground, preserve_state=True, keep_frame=True),
         air_end: Transition(ground_end, preserve_state=True, keep_frame=True),

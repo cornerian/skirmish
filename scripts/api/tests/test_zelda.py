@@ -109,7 +109,10 @@ class ZeldaSpecialTests(unittest.TestCase):
         for move, terminal, expected in cases:
             fighter = _Fighter(terminal)
             move._transition_animation_end(fighter, _context(grounded=False))
-            self.assertEqual(fighter.action, expected)
+            if move is Zelda.specials.down:
+                self.assertEqual(fighter.action, terminal)
+            else:
+                self.assertEqual(fighter.action, expected)
 
         for move in (Zelda.specials.neutral, Zelda.specials.side,
                      Zelda.specials.up, Zelda.specials.down):
@@ -172,6 +175,13 @@ class ZeldaSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
         self.assertIs(move.native_completion(fighter, SimpleNamespace()),
                       TransformOutcome.UNSUPPORTED)
+        transform_callbacks = [callback for callback in self.definition["behaviors"]
+                               if callback["id"] == self.definition["movesets"]["specials"]["down"]]
+        self.assertEqual(
+            [callback["hook"] for callback in transform_callbacks[0]["callbacks"]
+             if callback["callback"].endswith("native_completion")],
+            ["animation_ended"],
+        )
 
 
 if __name__ == "__main__":
