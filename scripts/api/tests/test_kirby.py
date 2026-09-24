@@ -139,6 +139,19 @@ class KirbySpecialTests(unittest.TestCase):
         Stone()._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, Stone.ground_hold.action)
 
+    def test_final_cutter_fall_rows_enter_matching_end_rows(self):
+        move = FinalCutter()
+        for fall, end, grounded in (
+            (move.ground_fall, move.ground_end, True),
+            (move.air_fall, move.air_end, False),
+        ):
+            fighter = _Fighter()
+            fighter.action = fall
+            move._transition_animation_end(
+                fighter, SimpleNamespace(grounded=grounded)
+            )
+            self.assertIs(fighter.action, end.action)
+
     def test_inhale_release_matches_source_loop_iASA(self):
         inhale = Inhale()
         for loop, end in ((inhale.ground_loop, inhale.ground_end),

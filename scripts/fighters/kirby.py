@@ -245,6 +245,10 @@ class FinalCutter(UpSpecial, _KirbySpecial):
         # launch; the collision callback owns the optional grounded finish.
         ground_start: Transition(air_rise),
         ground_rise: Transition(air_fall),
+        # The descending travel rows finish through their matching source end
+        # rows before reaching the ordinary grounded/airborne terminal state.
+        ground_fall: Transition(ground_end),
+        air_fall: Transition(air_end),
         ground_end: Transition(Action.WAIT),
         air_start: Transition(air_rise),
         air_rise: Transition(air_fall),
