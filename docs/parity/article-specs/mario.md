@@ -37,7 +37,8 @@ parity with `...Reflected`.
 The ordinary `...HitShield` callback destroys the fireball. The separate
 `...ShieldBounced` callback can preserve and reflect it in the source, but
 the typed host has no distinct callback event yet and therefore does not
-claim that bounce path.
+claim that bounce path. `...Reflected` is likewise rejected from typed
+resources until the source `xC70` speed multiplier is authorable.
 
 ## Cape article and reflection
 

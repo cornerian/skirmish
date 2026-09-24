@@ -1916,6 +1916,15 @@ fn link_article_resources(
                     move_id,
                     contact,
                 } => {
+                    if mario_fireball
+                        && contact.reflection
+                            != crate::game::script::resources::ProjectileReflection::None
+                    {
+                        return Err(Error::Invalid(
+                            "Mario fireball reflection is unsupported without the source xC70 multiplier"
+                                .into(),
+                        ));
+                    }
                     if let Some(name) = link_native_article(*id) {
                         return Err(Error::Invalid(format!(
                             "unsupported Link article {name} id {}",
@@ -2018,8 +2027,10 @@ fn link_article_resources(
                         hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
                         move_id: *move_id,
                         contact: ProjectileContactPolicy {
-                            reflection:
-                                crate::game::script::resources::ProjectileReflection::ReverseOwner,
+                            // `it_80273030` multiplies velocity by item xC70;
+                            // Luigi's typed schema does not expose that source
+                            // attribute, so keep reflection explicitly gated.
+                            reflection: crate::game::script::resources::ProjectileReflection::None,
                             shield: crate::game::script::resources::ProjectileShield::Bounce,
                             persistence:
                                 crate::game::script::resources::ProjectilePersistence::Despawn,
@@ -2756,6 +2767,51 @@ mod tests {
         let error = ResourceCache::build(Some(&data.fighters[0]), None, false)
             .expect_err("Mario fire must not enter the ray fast path");
         assert!(error.to_string().contains("unsupported ray article id 48"));
+    }
+
+    #[test]
+    fn article_cache_rejects_unmodeled_mario_reflection_multiplier() {
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
+        let mut data: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
+        data.fighters[0].specials = Some(
+            serde_json::from_value(json!({
+                "character": "mario",
+                "articles": {
+                    "48": {
+                        "kind": "mario_fireball",
+                        "speed": 1.0,
+                        "angle": 0.0,
+                        "lifetime": 30.0,
+                        "half_life": 15.0,
+                        "gravity": 0.08,
+                        "terminal_velocity": 2.4,
+                        "surface_multiplier": 0.5,
+                        "terrain_stop_speed": 0.2,
+                        "move_id": 48,
+                        "hitboxes": [{
+                            "group": 0,
+                            "bone": 0,
+                            "center": [0.0, 0.0, 0.0],
+                            "radius": 0.5,
+                            "damage": 3,
+                            "angle_degrees": 45.0,
+                            "growth": 20,
+                            "fixed": 0,
+                            "base": 10
+                        }],
+                        "contact": {
+                            "reflection": "reverse_owner",
+                            "shield": "bounce",
+                            "persistence": "despawn"
+                        }
+                    }
+                }
+            }))
+            .unwrap(),
+        );
+        let error = ResourceCache::build(Some(&data.fighters[0]), None, false)
+            .expect_err("Mario reflection must remain gated without xC70");
+        assert!(error.to_string().contains("xC70 multiplier"));
     }
 
     #[test]

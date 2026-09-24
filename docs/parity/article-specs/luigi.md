@@ -17,7 +17,9 @@ pinned `External/melee` checkout.
 
 The normal `HitShield` callback therefore consumes the fireball. The separate
 `ShieldBounced` callback is a distinct source event; the typed host preserves
-that distinction and leaves its bounce handoff unsupported.
+that distinction and leaves its bounce handoff unsupported. `Reflected` is
+also gated until the typed article attributes expose the source `xC70` speed
+multiplier; the current Luigi resource therefore uses no reflection policy.
 
 ### Test vector
 
