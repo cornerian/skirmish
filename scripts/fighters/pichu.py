@@ -19,6 +19,45 @@ from fighter.electric_family import (
 )
 
 
+PICHU_THUNDER_COMMAND_ENDS = {
+    360: 362,
+    361: 362,
+    364: 366,
+    365: 366,
+}
+
+
+def _source_state(action):
+    descriptor = getattr(action, "action", action)
+    state = getattr(descriptor, "slippi_state", None)
+    if state is not None:
+        return state
+    if isinstance(descriptor, str) and ":" in descriptor:
+        try:
+            return int(descriptor.rsplit(":", 1)[1])
+        except ValueError:
+            return None
+    return None
+
+
+def pichu_thunder_command_transition(action, command_value):
+    """Return the source Thunder end phase when command variable 0 is set.
+
+    ``ftPk_SpecialLwLoop{0,1}_Anim`` checks command variable 0 before its
+    contact path and enters the matching end phase when it is nonzero.  This
+    is separate from projectile contact: the source uses the same branch for
+    grounded and aerial loop and hit phases.
+    """
+    if not command_value:
+        return None
+    destination = PICHU_THUNDER_COMMAND_ENDS.get(_source_state(action))
+    if destination is None:
+        return None
+    # Keep the returned state in the same source identity space as the
+    # caller.  The native host binds this state to Pichu's action descriptor.
+    return destination
+
+
 class PichuParameters(Parameters):
     """Initialization metadata from ``ftPc_Init``.
 
@@ -95,4 +134,6 @@ __all__ = [
     "QuickAttack",
     "Agility",
     "Thunder",
+    "PICHU_THUNDER_COMMAND_ENDS",
+    "pichu_thunder_command_transition",
 ]
