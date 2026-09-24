@@ -136,6 +136,29 @@ class FalconKick(CaptainDownSpecial):
         attack="down.ground_end_air",
     )
 
+    @on.animation_end()
+    def animation_end(self, fighter, ctx):
+        if fighter.action is self.ground:
+            self._clear_kick_commands(fighter)
+        super().animation_end(fighter, ctx)
+
+    def _transition_animation_end(self, fighter, ctx):
+        """Clear kick command cues before the source recovery transition.
+
+        ``ftCa_SpecialLw_Anim`` and ``ftCa_SpecialAirLw_Anim`` clear
+        ``cmd_vars[0..2]`` before entering their ground or aerial end state.
+        Keep slot 3 intact because the native helper does not touch it.
+        """
+        if fighter.action is self.air:
+            self._clear_kick_commands(fighter)
+        super()._transition_animation_end(fighter, ctx)
+
+    @staticmethod
+    def _clear_kick_commands(fighter):
+        command = getattr(getattr(fighter, "action_state", None), "command", ())
+        if len(command) == 4:
+            fighter.action_state.command = (0, 0, 0, command[3])
+
     def wall_rebound(self, fighter, ctx):
         """Mirror ``ftCa_SpecialLw_Coll``'s command-gated wall handoff.
 

@@ -828,6 +828,22 @@ class CaptainFalconTests(unittest.TestCase):
         neutral_context.rules = rules
         self.assertFalse(move.input_pressed(self.Fighter(None), neutral_context))
 
+    def test_falcon_kick_animation_end_clears_source_command_slots_before_recovery(self):
+        captain = _load_captain()
+        move = captain.specials.down
+
+        grounded = self.Fighter(move.ground, grounded=True)
+        grounded.action_state.command = (1, 2, 3, 4)
+        move.animation_end(grounded, self.context())
+        self.assertEqual(grounded.action_state.command, (0, 0, 0, 4))
+        self.assertEqual(grounded.action, move.ground_end)
+
+        aerial = self.Fighter(move.air)
+        aerial.action_state.command = (1, 2, 3, 4)
+        move._transition_animation_end(aerial, self.context())
+        self.assertEqual(aerial.action_state.command, (0, 0, 0, 4))
+        self.assertEqual(aerial.action, move.air_end)
+
     def test_falcon_kick_landing_uses_source_end_motion_then_waits(self):
         captain = _load_captain()
         move = captain.specials.down
