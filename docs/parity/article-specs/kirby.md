@@ -21,6 +21,20 @@ fighter script mirrors these IDs (`scripts/fighters/kirby.py`):
 | 378--381 | `SpecialAirNDrink/End`, `SpecialAirNSpit/End` | airborne consume and spit |
 | 382 | `SpecialAirNEatTurn` | turn while holding a target |
 
+Surface collision keeps these source phase pairs aligned by motion identity:
+
+| Ground phase | Air phase | Source collision handoff |
+| --- | --- | --- |
+| 356 `SpecialNCapture0` | 375 `SpecialAirNCapture1` | `ftKb_SpecialNCapture0_Coll` / `ftKb_SpecialAirNCaptured_Coll` |
+| 357 `SpecialNCapture1` | 374 `SpecialAirNCapture0` | `ftKb_SpecialNCapture1_Coll` / `ftKb_SpecialAirNCapture_Coll` |
+| 358 `Eat` | 376 `EatAir` | `ftKb_Eat_Coll` / `ftKb_SpecialAirNCaptured_Coll` |
+| 359 `EatWait` | 377 `EatFall` | native capture wait collision callbacks |
+| 367 `SpecialNDrink0` | 379 `SpecialAirNDrink1` | `ftKb_SpecialNDrink0_Coll` / `ftKb_SpecialNDrink1_Coll` |
+| 368 `SpecialNDrink1` | 378 `SpecialAirNDrink0` | `ftKb_SpecialNDrink_Coll` / `ftKb_SpecialAirNDrink_Coll` |
+| 369 `SpecialNSpit0` | 381 `SpecialAirNSpit1` | `ftKb_SpecialNSpit0_Coll` / `ftKb_SpecialAirNSpit1_Coll` |
+| 370 `SpecialNSpit1` | 380 `SpecialAirNSpit0` | `ftKb_SpecialNSpit1_Coll` / `ftKb_SpecialAirNSpit_Coll` |
+| 363 `EatTurn` | 382 `EatTurnAir` | `ftKb_EatTurn_Coll` / `ftKb_SpecialAirNCaptureTurn_Coll` |
+
 Capture attaches one of two target types to Kirby. Fighter capture uses
 `victim_gobj`; item capture uses `target_item_gobj` and sets the internal item
 branch flag (`u.kb.xF4_b0`). `ftKb_Eat_Anim` and
@@ -126,9 +140,12 @@ preserving the target relation until the animation callback consumes it. The
 existing generic grab relation can represent a fighter attachment, but the
 host has no item target object, Kirby copied-kind/hat state, per-kind special
 dispatch table, or article lifetime callbacks. Consequently the Python script
-can accurately express the motion IDs, input decision order, release phases,
-and Stone/Hammer behavior, but cannot yet provide source parity for victim
-consumption, item/star creation, copied-special dispatch, or hat cleanup.
+can accurately express the motion IDs, surface phase pairs, release phases,
+and exposed Stone/Hammer transitions, but cannot yet provide source parity for
+the neutral special's target-dependent input decision order, victim
+consumption, item/star creation, copied-special dispatch, or hat cleanup. The
+script leaves those branches native-owned because they depend on target
+objects, animation command variables, article creation, and copied-kind data.
 
 The next native seam should be this target/ability interface; extending generic
 grab with Kirby-specific item or copied-special logic would otherwise conflate
