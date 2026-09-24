@@ -52,11 +52,18 @@ class Needles(NeutralSpecial, DirectionalSpecial):
             return False
         return DirectionalSpecial.input_pressed(self, fighter, ctx)
 
-    @on.release(Button.B)
+    @on.release(Button.B, actions=(ground_loop, air_loop))
     def release(self, fighter: Fighter, ctx: Any) -> bool:
+        """Enter the throw phase only after the charge loop has started.
+
+        ``ftSk_SpecialNStart_IASA`` and its aerial counterpart are empty in
+        the source.  The input dispatcher therefore must not interpret an
+        early B release as an end transition while the held needle article is
+        still being created by the start animation.
+        """
         destination = {
-            self.ground_start: self.ground_end, self.ground_loop: self.ground_end,
-            self.air_start: self.air_end, self.air_loop: self.air_end,
+            self.ground_loop: self.ground_end,
+            self.air_loop: self.air_end,
         }.get(fighter.action)
         if destination is None:
             return False
