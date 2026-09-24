@@ -114,7 +114,21 @@ class YoungLinkSideSpecial(_FamilySideSpecial):
     @on.command_changed(0, actions=(ground, ground_empty, air, air_empty))
     def boomerang_release(self, fighter: Any, ctx: Any) -> None:
         """Forward native boomerang release to an article-aware host."""
-        if not getattr(getattr(ctx, "event", None), "value", False):
+        event = getattr(ctx, "event", None)
+        if not getattr(event, "value", False):
+            return
+        # ``ftLk_SpecialS2_IASA`` only releases the article after the native
+        # dash/smash command window accepts the directional input.  Keep the
+        # host callback optional, but preserve those source gates when a host
+        # provides the corresponding rules.
+        specials = getattr(getattr(ctx, "rules", None), "specials", None)
+        threshold = getattr(specials, "dash_smash_stick_threshold", None)
+        if threshold is not None:
+            stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+            if abs(stick[0]) < threshold:
+                return
+        window = getattr(specials, "dash_smash_window", None)
+        if window is not None and getattr(fighter, "action_frame", 0) > window:
             return
         update = getattr(fighter, "update_boomerang_trajectory", None)
         if callable(update):
@@ -128,8 +142,19 @@ class YoungLinkUpSpecial(_FamilyUpSpecial):
     air = _phase(357, attack="up.air")
     _ENTRY_NAMES = ("ground", "air")
     _ACTIVE_NAMES = ("ground", "air")
-    on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
+    # ``ftLk_SpecialAirHi_Anim`` enters FallSpecial with mobility enabled at
+    # animation end.  The generic family transition to plain Fall loses that
+    # aerial recovery state, so mirror Link's source callback here.
+    on_end = {ground: Transition(Action.WAIT)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
+    @on.animation_end(air)
+    def enter_fall_special(self, fighter: Any, ctx: Any) -> bool:
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            return False
+        enter(mobility=1)
+        return True
 
 
 class YoungLinkDownSpecial(_FamilyDownSpecial):
