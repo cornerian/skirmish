@@ -34,6 +34,7 @@ class DonkeyKongActionState(ActionState):
     command: tuple[int, int, int, int] = (0, 0, 0, 0)
     arm_swings: int = 0
     release_swings: int = 0
+    cancel_pending: bool = False
 
 
 def _dk_state(fighter: Fighter) -> DonkeyKongActionState:
@@ -110,6 +111,7 @@ class GiantPunch(NeutralSpecial):
         command = getattr(state, "command", None)
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, 0)
+        state.cancel_pending = False
         if fighter.action in (self.ground_start, self.air_start):
             state.release_swings = 0
 
@@ -159,11 +161,27 @@ class GiantPunch(NeutralSpecial):
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
         if fighter.action in self._CHARGE:
             input_state = getattr(ctx, "input", None)
-            if input_state is not None and not input_state.just_pressed(Button.B):
-                if input_state.just_pressed(Button.L) or input_state.just_pressed(Button.R):
-                    self.cancel_charge(fighter, ctx)
+            if input_state is not None:
+                if input_state.just_pressed(Button.B):
+                    self._release(fighter)
                     return True
-            self._release(fighter)
+                if input_state.just_pressed(Button.L) or input_state.just_pressed(Button.R):
+                    # ftDk_Special*NLoop_IASA latches LR in x0 and waits for
+                    # the loop animation's frame zero before entering the
+                    # cancel state.  Cancelling immediately skips that
+                    # boundary and changes the amount of charge the native
+                    # animation can expose to the host.
+                    state = _dk_state(fighter)
+                    state.cancel_pending = True
+                    if getattr(fighter, "action_frame", 1) == 0:
+                        self.cancel_charge(fighter, ctx)
+                    return True
+            else:
+                self._release(fighter)
+                return True
+            if _dk_state(fighter).cancel_pending and getattr(fighter, "action_frame", 1) == 0:
+                self.cancel_charge(fighter, ctx)
+                return True
             return True
         if fighter.action in self._ACTIVE:
             return True
