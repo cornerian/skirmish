@@ -92,6 +92,21 @@ class RaptorBoost(CaptainSideSpecial):
         if len(command) == 4:
             fighter.action_state.command = (command[0], command[1], command[2], 0)
 
+    @on.before_hit()
+    def before_hit(self, fighter, hit):
+        """Require the native start animation's command cue before detection.
+
+        ``ftCa_SpecialS_OnDetect`` gates both fighter and item detection on
+        ``cmd_vars[0]``.  A contact during the startup animation therefore
+        leaves Falcon in the startup state until the resource command arrives;
+        the shared family callback must not turn every contact into the
+        follow-through state.
+        """
+        command = getattr(getattr(fighter, "action_state", None), "command", ())
+        if not command or not command[0]:
+            return
+        super().before_hit(fighter, hit)
+
 
 class FalconKick(CaptainDownSpecial):
     ground = action(Action.SPECIAL_LW, slippi_state=357, animation=311, attack="down.ground")

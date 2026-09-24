@@ -518,6 +518,7 @@ class CaptainFalconTests(unittest.TestCase):
         ground.resource_value = SimpleNamespace(attributes=attributes)
         ground.velocity = [2.0, 3.0]
         ground.ground_velocity = 4.0
+        ground.action_state.command = (1, 0, 0, 0)
         move.before_hit(ground, SimpleNamespace())
         self.assertEqual(ground.action, move.ground)
         self.assertEqual(ground.velocity, (2.0, 0.0))
@@ -526,11 +527,13 @@ class CaptainFalconTests(unittest.TestCase):
         air = self.Fighter(move.air_start)
         air.resource_value = SimpleNamespace(attributes=attributes)
         air.velocity = [2.0, 3.0]
+        air.action_state.command = (1, 0, 0, 0)
         move.before_hit(air, SimpleNamespace())
         self.assertEqual(air.action, move.air)
         self.assertEqual(air.velocity, [2.0, 3.0])
 
         air_without_attributes = self.Fighter(move.air_start)
+        air_without_attributes.action_state.command = (1, 0, 0, 0)
         move.before_hit(air_without_attributes, SimpleNamespace())
         self.assertEqual(air_without_attributes.action, move.air)
 
@@ -540,8 +543,28 @@ class CaptainFalconTests(unittest.TestCase):
                                           specials_gr_vel_x=value)))
             untouched = self.Fighter(move.ground_start)
             untouched.resource_value = missing.resource(move.resource)
+            untouched.action_state.command = (1, 0, 0, 0)
             move.before_hit(untouched, SimpleNamespace())
         self.assertEqual(untouched.action, move.ground_start)
+
+    def test_raptor_boost_contact_waits_for_source_command_zero_cue(self):
+        """Source detection ignores startup contacts before cmd_vars[0]."""
+        captain = _load_captain()
+        move = captain.specials.side
+
+        no_cue = self.Fighter(move.ground_start)
+        no_cue.resource_value = SimpleNamespace(
+            attributes=SimpleNamespace(specials_gr_vel_x=0.75)
+        )
+        move.before_hit(no_cue, SimpleNamespace())
+        self.assertEqual(no_cue.action, move.ground_start)
+        self.assertEqual(no_cue.changes, [])
+
+        cue = self.Fighter(move.ground_start)
+        cue.resource_value = no_cue.resource_value
+        cue.action_state.command = (1, 0, 0, 0)
+        move.before_hit(cue, SimpleNamespace())
+        self.assertEqual(cue.action, move.ground)
 
     def test_raptor_boost_reads_fighter_resource_without_touching_hit_resource(self):
         captain = _load_captain()
@@ -556,6 +579,7 @@ class CaptainFalconTests(unittest.TestCase):
         fighter.resource_value = SimpleNamespace(attributes=attrs)
         fighter.velocity = [2.0, 3.0]
         fighter.ground_velocity = 4.0
+        fighter.action_state.command = (1, 0, 0, 0)
         move.before_hit(fighter, NativeHit())
         self.assertEqual(fighter.action, move.ground)
         self.assertEqual(fighter.ground_velocity, 2.0)

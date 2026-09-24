@@ -10,6 +10,14 @@ relative to the pinned checkout at
 
 ## Source callback chain
 
+The Raptor Boost start callback `ftCa_SpecialS_OnDetect` only accepts a
+fighter or eligible item contact after the animation command has set
+`cmd_vars[0]`.  A startup contact before that cue must leave Falcon in
+`SpecialSStart` / `SpecialAirSStart`; once the cue is present, grounded and
+airborne contacts enter `SpecialS` / `SpecialAirS` respectively.  This gate is
+independent of the later movement and landing callbacks and is represented by
+Captain's concrete `before_hit` callback.
+
 The entry callbacks are `ftCa_SpecialHi_Enter` and
 `ftCa_SpecialAirHi_Enter` in
 `src/melee/ft/kinds/ftCaptain/ftcaptainspecialhi.c`.  They select motion
