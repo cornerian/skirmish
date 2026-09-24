@@ -785,11 +785,40 @@ pub struct State {
     /// In-flight fired projectiles (`game::projectile`), included in
     /// checkpoints like every other match-state field.
     pub projectiles: Vec<projectile::Projectile>,
+    /// Next monotonic match-local article handle. Zero is reserved as invalid.
+    pub(crate) next_article_handle: u64,
     pub rng_seed: u32,
     pub attack_instances: crate::fighter::state::stale::InstanceCounter,
     /// Independent `plAttack_80037B08` sequence for fighter/item actions.
     pub action_instances: crate::fighter::state::instance::Counter,
     pub events: Vec<Event>,
+}
+
+impl State {
+    pub(crate) fn allocate_article_handle(&mut self) -> Result<projectile::ArticleHandle, Error> {
+        let raw = self.next_article_handle;
+        if raw == 0 {
+            return Err(Error::FrameOverflow);
+        }
+        self.next_article_handle = raw.checked_add(1).ok_or(Error::FrameOverflow)?;
+        Ok(projectile::ArticleHandle::from_raw(raw))
+    }
+
+    /// Resolve a stable handle without exposing vector indexing to callers.
+    pub fn projectile(&self, handle: projectile::ArticleHandle) -> Option<&projectile::Projectile> {
+        self.projectiles
+            .iter()
+            .find(|projectile| projectile.handle == handle)
+    }
+
+    pub fn projectile_mut(
+        &mut self,
+        handle: projectile::ArticleHandle,
+    ) -> Option<&mut projectile::Projectile> {
+        self.projectiles
+            .iter_mut()
+            .find(|projectile| projectile.handle == handle)
+    }
 }
 
 /// Borrowed state at the native post-physics, pre-contact-resolution boundary.

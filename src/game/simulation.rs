@@ -51,6 +51,7 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Res
             )?,
         ],
         projectiles: vec![],
+        next_article_handle: 1,
         rng_seed: seed,
         attack_instances,
         action_instances,

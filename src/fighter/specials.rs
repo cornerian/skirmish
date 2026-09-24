@@ -1041,6 +1041,7 @@ pub(crate) fn emit_projectiles(
                         }
                     };
                 let mut projectile = game::projectile::spawn(
+                    state.allocate_article_handle()?,
                     kind,
                     behavior,
                     player,
@@ -1077,6 +1078,7 @@ pub(crate) fn emit_projectiles(
         )?;
         for item in pending {
             let projectile = game::projectile::spawn(
+                state.allocate_article_handle()?,
                 item.kind,
                 game::projectile::ProjectileBehavior::Ray,
                 player,

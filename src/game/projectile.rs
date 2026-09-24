@@ -32,6 +32,28 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Stable identity for an in-flight article.
+///
+/// Handles are allocated by the match state and are never reused during a
+/// match.  They intentionally do not encode a projectile vector index, so a
+/// removal cannot make an old reference point at a different article.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct ArticleHandle(u64);
+
+impl ArticleHandle {
+    pub const INVALID: Self = Self(0);
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub(crate) const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
 /// A fully validated projectile command staged by a fighter lifecycle
 /// transaction. Keeping hitboxes typed avoids reparsing callback JSON during
 /// the post-fighter phase.
@@ -128,6 +150,8 @@ pub enum ProjectileBehavior {
 /// own item hitbox offsets are defined relative to the item's own root).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Projectile {
+    /// Stable match-local identity, independent of the projectile vector slot.
+    pub handle: ArticleHandle,
     pub kind: ProjectileKind,
     pub behavior: ProjectileBehavior,
     /// Player index (0/1) this projectile currently belongs to. Flips on a
@@ -205,6 +229,7 @@ fn facing_from_velocity(x: f32) -> f32 {
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn(
+    handle: ArticleHandle,
     kind: ProjectileKind,
     behavior: ProjectileBehavior,
     owner: usize,
@@ -222,6 +247,7 @@ pub(crate) fn spawn(
     let mut staling_identity = crate::fighter::state::stale::Entry::INACTIVE;
     staling_identity.change_move(move_id, attack_instances);
     Projectile {
+        handle,
         kind,
         behavior,
         owner,
@@ -823,10 +849,10 @@ fn step(
 #[cfg(test)]
 mod tests {
     use super::{
-        ArticleLaunch, GravityProjectileState, ProjectileBehavior, ProjectileContactPolicy,
-        ProjectileKind, ProjectilePersistence, ProjectileReflection, ProjectileShield, dot,
-        facing_from_velocity, gravity_step, normalize_angle, reset_ray_after_terrain_contact,
-        spawn, speed, surface_bounce, tick_lifetime,
+        ArticleHandle, ArticleLaunch, GravityProjectileState, ProjectileBehavior,
+        ProjectileContactPolicy, ProjectileKind, ProjectilePersistence, ProjectileReflection,
+        ProjectileShield, dot, facing_from_velocity, gravity_step, normalize_angle,
+        reset_ray_after_terrain_contact, spawn, speed, surface_bounce, tick_lifetime,
     };
     use crate::game::script::resources::ArticleId;
 
@@ -864,6 +890,7 @@ mod tests {
     fn gravity_article_spawn_owns_angle_and_speed_but_keeps_ray_distinct() {
         let mut instances = crate::fighter::state::stale::InstanceCounter::default();
         let gravity = spawn(
+            ArticleHandle::from_raw(1),
             ProjectileKind::Gravity(ArticleId::MARIO_FIRE),
             ProjectileBehavior::Gravity(GravityProjectileState {
                 gravity: 0.5,
@@ -886,6 +913,7 @@ mod tests {
         assert!(matches!(gravity.behavior, ProjectileBehavior::Gravity(_)));
 
         let ray = spawn(
+            ArticleHandle::from_raw(2),
             ProjectileKind::FoxLaser,
             ProjectileBehavior::Ray,
             0,
@@ -916,6 +944,7 @@ mod tests {
 
         let mut instances = crate::fighter::state::stale::InstanceCounter::default();
         let ray = spawn(
+            ArticleHandle::from_raw(3),
             ProjectileKind::FoxLaser,
             ProjectileBehavior::Ray,
             0,
@@ -952,6 +981,7 @@ mod tests {
     fn ray_terrain_contact_arms_one_frame_expiry() {
         let mut instances = crate::fighter::state::stale::InstanceCounter::default();
         let mut ray = spawn(
+            ArticleHandle::from_raw(4),
             ProjectileKind::FoxLaser,
             ProjectileBehavior::Ray,
             0,
@@ -972,6 +1002,7 @@ mod tests {
     fn lifetime_is_consumed_before_projectile_callbacks() {
         let mut instances = crate::fighter::state::stale::InstanceCounter::default();
         let mut projectile = spawn(
+            ArticleHandle::from_raw(5),
             ProjectileKind::FoxLaser,
             ProjectileBehavior::Ray,
             0,
@@ -986,5 +1017,44 @@ mod tests {
         assert!(tick_lifetime(&mut projectile));
         assert_eq!(projectile.lifetime, 0.0);
         assert!(tick_lifetime(&mut projectile));
+    }
+
+    #[test]
+    fn article_handles_are_stable_after_vector_removal_and_checkpoint_serialization() {
+        let first = spawn(
+            ArticleHandle::from_raw(1),
+            ProjectileKind::FoxLaser,
+            ProjectileBehavior::Ray,
+            0,
+            [0.0, 0.0, 0.0],
+            0.0,
+            1.0,
+            10.0,
+            Vec::new(),
+            1,
+            &mut crate::fighter::state::stale::InstanceCounter::default(),
+        );
+        let second = spawn(
+            ArticleHandle::from_raw(2),
+            ProjectileKind::FoxLaser,
+            ProjectileBehavior::Ray,
+            0,
+            [1.0, 0.0, 0.0],
+            0.0,
+            1.0,
+            10.0,
+            Vec::new(),
+            1,
+            &mut crate::fighter::state::stale::InstanceCounter::default(),
+        );
+        let first_handle = first.handle;
+        let second_handle = second.handle;
+        let mut live = vec![first, second];
+        live.remove(0);
+        assert_eq!(live.iter().find(|item| item.handle == first_handle), None);
+        assert_eq!(live[0].handle, second_handle);
+
+        let encoded = serde_json::to_value(&live[0]).expect("projectile checkpoint encoding");
+        assert_eq!(encoded["handle"], serde_json::json!(2));
     }
 }
