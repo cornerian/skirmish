@@ -57,16 +57,21 @@ spawns the emblem counter effect (effect 1296). This is contact/shield
 behavior, not a projectile article.
 
 Roy has no fighter-owned projectile article in these special callbacks. The
-only article-like work is the native counter shield/effect path above.
+only article-like work is the native counter shield/effect path above. Command
+variable 1 arms the descriptor during the start animation; the shield contact
+callback then changes 369/371 to 370/372. The script keeps those events
+separate so an armed Counter does not enter its hit phase before contact.
 
 ## Test vector
 
 Start grounded in state 342 with command tuple `(0, 0, 0, 0)` and deliver a
 command-trace event `(index=0, value=1)`: the expected destination is state
-344. Start grounded in state 349 with both A and B newly pressed and a positive
-vertical stick: the first event arms command variable 1; after command variable
-0 is set, the next A+B event selects state 350. A-only or B-only input must
-leave state 349 unchanged.
+344. Start grounded in state 369 with command variable 1 changing to one: the
+expected result is a registered shield while the fighter remains in state 369;
+only a shield contact enters state 370. Start grounded in state 349 with both A
+and B newly pressed and a positive vertical stick: the first event arms command
+variable 1; after command variable 0 is set, the next A+B event selects state
+350. A-only or B-only input must leave state 349 unchanged.
 
 ## Host gap
 

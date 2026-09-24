@@ -158,17 +158,28 @@ class Counter(EmblemDownSpecial):
     air = source_phase(371)
     air_hit = source_phase(372)
 
+    @on.action_enter(ground, air)
+    def reset_command_window(self, fighter, ctx) -> None:
+        """Clear the source command-1 latch when Counter starts."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", (0, 0, 0, 0))
+        if isinstance(command, (tuple, list)) and len(command) == 4:
+            state.command = (command[0], 0, command[2], command[3])
+
     @on.command_changed(1, actions=(ground, air))
     def command_changed(self, fighter, ctx) -> bool:
-        """Arm the source Counter shield and enter its hit phase.
+        """Arm the source Counter shield without changing motion yet.
 
         ``ftMs_SpecialLw_Anim`` raises command variable one at the authored
-        shield frame.  The native callback then installs the counter shield
-        descriptor and changes 369/371 to 370/372.  Keep registration
+        shield frame and installs the counter shield descriptor.  The
+        descriptor's contact callback changes 369/371 to 370/372 later;
+        command timing must not skip that armed window.  Keep registration
         optional so this callback remains usable by lightweight authoring
         harnesses while native hosts can expose the real descriptor.
         """
         if getattr(getattr(ctx, "event", None), "value", 0) != 1:
+            return False
+        if fighter.action not in (self.ground, self.air):
             return False
         descriptor = getattr(ctx, "shield_descriptor", None)
         if descriptor is None:
@@ -176,6 +187,12 @@ class Counter(EmblemDownSpecial):
         register = getattr(fighter, "register_counter_shield", None)
         if descriptor is not None and callable(register):
             register(descriptor)
+            return True
+        return False
+
+    @on.before_hit(actions=(ground, air))
+    def hit_contact(self, fighter, hit) -> bool:
+        """Enter the source hit phase only when the armed shield is struck."""
         if fighter.action == self.ground:
             fighter.change_action(self.ground_hit)
             return True

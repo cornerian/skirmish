@@ -104,13 +104,14 @@ class RoyTests(unittest.TestCase):
         self.assertTrue(move.choose_phase(fighter, both))
         self.assertEqual(fighter.action_state.command[1], 1)
 
-    def test_counter_command_one_registers_shield_and_enters_matching_hit_phase(self):
+    def test_counter_command_one_registers_shield_without_skipping_armed_phase(self):
         move = _load_roy().Roy.specials.down
         shield = object()
         calls = []
         for start, hit in ((move.ground, move.ground_hit), (move.air, move.air_hit)):
             fighter = SimpleNamespace(
                 action=start,
+                action_state=SimpleNamespace(command=(0, 0, 0, 0)),
                 register_counter_shield=calls.append,
             )
             fighter.change_action = lambda action, fighter=fighter: setattr(
@@ -120,8 +121,27 @@ class RoyTests(unittest.TestCase):
                 event=SimpleNamespace(value=1), shield_descriptor=shield
             )
             self.assertTrue(move.command_changed(fighter, context))
-            self.assertIs(fighter.action, hit)
+            self.assertIs(fighter.action, start)
         self.assertEqual(calls, [shield, shield])
+
+    def test_counter_contact_enters_matching_hit_phase_after_command_arming(self):
+        move = _load_roy().Roy.specials.down
+        for start, hit in ((move.ground, move.ground_hit), (move.air, move.air_hit)):
+            fighter = SimpleNamespace(action=start)
+            fighter.change_action = lambda action, fighter=fighter: setattr(
+                fighter, "action", action
+            )
+            self.assertTrue(move.hit_contact(fighter, SimpleNamespace()))
+            self.assertIs(fighter.action, hit)
+
+    def test_counter_entry_clears_command_one_latch(self):
+        move = _load_roy().Roy.specials.down
+        fighter = SimpleNamespace(
+            action=move.ground,
+            action_state=SimpleNamespace(command=(7, 1, 3, 4)),
+        )
+        move.reset_command_window(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (7, 0, 3, 4))
 
     def test_counter_command_callback_rejects_other_values_and_non_entry_phases(self):
         move = _load_roy().Roy.specials.down
