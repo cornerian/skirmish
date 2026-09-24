@@ -121,8 +121,52 @@ class Roll(NeutralSpecial):
     def release(self, fighter: Fighter, ctx) -> None:
         if fighter.action in (self.ground_loop, self.ground_full):
             fighter.change_action(self.ground_release, preserve_state=True, keep_frame=True)
+            self._seed_release_velocity(fighter, grounded=True)
         elif fighter.action in (self.air_loop, self.air_full):
             fighter.change_action(self.air_release, preserve_state=True, keep_frame=True)
+            self._seed_release_velocity(fighter, grounded=False)
+
+    @classmethod
+    def _seed_release_velocity(cls, fighter: Fighter, *, grounded: bool) -> None:
+        """Apply the source release speed when the host exposes Rollout state.
+
+        ``ftPr_SpecialN{,AirN}ChargeLoop_IASA`` seeds horizontal speed from
+        ``xC0 * (x2C - xA0)``.  ``action_state.charge`` is the script host's
+        optional representation of ``specialn.x2C``; if a lightweight host
+        does not expose it, the native bridge remains responsible for this
+        callback instead of guessing a charge value.
+        """
+        state = getattr(fighter, "action_state", None)
+        charge = getattr(state, "charge", None)
+        release = cls._attribute(
+            fighter, JigglypuffRolloutAttribute.RELEASE_VELOCITY
+        )
+        initial = cls._attribute(
+            fighter, JigglypuffRolloutAttribute.CHARGE_INITIAL
+        )
+        if (
+            charge is None
+            or release is None
+            or initial is None
+            or not validation.finite(charge)
+            or not validation.finite(release)
+            or not validation.finite(initial)
+        ):
+            return
+        speed = fighter.facing * release * (charge - initial)
+        if grounded:
+            if hasattr(fighter, "ground_velocity"):
+                fighter.ground_velocity = speed
+            return
+        velocity = getattr(fighter, "velocity", None)
+        vertical = (
+            velocity[1]
+            if isinstance(velocity, (tuple, list)) and len(velocity) > 1
+            else 0.0
+        )
+        setter = getattr(fighter, "set_velocity", None)
+        if callable(setter):
+            setter(speed, vertical)
 
     @staticmethod
     def _attribute(fighter, attribute, default=None):

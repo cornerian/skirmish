@@ -183,6 +183,33 @@ class JigglypuffTests(unittest.TestCase):
         self.assertEqual(fighter.ground_velocity, -3.0)
         self.assertEqual(fighter.facing, -1.0)
 
+    def test_roll_release_seeds_source_ground_and_air_velocity(self):
+        attributes = {
+            JigglypuffRolloutAttribute.RELEASE_VELOCITY: f32(2.0),
+            JigglypuffRolloutAttribute.CHARGE_INITIAL: f32(1.0),
+        }
+        roll = Roll()
+
+        ground = _PoundFighter(
+            Roll.ground_loop,
+            facing=-1.0,
+            attributes=attributes,
+        )
+        ground.action_state.charge = f32(3.0)
+        ground.ground_velocity = 0.0
+        roll.release(ground, None)
+        self.assertEqual(ground.ground_velocity, f32(-4.0))
+
+        air = _PoundFighter(
+            Roll.air_full,
+            facing=1.0,
+            attributes=attributes,
+        )
+        air.action_state.charge = f32(3.0)
+        air.velocity = (0.5, f32(-0.75))
+        roll.release(air, None)
+        self.assertEqual(air.velocity, (f32(4.0), f32(-0.75)))
+
     def test_roll_wall_callback_is_exported_and_tolerates_unmodeled_charge(self):
         roll = Roll()
         exported = export_definition(Jigglypuff).as_dict()
