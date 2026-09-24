@@ -5,6 +5,7 @@
 //! has to capture a foreign interpreter heap. The simulation owns applying the returned
 //! commands and hit patch transactionally.
 
+use crate::game::Action;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;

@@ -2263,7 +2263,7 @@ fn dispatch_script_phase(
         .active_move
         .filter(|owner| owner.matches(fighter.action, fighter.script_events.action_generation))
         .map(|owner| owner.behavior_index);
-    if !program.has_callback_for_action(hook, fighter.action, behavior_index, Some(resources)) {
+    if !program.has_callback_for_action(hook, fighter.action, behavior_index, Some(&resources)) {
         return Ok(());
     }
     let context = serde_json::json!({
