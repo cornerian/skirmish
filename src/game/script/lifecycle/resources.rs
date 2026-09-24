@@ -19,7 +19,9 @@ use crate::game::data::{FighterData, Hitbox, Rules};
 use crate::game::projectile::ProjectileKind;
 use crate::game::script::definition::ActionDefinition;
 use crate::game::script::resources::AttackId;
-use crate::game::script::resources::{ArticleId, ArticleResource, ProjectileContactPolicy};
+use crate::game::script::resources::{
+    ArticleId, ArticleResource, LuigiFireballContactPolicy, ProjectileContactPolicy,
+};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

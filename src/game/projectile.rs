@@ -334,6 +334,10 @@ fn surface_bounce(velocity: [f32; 2], normal: [f32; 3], surface_multiplier: f32)
     ]
 }
 
+fn luigi_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
+    speed <= threshold
+}
+
 /// Fox laser stage collision arms the native one-frame expiry timer instead
 /// of deleting the item from the collision callback (`itFoxlaser_UnkMotion1_Coll`:
 /// `it_80275158(item_gobj, 1.0F)`).  The host step returns immediately so the
@@ -939,6 +943,13 @@ mod tests {
         assert!(dot([0.0, -1.0, 0.0], normal) < 0.0);
         let outgoing = dot([0.0, 1.0, 0.0], normal);
         assert!(outgoing.partial_cmp(&0.0) != Some(std::cmp::Ordering::Less));
+    }
+
+    #[test]
+    fn luigi_fireball_terrain_policy_despawns_at_or_below_source_threshold() {
+        assert!(luigi_fireball_terrain_despawns(0.5, 0.5));
+        assert!(luigi_fireball_terrain_despawns(0.25, 0.5));
+        assert!(!luigi_fireball_terrain_despawns(0.5001, 0.5));
     }
 
     #[test]

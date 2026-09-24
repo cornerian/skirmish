@@ -402,6 +402,18 @@ pub struct ProjectileContactPolicy {
     pub persistence: ProjectilePersistence,
 }
 
+/// Luigi's item callback owns terrain handling separately from the shared
+/// gravity article bounce path.  The closed policy makes that distinction
+/// visible at registration rather than inferring it from a generic field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LuigiFireballContactPolicy {
+    /// `itLuigiFireball_Logic89_*`: damage, clank, shield hit and absorption
+    /// all return true; reflected and shield-bounced events delegate to the
+    /// item's native helpers.
+    SourceLogic89,
+}
+
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub struct Specials {
     pub character: String,
