@@ -157,9 +157,10 @@ class DescriptorTests(unittest.TestCase):
         self.assertEqual(SpecialAttributeLayout.KIRBY_STONE, 6)
         self.assertEqual(SpecialAttributeLayout.JIGGLYPUFF_ROLLOUT, 6)
         self.assertEqual(SpecialAttributeLayout.GAME_AND_WATCH, 21)
+        self.assertEqual(SpecialAttributeLayout.POPO_NANA, 22)
         self.assertEqual(
             SPECIAL_ATTRIBUTE_LAYOUTS,
-            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22},
         )
 
     def test_special_attribute_reference_preserves_typed_wire_shape(self):

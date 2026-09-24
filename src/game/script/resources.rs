@@ -572,6 +572,10 @@ pub const SPECIAL_ATTRIBUTE_LAYOUTS: &[SpecialAttributeLayout] = &[
         id: 21,
         owner: "Game & Watch (reserved)",
     },
+    SpecialAttributeLayout {
+        id: 22,
+        owner: "Popo / Nana",
+    },
 ];
 
 fn is_declared_special_attribute_layout(id: u8) -> bool {
@@ -977,7 +981,7 @@ mod tests {
     #[test]
     fn special_attribute_layout_registry_accepts_declared_exporter_ids() {
         for layout in [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22,
         ] {
             let value = json!({"layout": layout, "words": [[0, 1065353216]]});
             let attributes = serde_json::from_value::<super::SpecialAttributes>(value)

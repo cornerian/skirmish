@@ -27,6 +27,8 @@ class SpecialAttributeLayout(IntEnum):
     DR_MARIO = 20
     # Reserved for the raw exporter; it must not reuse layout 6.
     GAME_AND_WATCH = 21
+    POPO_NANA = 22
+    ICE_CLIMBERS = 22
 
 
 # Public immutable registry for exporter and validation code that needs the
