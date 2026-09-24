@@ -133,6 +133,12 @@ class SamusTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
         self.assertEqual(fighter.max_jumps_calls, 0)
 
+    def test_aerial_entry_exhausts_jumps_like_source(self):
+        move = ScrewAttack()
+        fighter = _Fighter(grounded=False)
+        self.assertTrue(move.input_pressed(fighter, _context(grounded=False)))
+        self.assertEqual(fighter.max_jumps_calls, 1)
+
     def test_ground_command_launches_airborne_and_consumes_once(self):
         move = ScrewAttack()
         fighter = _Fighter()
