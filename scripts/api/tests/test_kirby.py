@@ -186,6 +186,39 @@ class KirbySpecialTests(unittest.TestCase):
         fighter.action = inhale.ground
         self.assertFalse(inhale.release(fighter, SimpleNamespace()))
 
+    def test_inhale_copy_transfers_fighter_target_only_with_native_resource(self):
+        move = Inhale()
+        fighter = _Fighter()
+        fighter.action = move.ground_drink.action
+        fighter.victim_gobj = object()
+        fighter.victim_kind = 7
+        fighter.released = []
+        fighter.copied = []
+        fighter.release_victim = fighter.released.append
+        fighter.copy_special = fighter.copied.append
+        event = SimpleNamespace(value=1)
+        context = _context(resource="specials.copy")
+        context.event = event
+        move.copy_victim(fighter, context)
+        self.assertEqual(fighter.released, [fighter.victim_gobj])
+        self.assertEqual(fighter.copied, [7])
+        self.assertEqual(fighter.action_state.copy_kind, 7)
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
+        blocked = _Fighter()
+        blocked.action = move.ground_drink.action
+        blocked.victim_gobj = object()
+        blocked.victim_kind = 7
+        blocked.released = []
+        blocked.copied = []
+        blocked.release_victim = blocked.released.append
+        blocked.copy_special = blocked.copied.append
+        unavailable = _context(resource="neutral")
+        unavailable.event = event
+        move.copy_victim(blocked, unavailable)
+        self.assertEqual(blocked.released, [])
+        self.assertEqual(blocked.copied, [])
+
     def test_inhale_capture_and_article_phases_preserve_surface_frames(self):
         inhale = Inhale()
         pairs = (

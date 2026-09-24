@@ -35,6 +35,7 @@ class KirbyActionState(ActionState):
 
     command: tuple[int, int, int, int] = (0, 0, 0, 0)
     stone_remaining: int = 0
+    copy_kind: int | None = None
 
 
 class _KirbySpecial:
@@ -120,6 +121,41 @@ class Inhale(NeutralSpecial, _KirbySpecial):
             return False
         fighter.change_action(destination)
         return True
+
+    @hook.command_changed(0, actions=(ground_drink, air_drink))
+    def copy_victim(self, fighter: Fighter, ctx) -> None:
+        """Transfer a captured fighter into the host's Kirby copy seam.
+
+        ``ftKb_SpecialNDrink_Anim`` detaches the victim, derives its fighter
+        kind, and calls the copied-special initializer when command slot zero
+        is raised.  The portable layer can perform that transfer when a host
+        supplies the source-owned copy resource and both lifecycle callbacks.
+        Item consume and copied articles remain native-owned.
+        """
+        event = getattr(ctx, "event", None)
+        if getattr(event, "value", 0) != 1:
+            return
+        lookup = getattr(ctx, "resource", None)
+        if not callable(lookup) or lookup("specials.copy") is None:
+            return
+        victim = getattr(fighter, "victim_gobj", None)
+        if victim is None:
+            victim = getattr(ctx, "victim", None)
+        kind = getattr(fighter, "victim_kind", None)
+        if kind is None:
+            kind = getattr(ctx, "victim_kind", None)
+        release = getattr(fighter, "release_victim", None)
+        copy_special = getattr(fighter, "copy_special", None)
+        if victim is None or kind is None or not callable(release) or not callable(copy_special):
+            return
+        release(victim)
+        copy_special(kind)
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            state.copy_kind = kind
+            command = getattr(state, "command", ())
+            if isinstance(command, (tuple, list)) and len(command) >= 4:
+                state.command = (0, command[1], command[2], command[3])
 
     on_end = {
         ground: Transition(ground_loop),

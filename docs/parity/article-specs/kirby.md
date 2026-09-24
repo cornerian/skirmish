@@ -149,5 +149,12 @@ objects, animation command variables, article creation, and copied-kind data.
 
 The next native seam should be this target/ability interface; extending generic
 grab with Kirby-specific item or copied-special logic would otherwise conflate
-the source's fighter and item lifecycles. Stone's defensive temporary state is
-also native-only (`ftkirbyspeciallw.c:362-555`).
+the source's fighter and item lifecycles. The script now accepts that seam for
+the fighter consume branch when `specials.copy`, `release_victim`, and
+`copy_special` are all present: it releases the captured target, transfers its
+kind, records the copied kind, and consumes command slot zero. If the copy
+resource or either lifecycle callback is absent, the marker is left untouched
+for the native owner; item consume and copied article dispatch remain gated.
+Stock death cleanup still belongs to the native copy host, matching
+`ftKb_SpecialN_800F9070` and `ftKb_SpecialN_800F1BAC`. Stone's defensive
+temporary state is also native-only (`ftkirbyspeciallw.c:362-555`).
