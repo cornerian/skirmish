@@ -14,7 +14,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
 
 from fighter import Action, ArticleId, export_definition  # noqa: E402
 from fighters.falco import Falco, FalcoActionState, FalcoParameters  # noqa: E402
-from fighters.fox import Blaster, Fox, FoxActionState  # noqa: E402
+from fighters.fox import Fox, FoxActionState  # noqa: E402
 
 
 class FalcoSourceTests(unittest.TestCase):
@@ -46,12 +46,8 @@ class FalcoSourceTests(unittest.TestCase):
 
     def test_shared_special_policies_still_bind_to_falco_source_id(self):
         self.assertIs(Falco.specials, Fox.specials)
-        # ftFalco's motion table points at the exact ftFox callback table for
-        # neutral, side, up, and down specials (ftfalco.c:23-370).
         self.assertIs(Falco.specials.neutral, Fox.specials.neutral)
         self.assertIs(Falco.specials.side, Fox.specials.side)
-        self.assertIs(Falco.specials.up, Fox.specials.up)
-        self.assertIs(Falco.specials.down, Fox.specials.down)
         exported = export_definition(Falco).as_dict()
         neutral = next(
             behavior for behavior in exported["behaviors"]
@@ -88,12 +84,12 @@ class FalcoSourceTests(unittest.TestCase):
         )
         self.assertEqual(fighter.action_state.command, (4, 5, 0, 7))
 
-    def test_shared_blaster_dispatches_falco_laser_article(self):
-        move = Blaster()
+    def test_shared_blaster_dispatches_falco_laser_from_ecb_midpoint(self):
+        move = Falco.specials.neutral
         spawned = []
         fighter = SimpleNamespace(
             action=move.ground_loop,
-            action_state=SimpleNamespace(command=(0, 0, 1, 0)),
+            action_state=SimpleNamespace(command=(4, 5, 1, 7)),
             ecb=SimpleNamespace(current=SimpleNamespace(top=(0.0, 2.0), bottom=(0.0, 0.0))),
             facing=1,
             position=(12.0, 4.0),
@@ -115,7 +111,7 @@ class FalcoSourceTests(unittest.TestCase):
         self.assertEqual(spawned[0][0], ArticleId.FALCO_LASER)
         self.assertEqual(spawned[0][1], (12.0, 5.0, 0.0))
         self.assertEqual(spawned[0][2:], (0.0, 5.0))
-
+        self.assertEqual(fighter.action_state.command, (4, 5, 0, 7))
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,12 +58,12 @@ effect.  The neutral motion table in `ftFalco/ftfalco.c:23-120` and its aerial
 continuation at `:120-165` routes through the shared `ftFx_SpecialN*`
 callbacks (states 341-346).
 
-The portable script definition keeps this shared blaster callback.  The
-native launch position is obtained by transforming an offset through
-`FtPart_RThumbNb` (`ftFx_SpecialN_FtGetHoldJoint`, `ftfoxspecialn.c:34-44`),
-which requires the article-aware joint mapping exposed by the native host.
-The current script boundary exposes part origins only, so it does not claim
-that transformed Falco blaster launch position as parity.
+The native helper passes the transformed `FtPart_RThumbNb` position as the
+laser item's `prev_pos`, then `Item_InitRaySpawnPosition` overwrites the
+actual projectile position with the fighter's ECB midpoint.  The portable
+script boundary models that actual ECB midpoint and leaves the previous ray
+anchor unsupported until a semantic joint map is available; it does not use
+the raw bone ordinal as a projectile origin.
 
 ## Phantasm state and owner lifecycle
 
