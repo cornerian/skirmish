@@ -952,11 +952,12 @@ fn step(
 #[cfg(test)]
 mod tests {
     use super::{
-        ArticleHandle, ArticleLaunch, GravityProjectileState, ProjectileBehavior,
-        ProjectileContactPolicy, ProjectileKind, ProjectilePersistence, ProjectileReflection,
-        ProjectileShield, dot, facing_from_velocity, gravity_step, luigi_fireball_terrain_despawns,
-        mario_fireball_terrain_despawns, normalize_angle, reset_ray_after_terrain_contact,
-        source_fireball_hit_shield_despawns, spawn, speed, surface_bounce, tick_lifetime,
+        ArticleHandle, ArticleLaunch, GravityProjectileState, LUIGI_FIREBALL_TERRAIN_EFFECT_ID,
+        ProjectileBehavior, ProjectileContactPolicy, ProjectileKind, ProjectilePersistence,
+        ProjectileReflection, ProjectileShield, dot, facing_from_velocity, gravity_step,
+        luigi_fireball_terrain_despawns, mario_fireball_terrain_despawns, normalize_angle,
+        reset_ray_after_terrain_contact, source_fireball_hit_shield_despawns, spawn, speed,
+        surface_bounce, tick_lifetime,
     };
     use crate::game::script::resources::ArticleId;
 
