@@ -10,6 +10,9 @@ const CAPTAIN_EXTERNAL_ID: u8 = 0;
 const REPLAY: &[u8] = include_bytes!(
     "../../../tests/fixtures/slippi/01-marth-dr-mario-yoshi-captain-falcon-battlefield.slp"
 );
+const REPLAY_TWO: &[u8] = include_bytes!(
+    "../../../tests/fixtures/slippi/02-jigglypuff-bowser-zelda-falco-battlefield.slp"
+);
 
 #[test]
 fn captain_runtime_resolves_recorded_states_and_animation_metadata() {
@@ -254,13 +257,46 @@ fn actor_selective_observation_reads_captain_from_four_player_frame() {
 
     let mut missing_frame = frame.clone();
     missing_frame.actors.retain(|actor| actor.port != Port::P4);
-    let missing = observation::expected_for_ports(&missing_frame, &[Port::P4]).unwrap_err();
+    let missing =
+        observation::expected_for_ports(&missing_frame, &[Port::P4, Port::P1]).unwrap_err();
     assert!(missing.contains("missing leader P4"), "{missing}");
     let duplicate = observation::expected_for_ports(&frame, &[Port::P4, Port::P4]).unwrap_err();
     assert!(
         duplicate.contains("P4") && duplicate.contains("duplicated"),
         "{duplicate}"
     );
+}
+
+#[test]
+fn four_player_projection_and_controllers_preserve_replay_port_order() {
+    for replay_bytes in [REPLAY, REPLAY_TWO] {
+        let replay =
+            skirmish_replay::slippi::Replay::read(std::io::Cursor::new(replay_bytes)).unwrap();
+        let index = replay
+            .frame_indices(skirmish_replay::slippi::Timeline::LastRecorded)
+            .unwrap()[0];
+        let frame = replay.frame(index).unwrap();
+        let ports = [Port::P1, Port::P2, Port::P3, Port::P4];
+
+        let observations = observation::expected_for_ports(&frame, &ports).unwrap();
+        assert_eq!(
+            observations
+                .iter()
+                .map(|fighter| fighter.port)
+                .collect::<Vec<_>>(),
+            ports
+        );
+        let controllers = observation::controllers_for_ports(&frame, &ports).unwrap();
+        assert_eq!(controllers.len(), ports.len());
+        for (controller, port) in controllers.iter().zip(ports) {
+            let actor = frame
+                .actors
+                .iter()
+                .find(|actor| actor.port == port && !actor.follower)
+                .unwrap();
+            assert_eq!(controller.buttons, actor.pre.buttons_physical);
+        }
+    }
 }
 
 #[test]

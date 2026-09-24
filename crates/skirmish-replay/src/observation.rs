@@ -186,8 +186,11 @@ fn selected_actors<'a>(
     frame: &'a slippi::Frame,
     ports: &[Port],
 ) -> Result<Vec<&'a slippi::Actor>, String> {
-    if ports.is_empty() {
-        return Err("actor selectors must include at least one port".into());
+    if !(2..=4).contains(&ports.len()) {
+        return Err(format!(
+            "actor selectors must include between two and four ports, found {}",
+            ports.len()
+        ));
     }
 
     let mut selected = Vec::with_capacity(ports.len());
@@ -304,62 +307,76 @@ pub fn expected_for_ports(
         .collect()
 }
 
+fn controller(actor: &slippi::Actor) -> Result<game::Controller, String> {
+    let pre = &actor.pre;
+    let stick = [pre.joystick.x, pre.joystick.y];
+    let unsupported_physical = pre.buttons_physical & !BUTTONS;
+    let unsupported_logical =
+        pre.buttons & !(u32::from(BUTTONS) | MAIN_STICK_FLAGS | CSTICK_FLAGS | LOGICAL_TRIGGER);
+    if unsupported_physical != 0 || unsupported_logical != 0 {
+        return Err(format!(
+            "{} unsupported button bits: physical {unsupported_physical:#06x}, processed {unsupported_logical:#010x}",
+            actor.port
+        ));
+    }
+    let cstick = [pre.cstick.x, pre.cstick.y];
+    if stick
+        .iter()
+        .chain(&cstick)
+        .any(|axis| !axis.is_finite() || !(-1.0..=1.0).contains(axis))
+    {
+        return Err(format!(
+            "{} stick values must be finite and within [-1, 1]",
+            actor.port
+        ));
+    }
+    if [
+        pre.triggers,
+        pre.triggers_physical.l,
+        pre.triggers_physical.r,
+    ]
+    .into_iter()
+    .any(|value| !(0.0..=1.0).contains(&value))
+    {
+        return Err(format!(
+            "{} triggers must be finite and within [0, 1]",
+            actor.port
+        ));
+    }
+    let controller = game::Controller {
+        buttons: pre.buttons_physical,
+        stick,
+        cstick,
+        trigger: pre.triggers,
+    };
+    if pre.buttons & LOGICAL_TRIGGER != 0 && !controller.shield_held() {
+        return Err(format!(
+            "{} logical trigger flag has no matching pressure",
+            actor.port
+        ));
+    }
+    Ok(controller)
+}
+
+/// Returns controllers for two to four selected leader ports in selector order.
+/// The caller should pass the replay's actual occupied ports in its roster order;
+/// no port or player reordering is performed here.
+pub fn controllers_for_ports(
+    frame: &slippi::Frame,
+    ports: &[Port],
+) -> Result<Vec<game::Controller>, String> {
+    selected_actors(frame, ports)?
+        .into_iter()
+        .map(controller)
+        .collect()
+}
+
 pub fn controllers(
     frame: &slippi::Frame,
     ports: [Port; 2],
 ) -> Result<[game::Controller; 2], String> {
-    let convert = |actor: &slippi::Actor| {
-        let pre = &actor.pre;
-        let stick = [pre.joystick.x, pre.joystick.y];
-        let unsupported_physical = pre.buttons_physical & !BUTTONS;
-        let unsupported_logical =
-            pre.buttons & !(u32::from(BUTTONS) | MAIN_STICK_FLAGS | CSTICK_FLAGS | LOGICAL_TRIGGER);
-        if unsupported_physical != 0 || unsupported_logical != 0 {
-            return Err(format!(
-                "{} unsupported button bits: physical {unsupported_physical:#06x}, processed {unsupported_logical:#010x}",
-                actor.port
-            ));
-        }
-        let cstick = [pre.cstick.x, pre.cstick.y];
-        if stick
-            .iter()
-            .chain(&cstick)
-            .any(|axis| !axis.is_finite() || !(-1.0..=1.0).contains(axis))
-        {
-            return Err(format!(
-                "{} stick values must be finite and within [-1, 1]",
-                actor.port
-            ));
-        }
-        if [
-            pre.triggers,
-            pre.triggers_physical.l,
-            pre.triggers_physical.r,
-        ]
-        .into_iter()
-        .any(|value| !(0.0..=1.0).contains(&value))
-        {
-            return Err(format!(
-                "{} triggers must be finite and within [0, 1]",
-                actor.port
-            ));
-        }
-        let controller = game::Controller {
-            buttons: pre.buttons_physical,
-            stick,
-            cstick,
-            trigger: pre.triggers,
-        };
-        if pre.buttons & LOGICAL_TRIGGER != 0 && !controller.shield_held() {
-            return Err(format!(
-                "{} logical trigger flag has no matching pressure",
-                actor.port
-            ));
-        }
-        Ok(controller)
-    };
     let [first, second] = actors(frame, ports)?;
-    Ok([convert(first)?, convert(second)?])
+    Ok([controller(first)?, controller(second)?])
 }
 
 pub fn expected(frame: &slippi::Frame, ports: [Port; 2]) -> Result<Observation, String> {
