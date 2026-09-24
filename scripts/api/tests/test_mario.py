@@ -258,6 +258,36 @@ class MarioNeutralTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
         self.assertTrue(fighter.action_state.tornado_charge)
 
+    def test_tornado_aerial_completion_enters_authored_fall_special(self):
+        move = MarioTornado()
+        calls = []
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
+        attributes = SimpleNamespace(speciallw_landing_lag=18)
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(attributes=attributes)
+        )
+
+        self.assertTrue(move.finish_air(fighter, context))
+        self.assertEqual(calls, [{"mobility": 1, "landing_lag": 18}])
+
+    def test_tornado_aerial_completion_keeps_plain_fall_when_lag_is_zero(self):
+        move = MarioTornado()
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.enter_fall_special = lambda **kwargs: self.fail(
+            "zero landing lag must use ordinary Fall"
+        )
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(
+                attributes=SimpleNamespace(speciallw_landing_lag=0)
+            )
+        )
+        fighter.action_state.command = (0, 0, 0, 4)
+
+        self.assertFalse(move.finish_air(fighter, context))
+
     def test_entry_requires_resource_and_complete_animation_and_clears_slot(self):
         move = Fireball()
         fighter = _Fighter(complete=(343,))

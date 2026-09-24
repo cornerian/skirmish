@@ -195,8 +195,31 @@ class MarioTornado(DownSpecial, _SourcePair):
 
     @hook.animation_end(air)
     def finish_air(self, fighter: Fighter, ctx) -> bool:
-        """Process a tap cue still present on the source animation's last tick."""
-        return self._consume_air_tap(fighter)
+        """Process the final tap cue and source FallSpecial handoff.
+
+        ``ftMr_SpecialAirLw_Anim`` consumes command 1 before checking the
+        animation end.  A nonzero ``speciallw.landing_lag`` then enters
+        ``ftCo_80096900``; zero uses ordinary Fall.  The host owns the
+        resulting fall-special state, so leave the generic terminal path in
+        place when the authored value or host callback is unavailable.
+        """
+        tap_consumed = self._consume_air_tap(fighter)
+        attributes = resource_attributes(ctx, self.resource)
+        landing_lag = getattr(
+            attributes,
+            "speciallw_landing_lag",
+            getattr(attributes, "landing_lag", None),
+        )
+        enter = getattr(fighter, "enter_fall_special", None)
+        if (
+            isinstance(landing_lag, (int, float))
+            and not isinstance(landing_lag, bool)
+            and landing_lag != 0
+            and callable(enter)
+        ):
+            enter(mobility=1, landing_lag=landing_lag)
+            return True
+        return tap_consumed
 
 
 class Mario(Fighter):
