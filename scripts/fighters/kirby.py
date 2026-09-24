@@ -241,17 +241,17 @@ class FinalCutter(UpSpecial, _KirbySpecial):
         return True
 
     on_end = {
-        # The native ground callback enters the aerial travel phases after
-        # launch; the collision callback owns the optional grounded finish.
-        ground_start: Transition(air_rise),
-        ground_rise: Transition(air_fall),
+        # The source animation callbacks advance through each ground row in
+        # order.  The air rows have the same three-stage travel sequence.
+        ground_start: Transition(ground_rise),
+        ground_rise: Transition(ground_fall),
         # The descending travel rows finish through their matching source end
         # rows before reaching the ordinary grounded/airborne terminal state.
         ground_fall: Transition(ground_end),
-        air_fall: Transition(air_end),
-        ground_end: Transition(Action.WAIT),
         air_start: Transition(air_rise),
         air_rise: Transition(air_fall),
+        air_fall: Transition(air_end),
+        ground_end: Transition(Action.WAIT),
         air_end: Transition(Action.FALL),
     }
     on_ground, on_air = frame_preserving_surface_pairs(
@@ -278,18 +278,12 @@ class Stone(DownSpecial, _KirbySpecial):
 
     @hook.input_released(Button.B)
     def release(self, fighter: Fighter, ctx) -> bool:
-        """Release Stone after the source minimum hold duration."""
+        """Release Stone from either source hold row on B release."""
         destination = {
             self.ground_hold.action: self.ground_end,
             self.air_hold.action: self.air_end,
         }.get(fighter.action)
         if destination is None:
-            return False
-        minimum = getattr(
-            getattr(getattr(ctx, "rules", None), "specials", None),
-            "stone_min_hold_frames", None,
-        )
-        if minimum is None or fighter.action_frame < minimum:
             return False
         fighter.change_action(destination)
         return True
