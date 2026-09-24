@@ -74,10 +74,15 @@ States 367 and 368 share `ftMs_SpecialHi_Anim` and
 `ftMs_SpecialAirHi_Anim`. Animation completion enters `FallSpecial` with
 `allow_interrupt = false`, mobility `MarsAttributes::x28`, and landing lag
 `x2C` (`ftmarsspecialhi.c:58-86`). During IASA, horizontal stick input above
-`x34` updates the launch angle up to `x38`; the throw input can turn the fighter
-when the stick exceeds `x30` (`ftmarsspecialhi.c:90-139`). The travel physics
+`x34` updates the launch angle up to `x38`; the one-shot `throw_flags_b3` cue can
+turn the fighter when the stick strictly exceeds `x30`, including after command
+variable 0 has been consumed (`ftmarsspecialhi.c:90-139`). The travel physics
 uses command variable 2 to switch from launch motion to gravity and air drift
 (`ftmarsspecialhi.c:141-220`).
+
+The Python callback consumes an exposed `fighter.throw_flags_b3` (or context
+fallback) after applying that turn. The native host still owns the animation
+command that raises the flag and the resulting model-part rotation.
 
 ## Counter
 
