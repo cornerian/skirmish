@@ -99,13 +99,28 @@ class EmblemFamilyTests(unittest.TestCase):
         self.assertTrue(move.choose_phase(fighter, neutral))
         self.assertEqual(fighter.action, move.ground_4_neutral)
 
-    def test_counter_contact_callbacks_arm_native_hit_phase(self):
+    def test_counter_command_callback_is_present_without_claiming_contact(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
             module = _load(module_name)
             move = getattr(module, fighter_name).specials.down
             hooks = {event.hook.value for event in move.events()}
             self.assertIn("command_trace_changed", hooks)
             self.assertNotIn("before_hit", hooks)
+
+    def test_counter_command_only_registers_shield_and_preserves_start_phase(self):
+        for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
+            module = _load(module_name)
+            move = getattr(module, fighter_name).specials.down
+            fighter = self._Fighter(move.ground)
+            registered = []
+            fighter.register_counter_shield = registered.append
+            descriptor = object()
+            ctx = SimpleNamespace(
+                event=SimpleNamespace(value=1), shield_descriptor=descriptor,
+            )
+            self.assertTrue(move.command_changed(fighter, ctx))
+            self.assertEqual(registered, [descriptor])
+            self.assertEqual(fighter.action, move.ground)
 
     def test_neutral_command_zero_enters_fully_charged_end_phase(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):

@@ -51,7 +51,8 @@ physics remain data/native responsibilities.
 
 Counter uses states 369–372. `ftMs_SpecialLw_Anim`/`ftMs_SpecialAirLw_Anim`
 arm the native shield descriptor at `da->x64`; command variable 1 selects the
-hit states 370/372. `ftMars_SpecialLwHit_ApplyDamage` applies accumulated
+shield, while the native contact callback selects hit states 370/372.
+`ftMars_SpecialLwHit_ApplyDamage` applies accumulated
 counter damage to enabled capsules, and `ftMs_SpecialLw_80139140_inline`
 spawns the emblem counter effect (effect 1296). This is contact/shield
 behavior, not a projectile article.

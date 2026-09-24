@@ -168,15 +168,11 @@ class Counter(EmblemDownSpecial):
         if descriptor is None:
             descriptor = getattr(ctx, "counter_shield", None)
         register = getattr(fighter, "register_counter_shield", None)
-        if descriptor is not None and callable(register):
-            register(descriptor)
-        if fighter.action == self.ground:
-            fighter.change_action(self.ground_hit)
-            return True
-        if fighter.action == self.air:
-            fighter.change_action(self.air_hit)
-            return True
-        return False
+        if descriptor is None or not callable(register):
+            return False
+        register(descriptor)
+        # Native contact, not this command cue, enters ground_hit/air_hit.
+        return True
 
 
 class Roy(Fighter):
