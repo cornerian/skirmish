@@ -246,6 +246,17 @@ class MarioNeutralTests(unittest.TestCase):
             SimpleNamespace(event=SimpleNamespace(value=1)),
         )
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
+
+    def test_tornado_animation_end_consumes_late_aerial_tap(self):
+        move = MarioTornado()
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 1, 0, 4)
+
+        self.assertTrue(move.finish_air(fighter, object()))
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
 
     def test_entry_requires_resource_and_complete_animation_and_clears_slot(self):
         move = Fireball()
