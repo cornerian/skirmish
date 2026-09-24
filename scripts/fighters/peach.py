@@ -111,6 +111,25 @@ class PeachNeutralSpecial(NeutralSpecial, _PeachSpecial):
         target = self.ground_hit if fighter.action is self.ground else self.air_hit
         fighter.change_action(target)
 
+    @on.before_hit(actions=(ground, air))
+    def hit_contact(self, fighter: Any, hit: Any) -> None:
+        """Enter the source hit motion on the Toad shield contact edge.
+
+        ``ftPe_SpecialN`` installs ``onUnkHit`` as the shield collision
+        callback.  The callback changes to the ground or air hit motion and
+        restarts it at frame nine; a command trace only arms the shield.  The
+        command callback above remains useful to authoring harnesses that
+        model the legacy trace directly, while native contact dispatch uses
+        this explicit collision edge.
+        """
+        if fighter.action is self.ground:
+            # The portable transition ABI currently has no authored frame
+            # offset; the native callback's frame-nine restart remains a
+            # documented bridge limitation.
+            fighter.change_action(self.ground_hit)
+        elif fighter.action is self.air:
+            fighter.change_action(self.air_hit)
+
 
 class PeachSideSpecial(SideSpecial, _PeachSpecial):
     ground_start = source_phase(354)
