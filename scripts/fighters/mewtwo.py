@@ -295,9 +295,10 @@ class Confusion(SideSpecial, _MewtwoSpecial):
             _clear_command_slot(fighter, 1)
             state.confusion_grabbed = False
             _set_reflecting(fighter, False)
-        # The native air boost is one-shot across a ground/air phase
-        # transition; a fresh grounded entry starts a new Confusion.
-        if fresh_entry and fighter.action == self.ground:
+        # ``ftMt_SpecialAirS_AirToGround`` clears the boost latch.  This is
+        # independent of the fresh-entry reset because the source preserves
+        # the other Confusion latches across the surface transition.
+        if fighter.action == self.ground:
             state.confusion_air_boosted = False
         # ftMt_SpecialAirS_Enter applies the one-time air boost.  Resource
         # authors may expose it as ``side.attributes.air_boost``; absent data

@@ -288,6 +288,7 @@ class MewtwoScriptTests(unittest.TestCase):
         # only a fresh SpecialS entry resets them.
         fighter.action = move.ground
         move.enter(fighter, SimpleNamespace())
+        self.assertFalse(fighter.action_state.confusion_air_boosted)
         fighter.action = move.air
         move.enter(
             fighter,
@@ -302,6 +303,7 @@ class MewtwoScriptTests(unittest.TestCase):
         self.assertTrue(fighter.flags.reflecting)
         self.assertTrue(fighter.action_state.confusion_reflecting)
         self.assertEqual(fighter.velocity, (2.0, 7.0))
+        self.assertFalse(fighter.action_state.confusion_air_boosted)
 
     def test_confusion_fresh_aerial_entry_applies_authored_boost_once(self):
         move = self.module.Confusion()
