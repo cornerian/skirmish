@@ -122,33 +122,6 @@ class DolphinSlash(EmblemUpSpecial):
 
     @on.stick(actions=(ground, air))
     def steer(self, fighter, ctx) -> bool:
-        """Mirror the source Dolphin Slash horizontal steering callback."""
-        attributes = resource_attributes(ctx, self.resource)
-        command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
-        if attributes is None or command[0]:
-            return False
-        threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
-        maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
-        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
-        try:
-            horizontal = float(stick[0])
-        except (IndexError, KeyError, TypeError, ValueError):
-            return False
-        if threshold is None or maximum is None or abs(horizontal) <= threshold:
-            return False
-        denominator = 1.0 - threshold
-        if denominator <= 0.0:
-            return False
-        angle = float(maximum) * (abs(horizontal) - threshold) / denominator
-        angle = math.radians(angle if horizontal < 0.0 else -angle)
-        previous = float(getattr(fighter, "lstick_angle", 0.0))
-        if abs(angle) <= abs(previous):
-            return False
-        fighter.lstick_angle = angle
-        return True
-
-    @on.stick(actions=(ground, air))
-    def steer(self, fighter, ctx) -> bool:
         """Apply ``ftMs_SpecialHi_IASA``'s horizontal stick steering.
 
         The source stores the strongest requested launch angle in

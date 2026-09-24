@@ -39,7 +39,7 @@ and native collision callbacks remain host work unless the row says otherwise.
 ## Current evidence boundary
 
 At main commit `24ad570`, the Python suite had 409 tests. This aggregate
-branch has 444 tests after the corrected Rollout and Stone scaffolds plus the
+branch has 446 tests after the corrected Rollout and Stone scaffolds plus the
 reviewed fighter audits. The merged
 source-backed callbacks cover additional command resets, release gates,
 ground/air and terminal transitions, charge state, counter routing, and
