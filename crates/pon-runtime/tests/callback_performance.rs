@@ -168,9 +168,10 @@ fn bundled_module_root_recapture_profile() {
     }
     assert_eq!(snapshot_checksum, visitor_checksum);
     eprintln!(
-        "pon-root-recapture-ab pin=ab9067dbd2899c64c4d67a4bc27b8ad49472b126 recaptures={} samples={} snapshot_median_ns={} snapshot_p95_ns={} visitor_median_ns={} visitor_p95_ns={} snapshot_samples_ns={:?} visitor_samples_ns={:?} scoped_allocations=unavailable",
+        "pon-root-recapture-ab pin=ab9067dbd2899c64c4d67a4bc27b8ad49472b126 recaptures_per_sample={} samples={} total_recaptures_per_arm={} snapshot_median_ns={} snapshot_p95_ns={} visitor_median_ns={} visitor_p95_ns={} snapshot_samples_ns={:?} visitor_samples_ns={:?} scoped_allocations=unavailable",
         RECAPTURES,
         SAMPLES,
+        RECAPTURES * SAMPLES,
         median_nanos(&snapshot_samples),
         percentile_nanos(&snapshot_samples, 95),
         median_nanos(&visitor_samples),
