@@ -566,13 +566,16 @@ fn step(
             });
         } else if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior {
             if state.projectiles[index].kind == ProjectileKind::LuigiFire {
+                // `it_8026D9A0` writes the common collision position before
+                // the source callback evaluates its speed threshold. Keep
+                // that ordering even when the threshold consumes the item.
+                state.projectiles[index].position = contact.position;
                 if luigi_fireball_terrain_despawns(
                     speed(state.projectiles[index].velocity),
                     gravity.terrain_stop_speed,
                 ) {
                     return Ok(Outcome::Despawn);
                 }
-                state.projectiles[index].position = contact.position;
                 state.events.push(Event::ProjectileTerrainEffect {
                     owner,
                     effect_id: LUIGI_FIREBALL_TERRAIN_EFFECT_ID,
@@ -1003,6 +1006,38 @@ mod tests {
     #[test]
     fn luigi_fireball_terrain_contact_uses_source_effect() {
         assert_eq!(LUIGI_FIREBALL_TERRAIN_EFFECT_ID, 1288);
+    }
+
+    #[test]
+    fn luigi_fireball_despawn_keeps_common_contact_position_update() {
+        let mut instances = crate::fighter::state::stale::InstanceCounter::default();
+        let mut projectile = spawn(
+            ArticleHandle::from_raw(6),
+            ProjectileKind::LuigiFire,
+            ProjectileBehavior::Gravity(GravityProjectileState {
+                gravity: 0.0,
+                terminal_velocity: 2.0,
+                surface_multiplier: 1.0,
+                terrain_stop_speed: 0.5,
+                half_life: 30.0,
+                contact: CONTACT,
+            }),
+            0,
+            [1.0, 2.0, 0.0],
+            0.0,
+            0.25,
+            30.0,
+            Vec::new(),
+            37,
+            &mut instances,
+        );
+        let contact_position = [4.0, 5.0, 0.0];
+        projectile.position = contact_position;
+        assert!(luigi_fireball_terrain_despawns(
+            speed(projectile.velocity),
+            0.5
+        ));
+        assert_eq!(projectile.position, contact_position);
     }
 
     #[test]
