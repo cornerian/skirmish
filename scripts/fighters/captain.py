@@ -144,7 +144,9 @@ class FalconKick(CaptainDownSpecial):
         rebound state.
         """
         command = getattr(getattr(fighter, "action_state", None), "command", ())
-        if not command or not command[0]:
+        # ftCa_SpecialLw_Coll owns the rebound branch; the aerial collision
+        # callbacks (ftCa_SpecialAirLw_Coll and its end states) do not.
+        if fighter.action is not self.ground or not command or not command[0]:
             return False
         # ``ftCa_SpecialLw_Coll`` only rebounds from the wall in the fighter's
         # facing direction: Captain facing right uses the left-wall flag and

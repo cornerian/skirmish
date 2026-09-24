@@ -606,6 +606,16 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(fighter.command_at_change, [(0, 0, 0, 0)])
         self.assertIn(str(getattr(fighter.action, "reference", fighter.action)), {"Source.363", "Source.0:363"})
 
+        aerial = self.Fighter(move.air)
+        aerial.action_state.command = (1, 0, 0, 0)
+        self.assertFalse(
+            move.wall_rebound(
+                aerial,
+                SimpleNamespace(wall=SimpleNamespace(normal=(-1.0, 0.0, 0.0))),
+            )
+        )
+        self.assertIs(aerial.action, move.air)
+
     def test_special_entries_consume_stale_command_slots(self):
         captain = _load_captain()
         for move, action in (
