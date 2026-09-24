@@ -70,7 +70,7 @@ class PKFlash(NeutralSpecial, _NessSpecial):
     air = air_start
     _ACTIVE = (
         ground_start, ground_hold, ground_release,
-        air_start, air_hold, air_release,
+        ground_end, air_start, air_hold, air_release, air_end,
     )
 
     @hook.input_released(Button.B)

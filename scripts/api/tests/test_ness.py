@@ -214,6 +214,21 @@ class NessTests(unittest.TestCase):
             move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
             self.assertEqual(fighter.action, grounded)
 
+    def test_pk_flash_end_consumes_special_input_until_terminal_animation_finishes(self):
+        # ftNs_SpecialNEnd_IASA is an empty callback.  The terminal release
+        # motion therefore remains a Ness special action for its full
+        # animation; a fresh B press must not re-enter PK Flash during it.
+        move = PKFlash()
+        for phase in (move.ground_end, move.air_end):
+            fighter = _Fighter(phase)
+            self.assertTrue(
+                move.input_pressed(
+                    fighter,
+                    _context(resource="neutral", grounded=phase is move.ground_end),
+                )
+            )
+            self.assertEqual(fighter.action, phase)
+
 
 if __name__ == "__main__":
     unittest.main()
