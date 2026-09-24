@@ -6,12 +6,27 @@ is the fighter data and article kind, so the policy objects remain shared while
 the state and parameters are named explicitly for the Falco source module.
 """
 
-from skirmish import ArticleId, Fighter
+from skirmish import Action, ArticleId, Fighter, hook
 
 if __package__:
-    from .fox import Fox, FoxActionState, FoxParameters
+    from .fox import Fox, FoxActionState, FoxParameters, Illusion
 else:  # Native source bundles execute each fighter as a top-level module.
-    from fox import Fox, FoxActionState, FoxParameters
+    from fox import Fox, FoxActionState, FoxParameters, Illusion
+
+
+class FalcoIllusion(Illusion):
+    """Falco's shared Phantasm callback with the native end transition."""
+
+    @hook.animation_end(*Illusion._DASH_PHASES, Illusion.air_end, Illusion.ground_end)
+    def animation_end(self, fighter, ctx) -> None:
+        # ftFx_SpecialSEnd_Anim calls the common grounded wait transition when
+        # the Phantasm end animation finishes.  Keep it explicit here because
+        # the shared policy's callback only covered the aerial fall-special
+        # path, leaving Falco's grounded end state without a transition.
+        if fighter.action == self.ground_end:
+            fighter.change_action(Action.WAIT)
+            return
+        super().animation_end(fighter, ctx)
 
 
 class FalcoActionState(FoxActionState):
@@ -37,7 +52,7 @@ class Falco(Fighter):
     # The host projectile boundary models the laser's actual ECB midpoint
     # spawn; the native hand joint is only the item's previous ray anchor and
     # requires a semantic joint map that this script layer does not expose.
-    specials = Fox.specials
+    specials = Fox.specials.replace(side=FalcoIllusion())
 
 
-__all__ = ["Falco", "FalcoActionState", "FalcoParameters"]
+__all__ = ["Falco", "FalcoActionState", "FalcoParameters", "FalcoIllusion"]

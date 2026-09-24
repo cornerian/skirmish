@@ -45,9 +45,9 @@ class FalcoSourceTests(unittest.TestCase):
         )
 
     def test_shared_special_policies_still_bind_to_falco_source_id(self):
-        self.assertIs(Falco.specials, Fox.specials)
+        self.assertIsNot(Falco.specials, Fox.specials)
         self.assertIs(Falco.specials.neutral, Fox.specials.neutral)
-        self.assertIs(Falco.specials.side, Fox.specials.side)
+        self.assertIsInstance(Falco.specials.side, Fox.specials.side.__class__)
         exported = export_definition(Falco).as_dict()
         neutral = next(
             behavior for behavior in exported["behaviors"]
@@ -83,6 +83,18 @@ class FalcoSourceTests(unittest.TestCase):
             [(ArticleId.FALCO_PHANTASM, (12.0, 4.0, 0.0), -1)],
         )
         self.assertEqual(fighter.action_state.command, (4, 5, 0, 7))
+
+    def test_phantasm_ground_end_transitions_to_wait(self):
+        move = Falco.specials.side
+        transitions = []
+        fighter = SimpleNamespace(
+            action=move.ground_end,
+            change_action=lambda action: transitions.append(action),
+        )
+
+        move.animation_end(fighter, SimpleNamespace())
+
+        self.assertEqual(transitions, [Action.WAIT])
 
     def test_shared_blaster_dispatches_falco_laser_from_ecb_midpoint(self):
         move = Falco.specials.neutral

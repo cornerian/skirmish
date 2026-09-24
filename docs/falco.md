@@ -9,6 +9,15 @@ callbacks, so this is wiring and data, not new game logic.
 
 ## What Falco shares vs. what is his own
 
+### Phantasm grounded end transition
+
+The shared `ftFx_SpecialSEnd_Anim` callback transitions a completed grounded
+Illusion/Phantasm end animation to `Wait`; its aerial counterpart enters
+`FallSpecial`. Falco keeps the same callback family, with the Falco script
+binding this grounded transition explicitly so a completed Phantasm cannot
+remain in the terminal end state. This matches `ftfoxspecials.c` lines
+467-484 at pinned revision `0bac93a5`.
+
 `ftFc_Init_MotionStateTable[ftFx_MS_SelfCount]` (`src/melee/ft/kinds/
 ftFalco/ftfalco.c:23-370`) is Falco's own motion-state table, and every one
 of its ~30 special-move entries (`ftFx_MS_SpecialNStart`..`ftFx_MS_
