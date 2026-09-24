@@ -66,11 +66,10 @@ class DarkDive(CaptainUpSpecial):
     # native collision callback can enter it for the wall rebound branch.
     throw_rebound = source_phase(363, animation=317)
 
-    @on.animation_end()
+    @on.animation_end(throw_rebound)
     def animation_end_rebound(self, fighter, ctx):
         """Finish the source wall-rebound motion into ordinary falling."""
-        if fighter.action == self.throw_rebound:
-            fighter.change_action(Action.FALL)
+        fighter.change_action(Action.FALL)
 
 
 class WizardFoot(CaptainDownSpecial):
