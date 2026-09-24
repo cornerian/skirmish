@@ -179,6 +179,14 @@ class IceClimbersTests(unittest.TestCase):
             move.enter(fighter, _context())
             self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
 
+    def test_blizzard_entry_clears_source_article_command_slots(self):
+        export_definition(IceClimbers)
+        move = IceClimbers.specials.down
+        for phase in (move.ground, move.air):
+            fighter = _Fighter(phase)
+            move.enter(fighter, _context())
+            self.assertEqual(fighter.action_state.command, (0, 6, 5, 0))
+
     def test_belay_partner_command_branches_require_native_partner_facts(self):
         export_definition(IceClimbers)
         up = IceClimbers.specials.up

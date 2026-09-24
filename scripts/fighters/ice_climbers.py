@@ -184,6 +184,23 @@ class Blizzard(DownSpecial, DirectionalSpecial):
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground, on_air = frame_preserving_surface_pairs(ground, ground, air, air)
 
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Clear the source command latches on both Blizzard entries.
+
+        ``ftPp_SpecialLw_Enter`` and ``ftPp_SpecialAirLw_Enter`` clear
+        ``cmd_vars[0]`` and ``cmd_vars[3]`` before the article callback is
+        installed. Preserve the other command slots owned by the host.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and command:
+            values = list(command)
+            for index in (0, 3):
+                if index < len(values):
+                    values[index] = 0
+            state.command = type(command)(values) if isinstance(command, tuple) else values
+
 
 class IceClimbers(Fighter):
     specials = Fighter.specials.replace(
