@@ -114,6 +114,7 @@ class ZeldaSpecialTests(unittest.TestCase):
 
         ctx = SimpleNamespace(event=SimpleNamespace(value=1))
         move.reflect_command(fighter, ctx)
+        self.assertEqual(fighter.action_state.command, (2, 2, 3, 4))
         self.assertTrue(fighter.flags.reflecting)
 
         ctx.event.value = 0

@@ -39,17 +39,24 @@ class Nayru(NeutralSpecial, DirectionalSpecial):
     def reflect_command(self, fighter: Fighter, ctx: object) -> None:
         """Mirror ``ftZd_SpecialN_Anim``'s command-0 reflect latch.
 
-        The native callback creates the reflect volume at command value 1 and
-        clears the fighter's reflecting state when command 0 is observed. The
-        volume and hit routing remain native host responsibilities.
+        The native callback consumes command value 1 by rewriting it to 2,
+        creates the reflect volume, and clears the fighter's reflecting state
+        when command 0 is observed. The volume and hit routing remain native
+        host responsibilities.
         """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
         flags = getattr(fighter, "flags", None)
-        if flags is None or not hasattr(flags, "reflecting"):
-            return
         value = getattr(getattr(ctx, "event", None), "value", 0)
         if value == 1:
+            if isinstance(command, (tuple, list)) and command:
+                state.command = (2, *command[1:])
+            if flags is None or not hasattr(flags, "reflecting"):
+                return
             flags.reflecting = True
         elif value == 0:
+            if flags is None or not hasattr(flags, "reflecting"):
+                return
             flags.reflecting = False
 
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
