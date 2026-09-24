@@ -187,6 +187,24 @@ class IceClimbersTests(unittest.TestCase):
             move.enter(fighter, _context())
             self.assertEqual(fighter.action_state.command, (0, 6, 5, 0))
 
+    def test_squall_entry_clears_all_source_command_slots(self):
+        """Popo's Squall entries reset cmd_vars[0..3] before partner choice."""
+        export_definition(IceClimbers)
+        move = IceClimbers.specials.side
+        for phase in (move.ground_start, move.air_start):
+            fighter = _Fighter(phase)
+            move.enter(fighter, _context())
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
+    def test_belay_entry_clears_only_source_command_slots(self):
+        """Belay entry clears cmd_vars[0..2] and preserves slot 3."""
+        export_definition(IceClimbers)
+        move = IceClimbers.specials.up
+        for phase in (move.ground_start_0, move.air_start_0):
+            fighter = _Fighter(phase)
+            move.enter(fighter, _context())
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
     def test_belay_partner_command_branches_require_native_partner_facts(self):
         export_definition(IceClimbers)
         up = IceClimbers.specials.up

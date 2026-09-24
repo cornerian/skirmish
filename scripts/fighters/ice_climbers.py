@@ -135,6 +135,22 @@ class SquallHammer(SideSpecial, DirectionalSpecial):
         ground_start, ground_partner, air_start, air_partner
     )
 
+    @on.action_enter(ground_start, air_start)
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Clear Squall's four source command latches on entry.
+
+        ``ftPp_SpecialS_Enter`` and ``ftPp_SpecialAirS_Enter`` reset
+        ``cmd_vars[0..3]`` before choosing the Popo/Nana row.  The host owns
+        the companion choice and article state; this callback only mirrors
+        the fighter-owned command reset.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)):
+            values = [0] * min(len(command), 4)
+            values.extend(command[4:])
+            state.command = type(command)(values) if isinstance(command, tuple) else values
+
 class Belay(UpSpecial, DirectionalSpecial):
     """Belay's ten Popo rows; companion selection remains native-owned.
 
@@ -202,6 +218,22 @@ class Belay(UpSpecial, DirectionalSpecial):
     # contact; they do not become the matching grounded source rows.
     on_ground[air_throw_1] = Transition(Action.SPECIAL_HI_LANDING)
     on_ground[air_throw_2] = Transition(Action.SPECIAL_HI_LANDING)
+
+    @on.action_enter(ground_start_0, air_start_0)
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Clear Belay's source command latches on ground and air entry.
+
+        ``ftPp_SpecialHi_Enter`` and its aerial counterpart clear
+        ``cmd_vars[0..2]``.  Command slot 3 belongs to another source path
+        and is preserved here.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)):
+            values = list(command)
+            for index in range(min(3, len(values))):
+                values[index] = 0
+            state.command = type(command)(values) if isinstance(command, tuple) else values
 
     @on.command_changed(2, actions=(ground_start_0, air_start_0))
     def partner_fallback(self, fighter: Any, ctx: MoveContext) -> None:
