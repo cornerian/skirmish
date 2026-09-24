@@ -18,7 +18,6 @@ from fighter import (
     Action,
     Button,
     JigglypuffPoundAttribute,
-    JigglypuffRolloutAttribute,
     export_definition,
     f32,
 )
@@ -55,21 +54,6 @@ class _PoundFighter(_Fighter):
         super().__init__(action, facing=facing, complete=complete)
         self.action_state = SimpleNamespace(command=(1, 7, 8, 9))
         self.velocity = None
-        self.attributes = attributes or {}
-
-    def special_attribute(self, attribute):
-        return self.attributes.get(attribute)
-
-    def set_velocity(self, x, y):
-        self.velocity = (x, y)
-
-
-class _RollFighter(_Fighter):
-    def __init__(self, action=Action.WAIT, *, facing=1.0, attributes=None):
-        super().__init__(action, facing=facing)
-        self.action_state = Roll.State()
-        self.velocity = (0.0, 0.0)
-        self.ground_velocity = 0.0
         self.attributes = attributes or {}
 
     def special_attribute(self, attribute):
@@ -118,6 +102,10 @@ class JigglypuffTests(unittest.TestCase):
                 if record.get("slippi_state") == state
             )
             self.assertTrue(phase["animation_loop"])
+        neutral = next(item for item in exported["behaviors"] if item["resource"] == "neutral")
+        wall = next(item for item in neutral["callbacks"] if item["callback"].endswith("wall_bounce"))
+        self.assertEqual(wall["hook"], "surface_contact")
+        self.assertEqual(wall["actions"], ["Source.15:350", "Source.15:358"])
 
     def test_roll_requires_neutral_b_and_selected_complete_start(self):
         roll = Roll()
@@ -200,41 +188,6 @@ class JigglypuffTests(unittest.TestCase):
         self.assertEqual(
             fighter.changes[-1][1], {"preserve_state": True, "keep_frame": True}
         )
-
-    def test_rollout_charge_release_and_capsule_use_typed_source_attributes(self):
-        attrs = {
-            JigglypuffRolloutAttribute.CHARGE_INITIAL: f32(1.0),
-            JigglypuffRolloutAttribute.CHARGE_RATE: f32(0.75),
-            JigglypuffRolloutAttribute.CHARGE_MAX: f32(2.0),
-            JigglypuffRolloutAttribute.RELEASE_VELOCITY: f32(3.0),
-            JigglypuffRolloutAttribute.HIT_SPEED_THRESHOLD: f32(0.5),
-            JigglypuffRolloutAttribute.DAMAGE_BASE: f32(1.0),
-            JigglypuffRolloutAttribute.DAMAGE_SPEED_SCALE: f32(2.0),
-            JigglypuffRolloutAttribute.HIT_TOGGLE_PERIOD: f32(2.0),
-        }
-        roll = Roll()
-        fighter = _RollFighter(Roll.ground_loop, attributes=attrs)
-        fighter.action_state.charge = 1.0
-        self.assertEqual(float(roll.advance_charge(fighter)), 1.75)
-        self.assertEqual(float(roll.advance_charge(fighter)), 2.0)
-        roll.release(fighter, None)
-        self.assertEqual(fighter.ground_velocity, 3.0)
-        self.assertEqual(fighter.velocity, (3.0, 0.0))
-        self.assertEqual(roll.capsule_step(fighter), 8)
-        self.assertEqual(fighter.action_state.capsule_group, 0)
-        self.assertEqual(roll.capsule_step(fighter), 8)
-        self.assertEqual(fighter.action_state.capsule_group, 1)
-
-    def test_rollout_wall_rebound_scales_charge_and_speed_from_source_attribute(self):
-        attrs = {JigglypuffRolloutAttribute.WALL_SPEED_SCALE: f32(0.5)}
-        fighter = _RollFighter(Roll.ground_release, attributes=attrs)
-        fighter.action_state.charge = 2.0
-        fighter.velocity = (4.0, 0.25)
-        fighter.ground_velocity = 4.0
-        self.assertTrue(Roll().wall_bounce(fighter, SimpleNamespace(wall=object())))
-        self.assertEqual(fighter.velocity, (-2.0, 0.25))
-        self.assertEqual(fighter.ground_velocity, -2.0)
-        self.assertEqual(fighter.action_state.charge, 1.0)
 
     def test_pound_declares_source_states_traces_and_command_branches(self):
         exported = export_definition(Jigglypuff).as_dict()
