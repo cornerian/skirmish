@@ -88,6 +88,19 @@ class Pichu(Fighter):
     specials = ELECTRIC_SPECIALS
 
 
+def thunder_jolt_article_id(*, aerial: bool = False) -> ArticleId:
+    """Select the Jolt kind passed by Pichu's shared neutral callback.
+
+    ``ftPk_SpecialN_Anim`` and ``ftPk_SpecialAirN_Anim`` both pass
+    ``pika_attr->specialn_itkind`` to ``itPikachuThunderJolt_Spawn``.  Pichu
+    registers a distinct air article in ``ftPc_Init_OnLoad``, but the aerial
+    callback still selects the grounded kind.  Keep that source behavior
+    explicit rather than choosing the air registration from the phase.
+    """
+    del aerial
+    return PichuParameters.thunder_jolt_ground_article_id
+
+
 def up_special_effect_offset(
     random_x: float = 0.0,
     random_y: float = 0.0,
@@ -118,4 +131,5 @@ __all__ = [
     "Agility",
     "Thunder",
     "up_special_effect_offset",
+    "thunder_jolt_article_id",
 ]

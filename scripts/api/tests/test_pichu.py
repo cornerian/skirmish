@@ -15,7 +15,12 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
 
 from fighter import Action, ArticleId, Button, export_definition
 from fighters.pikachu import Pikachu
-from fighters.pichu import Pichu, PichuParameters, up_special_effect_offset
+from fighters.pichu import (
+    Pichu,
+    PichuParameters,
+    thunder_jolt_article_id,
+    up_special_effect_offset,
+)
 
 
 class _Fighter:
@@ -203,6 +208,20 @@ class PichuTests(unittest.TestCase):
                         terminal=terminal,
                     )
                 )
+
+    def test_aerial_thunder_jolt_keeps_native_ground_article_kind(self):
+        self.assertEqual(
+            thunder_jolt_article_id(aerial=False),
+            PichuParameters().thunder_jolt_ground_article_id,
+        )
+        self.assertEqual(
+            thunder_jolt_article_id(aerial=True),
+            PichuParameters().thunder_jolt_ground_article_id,
+        )
+        self.assertNotEqual(
+            PichuParameters().thunder_jolt_ground_article_id,
+            PichuParameters().thunder_jolt_air_article_id,
+        )
 
 
 if __name__ == "__main__":
