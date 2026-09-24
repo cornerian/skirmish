@@ -1168,12 +1168,73 @@ pub fn builtin_action_for_slippi_state(character: Option<u8>, state_id: u32) -> 
         .and_then(|definition| definition.action_for_slippi_state(state_id))
 }
 
+/// The CSS id and private module filename are stable resource identity, so
+/// keep their routing metadata independent from the compiled definitions.
+/// This lets replay observation compile only the fighter it actually asks
+/// for instead of eagerly compiling the entire roster.
+#[derive(Debug)]
+struct BuiltinIdentity {
+    external_id: u8,
+    filename: &'static str,
+    definition: OnceLock<Definition>,
+}
+
+const fn builtin_identity(external_id: u8, filename: &'static str) -> BuiltinIdentity {
+    BuiltinIdentity {
+        external_id,
+        filename,
+        definition: OnceLock::new(),
+    }
+}
+
+static BUILTIN_IDENTITIES: [BuiltinIdentity; 26] = [
+    builtin_identity(0, "captain.py"),
+    builtin_identity(1, "donkey_kong.py"),
+    builtin_identity(2, "fox.py"),
+    builtin_identity(3, "game_and_watch.py"),
+    builtin_identity(4, "kirby.py"),
+    builtin_identity(5, "bowser.py"),
+    builtin_identity(6, "link.py"),
+    builtin_identity(7, "luigi.py"),
+    builtin_identity(8, "mario.py"),
+    builtin_identity(9, "marth.py"),
+    builtin_identity(10, "mewtwo.py"),
+    builtin_identity(11, "ness.py"),
+    builtin_identity(12, "peach.py"),
+    builtin_identity(13, "pikachu.py"),
+    builtin_identity(14, "ice_climbers.py"),
+    builtin_identity(15, "jigglypuff.py"),
+    builtin_identity(16, "samus.py"),
+    builtin_identity(17, "yoshi.py"),
+    builtin_identity(18, "zelda.py"),
+    builtin_identity(19, "sheik.py"),
+    builtin_identity(20, "falco.py"),
+    builtin_identity(21, "young_link.py"),
+    builtin_identity(22, "dr_mario.py"),
+    builtin_identity(23, "roy.py"),
+    builtin_identity(24, "pichu.py"),
+    builtin_identity(25, "ganondorf.py"),
+];
+
 fn builtin_definition(character: Option<u8>) -> Option<&'static Definition> {
     let id = character?;
-    static REGISTRY: OnceLock<Registry> = OnceLock::new();
-    REGISTRY
-        .get_or_init(|| Registry::builtins().expect("bundled fighter definitions must load"))
-        .by_external_id(id)
+    let identity = BUILTIN_IDENTITIES.get(usize::from(id))?;
+    Some(identity.definition.get_or_init(|| {
+        let assets = AssetStore::builtins();
+        let source = assets
+            .get(identity.filename)
+            .unwrap_or_else(|| panic!("missing builtin {}", identity.filename));
+        let definition = Definition::load_registered(source, &assets).unwrap_or_else(|error| {
+            panic!("builtin {} failed to load: {error}", identity.filename)
+        });
+        assert_eq!(
+            definition.manifest.external_ids,
+            [identity.external_id],
+            "builtin {} has stale external-id metadata",
+            identity.filename
+        );
+        definition
+    }))
 }
 
 #[cfg(test)]
@@ -1491,6 +1552,19 @@ mod tests {
                 dependencies.get(builtin.filename).map(String::as_str),
                 Some(builtin.source)
             );
+        }
+    }
+
+    #[test]
+    fn builtin_identity_catalog_matches_embedded_sources() {
+        assert_eq!(BUILTIN_IDENTITIES.len(), script::BUILTIN_SCRIPTS.len());
+        for identity in &BUILTIN_IDENTITIES {
+            let source = script::BUILTIN_SCRIPTS
+                .iter()
+                .find(|builtin| builtin.filename == identity.filename)
+                .unwrap_or_else(|| panic!("missing source for {}", identity.filename));
+            assert_eq!(source.filename, identity.filename);
+            assert!(!source.character_key.is_empty());
         }
     }
 
