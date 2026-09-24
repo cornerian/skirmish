@@ -261,6 +261,15 @@ class YoungLinkAppeal(Move):
         event = getattr(ctx, "event", None)
         value = getattr(event, "value", None)
         if value == 1:
+            active = getattr(fighter, "appeal_milk_active", None)
+            if active is None:
+                has_article = getattr(fighter, "has_active_article", None)
+                if callable(has_article):
+                    active = has_article("young_link_milk")
+            # Native ftCl checks x18 before creating milk.  An absent host
+            # fact cannot prove that x18 is NULL, so fail closed.
+            if active is None or active:
+                return
             spawn = getattr(fighter, "spawn_appeal_milk", None)
             if callable(spawn):
                 spawn(ctx)

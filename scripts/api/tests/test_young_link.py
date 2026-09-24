@@ -93,6 +93,7 @@ class YoungLinkTests(unittest.TestCase):
     def test_c_link_appeal_command_values_bound_milk_lifecycle(self):
         move = YoungLinkAppeal()
         fighter = _Fighter()
+        fighter.appeal_milk_active = False
         events = []
         fighter.spawn_appeal_milk = lambda ctx: events.append(("spawn", ctx))
         fighter.cleanup_appeal_milk = lambda ctx: events.append(("cleanup", ctx))
@@ -110,6 +111,31 @@ class YoungLinkTests(unittest.TestCase):
             SimpleNamespace(event=SimpleNamespace(value=0)),
         )
         self.assertEqual([kind for kind, _ in events], ["spawn", "cleanup"])
+
+    def test_c_link_appeal_does_not_duplicate_existing_milk(self):
+        move = YoungLinkAppeal()
+        fighter = _Fighter()
+        fighter.appeal_milk_active = True
+        spawned = []
+        fighter.spawn_appeal_milk = lambda ctx: spawned.append(ctx)
+
+        move.milk_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=1)),
+        )
+        self.assertEqual(spawned, [])
+
+    def test_c_link_appeal_fails_closed_without_milk_fact(self):
+        move = YoungLinkAppeal()
+        fighter = _Fighter()
+        spawned = []
+        fighter.spawn_appeal_milk = lambda ctx: spawned.append(ctx)
+
+        move.milk_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=1)),
+        )
+        self.assertEqual(spawned, [])
 
     def test_source_move_classes_keep_article_boundary_and_resources(self):
         for root, move_type in (
