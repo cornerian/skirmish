@@ -275,6 +275,19 @@ class IceClimbersTests(unittest.TestCase):
             )
             self.assertEqual(fighter.action, "Source.14:348")
 
+        # Once the generic resolver exists, stale legacy facts cannot override
+        # a missing same-port partner.
+        fighter = _Fighter("Source.14:348")
+        up.partner_launch(
+            fighter,
+            SimpleNamespace(
+                event=_Event(1),
+                partner_launching=True,
+                entity_at_index=lambda index: None,
+            ),
+        )
+        self.assertEqual(fighter.action, "Source.14:348")
+
         class Partner:
             available = True
             motion_state = 361

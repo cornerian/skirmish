@@ -27,6 +27,7 @@ from skirmish import (
 
 
 _MISSING = object()
+_NO_RESOLVER = object()
 
 
 def _partner_projection(ctx: Any) -> Any | None:
@@ -39,7 +40,7 @@ def _partner_projection(ctx: Any) -> Any | None:
     """
     resolve = getattr(ctx, "entity_at_index", None)
     if not callable(resolve):
-        return None
+        return _NO_RESOLVER
     try:
         partner = resolve(1)
     except Exception:
@@ -54,11 +55,13 @@ def _partner_available(ctx: Any) -> bool | None:
     current hosts should expose ``EntityProjection.available`` instead.
     """
     partner = _partner_projection(ctx)
+    if partner is _NO_RESOLVER:
+        legacy = getattr(ctx, "partner_available", _MISSING)
+        return legacy if isinstance(legacy, bool) else None
     if partner is not None:
         value = getattr(partner, "available", _MISSING)
         return value if isinstance(value, bool) else None
-    legacy = getattr(ctx, "partner_available", _MISSING)
-    return legacy if isinstance(legacy, bool) else None
+    return None
 
 
 def _partner_launching(ctx: Any) -> bool | None:
@@ -69,13 +72,15 @@ def _partner_launching(ctx: Any) -> bool | None:
     compatibility shim when no generic projection exists.
     """
     partner = _partner_projection(ctx)
+    if partner is _NO_RESOLVER:
+        legacy = getattr(ctx, "partner_launching", _MISSING)
+        return legacy if isinstance(legacy, bool) else None
     if partner is not None:
         motion_state = getattr(partner, "motion_state", _MISSING)
         if isinstance(motion_state, bool) or not isinstance(motion_state, int):
             return None
         return 362 <= motion_state <= 366
-    legacy = getattr(ctx, "partner_launching", _MISSING)
-    return legacy if isinstance(legacy, bool) else None
+    return None
 
 
 class IceShot(NeutralSpecial, DirectionalSpecial):
