@@ -245,6 +245,15 @@ class GameAndWatchTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.panic_release_damage, 22.0)
         self.assertEqual(fighter.action_state.panic_damage, 0.0)
 
+    def test_oil_panic_turns_at_source_deadzone(self):
+        move = OilPanic()
+        fighter = _Fighter(move.ground)
+        fighter.facing = 1.0
+        context = _context(stick=(-0.8, 0.0))
+        context.panic_stick_deadzone = 0.3
+        self.assertTrue(move.steer(fighter, context))
+        self.assertEqual(fighter.facing, -1.0)
+
     def test_oil_panic_uses_retained_full_charge_when_context_omits_charge(self):
         move = OilPanic()
         fighter = _Fighter()

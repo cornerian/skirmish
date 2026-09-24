@@ -354,6 +354,40 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
         state = _fighter_state(fighter)
         state.panic_release_damage = 0.0
 
+    @on.stick(actions=(ground, air))
+    def steer(self, fighter: Any, ctx: Any) -> bool:
+        """Mirror Oil Panic's source-facing turn at the stick boundary.
+
+        ``ftGw_SpecialLw_IASA`` updates facing only outside the native common
+        horizontal deadzone.  The source also counts down a native IASA
+        turn-frame cooldown; the authoring API exposes stick changes but no
+        per-frame IASA callback, so that fighter-owned countdown remains a
+        host concern.  The common deadzone is supplied by the host because it
+        is not a Game & Watch special attribute.
+        """
+        rules = getattr(getattr(ctx, "rules", None), "specials", None)
+        threshold = getattr(ctx, "panic_stick_deadzone", None)
+        if threshold is None:
+            threshold = getattr(rules, "horizontal_stick_deadzone", None)
+        attrs = _resource_attributes(ctx, "down.attributes")
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        try:
+            horizontal = float(stick[0])
+            threshold = float(threshold)
+            facing = float(fighter.facing)
+        except (IndexError, KeyError, TypeError, ValueError, AttributeError):
+            return False
+        if not all(value == value and abs(value) != float("inf")
+                   for value in (horizontal, threshold)):
+            return False
+        if abs(horizontal) <= threshold:
+            return False
+        target = 1.0 if horizontal > 0.0 else -1.0
+        if facing == target:
+            return False
+        fighter.facing = target
+        return True
+
     @on.animation_end(ground_catch, air_catch)
     def catch_animation_end(self, fighter: Any, ctx: Any) -> None:
         """Finish the absorb animation like ``SpecialLwCatch_Anim``.
