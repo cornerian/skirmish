@@ -3040,6 +3040,28 @@ pub fn module_object_attr_values(module_object: *mut PyObject) -> Option<Vec<*mu
     Some(unsafe { (&*module).attrs.values().copied().collect() })
 }
 
+/// Visit all attribute values held by one original module object without
+/// allocating a snapshot vector.
+///
+/// Callers use this while a parked module is being rooted.  Keeping the
+/// import-state lock across the visit is intentional: the callback only
+/// publishes already-owned pointers and must not re-enter module mutation.
+pub fn for_each_module_object_attr(
+    module_object: *mut PyObject,
+    mut visit: impl FnMut(*mut PyObject),
+) -> Option<()> {
+    let state = IMPORT_STATE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let module = module_from_object_locked(&state, module_object)?;
+    // SAFETY: The import state proved the `PyModuleObject` layout.  Values are
+    // copied while the import-state lock prevents the namespace from changing.
+    for value in unsafe { (&*module).attrs.values() } {
+        visit(*value);
+    }
+    Some(())
+}
+
 pub fn store_active_module_attr(name: u32, value: *mut PyObject) -> bool {
     let Some(module) = active_module_object() else {
         return false;
@@ -3463,6 +3485,31 @@ mod tests {
             crate::types::function::function_module(native_function),
             Some(intern(&installed_module))
         );
+    }
+
+    #[test]
+    fn module_attribute_visit_matches_snapshot_without_changing_bindings() {
+        let _guard = test_state_lock();
+        let _reset = ResetImportStateOnDrop;
+        unsafe {
+            assert_eq!(pon_runtime_init(), 0);
+        }
+        let module_name = format!(
+            "pon_attr_visit_{}_{}",
+            process::id(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let first = unsafe { crate::abi::pon_const_int(17) };
+        let second = unsafe { crate::abi::pon_const_int(29) };
+        let module = install_module(
+            &module_name,
+            [(intern("first"), first), (intern("second"), second)],
+        )
+        .unwrap();
+        let expected = module_object_attr_values(module).unwrap();
+        let mut visited = Vec::new();
+        assert!(for_each_module_object_attr(module, |value| visited.push(value)).is_some());
+        assert_eq!(visited, expected);
     }
 
     #[test]

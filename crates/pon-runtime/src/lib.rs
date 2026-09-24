@@ -1404,14 +1404,11 @@ impl InvocationScope<'_> {
 /// Pon module objects are immortal descriptor boxes; their namespace values
 /// therefore need explicit roots when a bundle is parked outside sys.modules.
 fn root_module_values(roots: &mut safety::PersistentRoots, module: *mut PyObject) {
-    // This is a fresh bounded snapshot. Duplicate roots are harmless and
-    // avoid an O(n²) linear membership scan across large SDK namespaces.
+    // Duplicate roots are harmless and avoid an O(n²) linear membership scan
+    // across large SDK namespaces. Visit the live namespace in place so the
+    // callback path does not allocate a temporary Vec for every module.
     roots.push(module);
-    if let Some(values) = pon_runtime::import::module_object_attr_values(module) {
-        for value in values {
-            roots.push(value);
-        }
-    }
+    let _ = pon_runtime::import::for_each_module_object_attr(module, |value| roots.push(value));
 }
 
 fn diagnostic() -> String {
