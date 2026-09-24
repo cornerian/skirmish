@@ -68,7 +68,7 @@ def _button_held(ctx: Any, button: Button) -> bool:
     return bool(held_buttons)
 
 
-def _judge_phase(ctx: Any) -> int:
+def _judge_phase(ctx: Any, retained_rows: Any = ()) -> int:
     """Resolve the native Judge roll when the host exposes its source data.
 
     ``ftGw_SpecialS_GetRandomInt`` excludes the previous two rows and rolls
@@ -88,7 +88,12 @@ def _judge_phase(ctx: Any) -> int:
         return 1
     if isinstance(roll, bool) or not isinstance(roll, int) or roll < 0:
         return 1
-    excluded = set(previous) if isinstance(previous, (tuple, list, set)) else set()
+    excluded = {
+        value
+        for values in (previous, retained_rows)
+        for value in (values if isinstance(values, (tuple, list, set, frozenset)) else (values,))
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 9
+    }
     if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in weights):
         return 1
     total = sum(weight for index, weight in enumerate(weights) if index not in excluded)
@@ -239,8 +244,12 @@ class Judge(SideSpecial):
         ):
             return False
 
-        phase_number = _judge_phase(ctx)
         state = _fighter_state(fighter)
+        # The native fighter excludes both x222C_judgeVar1 (the last row)
+        # and x2230_judgeVar2 (the row before it).  Keep host-provided
+        # exclusions as well, then update the pair only after selecting the
+        # new weighted row.
+        phase_number = _judge_phase(ctx, (state.judge_current, state.judge_previous))
         state.judge_previous = state.judge_current
         state.judge_current = phase_number - 1
         phases = self._SURFACE_PAIRS[phase_number - 1]
