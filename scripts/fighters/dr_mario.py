@@ -86,7 +86,23 @@ class SuperSheet(SideSpecial, _SourcePair):
         if flags is None or not hasattr(flags, "reflecting"):
             return
         event = getattr(ctx, "event", None)
-        flags.reflecting = bool(getattr(event, "value", 0))
+        # The native callback tests cmd_vars[1] == 1.  Treating every
+        # nonzero trace value as active leaves the reflector latched for
+        # malformed or future command values.
+        flags.reflecting = getattr(event, "value", 0) == 1
+
+    @hook.action_exit(ground, air)
+    def exit(self, fighter: Fighter, ctx) -> None:
+        """Clear reflection when the side-special phase actually ends.
+
+        Ground/air surface transitions preserve the source reflection latch;
+        leaving both side-special phases resets it with the cape lifecycle.
+        """
+        if fighter.action in (self.ground, self.air):
+            return
+        flags = getattr(fighter, "flags", None)
+        if flags is not None and hasattr(flags, "reflecting"):
+            flags.reflecting = False
 
     @hook.projectile_contact
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:

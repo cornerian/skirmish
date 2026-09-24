@@ -138,8 +138,23 @@ class DrMarioSpecialTests(unittest.TestCase):
 
         move.reflect_command(fighter, type("Context", (), {"event": Event()})())
         self.assertTrue(fighter.flags.reflecting)
+        Event.value = 2
+        move.reflect_command(fighter, type("Context", (), {"event": Event()})())
+        self.assertFalse(fighter.flags.reflecting)
         Event.value = 0
         move.reflect_command(fighter, type("Context", (), {"event": Event()})())
+        self.assertFalse(fighter.flags.reflecting)
+
+    def test_cape_exit_clears_stale_reflection_but_surface_transfer_preserves_it(self):
+        move = DrMario.specials.side
+        fighter = _Fighter()
+        fighter.flags.reflecting = True
+        fighter.action = move.air
+        move.exit(fighter, object())
+        self.assertTrue(fighter.flags.reflecting)
+
+        fighter.action = Action.WAIT
+        move.exit(fighter, object())
         self.assertFalse(fighter.flags.reflecting)
 
     def test_up_entry_clears_command_zero_and_throw_flags(self):
