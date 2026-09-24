@@ -273,6 +273,53 @@ class MewtwoScriptTests(unittest.TestCase):
         move.grab_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
         self.assertTrue(fighter.action_state.confusion_grabbed)
 
+    def test_confusion_surface_transition_preserves_reflect_and_air_boost_latch(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.confusion_active = True
+        fighter.action_state.confusion_reflecting = True
+        fighter.flags.reflecting = True
+        fighter.action_state.confusion_air_boosted = True
+        fighter.action_state.command = (1, 2, 3, 4)
+        fighter.velocity = (2.0, 7.0)
+
+        # Source AirToGround/GroundToAir handlers preserve these latches;
+        # only a fresh SpecialS entry resets them.
+        fighter.action = move.ground
+        move.enter(fighter, SimpleNamespace())
+        fighter.action = move.air
+        move.enter(
+            fighter,
+            SimpleNamespace(
+                resource=lambda path: SimpleNamespace(air_boost=12.0)
+                if path == "side.attributes"
+                else None,
+            ),
+        )
+
+        self.assertEqual(fighter.action_state.command, (1, 2, 3, 4))
+        self.assertTrue(fighter.flags.reflecting)
+        self.assertTrue(fighter.action_state.confusion_reflecting)
+        self.assertEqual(fighter.velocity, (2.0, 7.0))
+
+    def test_confusion_fresh_aerial_entry_applies_authored_boost_once(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.air
+
+        move.enter(
+            fighter,
+            SimpleNamespace(
+                resource=lambda path: SimpleNamespace(air_boost=8.0)
+                if path == "side.attributes"
+                else None,
+            ),
+        )
+
+        self.assertEqual(fighter.velocity, (2.0, 8.0))
+        self.assertTrue(fighter.action_state.confusion_air_boosted)
+
     def test_disable_and_teleport_keep_source_local_state(self):
         disable = self.module.Disable()
         fighter = _Fighter()

@@ -47,6 +47,7 @@ class MewtwoActionState(ActionState):
     confusion_reflecting: bool = False
     confusion_grabbed: bool = False
     confusion_air_boosted: bool = False
+    confusion_active: bool = False
     teleport_active: bool = False
 
 
@@ -274,24 +275,39 @@ class Confusion(SideSpecial, _MewtwoSpecial):
     _ACTIVE = (ground, air)
     _ENTRY = (ground, air)
 
+    @hook.input_pressed(Button.B, Button.L, Button.R)
+    def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        # Ground/air phase changes preserve the source motion variables.  A
+        # later fresh B dispatch must still re-run the entry reset.
+        if fighter.action not in self._ACTIVE:
+            _fighter_state(fighter).confusion_active = False
+        return super().input_pressed(fighter, ctx)
+
     @hook.action_enter(ground, air)
     def enter(self, fighter: Any, ctx: Any) -> None:
         state = _fighter_state(fighter)
+        fresh_entry = not getattr(state, "confusion_active", False)
         # ftMt_SpecialS_Enter and ftMt_SpecialAirS_Enter clear cmd_vars[0] and
         # cmd_vars[1]. The remaining command slots belong to the shared
         # animation stream and must survive the entry boundary.
-        _clear_command_slot(fighter, 0)
-        _clear_command_slot(fighter, 1)
-        state.confusion_grabbed = False
-        _set_reflecting(fighter, False)
+        if fresh_entry:
+            _clear_command_slot(fighter, 0)
+            _clear_command_slot(fighter, 1)
+            state.confusion_grabbed = False
+            _set_reflecting(fighter, False)
         # The native air boost is one-shot across a ground/air phase
         # transition; a fresh grounded entry starts a new Confusion.
-        if fighter.action == self.ground:
+        if fresh_entry and fighter.action == self.ground:
             state.confusion_air_boosted = False
         # ftMt_SpecialAirS_Enter applies the one-time air boost.  Resource
         # authors may expose it as ``side.attributes.air_boost``; absent data
         # deliberately leaves the host's current velocity untouched.
-        if fighter.action == self.air and not getattr(state, "confusion_air_boosted", False) and hasattr(fighter, "set_velocity"):
+        if (
+            fresh_entry
+            and fighter.action == self.air
+            and not getattr(state, "confusion_air_boosted", False)
+            and hasattr(fighter, "set_velocity")
+        ):
             lookup = getattr(ctx, "resource", None)
             attrs = lookup("side.attributes") if lookup is not None else None
             boost = getattr(attrs, "air_boost", None)
@@ -299,6 +315,7 @@ class Confusion(SideSpecial, _MewtwoSpecial):
                 velocity = getattr(fighter, "velocity", (0.0, 0.0))
                 fighter.set_velocity(velocity[0], boost)
                 state.confusion_air_boosted = True
+        state.confusion_active = True
 
     @hook.command_changed(0, actions=(ground, air))
     def grab_command(self, fighter: Any, ctx: Any) -> None:
@@ -327,6 +344,10 @@ class Confusion(SideSpecial, _MewtwoSpecial):
         elif value == 2:
             _set_reflecting(fighter, False)
             _clear_command_slot(fighter, 1)
+
+    @hook.animation_end(ground, air)
+    def end_confusion(self, fighter: Any, ctx: Any) -> None:
+        _fighter_state(fighter).confusion_active = False
 
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
