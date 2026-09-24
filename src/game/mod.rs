@@ -756,6 +756,13 @@ pub enum Event {
     ProjectileReflected {
         owner: usize,
     },
+    /// Source `itMariofireball_UnkMotion0_Coll` effect 1147 emitted after a
+    /// non-terminal terrain contact.
+    ProjectileEffect {
+        owner: usize,
+        projectile_kind: projectile::ProjectileKind,
+        effect_id: u16,
+    },
     Knockout {
         player: usize,
         stocks: u8,

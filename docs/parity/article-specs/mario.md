@@ -91,7 +91,8 @@ the B0 queue drains it after fighter callbacks.
 The source callback coverage still has explicit limits. `DmgDealt`,
 `Clanked`, `HitShield`, and `Absorbed` retain the shared projectile result
 path; `Reflected` transfers ownership and `ShieldBounced` mirrors velocity.
-The source event callback's effect and object reference bookkeeping are not
-yet exposed as independent host events. Cape remains native-host owned, as do
+Terrain contact now uses Mario's source rule: below the authored stop speed it
+despawns, otherwise it emits native effect 1147 and continues without the
+generic gravity bounce. Cape remains native-host owned, as do
 `efSync_Spawn(0x47C)`, hitlag effect pause/resume, Tornado physics, and all
 native article/effect cleanup callbacks.

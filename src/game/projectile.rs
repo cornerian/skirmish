@@ -520,9 +520,32 @@ fn step(
     )
     .map_err(|e: crate::collision::stage::StageError| super::Error::Physics(e.to_string()))?;
     if let Some((_surface, contact)) = terrain_contact {
-        if let ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) =
-            state.projectiles[index].behavior
-        {
+        if let ProjectileBehavior::MarioFireball(gravity) = state.projectiles[index].behavior {
+            // `itMariofireball_UnkMotion0_Coll` first lets the common item
+            // collision helper update the contact position.  It terminates
+            // below the authored speed threshold; otherwise it emits the
+            // Mario fire effect (1147) and continues without the generic
+            // gravity article's surface bounce.
+            let incoming = dot(
+                [
+                    state.projectiles[index].velocity[0],
+                    state.projectiles[index].velocity[1],
+                    0.0,
+                ],
+                contact.normal,
+            );
+            if incoming < 0.0 {
+                state.projectiles[index].position = contact.position;
+                if state.projectiles[index].speed <= gravity.terrain_stop_speed {
+                    return Ok(Outcome::Despawn);
+                }
+                state.events.push(Event::ProjectileEffect {
+                    owner,
+                    projectile_kind: state.projectiles[index].kind,
+                    effect_id: 1147,
+                });
+            }
+        } else if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior {
             let incoming = dot(
                 [
                     state.projectiles[index].velocity[0],
