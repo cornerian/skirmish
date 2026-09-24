@@ -115,11 +115,15 @@ class PKFire(SideSpecial, _NessSpecial):
     @hook.landed(actions=(air,))
     def landing(self, fighter: Fighter, ctx) -> bool:
         """Enter the source aerial PK Fire landing-fall-special state."""
-        enter = getattr(fighter, "enter_fall_special", None)
+        enter = getattr(fighter, "enter_landing_special", None)
         if not callable(enter):
             return False
         attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
+            return False
+        escape_air = ctx.resource("escape_air")
+        animation_end = getattr(escape_air, "landing_animation_end", None)
+        if animation_end is None:
             return False
         landing_lag = getattr(
             attributes,
@@ -128,7 +132,11 @@ class PKFire(SideSpecial, _NessSpecial):
         )
         if landing_lag is None:
             return False
-        enter(mobility=0, landing_lag=landing_lag)
+        # ``ftCo_LandingFallSpecial_Enter(false, x38)`` maps to the native
+        # landing helper: false means the resulting landing state cannot be
+        # interrupted, and the helper derives its animation rate from the
+        # common escape-air landing end frame.
+        enter(animation_end, landing_lag)
         return True
 
     @hook.ground_air_changed(ground)

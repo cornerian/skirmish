@@ -49,9 +49,16 @@ class _LandingFighter(_Fighter):
     def __init__(self, action):
         super().__init__(action)
         self.fall_special = None
+        self.landing_special = None
 
     def enter_fall_special(self, *, mobility, landing_lag):
         self.fall_special = {"mobility": mobility, "landing_lag": landing_lag}
+
+    def enter_landing_special(self, animation_end, landing_lag):
+        self.landing_special = {
+            "animation_end": animation_end,
+            "landing_lag": landing_lag,
+        }
 
 
 def _context(*, resource=None, stick=(0.0, 0.0), grounded=True, pressed=True):
@@ -174,13 +181,17 @@ class NessTests(unittest.TestCase):
         fighter = _LandingFighter(move.air)
         resource = SimpleNamespace(attributes=SimpleNamespace(x38=12.0))
         ctx = _context(resource="side", grounded=False)
-        ctx.resource = lambda path: resource if path == "side" else None
+        escape_air = SimpleNamespace(landing_animation_end=3.0)
+        ctx.resource = lambda path: {
+            "side": resource,
+            "escape_air": escape_air,
+        }.get(path)
 
         self.assertTrue(move.landing(fighter, ctx))
         self.assertEqual(fighter.action, move.air)
         self.assertEqual(
-            fighter.fall_special,
-            {"mobility": 0, "landing_lag": 12.0},
+            fighter.landing_special,
+            {"animation_end": 3.0, "landing_lag": 12.0},
         )
 
     def test_psi_magnet_release_exits_absorb_and_turn_phases(self):
