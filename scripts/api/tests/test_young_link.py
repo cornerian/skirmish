@@ -90,6 +90,27 @@ class YoungLinkTests(unittest.TestCase):
             "taunt.left",
         )
 
+    def test_c_link_appeal_command_values_bound_milk_lifecycle(self):
+        move = YoungLinkAppeal()
+        fighter = _Fighter()
+        events = []
+        fighter.spawn_appeal_milk = lambda ctx: events.append(("spawn", ctx))
+        fighter.cleanup_appeal_milk = lambda ctx: events.append(("cleanup", ctx))
+
+        move.milk_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=1)),
+        )
+        move.milk_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=2)),
+        )
+        move.milk_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=0)),
+        )
+        self.assertEqual([kind for kind, _ in events], ["spawn", "cleanup"])
+
     def test_source_move_classes_keep_article_boundary_and_resources(self):
         for root, move_type in (
             ("neutral", YoungLinkNeutralSpecial),

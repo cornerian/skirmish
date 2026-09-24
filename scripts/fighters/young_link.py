@@ -249,6 +249,26 @@ class YoungLinkAppeal(Move):
     action = _phase(342, attack="taunt.right")
     left = _phase(343, attack="taunt.left")
 
+    @on.command_changed(1, actions=(action, left))
+    def milk_command(self, fighter: Any, ctx: Any) -> None:
+        """Forward CLink's command-triggered milk spawn/cleanup boundary.
+
+        ``ftCl_AppealS_Anim`` handles ``cmd_vars[1] == 1`` by creating milk
+        and ``== 2`` by running the native cleanup check.  Keep those values
+        distinct and optional at the host boundary; unrelated command values
+        must not create or destroy an appeal article.
+        """
+        event = getattr(ctx, "event", None)
+        value = getattr(event, "value", None)
+        if value == 1:
+            spawn = getattr(fighter, "spawn_appeal_milk", None)
+            if callable(spawn):
+                spawn(ctx)
+        elif value == 2:
+            cleanup = getattr(fighter, "cleanup_appeal_milk", None)
+            if callable(cleanup):
+                cleanup(ctx)
+
 
 class YoungLink(Fighter):
     """Source-state definition for the CLink fighter (external id 21)."""
