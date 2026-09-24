@@ -159,8 +159,8 @@ class NessTests(unittest.TestCase):
         self.assertEqual(fighter.action, PKFlash.ground_hold)
 
         fighter = _Fighter(PKFire.ground)
-        PKFire()._transition_ground_air(fighter, SimpleNamespace(grounded=False))
-        self.assertEqual(fighter.action, PKFire.ground)
+        PKFire().ground_to_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, Action.FALL)
         self.assertEqual(PKFire().on_ground, {})
         self.assertEqual(PKFire().on_air, {})
 

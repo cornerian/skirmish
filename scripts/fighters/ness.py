@@ -131,6 +131,14 @@ class PKFire(SideSpecial, _NessSpecial):
         enter(mobility=0, landing_lag=landing_lag)
         return True
 
+    @hook.ground_air_changed(ground)
+    def ground_to_air(self, fighter: Fighter, ctx) -> bool:
+        """Match ``ftNs_SpecialS_Coll`` falling off the ground."""
+        if ctx.grounded:
+            return False
+        fighter.change_action(Action.FALL)
+        return True
+
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground = {}
     on_air = {}
