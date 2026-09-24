@@ -165,12 +165,15 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         air: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
         air_turn: Transition(ground_turn, preserve_state=True, keep_frame=True),
+        # ftYs_SpecialAirSEnd_Coll selects motion 363 when motion 359
+        # receives a ground collision.  The landing phase itself has a
+        # guarded collision callback and must remain active on ground.
+        ground_end: Transition(air_landing, preserve_state=True, keep_frame=True),
     }
     on_air = {
         ground_start: Transition(ground, preserve_state=True, keep_frame=True),
         ground_loop: Transition(air_loop, preserve_state=True, keep_frame=True),
         ground_turn: Transition(air_turn, preserve_state=True, keep_frame=True),
-        ground_end: Transition(air_landing, preserve_state=True, keep_frame=True),
     }
 
     def _on_active_input(self, fighter: Fighter) -> None:

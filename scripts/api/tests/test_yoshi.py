@@ -126,6 +126,18 @@ class YoshiSpecialTests(unittest.TestCase):
         # ftYs_SpecialAirSLanding_Coll is guarded by a non-ground collision
         # result, so grounded contact leaves phase 363 active.
         self.assertEqual(fighter.action, move.air_landing)
+        # ftYs_SpecialAirSEnd_Coll (motion 359) enters motion 363 only on a
+        # ground collision.  ftYs_SpecialAirSLanding_Coll intentionally
+        # leaves motion 363 active when it reports ground contact.
+        fighter = _Fighter(move.ground_end)
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.air_landing)
+        fighter = _Fighter(move.air_landing)
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.air_landing)
+        fighter = _Fighter(move.ground_end)
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, move.ground_end)
 
         move = Yoshi.specials.down
         fighter = _Fighter("Source.17:368")
