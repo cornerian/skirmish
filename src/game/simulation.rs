@@ -838,6 +838,9 @@ where
             (&data.fighters[player], &data.rules, input),
             &state.entities,
         )?;
+        // This is the fighter environmental collision phase. Secondary
+        // hurtbox/article collision services have their own dispatch paths;
+        // this generic hook does not pretend to cover those contacts.
         dispatch_script_phase(
             fighter,
             &data.fighters[player],
