@@ -86,10 +86,13 @@ class SuperSheet(SideSpecial, _SourcePair):
         if flags is None or not hasattr(flags, "reflecting"):
             return
         event = getattr(ctx, "event", None)
-        # The native callback tests cmd_vars[1] == 1.  Treating every
-        # nonzero trace value as active leaves the reflector latched for
-        # malformed or future command values.
-        flags.reflecting = getattr(event, "value", 0) == 1
+        value = getattr(event, "value", 0)
+        if value == 1:
+            flags.reflecting = True
+        elif value == 0:
+            flags.reflecting = False
+        # The source has no branch for other command values.  In particular,
+        # cmd_vars[1] == 2 leaves both native reflection latches unchanged.
 
     @hook.action_exit(ground, air)
     def exit(self, fighter: Fighter, ctx) -> None:

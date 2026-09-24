@@ -61,11 +61,17 @@ when the cape is destroyed or leaves the side-special states, and forwards
 hitlag enter/exit to the attached item.
 
 The script mirrors command variable 1 as the reflection window and clears the
-latch when the side-special phases end. Air entry velocity decay, cape
-attachment, and cape destruction remain host responsibilities because the
-authoring context does not expose the source special attributes and article
-handles. The native cape reflection geometry (bone, offset, size, damage and
-speed multipliers) is also unsupported by this script layer.
+latch when the side-special phases end. It preserves the source's stateful
+branch: command value 1 enables reflection, value 0 disables it, and other
+values leave the existing reflection state unchanged. This follows
+`ftMr_SpecialS_Phys` in
+`../../External/melee/src/melee/ft/kinds/ftMario/ftmariospecials.c`, where
+`reflect` has an `== 1` enable branch and an `== 0` clear branch. Air entry
+velocity decay, cape attachment, and cape destruction remain host
+responsibilities because the authoring context does not expose the source
+special attributes and article handles. The native cape reflection geometry
+(bone, offset, size, damage and speed multipliers) is also unsupported by
+this script layer.
 
 Dr. Mario's special attributes are the `ftMario_DatAttrs` fields in
 `ftMario/types.h`: `specials.vel_x_decay`, `specials.vel`, `specials.grav`,

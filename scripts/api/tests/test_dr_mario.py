@@ -132,15 +132,20 @@ class DrMarioSpecialTests(unittest.TestCase):
     def test_cape_command_one_controls_reflection_window(self):
         move = DrMario.specials.side
         fighter = _Fighter()
+        fighter.flags.reflecting = False
 
         class Event:
             value = 1
 
+        Event.value = 2
+        move.reflect_command(fighter, type("Context", (), {"event": Event()})())
+        self.assertFalse(fighter.flags.reflecting)
+        Event.value = 1
         move.reflect_command(fighter, type("Context", (), {"event": Event()})())
         self.assertTrue(fighter.flags.reflecting)
         Event.value = 2
         move.reflect_command(fighter, type("Context", (), {"event": Event()})())
-        self.assertFalse(fighter.flags.reflecting)
+        self.assertTrue(fighter.flags.reflecting)
         Event.value = 0
         move.reflect_command(fighter, type("Context", (), {"event": Event()})())
         self.assertFalse(fighter.flags.reflecting)
