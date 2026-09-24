@@ -1,9 +1,12 @@
 """Falco's fighter declaration.
 
 The pinned ``ftFalco.c`` motion table delegates every special callback to the
-shared ``ftFox`` implementation.  Falco's observable script-level difference
-is the fighter data and article kind, so the policy objects remain shared while
+shared ``ftFox`` implementation.  Falco's observable script-level differences
+are fighter data and article kinds, so the policy objects remain shared while
 the state and parameters are named explicitly for the Falco source module.
+The native blaster callback's transformed ``FtPart_RThumbNb`` launch point is
+left to the article-aware host boundary; this definition keeps the shared
+callback until that joint mapping is available.
 """
 
 from skirmish import ArticleId, Fighter

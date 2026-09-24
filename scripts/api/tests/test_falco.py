@@ -46,6 +46,12 @@ class FalcoSourceTests(unittest.TestCase):
 
     def test_shared_special_policies_still_bind_to_falco_source_id(self):
         self.assertIs(Falco.specials, Fox.specials)
+        # ftFalco's motion table points at the exact ftFox callback table for
+        # neutral, side, up, and down specials (ftfalco.c:23-370).
+        self.assertIs(Falco.specials.neutral, Fox.specials.neutral)
+        self.assertIs(Falco.specials.side, Fox.specials.side)
+        self.assertIs(Falco.specials.up, Fox.specials.up)
+        self.assertIs(Falco.specials.down, Fox.specials.down)
         exported = export_definition(Falco).as_dict()
         neutral = next(
             behavior for behavior in exported["behaviors"]

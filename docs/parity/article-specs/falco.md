@@ -58,6 +58,13 @@ effect.  The neutral motion table in `ftFalco/ftfalco.c:23-120` and its aerial
 continuation at `:120-165` routes through the shared `ftFx_SpecialN*`
 callbacks (states 341-346).
 
+The portable script definition keeps this shared blaster callback.  The
+native launch position is obtained by transforming an offset through
+`FtPart_RThumbNb` (`ftFx_SpecialN_FtGetHoldJoint`, `ftfoxspecialn.c:34-44`),
+which requires the article-aware joint mapping exposed by the native host.
+The current script boundary exposes part origins only, so it does not claim
+that transformed Falco blaster launch position as parity.
+
 ## Phantasm state and owner lifecycle
 
 The Falco motion table uses the shared side-special callbacks in states
