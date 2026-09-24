@@ -104,10 +104,10 @@ class RoyTests(unittest.TestCase):
         self.assertTrue(move.choose_phase(fighter, both))
         self.assertEqual(fighter.action_state.command[1], 1)
 
-    def test_counter_has_no_unsupported_runtime_callbacks(self):
+    def test_counter_arms_hit_phase_on_native_command(self):
         move = _load_roy().Roy.specials.down
         hooks = {event.hook.value for event in move.events()}
-        self.assertNotIn("command_trace_changed", hooks)
+        self.assertIn("command_trace_changed", hooks)
         self.assertNotIn("before_hit", hooks)
 
 

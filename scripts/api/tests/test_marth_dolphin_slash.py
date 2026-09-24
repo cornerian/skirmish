@@ -44,6 +44,7 @@ class DolphinSlashTests(unittest.TestCase):
         fighter = SimpleNamespace(
             action=move.ground,
             lstick_angle=0.0,
+            throw_flags_b3=0,
             action_state=SimpleNamespace(command=(0, 0, 0, 0)),
         )
         attrs = SimpleNamespace(x30=0.1, x34=0.3, x38=45.0)
