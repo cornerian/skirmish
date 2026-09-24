@@ -68,6 +68,13 @@ are:
 * `x50`: initial forward segment velocity;
 * `x64`/`x68`: segment joint resources.
 
+The B-release edge is latched by `ftSk_SpecialS_IASA` and consumed by the
+ground and aerial loop animation callbacks only after their
+`ftSeakAttributes.x14` minimum frame.  The fighter script records that edge
+for replay/state inspection and leaves the 350/353 to 351/354 transition to
+the native callback, so a release during the minimum-frame window cannot
+skip the source timer.
+
 `it_802BAEEC` releases link motion, `it_802BAF0C` resumes it after hitlag,
 and `it_802BB20C` frees every segment and clears the owner relation.  The
 fighter's four moving chain hitboxes are updated by

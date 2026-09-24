@@ -33,6 +33,7 @@ class _Fighter:
         self.action = action
         self.action_frame = 0
         self.changes = []
+        self.action_state = SimpleNamespace(chain_release_latched=False)
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -122,20 +123,25 @@ class SheikTests(unittest.TestCase):
         ))
         self.assertIs(fighter.action, move.ground_start)
 
-    def test_chain_release_retracts_only_after_startup(self):
+    def test_chain_release_latches_without_bypassing_native_minimum_frame(self):
         move = Chain()
-        for source, target in (
-            (move.ground_loop, move.ground_end),
-            (move.air_loop, move.air_end),
-        ):
+        for source in (move.ground_loop, move.air_loop):
             fighter = _Fighter(source)
-            self.assertTrue(move.release(fighter, _context()))
-            self.assertIs(fighter.action, target)
+            self.assertFalse(move.release(fighter, _context()))
+            self.assertIs(fighter.action, source)
+            self.assertTrue(fighter.action_state.chain_release_latched)
 
         for source in (move.ground_start, move.air_start):
             fighter = _Fighter(source)
             self.assertFalse(move.release(fighter, _context()))
             self.assertIs(fighter.action, source)
+
+    def test_chain_loop_entry_clears_a_stale_release_latch(self):
+        move = Chain()
+        fighter = _Fighter(move.ground_loop)
+        fighter.action_state.chain_release_latched = True
+        move.enter_loop(fighter, _context())
+        self.assertFalse(fighter.action_state.chain_release_latched)
 
     def test_native_terminal_and_surface_transitions(self):
         for move in (Needles(), Chain(), Vanish(), Transform()):

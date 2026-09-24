@@ -9,9 +9,22 @@ from __future__ import annotations
 from typing import Any
 
 from skirmish import (
-    Action, Button, DirectionalSpecial, DownSpecial, Fighter, NeutralSpecial,
-    SideSpecial, Transition, UpSpecial, on, source_phase,
+    Action, ActionState, Button, DirectionalSpecial, DownSpecial, Fighter,
+    NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
 )
+
+
+class SheikActionState(ActionState):
+    """Small script-visible latch mirrored by the native chain IASA.
+
+    ``ftSk_SpecialS_IASA`` stores the B-release request and lets the chain
+    animation callback consume it after ``ftSeakAttributes.x14``.  Keeping
+    the edge in action state makes the request replay-safe without guessing
+    the packed fighter attribute (no typed Sheik attribute resource exists
+    yet).
+    """
+
+    chain_release_latched: bool = False
 
 
 class Needles(NeutralSpecial, DirectionalSpecial):
@@ -108,17 +121,34 @@ class Chain(SideSpecial, DirectionalSpecial):
 
     @on.release(Button.B)
     def release(self, fighter: Fighter, ctx: Any) -> bool:
-        """Begin native chain retraction once the extension loop is active."""
+        """Latch B release for the native, attribute-gated chain callback.
+
+        ``ftSk_SpecialS_IASA`` (``ftseakspecials.c:738-758``) sets the
+        release latch, while ``ftSk_SpecialS_Anim``
+        (``ftseakspecials.c:677-735``) waits until its packed
+        ``ftSeakAttributes.x14`` minimum frame before selecting 351/354.
+        The script deliberately leaves the action unchanged: transitioning
+        here would bypass that source-controlled delay.
+        """
         destination = {
             self.ground_loop: self.ground_end,
             self.air_loop: self.air_end,
         }.get(fighter.action)
         if destination is None:
-            # ftSk_SpecialSStart_IASA is empty: releasing during startup does
-            # not interrupt chain creation until the loop callback observes it.
             return False
-        fighter.change_action(destination)
-        return True
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            state.chain_release_latched = True
+        # Keep native IASA/callback processing alive.  The destination map is
+        # retained above as an explicit source audit of the only legal exits.
+        _ = destination
+        return False
+
+    @on.action_enter(ground_loop, air_loop)
+    def enter_loop(self, fighter: Fighter, ctx: Any) -> None:
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            state.chain_release_latched = False
 
     on_end = {
         ground_start: Transition(ground_loop), ground_end: Transition(Action.WAIT),
@@ -198,9 +228,10 @@ class Transform(DownSpecial, DirectionalSpecial):
 
 
 class Sheik(Fighter):
+    action_state = SheikActionState
     specials = Fighter.specials.replace(
         neutral=Needles(), side=Chain(), up=Vanish(), down=Transform()
     )
 
 
-__all__ = ["Sheik", "Needles", "Chain", "Vanish", "Transform"]
+__all__ = ["Sheik", "Needles", "Chain", "Vanish", "Transform", "SheikActionState"]
