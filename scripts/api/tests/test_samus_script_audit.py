@@ -26,6 +26,9 @@ class _Fighter:
     def max_jumps(self):
         self.max_jumps_calls += 1
 
+    def special_attribute(self, attribute):
+        return None
+
 
 class SamusChargeEntryTests(unittest.TestCase):
     def test_source_entry_clears_all_command_latches(self):
@@ -56,6 +59,17 @@ class SamusScrewAttackEntryTests(unittest.TestCase):
         aerial.action = move.air
         move.action_enter(aerial, SimpleNamespace())
         self.assertEqual(aerial.max_jumps_calls, 1)
+
+    def test_source_launch_physics_exhausts_jumps_for_ground_and_air(self):
+        from fighters.samus import ScrewAttack
+
+        move = ScrewAttack()
+        for action in (move.ground, move.air):
+            fighter = _Fighter()
+            fighter.action = action
+            fighter.action_state.command = (1, 0, 0, 0)
+            move.launch(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+            self.assertEqual(fighter.max_jumps_calls, 1)
 
 
 if __name__ == "__main__":

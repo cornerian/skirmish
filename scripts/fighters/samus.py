@@ -224,6 +224,13 @@ class ScrewAttack(UpSpecial):
     def launch(self, fighter: Fighter, ctx: MoveContext) -> None:
         if not getattr(getattr(ctx, "event", None), "value", 0):
             return
+        # ``ftSs_SpecialHi_Phys`` calls ``ftCommon_8007D60C`` when command 0
+        # launches the Screw Attack, for both grounded and aerial variants.
+        # The entry callback already performs the same source operation for
+        # the aerial variant; retain both calls at their source boundaries.
+        max_jumps = getattr(fighter, "max_jumps", None)
+        if callable(max_jumps):
+            max_jumps()
         speed = fighter.special_attribute(SamusAttribute.SCREW_ATTACK_LAUNCH_HORIZONTAL_VELOCITY)
         if speed is None:
             return
