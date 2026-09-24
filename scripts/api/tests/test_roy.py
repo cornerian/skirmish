@@ -87,7 +87,7 @@ class RoyTests(unittest.TestCase):
         self.assertEqual(terminal["Source.371"].name, "FALL")
         self.assertEqual(terminal["Source.372"].name, "FALL")
 
-    def test_dancing_blade_requires_both_buttons_for_phase_choice(self):
+    def test_dancing_blade_accepts_either_button_for_phase_choice(self):
         roy = _load_roy()
         move = roy.Roy.specials.side
         for ctx in (
@@ -95,14 +95,15 @@ class RoyTests(unittest.TestCase):
             SimpleNamespace(input=self._Input({roy.Button.B})),
         ):
             fighter = self._Fighter(move.ground_start)
-            self.assertFalse(move.choose_phase(fighter, ctx))
-            self.assertEqual(fighter.action, move.ground_start)
+            fighter.action_state.command = (0, 0, 0, 0)
+            self.assertTrue(move.choose_phase(fighter, ctx))
+            self.assertEqual(fighter.action_state.command[1], 1)
 
         fighter = self._Fighter(move.ground_start)
+        none = SimpleNamespace(input=self._Input(set()))
         fighter.action_state.command = (0, 0, 0, 0)
-        both = SimpleNamespace(input=self._Input({roy.Button.A, roy.Button.B}))
-        self.assertTrue(move.choose_phase(fighter, both))
-        self.assertEqual(fighter.action_state.command[1], 1)
+        self.assertFalse(move.choose_phase(fighter, none))
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
     def test_counter_command_callback_does_not_claim_contact(self):
         move = _load_roy().Roy.specials.down

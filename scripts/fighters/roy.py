@@ -53,11 +53,12 @@ class DoubleEdgeDance(EmblemSideSpecial):
     def _ab_pressed(ctx) -> bool:
         input_state = getattr(ctx, "input", None)
         query = getattr(input_state, "just_pressed", None)
-        if not callable(query):
-            return False
-        return bool(query(Button.A) and query(Button.B))
+        if callable(query):
+            return bool(query(Button.A) or query(Button.B))
+        buttons = getattr(input_state, "pressed_buttons", 0)
+        return isinstance(buttons, int) and bool(buttons & 0x300)
 
-    @on.input_pressed(Button.A, Button.B, require_all_buttons=True)
+    @on.input_pressed(Button.A, Button.B)
     def input_pressed(self, fighter, ctx) -> bool:
         if fighter.action in self._active_actions():
             return self.choose_phase(fighter, ctx) if self._ab_pressed(ctx) else False

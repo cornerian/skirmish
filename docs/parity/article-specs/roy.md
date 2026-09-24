@@ -34,10 +34,10 @@ the charge timer, capsule geometry, effects, and Mars attribute values
 States 349–366 are the four-stage ground/air tree. The IASA callbacks in
 `ftmarsspecials.c` (`ftMs_SpecialS2_IASA`, `ftMs_SpecialS3_IASA`,
 `ftMs_SpecialS4_IASA`)
-require a later A+B press after command variable 0 is armed. The stick chooses
+accept an A or B press after command variable 0 is armed. The stick chooses
 up/down at stage 1 and up/neutral/down at stages 2 and 3. The final stage has
 no further IASA branch. The Python declaration mirrors this tree and requires
-both A and B for phase selection.
+either A or B for phase selection.
 
 ## Blazer (up special)
 
