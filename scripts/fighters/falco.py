@@ -20,6 +20,14 @@ class FalcoActionState(FoxActionState):
 
 class FalcoParameters(FoxParameters):
     article_id: ArticleId = ArticleId.FALCO_LASER
+    # ftFc_Init_OnLoad (ftfalco.c:468-484) explicitly enables wall jumps
+    # before delegating the remaining setup to ftFx_Init_OnLoadForFalco.
+    can_walljump: bool = True
+    # It_Kind_Falco_Phantasm is the item immediately after
+    # It_Kind_Fox_Illusion in it/forward.h.  Keep this native item identity
+    # available to the eventual side-special article bridge; the current
+    # authoring API has no typed Phantasm ArticleId or item-slot hook.
+    phantasm_article_id: int = 57
 
 
 class Falco(Fighter):

@@ -99,6 +99,22 @@ class Roll(NeutralSpecial):
         elif fighter.action in (self.air_loop, self.air_full):
             fighter.change_action(self.air_release, preserve_state=True, keep_frame=True)
 
+    @hook.stick_changed(actions=(ground_release,))
+    def reverse(self, fighter: Fighter, ctx) -> bool:
+        """Enter Rollout's ground turn phase for opposite-facing input."""
+        if fighter.action != self.ground_release:
+            return False
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        rules = special_rules(ctx)
+        threshold = getattr(rules, "side_stick_threshold", None) if rules else None
+        if threshold is None:
+            return False
+        if stick[0] * fighter.facing > -threshold:
+            return False
+        fighter.change_action(self.ground_turn, preserve_state=True, keep_frame=True)
+        fighter.facing = -fighter.facing
+        return True
+
     @hook.animation_end(*_START)
     def start_end(self, fighter: Fighter, ctx) -> None:
         fighter.change_action(
@@ -149,6 +165,14 @@ class Roll(NeutralSpecial):
     @hook.animation_end(hit)
     def hit_end(self, fighter: Fighter, ctx) -> None:
         fighter.change_action(Action.WAIT if fighter.grounded else Action.FALL)
+
+    @hook.landed(hit)
+    def hit_landed(self, fighter: Fighter, ctx) -> bool:
+        """Match SpecialNHit_Coll's immediate floor-contact exit."""
+        if fighter.action != self.hit:
+            return False
+        fighter.change_action(Action.FALL)
+        return True
 
     on_ground = {
         air_start_left: Transition(ground_start_left, preserve_state=True, keep_frame=True),

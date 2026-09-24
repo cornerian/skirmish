@@ -38,6 +38,9 @@ class _Fighter:
         self.facing = 1.0
         self.action_state = SimpleNamespace(command=(0, 0, 0, 0))
 
+    def enter_fall_special(self, **kwargs):
+        self.fall_special = kwargs
+
     def change_action(self, action, **kwargs):
         self.action = action
         self.changes.append((action, kwargs))
@@ -194,6 +197,30 @@ class KirbySpecialTests(unittest.TestCase):
         exported = export_definition(Kirby).as_dict()["actions"]
         self.assertTrue(exported["special.down.ground_hold"]["animation_loop"])
         self.assertTrue(exported["special.down.air_hold"]["animation_loop"])
+
+    def test_stone_release_waits_for_source_minimum_hold(self):
+        move = Stone()
+        fighter = _Fighter()
+        fighter.action = move.ground_hold.action
+        fighter.action_frame = 4
+        ctx = SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(stone_min_hold_frames=5))
+        )
+        self.assertFalse(move.release(fighter, ctx))
+        self.assertIs(fighter.action, move.ground_hold.action)
+        fighter.action_frame = 5
+        self.assertTrue(move.release(fighter, ctx))
+        self.assertIs(fighter.action, move.ground_end)
+
+    def test_hammer_air_landing_enters_fall_special_lag(self):
+        move = Hammer()
+        fighter = _Fighter()
+        fighter.action = move.air.action
+        ctx = SimpleNamespace(
+            rules=SimpleNamespace(specials=SimpleNamespace(landing_lag=12))
+        )
+        self.assertTrue(move.landing(fighter, ctx))
+        self.assertEqual(fighter.fall_special, {"mobility": 0, "landing_lag": 12})
 
 
 if __name__ == "__main__":

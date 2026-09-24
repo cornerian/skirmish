@@ -33,6 +33,9 @@ class _YoshiSpecial:
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx) -> bool:
         if fighter.action in self._ACTIVE:
+            active_handler = getattr(self, "_on_active_input", None)
+            if active_handler is not None:
+                active_handler(fighter)
             return True
         if not fresh_special_input(ctx, self.resource):
             return False
@@ -154,6 +157,15 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         ground_turn: Transition(air_turn, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_landing, preserve_state=True, keep_frame=True),
     }
+
+    def _on_active_input(self, fighter: Fighter) -> None:
+        # ftYs_SpecialAirSLoop_{0,1}_IASA and Loop_{2,3}_IASA use B as the
+        # release edge.  The native helper preserves the current animation
+        # frame while selecting the ground end or aerial landing phase.
+        if fighter.action in (self.ground_loop, self.ground_turn):
+            fighter.change_action(self.ground_end, preserve_state=True, keep_frame=True)
+        elif fighter.action in (self.air_loop, self.air_turn):
+            fighter.change_action(self.air_landing, preserve_state=True, keep_frame=True)
 
 
 class EggToss(UpSpecial, _YoshiSpecial):

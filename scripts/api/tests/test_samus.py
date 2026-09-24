@@ -14,11 +14,12 @@ from fighters.samus import Bomb, ChargeShot, Missile, Samus, ScrewAttack
 
 
 class _Input:
-    def __init__(self, stick=(0.0, 1.0)):
+    def __init__(self, stick=(0.0, 1.0), pressed=(Button.B,)):
         self.stick = stick
+        self.pressed = set(pressed)
 
     def just_pressed(self, button):
-        return button is Button.B
+        return button in self.pressed
 
 
 class _Fighter:
@@ -56,11 +57,11 @@ class _Fighter:
         self.max_jumps_calls += 1
 
 
-def _context(*, grounded=True, resource=True, stick=(0.0, 1.0)):
+def _context(*, grounded=True, resource=True, stick=(0.0, 1.0), pressed=(Button.B,)):
     return SimpleNamespace(
         ground_open=grounded,
         air_open=not grounded,
-        input=_Input(stick),
+        input=_Input(stick, pressed),
         resource=lambda path: object() if resource else None,
     )
 
@@ -84,6 +85,14 @@ class SamusTests(unittest.TestCase):
         fighter.action = move.ground_hold
         self.assertTrue(move.input_pressed(fighter, _context()))
         self.assertEqual(fighter.action, move.ground_fire)
+
+    def test_charge_shot_lr_cancels_held_charge(self):
+        move = ChargeShot()
+        for button in (Button.L, Button.R):
+            fighter = _Fighter()
+            fighter.action = move.ground_hold
+            self.assertTrue(move.input_pressed(fighter, _context(pressed=(button,))))
+            self.assertEqual(fighter.action, move.ground_cancel)
 
     def test_definition_uses_source_states_and_typed_motion(self):
         self.assertEqual(ScrewAttack.ground.as_dict()["slippi_state"], 353)

@@ -200,6 +200,24 @@ class MarioNeutralTests(unittest.TestCase):
             move.projectile_contact(fighter, rejected)
             self.assertFalse(rejected.reflect)
 
+    def test_cape_entry_resets_native_command_window(self):
+        move = Cape()
+        fighter = _Fighter()
+        move.enter(fighter, _context())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
+    def test_tornado_aerial_tap_consumes_native_command_cue(self):
+        move = MarioTornado()
+        fighter = _Fighter()
+        fighter.action = move.air
+        move.enter(fighter, _context(grounded=False))
+        fighter.action_state.command = (0, 1, 0, 4)
+        move.tap_command(
+            fighter,
+            SimpleNamespace(event=SimpleNamespace(value=1)),
+        )
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
     def test_entry_requires_resource_and_complete_animation_and_clears_slot(self):
         move = Fireball()
         fighter = _Fighter(complete=(343,))

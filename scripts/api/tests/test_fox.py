@@ -4,6 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[3]
@@ -202,6 +203,58 @@ class FoxShineTests(unittest.TestCase):
             move.action_enter(fighter, context)
 
             self.assertEqual(fighter.action_state.command, (1, 2, 0, 4))
+
+    def test_reflector_projectile_contact_enters_hit_phase(self):
+        move = Fox.specials.down
+        fighter = SimpleNamespace(
+            grounded=True,
+            flags=SimpleNamespace(reflecting=True),
+            action=move.ground_loop,
+        )
+        fighter.change_action = lambda action: setattr(fighter, "action", action)
+        hit = SimpleNamespace(projectile=True, damage=8, max_damage=8, reflect=False)
+
+        move.projectile_contact(fighter, hit)
+
+        self.assertTrue(hit.reflect)
+        self.assertIs(fighter.action, move.ground_hit)
+
+    def test_firefox_shallow_wall_redirects_but_steep_wall_does_not(self):
+        move = Fox.specials.up
+        attributes = SimpleNamespace(bound_angle_degrees=0.0)
+
+        def attempt(normal):
+            fighter = SimpleNamespace(
+                action=move.travel_air,
+                facing=1.0,
+                velocity=[1.0, 1.0],
+                action_state=SimpleNamespace(travel_angle=0.0),
+            )
+            fighter.set_motion_angle = lambda angle: setattr(
+                fighter.action_state, "travel_angle", angle
+            )
+            context = SimpleNamespace(
+                ceiling=None,
+                wall=SimpleNamespace(normal=normal),
+                resource=lambda path=None: SimpleNamespace(attributes=attributes),
+            )
+            with patch(
+                "fighters.fox.math.angle_xy",
+                side_effect=lambda candidate, velocity: (
+                    0.785398 if candidate[0] else 2.356194
+                ),
+            ), patch("fighters.fox.math.facing", return_value=1.0), patch(
+                "fighters.fox.math.atan2", return_value=0.785398
+            ):
+                return move.surface_contact(fighter, context), fighter
+
+        redirected, fighter = attempt([1.0, 0.0, 0.0])
+        self.assertTrue(redirected)
+        self.assertAlmostEqual(fighter.action_state.travel_angle, 0.785398, places=5)
+
+        rejected, fighter = attempt([0.0, -1.0, 0.0])
+        self.assertFalse(rejected)
+        self.assertEqual(fighter.action_state.travel_angle, 0.0)
 
 
 

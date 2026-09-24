@@ -27,12 +27,14 @@ class _Input:
 class _Fighter:
     def __init__(self, *, used_boomerang=False):
         self.action = None
+        self.action_frame = 0
         self.used_boomerang = used_boomerang
         self.boomerang_active = False
         self.link_bomb_held = False
         self.changes = []
         self.trajectory_events = []
         self.bomb_reuse = []
+        self.fall_special = []
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -43,6 +45,9 @@ class _Fighter:
 
     def reuse_held_bomb_special(self, *, airborne):
         self.bomb_reuse.append(airborne)
+
+    def enter_fall_special(self, **kwargs):
+        self.fall_special.append(kwargs)
 
 
 def _context(*, ground=True, resource=True, stick=(0.0, 0.0)):
@@ -101,6 +106,26 @@ class LinkTests(unittest.TestCase):
         move.boomerang_release(fighter, SimpleNamespace(event=SimpleNamespace(value=False)))
         self.assertEqual(fighter.trajectory_events, [context])
 
+    def test_boomerang_release_obeys_source_stick_and_window_gate(self):
+        move = Link.specials.side
+        fighter = _Fighter()
+        context = SimpleNamespace(
+            event=SimpleNamespace(value=True),
+            input=SimpleNamespace(stick=(0.25, 0.0)),
+            rules=SimpleNamespace(specials=SimpleNamespace(
+                dash_smash_stick_threshold=0.5, dash_smash_window=3,
+            )),
+        )
+        move.boomerang_release(fighter, context)
+        self.assertEqual(fighter.trajectory_events, [])
+        context.input.stick = (1.0, 0.0)
+        fighter.action_frame = 4
+        move.boomerang_release(fighter, context)
+        self.assertEqual(fighter.trajectory_events, [])
+        fighter.action_frame = 3
+        move.boomerang_release(fighter, context)
+        self.assertEqual(fighter.trajectory_events, [context])
+
     def test_down_entry_forwards_held_bomb_branch_to_article_host(self):
         move = Link.specials.down
         fighter = _Fighter()
@@ -112,6 +137,13 @@ class LinkTests(unittest.TestCase):
         fighter.action = move.air
         move.reuse_held_bomb(fighter, SimpleNamespace())
         self.assertEqual(fighter.bomb_reuse, [False, True])
+
+    def test_spin_attack_air_end_enters_fall_special(self):
+        move = Link.specials.up
+        fighter = _Fighter()
+        fighter.action = move.air
+        self.assertTrue(move.enter_fall_special(fighter, SimpleNamespace()))
+        self.assertEqual(fighter.fall_special, [{"mobility": 1}])
 
     def test_terminal_phases_return_to_native_wait_or_fall(self):
         for move in (Link.specials.neutral, Link.specials.side,

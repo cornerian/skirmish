@@ -104,6 +104,22 @@ class FalconKick(CaptainDownSpecial):
         command = getattr(getattr(fighter, "action_state", None), "command", ())
         if not command or not command[0]:
             return False
+        # ``ftCa_SpecialLw_Coll`` only rebounds from the wall in the fighter's
+        # facing direction: Captain facing right uses the left-wall flag and
+        # facing left uses the right-wall flag. Native surface contexts expose
+        # the outward wall normal; retain the legacy boolean form for hosts
+        # that have not surfaced that geometry yet.
+        wall = getattr(ctx, "wall", None)
+        if wall is None:
+            wall = getattr(ctx, "wall_contact", None)
+        normal = getattr(wall, "normal", None)
+        facing = getattr(fighter, "facing", None)
+        if normal is not None and facing is not None:
+            try:
+                if len(normal) < 1 or normal[0] * facing >= 0:
+                    return False
+            except (TypeError, IndexError):
+                return False
         return super().wall_rebound(fighter, ctx)
 
 

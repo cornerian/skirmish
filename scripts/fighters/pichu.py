@@ -31,6 +31,12 @@ class PichuParameters(Parameters):
     can_walljump: bool = True
     data_file: str = "PlPc.dat"
     animation_data_file: str = "PlPcAJ.dat"
+    # ftPk_SpecialHiStart1_Anim and its aerial twin suppress Pikachu's
+    # electric burst for FTKIND_PICHU.  Keep this as typed host metadata until
+    # the effect callback surface is available to fighter scripts.
+    up_special_effects: bool = False
+    # ftPk_SpecialN_Anim selects Pichu's distinct Thunder Jolt sound.
+    thunder_jolt_sound: int = 230067
 
 
 class Pichu(Fighter):

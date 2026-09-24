@@ -157,6 +157,19 @@ class PeachSideSpecial(SideSpecial, _PeachSpecial):
         if value:
             fighter.change_action(self.air_end1)
 
+    @on.command_changed(3, actions=(air_jump,))
+    def jump_end(self, fighter: Any, ctx: Any) -> None:
+        """End the jump when the native command-3 cue is reached.
+
+        ``ftPe_SpecialAirSJump_Anim`` checks ``cmd_vars[3]`` every frame and
+        enters ``SpecialAirSEnd``; command variable 2 has already selected
+        the wall-hit variant when that branch applies.  Bomber article
+        creation remains a native item callback after this transition.
+        """
+        value = getattr(getattr(ctx, "event", None), "value", 0)
+        if value:
+            fighter.change_action(self.air_end0)
+
 
 class PeachUpSpecial(UpSpecial, _PeachSpecial):
     ground = source_phase(361)
@@ -193,6 +206,22 @@ class PeachDownSpecial(DownSpecial, _PeachSpecial):
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
+    @on.action_enter(ground, air)
+    def throw_held_turnip(self, fighter: Any, ctx: Any) -> None:
+        """Forward the source held-turnip branch to an article-aware host.
+
+        ``ftPe_SpecialLw_Enter`` calls the common light-throw entry when a
+        Peach turnip is already held, instead of pulling a new vegetable.
+        The optional host callback owns that item handoff and common throw
+        action; this declaration preserves the fighter-side branch without
+        manufacturing article state.
+        """
+        if not getattr(fighter, "peach_turnip_held", False):
+            return
+        throw = getattr(fighter, "throw_held_turnip_special", None)
+        if callable(throw):
+            throw(airborne=fighter.action is self.air)
 
 
 class Peach(Fighter):

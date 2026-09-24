@@ -17,12 +17,13 @@ from fighters.sheik import Chain, Needles, Sheik, Transform, Vanish  # noqa: E40
 
 
 class _Input:
-    def __init__(self, *, pressed: bool = True):
+    def __init__(self, *, pressed: bool = True, buttons=(Button.B,)):
         self.pressed = pressed
+        self.buttons = set(buttons)
         self.stick = (0.0, 0.0)
 
     def just_pressed(self, button):
-        return self.pressed and button is Button.B
+        return self.pressed and button in self.buttons
 
 
 class _Fighter:
@@ -38,9 +39,9 @@ class _Fighter:
         self.action = action
 
 
-def _context(*, ground: bool = True, resource: bool = True):
+def _context(*, ground: bool = True, resource: bool = True, buttons=(Button.B,)):
     return SimpleNamespace(
-        input=_Input(),
+        input=_Input(buttons=buttons),
         resource=lambda path: object() if resource else None,
         ground_open=ground,
         air_open=not ground,
@@ -99,6 +100,24 @@ class SheikTests(unittest.TestCase):
         fighter = _Fighter(Chain.ground_start)
         self.assertFalse(move.release(fighter, _context()))
         self.assertIs(fighter.action, Chain.ground_start)
+
+    def test_needles_loop_shoulder_input_cancels_charge(self):
+        move = Needles()
+        for source, target in (
+            (move.ground_loop, move.ground_cancel),
+            (move.air_loop, move.air_cancel),
+        ):
+            fighter = _Fighter(source)
+            self.assertTrue(move.input_pressed(
+                fighter, _context(buttons=(Button.L,)),
+            ))
+            self.assertIs(fighter.action, target)
+
+        fighter = _Fighter(move.ground_start)
+        self.assertFalse(move.input_pressed(
+            fighter, _context(buttons=(Button.L,)),
+        ))
+        self.assertIs(fighter.action, move.ground_start)
 
     def test_chain_release_retracts_only_after_startup(self):
         move = Chain()

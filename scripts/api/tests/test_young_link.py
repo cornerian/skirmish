@@ -16,6 +16,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
 from fighter import Action, Button, export_definition
 from fighters.young_link import (
     YoungLink,
+    YoungLinkAppeal,
     YoungLinkDownSpecial,
     YoungLinkNeutralSpecial,
     YoungLinkSideSpecial,
@@ -71,6 +72,22 @@ class YoungLinkTests(unittest.TestCase):
         self.assertEqual(states, list(range(344, 360)))
         self.assertTrue(exported["actions"]["special.neutral.ground_loop"]["animation_loop"])
         self.assertTrue(exported["actions"]["special.neutral.air_loop"]["animation_loop"])
+
+    def test_c_link_appeal_rows_preserve_both_z_air_source_states(self):
+        exported = export_definition(YoungLink).as_dict()
+        self.assertIsInstance(YoungLink.taunt.taunt, YoungLinkAppeal)
+        self.assertEqual(
+            exported["actions"]["taunt.taunt.action"]["action"],
+            "Action.Source.21:342",
+        )
+        self.assertEqual(
+            exported["actions"]["taunt.taunt.left"]["action"],
+            "Action.Source.21:343",
+        )
+        self.assertEqual(
+            exported["actions"]["taunt.taunt.left"]["attack"],
+            "taunt.left",
+        )
 
     def test_source_move_classes_keep_article_boundary_and_resources(self):
         for root, move_type in (

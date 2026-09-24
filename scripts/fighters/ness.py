@@ -14,14 +14,16 @@ from skirmish import (
     Action,
     Button,
     DownSpecial,
-    DirectionalSpecial,
     Fighter,
     NeutralSpecial,
     SideSpecial,
     Transition,
     UpSpecial,
+    directional_match,
+    fresh_special_input,
     hook,
     source_phase,
+    start_action,
 )
 
 
@@ -29,7 +31,33 @@ def _phase(state: int, *, loop: bool = False):
     return source_phase(state, animation_loop=loop)
 
 
-class PKFlash(NeutralSpecial, DirectionalSpecial):
+class _NessSpecial:
+    """Shared source-motion availability gate for Ness's B specials."""
+
+    _ACTIVE = ()
+
+    @hook.input_pressed(Button.B)
+    def input_pressed(self, fighter: Fighter, ctx) -> bool:
+        if fighter.action in self._ACTIVE:
+            return True
+        if not fresh_special_input(ctx, self.resource):
+            return False
+        if not directional_match(ctx, self.root):
+            return False
+        grounded = bool(ctx.ground_open)
+        if not (grounded or ctx.air_open):
+            return False
+        phase = self.ground if grounded else self.air
+        animation = getattr(fighter, "has_complete_animation", None)
+        if callable(animation):
+            state = dict(phase.metadata)["slippi_state"]
+            if not animation(state):
+                return False
+        start_action(fighter, phase)
+        return True
+
+
+class PKFlash(NeutralSpecial, _NessSpecial):
     ground_start = _phase(348)
     ground_hold = _phase(349, loop=True)
     ground_release = _phase(350)
@@ -78,7 +106,7 @@ class PKFlash(NeutralSpecial, DirectionalSpecial):
     }
 
 
-class PKFire(SideSpecial, DirectionalSpecial):
+class PKFire(SideSpecial, _NessSpecial):
     ground = _phase(356)
     air = _phase(357)
     _ACTIVE = (ground, air)
@@ -88,7 +116,7 @@ class PKFire(SideSpecial, DirectionalSpecial):
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
 
-class PKThunder(UpSpecial, DirectionalSpecial):
+class PKThunder(UpSpecial, _NessSpecial):
     ground_start = _phase(358)
     ground_hold = _phase(359, loop=True)
     ground_end = _phase(360)
@@ -126,7 +154,7 @@ class PKThunder(UpSpecial, DirectionalSpecial):
     }
 
 
-class PSIMagnet(DownSpecial, DirectionalSpecial):
+class PSIMagnet(DownSpecial, _NessSpecial):
     ground_start = _phase(367)
     ground_hold = _phase(368, loop=True)
     ground_hit = _phase(369)

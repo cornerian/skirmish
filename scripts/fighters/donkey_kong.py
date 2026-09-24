@@ -10,6 +10,7 @@ from skirmish import (
     Button,
     Fighter,
     MoveContext,
+    NeutralSpecial,
     UpSpecial,
     Transition,
     hook,
@@ -18,6 +19,89 @@ from skirmish import (
     source_phase,
     start_complete_special,
 )
+
+
+class GiantPunch(NeutralSpecial):
+    """Donkey Kong's source charge, release, and cancel state graph.
+
+    ``ftDk_SpecialNStart_Anim`` advances into the looping charge state.  The
+    native IASA callback releases the punch on B and cancels on L/R; the
+    charge counter, effects, hitboxes, and full charge decision stay owned by
+    the native fighter callback.
+    """
+
+    ground_start = source_phase(369)
+    ground_loop = source_phase(370, animation_loop=True)
+    ground_cancel = source_phase(371)
+    ground_punch = source_phase(372)
+    ground_full = source_phase(373)
+    air_start = source_phase(374)
+    air_loop = source_phase(375, animation_loop=True)
+    air_cancel = source_phase(376)
+    air_punch = source_phase(377)
+    air_full = source_phase(378)
+
+    ground = ground_start
+    air = air_start
+    _ACTIVE = (
+        ground_start, ground_loop, ground_cancel, ground_punch, ground_full,
+        air_start, air_loop, air_cancel, air_punch, air_full,
+    )
+    _CHARGE = (ground_loop, air_loop)
+
+    on_end = {
+        ground_start: Transition(ground_loop),
+        air_start: Transition(air_loop),
+        ground_cancel: Transition(Action.WAIT),
+        ground_punch: Transition(Action.WAIT),
+        ground_full: Transition(Action.WAIT),
+        air_cancel: Transition(Action.FALL),
+        air_punch: Transition(Action.FALL),
+        air_full: Transition(Action.FALL),
+    }
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
+        air_cancel: Transition(ground_cancel, preserve_state=True, keep_frame=True),
+        air_punch: Transition(ground_punch, preserve_state=True, keep_frame=True),
+        air_full: Transition(ground_full, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_loop: Transition(air_loop, preserve_state=True, keep_frame=True),
+        ground_cancel: Transition(air_cancel, preserve_state=True, keep_frame=True),
+        ground_punch: Transition(air_punch, preserve_state=True, keep_frame=True),
+        ground_full: Transition(air_full, preserve_state=True, keep_frame=True),
+    }
+
+    @hook.input_pressed(Button.B, Button.L, Button.R)
+    def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        if fighter.action in self._CHARGE:
+            input_state = getattr(ctx, "input", None)
+            if input_state is not None and not input_state.just_pressed(Button.B):
+                if input_state.just_pressed(Button.L) or input_state.just_pressed(Button.R):
+                    self.cancel_charge(fighter, ctx)
+                    return True
+            fighter.change_action(
+                self.ground_punch if fighter.action == self.ground_loop else self.air_punch
+            )
+            return True
+        if fighter.action in self._ACTIVE:
+            return True
+        return start_complete_special(
+            fighter,
+            ctx,
+            lambda grounded, _: (self.ground_start, 369)
+            if grounded
+            else (self.air_start, 374),
+            active_actions=self._ACTIVE,
+        )
+
+    def cancel_charge(self, fighter: Fighter, ctx: MoveContext) -> bool:
+        fighter.change_action(
+            self.ground_cancel if fighter.action == self.ground_loop else self.air_cancel
+        )
+        return True
 
 
 _GROUND = source_phase(
@@ -172,7 +256,7 @@ class SpinningKong(UpSpecial):
 
 
 class DonkeyKong(Fighter):
-    specials = Fighter.specials.replace(up=SpinningKong())
+    specials = Fighter.specials.replace(neutral=GiantPunch(), up=SpinningKong())
 
 
-__all__ = ["DonkeyKong", "SpinningKong"]
+__all__ = ["DonkeyKong", "GiantPunch", "SpinningKong"]

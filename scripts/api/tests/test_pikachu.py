@@ -14,7 +14,14 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
 from fighter import export_definition
-from fighters.pikachu import Pikachu, SOURCE_MOTION_STATES
+from fighters.pikachu import (
+    Pikachu,
+    QuickAttack,
+    SOURCE_MOTION_STATES,
+    advance_quick_attack_animation,
+    advance_quick_attack_hold,
+    skull_bash_command_transition,
+)
 
 
 def _pinned_melee_root() -> Path:
@@ -91,6 +98,51 @@ class PikachuScriptTests(unittest.TestCase):
         }
         self.assertTrue(any(name.endswith("._transition_animation_end") for name in callbacks))
         self.assertTrue(any(name.endswith("._transition_ground_air") for name in callbacks))
+
+    def test_quick_attack_animation_and_hold_branches_match_source(self):
+        class Fighter:
+            def __init__(self, action):
+                self.action = action
+                self.changes = []
+
+            def change_action(self, action):
+                self.changes.append(action)
+                self.action = action
+
+        for source, destination in (
+            (QuickAttack.ground_start, QuickAttack.ground_hold),
+            (QuickAttack.air_start, QuickAttack.air_hold),
+            (QuickAttack.air_travel, QuickAttack.air_end),
+        ):
+            fighter = Fighter(source)
+            self.assertTrue(advance_quick_attack_animation(fighter))
+            self.assertEqual(fighter.changes, [destination])
+
+        fighter = Fighter(QuickAttack.ground_dash)
+        self.assertFalse(advance_quick_attack_animation(fighter))
+        self.assertEqual(fighter.changes, [])
+
+        fighter = Fighter(QuickAttack.ground_hold)
+        self.assertFalse(advance_quick_attack_hold(fighter, frames_held=4, hold_limit=4))
+        self.assertTrue(advance_quick_attack_hold(fighter, frames_held=5, hold_limit=4))
+        self.assertEqual(fighter.changes, [QuickAttack.ground_dash])
+
+        fighter = Fighter(QuickAttack.air_hold)
+        self.assertTrue(advance_quick_attack_hold(fighter, frames_held=6, hold_limit=5))
+        self.assertEqual(fighter.changes, [QuickAttack.air_dash])
+
+    def test_skull_bash_command_ends_ground_and_air_loops(self):
+        from fighters.pikachu import Thunder
+
+        for source, destination in (
+            (Thunder.ground_loop, Thunder.ground_end),
+            (Thunder.ground_hit, Thunder.ground_end),
+            (Thunder.air_loop, Thunder.air_end),
+            (Thunder.air_hit, Thunder.air_end),
+        ):
+            self.assertIsNone(skull_bash_command_transition(source, 0))
+            self.assertEqual(skull_bash_command_transition(source, 1), destination)
+        self.assertIsNone(skull_bash_command_transition(Thunder.ground_end, 1))
 
 if __name__ == "__main__":
     unittest.main()

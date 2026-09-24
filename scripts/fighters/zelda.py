@@ -38,7 +38,7 @@ class Din(SideSpecial, DirectionalSpecial):
     air = air_start
     _ACTIVE = (ground_start, ground_loop, ground_end, air_start, air_loop, air_end)
 
-    @on.release(Button.B)
+    @on.release(Button.B, actions=(ground_loop, air_loop))
     def release(self, fighter: Fighter, ctx: object) -> bool:
         """End the loop once the source's hold timer permits release.
 

@@ -62,6 +62,8 @@ class PichuTests(unittest.TestCase):
         self.assertTrue(PichuParameters().can_walljump)
         self.assertEqual(PichuParameters().data_file, "PlPc.dat")
         self.assertEqual(PichuParameters().animation_data_file, "PlPcAJ.dat")
+        self.assertFalse(PichuParameters().up_special_effects)
+        self.assertEqual(PichuParameters().thunder_jolt_sound, 230067)
         self.assertEqual(
             Pichu.costume_files,
             ("PlPcNr.dat", "PlPcRe.dat", "PlPcBu.dat", "PlPcGr.dat"),

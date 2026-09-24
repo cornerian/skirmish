@@ -76,8 +76,10 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
         air: Transition(ground, preserve_state=True, keep_frame=True),
         air_misfire: Transition(ground_misfire, preserve_state=True, keep_frame=True),
-        air_s2: Transition(ground_s2, preserve_state=True, keep_frame=True),
-        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+        # ftLg_SpecialAirS2_Coll and ftLg_SpecialAirSEnd_Coll enter the
+        # grounded end state afresh after landing/wall contact.
+        air_s2: Transition(ground_end),
+        air_end: Transition(ground_end),
     }
     on_air = {
         ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
@@ -141,6 +143,16 @@ class Cyclone(DownSpecial, DirectionalSpecial):
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
+
+    @hook.animation_end(air)
+    def finish_air(self, fighter, ctx) -> None:
+        """Latch the native aerial charge marker before leaving Cyclone."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if not isinstance(command, (tuple, list)) or len(command) < 4 or not command[1]:
+            return
+        state.command = (command[0], 0, command[2], command[3])
+        state.cyclone_charge = True
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter, ctx) -> bool:

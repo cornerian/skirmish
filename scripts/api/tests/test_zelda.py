@@ -124,6 +124,13 @@ class ZeldaSpecialTests(unittest.TestCase):
         fighter = _Fighter(move.ground_start)
         self.assertFalse(move.release(fighter, _context(pressed=False)))
 
+        behavior_id = self.definition["movesets"]["specials"]["side"]
+        behavior = next(item for item in self.definition["behaviors"]
+                        if item["id"] == behavior_id)
+        release = next(item for item in behavior["callbacks"]
+                       if item["hook"] == "input_released")
+        self.assertEqual(release["actions"], ["Source.18:344", "Source.18:347"])
+
 
 if __name__ == "__main__":
     unittest.main()

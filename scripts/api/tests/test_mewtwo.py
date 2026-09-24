@@ -154,6 +154,18 @@ class MewtwoScriptTests(unittest.TestCase):
         move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=2)))
         self.assertFalse(fighter.flags.reflecting)
 
+    def test_confusion_grab_command_requires_and_records_a_victim(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.ground
+
+        move.grab_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        self.assertFalse(getattr(fighter.action_state, "confusion_grabbed", False))
+
+        fighter.victim_gobj = object()
+        move.grab_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        self.assertTrue(fighter.action_state.confusion_grabbed)
+
     def test_disable_and_teleport_keep_source_local_state(self):
         disable = self.module.Disable()
         fighter = _Fighter()
@@ -171,3 +183,27 @@ class MewtwoScriptTests(unittest.TestCase):
         fighter.action = teleport.air_travel
         teleport.begin_travel(fighter, SimpleNamespace())
         self.assertTrue(fighter.action_state.teleport_active)
+
+    def test_teleport_aerial_landing_honors_timer_and_special_lag(self):
+        move = self.module.Teleport()
+        fighter = _Fighter()
+        fighter.action = move.air_travel
+
+        move.travel_landed(
+            fighter, SimpleNamespace(teleport_timer_ready=False)
+        )
+        self.assertEqual(fighter.changes, [])
+
+        move.travel_landed(
+            fighter, SimpleNamespace(teleport_timer_ready=True)
+        )
+        self.assertEqual(fighter.changes[-1][0], move.ground_travel)
+        self.assertEqual(
+            fighter.changes[-1][1], {"preserve_state": True, "keep_frame": True}
+        )
+
+        fighter.action = move.air_end
+        fighter.action_state.teleport_active = True
+        move.land_end(fighter, SimpleNamespace())
+        self.assertEqual(fighter.changes[-1][0], self.module.Action.SPECIAL_HI_LANDING)
+        self.assertFalse(fighter.action_state.teleport_active)

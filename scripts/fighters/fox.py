@@ -1236,6 +1236,10 @@ class Shine(DownSpecial):
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
         if fighter.flags.reflecting and hit.projectile and hit.damage <= hit.max_damage:
             hit.reflect = True
+            # ftFx_SpecialLwHit_Enter is the native reflect-hit callback. The
+            # host exposes the same contact edge to the move, so enter the
+            # ground/air Hit phase while the engine applies the reflection.
+            fighter.change_action(self.ground_hit if fighter.grounded else self.air_hit)
 
     @hook.landed(*_AIR_PHASES)
     def landed(self, fighter: Fighter, ctx: MoveContext) -> bool:

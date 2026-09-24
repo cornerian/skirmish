@@ -53,6 +53,19 @@ class Cape(SideSpecial, _SourcePair):
     ground = source_phase(345)
     air = source_phase(346)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset the native cape command window on every entry.
+
+        ``changeAction`` in ``ftmariospecials.c`` clears command variables 0,
+        1, and 2 before the accessory callback creates the cape. The fourth
+        slot is owned by the common command stream and is preserved here.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, command[3])
+
     @hook.projectile_contact
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
         """Mirror the native cape reflect callback's eligibility gate.
@@ -74,6 +87,31 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
 class MarioTornado(DownSpecial, _SourcePair):
     ground = source_phase(349)
     air = source_phase(350)
+
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset the command cues initialized by ``doStartMotion``."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, command[3])
+
+    @hook.command_changed(1, actions=(air,))
+    def tap_command(self, fighter: Fighter, ctx) -> None:
+        """Consume the aerial tap cue used by ``ftMr_SpecialAirLw_Anim``.
+
+        The native animation callback turns command variable 1 into the
+        persistent tornado-charge flag and clears the command slot. The host
+        owns that persistent physics flag; consuming the cue here preserves
+        the observable one-shot command behavior.
+        """
+        event = getattr(ctx, "event", None)
+        if not getattr(event, "value", 0):
+            return
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (command[0], 0, command[2], command[3])
 
 
 class Mario(Fighter):

@@ -186,6 +186,19 @@ class Hammer(SideSpecial, _KirbySpecial):
     air = source_phase(384)
     _ACTIVE = (ground, air)
 
+    @hook.landed(actions=(air,))
+    def landing(self, fighter: Fighter, ctx) -> bool:
+        """Air Hammer lands into the source fall-special lag state."""
+        enter = getattr(fighter, "enter_fall_special", None)
+        lag = getattr(
+            getattr(getattr(ctx, "rules", None), "specials", None),
+            "landing_lag", None,
+        )
+        if not callable(enter) or lag is None:
+            return False
+        enter(mobility=0, landing_lag=lag)
+        return True
+
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground, on_air = frame_preserving_surface_pairs(ground, ground, air, air)
 
@@ -258,6 +271,24 @@ class Stone(DownSpecial, _KirbySpecial):
     air_end = source_phase(398)
     ground, air = ground_start, air_start
     _ACTIVE = (ground_start, ground_hold, ground_end, air_start, air_hold, air_end)
+
+    @hook.input_released(Button.B)
+    def release(self, fighter: Fighter, ctx) -> bool:
+        """Release Stone after the source minimum hold duration."""
+        destination = {
+            self.ground_hold.action: self.ground_end,
+            self.air_hold.action: self.air_end,
+        }.get(fighter.action)
+        if destination is None:
+            return False
+        minimum = getattr(
+            getattr(getattr(ctx, "rules", None), "specials", None),
+            "stone_min_hold_frames", None,
+        )
+        if minimum is None or fighter.action_frame < minimum:
+            return False
+        fighter.change_action(destination)
+        return True
 
     on_end = {
         ground_start: Transition(ground_hold),

@@ -97,6 +97,16 @@ class LuigiNeutralTests(unittest.TestCase):
         move._transition_animation_end(fighter, SimpleNamespace(grounded=False))
         self.assertEqual(fighter.action, Action.FALL)
 
+    def test_green_missile_aerial_fly_landing_enters_fresh_ground_end(self):
+        move = Luigi.specials.side
+        for phase in (move.air_s2, move.air_end):
+            fighter = _Fighter()
+            fighter.action = phase
+            move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+            self.assertEqual(fighter.action, move.ground_end)
+        self.assertFalse(move.on_ground[move.air_s2].preserve_state)
+        self.assertFalse(move.on_ground[move.air_end].keep_frame)
+
     def test_green_missile_release_launches_from_charge(self):
         move = Luigi.specials.side
         fighter = _Fighter()
@@ -137,6 +147,21 @@ class LuigiNeutralTests(unittest.TestCase):
         fighter.action_state.command = (9, 8, 7, 6)
         cyclone.enter(fighter, _context())
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 6))
+
+    def test_cyclone_air_animation_latches_charge_command(self):
+        move = Luigi.specials.down
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 1, 0, 0)
+        move.finish_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+        self.assertTrue(fighter.action_state.cyclone_charge)
+
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 0, 0, 0)
+        move.finish_air(fighter, SimpleNamespace(grounded=False))
+        self.assertFalse(hasattr(fighter.action_state, "cyclone_charge"))
 
     def test_neutral_is_reserved_only_when_b_is_not_directional(self):
         move = Fireball()

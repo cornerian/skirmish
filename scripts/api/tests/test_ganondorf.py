@@ -250,6 +250,34 @@ class GanondorfTests(unittest.TestCase):
         self.assertEqual(fighter.action, Action.FALL)
         self.assertEqual(fighter.changes, [(Action.FALL, {})])
 
+    def test_dark_dive_air_landing_requires_release_cue(self):
+        move = Ganondorf.specials.up
+        attributes = SimpleNamespace(
+            specialhi_freefall_air_spd_mul=0.8,
+            specialhi_landing_lag=20,
+        )
+        fighter = _Fighter(move.air)
+        context = _context(resource_value=SimpleNamespace(attributes=attributes))
+        self.assertFalse(move.landed(fighter, context))
+        self.assertEqual(fighter.fall_special, [])
+
+        fighter.action_state.dive_released = True
+        self.assertTrue(move.landed(fighter, context))
+        self.assertEqual(
+            fighter.fall_special,
+            [{"mobility": 0.8, "landing_lag": 20}],
+        )
+
+    def test_wizard_foot_wall_rebound_requires_source_command_cue(self):
+        move = Ganondorf.specials.down
+        fighter = _Fighter(move.ground)
+        self.assertFalse(move.wall_rebound(fighter, SimpleNamespace(wall=True)))
+        self.assertEqual(fighter.changes, [])
+
+        fighter.action_state.command = (1, 0, 0, 0)
+        self.assertTrue(move.wall_rebound(fighter, SimpleNamespace(wall=True)))
+        self.assertTrue(getattr(fighter.action, "reference", fighter.action).endswith(":363"))
+
 
 if __name__ == "__main__":
     unittest.main()

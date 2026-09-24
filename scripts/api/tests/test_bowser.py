@@ -29,6 +29,7 @@ class _Fighter:
         self.action = action
         self.action_frame = 0
         self.grounded = True
+        self.facing = 1.0
         self.changes = []
 
     def change_action(self, action, **kwargs):
@@ -148,6 +149,27 @@ class BowserTests(unittest.TestCase):
             if name.startswith("special."):
                 self.assertNotIn("article", action)
                 self.assertNotIn("effect", action)
+
+    def test_klaw_hit_and_wait_choose_native_forward_or_back_end(self):
+        side = Bowser.specials.side
+        fighter = _Fighter(side.ground_wait)
+        self.assertTrue(side.choose_throw_direction(
+            fighter, _context(stick=(1.0, 0.0))
+        ))
+        self.assertEqual(fighter.action, side.ground_end_forward)
+        self.assertEqual(fighter.changes[-1][1], {
+            "preserve_state": True, "keep_frame": True,
+        })
+
+        fighter = _Fighter(side.air_hit)
+        fighter.facing = -1.0
+        self.assertTrue(side.choose_throw_direction(
+            fighter, _context(stick=(1.0, 0.0), ground=False)
+        ))
+        self.assertEqual(fighter.action, side.air_end_back)
+        self.assertFalse(side.choose_throw_direction(
+            _Fighter(side.ground_start), _context(stick=(1.0, 0.0))
+        ))
 
 
 if __name__ == "__main__":

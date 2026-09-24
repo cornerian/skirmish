@@ -34,6 +34,17 @@ class _Fighter:
         self.changes.append((action, kwargs))
 
 
+class _AnimationAwareFighter(_Fighter):
+    def __init__(self, available=True):
+        super().__init__()
+        self.available = available
+        self.queried_states = []
+
+    def has_complete_animation(self, state):
+        self.queried_states.append(state)
+        return self.available
+
+
 def _context(*, resource=None, stick=(0.0, 0.0), grounded=True, pressed=True):
     available = {resource} if resource is not None else set()
     return SimpleNamespace(
@@ -107,6 +118,17 @@ class NessTests(unittest.TestCase):
                 wrong, _context(resource="side", stick=(0.0, 1.0))
             )
         )
+
+    def test_entry_rejects_missing_native_animation(self):
+        fighter = _AnimationAwareFighter(available=False)
+        self.assertFalse(
+            PKThunder().input_pressed(
+                fighter,
+                _context(resource="up", stick=(0.0, 1.0), grounded=False),
+            )
+        )
+        self.assertEqual(fighter.queried_states, [362])
+        self.assertEqual(fighter.changes, [])
 
     def test_source_lifecycle_preserves_surface_and_terminal_destinations(self):
         for move, ground, air in (

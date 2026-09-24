@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from skirmish import Action, Fighter, action, source_action
+from skirmish import Action, Fighter, Move, TauntMoves, action, source_action
 from fighter.compat import Button
 from fighter.events import on
 from fighter.helpers import fresh_special_input, start_action
@@ -153,6 +153,19 @@ class YoungLinkDownSpecial(_FamilyDownSpecial):
             reuse(airborne=fighter.action is self.air)
 
 
+class YoungLinkAppeal(Move):
+    """CLink's two Z-air appeal rows (342/343).
+
+    ``ftCl_AppealS_Anim`` owns milk creation and cleanup in the native item
+    layer. The authoring API can still retain both source motion identities so
+    hosts can select the left/right row without collapsing them to Link's
+    generic appeal action.
+    """
+
+    action = _phase(342, attack="taunt.right")
+    left = _phase(343, attack="taunt.left")
+
+
 class YoungLink(Fighter):
     """Source-state definition for the CLink fighter (external id 21)."""
 
@@ -162,6 +175,7 @@ class YoungLink(Fighter):
         up=YoungLinkUpSpecial(),
         down=YoungLinkDownSpecial(),
     )
+    taunt = TauntMoves(YoungLinkAppeal())
 
 
 __all__ = [
@@ -170,4 +184,5 @@ __all__ = [
     "YoungLinkSideSpecial",
     "YoungLinkUpSpecial",
     "YoungLinkDownSpecial",
+    "YoungLinkAppeal",
 ]

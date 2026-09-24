@@ -122,6 +122,7 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
         air_start, air_hit, air_hold, air_wait,
         air_end_forward, air_end_back,
     )
+    _TURN_PHASES = (ground_hit, ground_wait, air_hit, air_wait)
 
     # The native hit/hold branch is selected by capture callbacks.  Those
     # callbacks require the victim archive and therefore cannot be represented
@@ -153,6 +154,28 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
             fighter.change_action(self.ground_hit)
         elif fighter.action == self.air_start:
             fighter.change_action(self.air_hit)
+
+    @hook.stick_changed(actions=_TURN_PHASES)
+    def choose_throw_direction(self, fighter: Any, ctx: Any) -> bool:
+        """Match ``ftKp_SpecialS{,Air}Hit/Wait_IASA`` direction selection."""
+        if fighter.action not in self._TURN_PHASES:
+            return False
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        rules = getattr(ctx, "rules", None)
+        specials = getattr(rules, "specials", None)
+        threshold = getattr(specials, "side_stick_threshold", None)
+        if threshold is None or abs(stick[0]) < threshold:
+            return False
+        # The native routine compares the stick direction in world space to
+        # the fighter's facing direction: +1 selects forward, -1 back.
+        forward = stick[0] * getattr(fighter, "facing", 1.0) > 0.0
+        grounded = fighter.action in (self.ground_hit, self.ground_wait)
+        if grounded:
+            target = self.ground_end_forward if forward else self.ground_end_back
+        else:
+            target = self.air_end_forward if forward else self.air_end_back
+        fighter.change_action(target, preserve_state=True, keep_frame=True)
+        return True
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_hit: Transition(ground_hit, preserve_state=True, keep_frame=True),

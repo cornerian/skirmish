@@ -143,6 +143,25 @@ class YoshiSpecialTests(unittest.TestCase):
             move._transition_ground_air(grounded, SimpleNamespace(grounded=False))
             self.assertEqual(grounded.action, air)
 
+    def test_egg_roll_b_press_releases_ground_and_air_loops(self):
+        move = Yoshi.specials.side
+        grounded = _Fighter(move.ground_loop)
+        self.assertTrue(move.input_pressed(grounded, _context(stick=(1.0, 0.0))))
+        self.assertEqual(grounded.action, move.ground_end)
+        self.assertEqual(
+            grounded.changes,
+            [(move.ground_end, {"preserve_state": True, "keep_frame": True})],
+        )
+
+        airborne = _Fighter(move.air_loop)
+        self.assertTrue(
+            move.input_pressed(
+                airborne,
+                _context(stick=(1.0, 0.0), ground=False),
+            )
+        )
+        self.assertEqual(airborne.action, move.air_landing)
+
 
 if __name__ == "__main__":
     unittest.main()

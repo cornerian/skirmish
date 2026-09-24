@@ -12,10 +12,12 @@ from skirmish import (
     DirectionalSpecial,
     DownSpecial,
     Fighter,
+    HitContext,
     SideSpecial,
     Transition,
     UpSpecial,
     b0_source_phases,
+    hook,
     source_phase,
 )
 
@@ -49,6 +51,20 @@ class _SourcePair(DirectionalSpecial):
 class SuperSheet(SideSpecial, _SourcePair):
     ground = source_phase(345)
     air = source_phase(346)
+
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset Mario's cape command window on every Dr. entry."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, command[3])
+
+    @hook.projectile_contact
+    def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
+        """Mirror ftMr_SpecialS's active-cape reflection gate."""
+        if fighter.flags.reflecting and hit.projectile and hit.damage <= hit.max_damage:
+            hit.reflect = True
 
 
 class SuperJumpPunch(UpSpecial, _SourcePair):

@@ -9,7 +9,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from fighter import Action, Button, Fighter, export_definition
+from fighter import Action, Button, Fighter, HitContext, export_definition
 from fighters.dr_mario import DrMario, DrTornado, SuperJumpPunch, SuperSheet
 
 
@@ -28,6 +28,8 @@ class _Fighter:
     def __init__(self):
         self.changes = []
         self.spawned = []
+        self.action_state = type("State", (), {"command": (7, 6, 5, 4)})()
+        self.flags = type("Flags", (), {"reflecting": True})()
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -100,6 +102,21 @@ class DrMarioSpecialTests(unittest.TestCase):
             fighter.spawned,
             [(ArticleId.DR_MARIO_VITAMIN, (FighterPart.L1ST_NB, 1.0, 2.0), -1.0)],
         )
+
+    def test_cape_entry_resets_commands_and_reflects_eligible_projectiles(self):
+        move = DrMario.specials.side
+        fighter = _Fighter()
+        fighter.action = move.ground
+        move.enter(fighter, object())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
+        hit = HitContext(projectile=True, damage=3.0, max_damage=4.0, reflect=False)
+        move.projectile_contact(fighter, hit)
+        self.assertTrue(hit.reflect)
+
+        blocked = HitContext(projectile=True, damage=5.0, max_damage=4.0, reflect=False)
+        move.projectile_contact(fighter, blocked)
+        self.assertFalse(blocked.reflect)
 
 
 if __name__ == "__main__":

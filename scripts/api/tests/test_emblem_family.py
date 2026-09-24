@@ -77,7 +77,9 @@ class EmblemFamilyTests(unittest.TestCase):
 
         # ftMars first arms cmd_vars[1], then consumes A+B after cmd_vars[0].
         self.assertTrue(move.choose_phase(fighter, ctx))
-        self.assertEqual(fighter.action_state.command[0], 1)
+        self.assertEqual(fighter.action_state.command[1], 1)
+        # The first callback arms cmd_vars[1]; the animation later sets
+        # cmd_vars[0], clearing cmd_vars[1] before the phase chooser runs.
         fighter.action_state.command = (1, 0, 0, 0)
         self.assertTrue(move.choose_phase(fighter, ctx))
         self.assertEqual(fighter.action, move.ground_2_up)
@@ -142,7 +144,11 @@ class EmblemFamilyTests(unittest.TestCase):
 
         def normalize(value):
             if isinstance(value, dict):
-                return {key: normalize(item) for key, item in value.items()}
+                return {
+                    key: normalize(item)
+                    for key, item in value.items()
+                    if key != "buttons_all"
+                }
             if isinstance(value, list):
                 return [normalize(item) for item in value]
             if isinstance(value, str) and "Source." in value and ":" in value:

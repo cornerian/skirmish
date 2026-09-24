@@ -161,6 +161,12 @@ class IceClimbersTests(unittest.TestCase):
 
         fighter = _Fighter("Source.14:347")
         up.partner_fallback(
+            fighter, SimpleNamespace(event=_Event(1), partner_available=True)
+        )
+        self.assertEqual(fighter.action, "Source.14:347")
+
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(
             fighter, SimpleNamespace(event=_Event(1), partner_available=False)
         )
         self.assertEqual(fighter.action.action, "Source.14:350")
@@ -171,6 +177,13 @@ class IceClimbersTests(unittest.TestCase):
         fighter = _Fighter("Source.14:348")
         up.partner_launch(fighter, SimpleNamespace(event=_Event(1)))
         self.assertEqual(fighter.action, "Source.14:348")
+
+        fighter = _Fighter("Source.14:348")
+        up.partner_launch(
+            fighter, SimpleNamespace(event=_Event(1), partner_launching=False)
+        )
+        self.assertEqual(fighter.action, "Source.14:348")
+
         fighter = _Fighter("Source.14:348")
         up.partner_launch(
             fighter, SimpleNamespace(event=_Event(1), partner_launching=True)
@@ -188,6 +201,28 @@ class IceClimbersTests(unittest.TestCase):
         }
         self.assertIn((2, ("Source.14:347", "Source.14:352")), command_hooks)
         self.assertIn((1, ("Source.14:348", "Source.14:353")), command_hooks)
+
+    def test_squall_wall_contact_advances_s1_to_s2_rows(self):
+        export_definition(IceClimbers)
+        side = IceClimbers.specials.side
+        for source, target in ((343, 344), (345, 346)):
+            fighter = _Fighter(f"Source.14:{source}")
+            self.assertTrue(
+                side.wall_rebound(
+                    fighter, SimpleNamespace(wall_contact=True)
+                )
+            )
+            self.assertEqual(fighter.action.action, f"Source.14:{target}")
+            self.assertEqual(
+                fighter.changes[-1][1],
+                {"preserve_state": True, "keep_frame": True},
+            )
+
+        fighter = _Fighter("Source.14:343")
+        self.assertFalse(
+            side.wall_rebound(fighter, SimpleNamespace(wall_contact=False))
+        )
+        self.assertEqual(fighter.action, "Source.14:343")
 
 
 if __name__ == "__main__":

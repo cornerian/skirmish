@@ -22,6 +22,57 @@ class Pikachu(Fighter):
     specials = ELECTRIC_SPECIALS
 
 
+# Native ``ftPk_SpecialSStart_Anim`` enters the hold pose when the start
+# animation ends.  The hold callback advances to dash after its attribute
+# controlled counter expires, while the airborne travel pose falls through
+# to its end pose in ``ftPk_SpecialAirS1_Anim``.  Keep these source branches
+# local to Pikachu's authoring module until the shared family can expose the
+# corresponding animation/countdown callbacks without changing its ABI.
+QUICK_ATTACK_ANIMATION_ENDS = {
+    QuickAttack.ground_start: QuickAttack.ground_hold,
+    QuickAttack.air_start: QuickAttack.air_hold,
+    QuickAttack.air_travel: QuickAttack.air_end,
+}
+
+
+def advance_quick_attack_animation(fighter) -> bool:
+    """Apply one source animation-end transition, returning whether it fired."""
+    destination = QUICK_ATTACK_ANIMATION_ENDS.get(fighter.action)
+    if destination is None:
+        return False
+    fighter.change_action(destination)
+    return True
+
+
+def advance_quick_attack_hold(fighter, frames_held: int, hold_limit: int) -> bool:
+    """Apply ``ftPk_SpecialSHold_Anim`` once its native counter expires."""
+    if frames_held <= hold_limit:
+        return False
+    destination = {
+        QuickAttack.ground_hold: QuickAttack.ground_dash,
+        QuickAttack.air_hold: QuickAttack.air_dash,
+    }.get(fighter.action)
+    if destination is None:
+        return False
+    fighter.change_action(destination)
+    return True
+
+
+SKULL_BASH_COMMAND_ENDS = {
+    Thunder.ground_loop: Thunder.ground_end,
+    Thunder.ground_hit: Thunder.ground_end,
+    Thunder.air_loop: Thunder.air_end,
+    Thunder.air_hit: Thunder.air_end,
+}
+
+
+def skull_bash_command_transition(action, command_value):
+    """Return Skull Bash's terminal phase when native command 0 is nonzero."""
+    if not command_value:
+        return None
+    return SKULL_BASH_COMMAND_ENDS.get(action)
+
+
 # Keep the names aligned with the symbols in ``ftpikachu.c``.  A tuple rather
 # than a derived range makes omissions visible during code review and gives
 # native exporters a stable, allocation-free source index.
@@ -59,6 +110,11 @@ __all__ = [
     "Pikachu",
     "ThunderJolt",
     "QuickAttack",
+    "QUICK_ATTACK_ANIMATION_ENDS",
+    "advance_quick_attack_animation",
+    "advance_quick_attack_hold",
+    "SKULL_BASH_COMMAND_ENDS",
+    "skull_bash_command_transition",
     "Agility",
     "Thunder",
     "SOURCE_MOTION_STATES",

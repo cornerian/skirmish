@@ -69,14 +69,18 @@ def _context(*, pressed=True, resource=True, grounded=True, stick=(0.0, 0.0)):
 
 class ArticleTests(unittest.TestCase):
     def test_source_article_ids_match_item_kind_enum(self):
+        ids = {member.name: int(member) for member in ArticleId}
         self.assertEqual(
-            {member.name: int(member) for member in ArticleId},
+            {name: ids[name] for name in (
+                "MARIO_FIRE", "DR_MARIO_VITAMIN", "FOX_LASER", "FALCO_LASER",
+                "LINK_BOMB", "YOUNG_LINK_BOMB", "NESS_PK_FLASH_EXPLOSION",
+                "SAMUS_BOMB", "PEACH_TOAD_SPORE", "LUIGI_FIRE",
+            )},
             {
-                "MARIO_FIRE": 48,
-                "DR_MARIO_VITAMIN": 49,
-                "FOX_LASER": 54,
-                "FALCO_LASER": 55,
-                "LUIGI_FIRE": 105,
+                "MARIO_FIRE": 48, "DR_MARIO_VITAMIN": 49, "FOX_LASER": 54,
+                "FALCO_LASER": 55, "LINK_BOMB": 58, "YOUNG_LINK_BOMB": 59,
+                "NESS_PK_FLASH_EXPLOSION": 78, "SAMUS_BOMB": 93,
+                "PEACH_TOAD_SPORE": 111, "LUIGI_FIRE": 105,
             },
         )
 

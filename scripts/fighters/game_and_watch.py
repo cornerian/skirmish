@@ -92,10 +92,31 @@ class _SourcePairSpecial(DirectionalSpecial):
         super().__init_subclass__(**kwargs)
 
 class Chef(NeutralSpecial, _SourcePairSpecial):
-    """Chef's grounded and aerial source entry states."""
+    """Chef's grounded and aerial states, including the held-B loop."""
 
     ground = source_phase(353)
     air = source_phase(354)
+
+    @on.input_pressed(Button.B)
+    def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        """Restart Chef's source motion when its command frame allows a loop."""
+        if fighter.action in self._ACTIVE:
+            if (
+                bool(getattr(ctx, "chef_loop_open", False))
+                and isinstance(getattr(ctx, "chef_sausages", None), int)
+                and isinstance(getattr(ctx, "chef_maximum", None), int)
+                and ctx.chef_sausages < ctx.chef_maximum
+            ):
+                start_action(fighter, fighter.action)
+            return True
+        if not (
+            fresh_special_input(ctx, self.resource)
+            and directional_match(ctx, self.root)
+            and bool(ctx.ground_open or ctx.air_open)
+        ):
+            return False
+        start_action(fighter, self.ground if ctx.ground_open else self.air)
+        return True
 
 
 class Judge(SideSpecial):
@@ -191,7 +212,7 @@ class Fire(UpSpecial, _SourcePairSpecial):
 
 
 class OilPanic(DownSpecial, _SourcePairSpecial):
-    """Oil Panic's source states, excluding article/absorb decisions."""
+    """Oil Panic's source states and full-bucket release branch."""
 
     ground = source_phase(375)
     ground_catch = source_phase(376)
@@ -219,6 +240,25 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
         air_catch: Transition(Action.FALL),
         air_shoot: Transition(Action.FALL),
     }
+
+    @on.input_pressed(Button.B)
+    def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        """Release a full bucket immediately, as SpecialLw_Enter does."""
+        if fighter.action in self._ACTIVE:
+            return True
+        if not (
+            fresh_special_input(ctx, self.resource)
+            and directional_match(ctx, self.root)
+            and bool(ctx.ground_open or ctx.air_open)
+        ):
+            return False
+        ground = bool(ctx.ground_open)
+        charge = getattr(ctx, "panic_charge", None)
+        if isinstance(charge, int) and not isinstance(charge, bool) and charge >= 3:
+            start_action(fighter, self.ground_shoot if ground else self.air_shoot)
+        else:
+            start_action(fighter, self.ground if ground else self.air)
+        return True
 
 
 class GameAndWatch(Fighter):

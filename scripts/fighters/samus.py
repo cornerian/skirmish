@@ -52,10 +52,15 @@ class ChargeShot(NeutralSpecial, DirectionalSpecial):
               ground_cancel: Transition(air_fire, preserve_state=True, keep_frame=True),
               ground_fire: Transition(air_fire, preserve_state=True, keep_frame=True)}
 
-    @hook.input_pressed(Button.B)
+    @hook.input_pressed(Button.B, Button.L, Button.R)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        """Release a held ground charge when B is pressed again."""
+        """Match the source B release and LR cancel paths while charging."""
         if fighter.action == self.ground_hold:
+            input_state = getattr(ctx, "input", None)
+            if input_state is not None and not input_state.just_pressed(Button.B):
+                if input_state.just_pressed(Button.L) or input_state.just_pressed(Button.R):
+                    fighter.change_action(self.ground_cancel)
+                    return True
             fighter.change_action(self.ground_fire)
             return True
         return DirectionalSpecial.input_pressed(self, fighter, ctx)

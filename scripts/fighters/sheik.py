@@ -33,6 +33,25 @@ class Needles(NeutralSpecial, DirectionalSpecial):
     air = air_start
     _ACTIVE = (ground_start, ground_loop, air_start, air_loop)
 
+    @on.input_pressed(Button.B, Button.L, Button.R)
+    def input_pressed(self, fighter: Fighter, ctx: Any) -> bool:
+        """Select B entry or the native loop-only shoulder cancel branch."""
+        input_state = getattr(ctx, "input", None)
+        just_pressed = getattr(input_state, "just_pressed", None)
+        if callable(just_pressed) and (
+            just_pressed(Button.L) or just_pressed(Button.R)
+        ):
+            destination = {
+                self.ground_loop: self.ground_cancel,
+                self.air_loop: self.air_cancel,
+            }.get(fighter.action)
+            if destination is not None:
+                fighter.change_action(destination)
+                return True
+        if callable(just_pressed) and not just_pressed(Button.B):
+            return False
+        return DirectionalSpecial.input_pressed(self, fighter, ctx)
+
     @on.release(Button.B)
     def release(self, fighter: Fighter, ctx: Any) -> bool:
         destination = {

@@ -44,6 +44,7 @@ class MewtwoActionState(ActionState):
     shadow_ball_charge: int = 0
     disable_fired: bool = False
     confusion_reflecting: bool = False
+    confusion_grabbed: bool = False
     confusion_air_boosted: bool = False
     teleport_active: bool = False
 
@@ -225,6 +226,7 @@ class Confusion(SideSpecial, _MewtwoSpecial):
         # a fresh grounded entry starts a new Confusion and clears the latch.
         if fighter.action == self.ground:
             state.confusion_air_boosted = False
+            state.confusion_grabbed = False
             _set_reflecting(fighter, False)
         # ftMt_SpecialAirS_Enter applies the one-time air boost.  Resource
         # authors may expose it as ``side.attributes.air_boost``; absent data
@@ -237,6 +239,23 @@ class Confusion(SideSpecial, _MewtwoSpecial):
                 velocity = getattr(fighter, "velocity", (0.0, 0.0))
                 fighter.set_velocity(velocity[0], boost)
                 state.confusion_air_boosted = True
+
+    @hook.command_changed(0, actions=(ground, air))
+    def grab_command(self, fighter: Any, ctx: Any) -> None:
+        """Mirror ``ftMewtwo_SetGrabVictim`` after the grab command fires.
+
+        The native callback consumes command variable 0 only when a victim
+        exists.  A host can expose that object on either the event context or
+        fighter; keeping the check here prevents a stray animation marker
+        from claiming a grab.
+        """
+        if not _event_value(ctx):
+            return
+        victim = getattr(ctx, "victim", None)
+        if victim is None:
+            victim = getattr(fighter, "victim_gobj", None)
+        if victim is not None:
+            _fighter_state(fighter).confusion_grabbed = True
 
     @hook.command_changed(1, actions=(ground, air))
     def reflect_command(self, fighter: Any, ctx: Any) -> None:
@@ -284,10 +303,30 @@ class Teleport(UpSpecial, _MewtwoSpecial):
     def begin_travel(self, fighter: Any, ctx: Any) -> None:
         _fighter_state(fighter).teleport_active = True
 
+    @hook.landed(actions=(air_travel,))
+    def travel_landed(self, fighter: Any, ctx: Any) -> None:
+        """Land only after the native Teleport travel timer permits it.
+
+        ``ftMt_SpecialAirHiLost_Coll`` checks the travel timer before taking
+        the air-to-ground transition.  Hosts that expose that result provide
+        ``teleport_timer_ready`` on the contact context; older hosts retain
+        the historical immediate landing behavior when the field is absent.
+        """
+        if ctx is not None and hasattr(ctx, "teleport_timer_ready"):
+            if not bool(ctx.teleport_timer_ready):
+                return
+        fighter.change_action(
+            self.ground_travel, preserve_state=True, keep_frame=True
+        )
+
+    @hook.landed(actions=(air_end,))
+    def land_end(self, fighter: Any, ctx: Any) -> None:
+        """The aerial end state enters SpecialHi landing lag on contact."""
+        fighter.change_action(Action.SPECIAL_HI_LANDING)
+        _fighter_state(fighter).teleport_active = False
+
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
-        air_travel: Transition(ground_travel, preserve_state=True, keep_frame=True),
-        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
     }
     on_air = {
         ground_start: Transition(air_start, preserve_state=True, keep_frame=True),

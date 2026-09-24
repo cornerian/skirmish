@@ -81,6 +81,13 @@ class WizardFoot(CaptainDownSpecial):
     air_end = source_phase(361, animation=316, attack="down.air_end")
     ground_end_air = source_phase(362, animation=315, attack="down.ground_end_air")
 
+    def wall_rebound(self, fighter, ctx):
+        """Require the source wall-collision command cue before state 363."""
+        command = getattr(getattr(fighter, "action_state", None), "command", ())
+        if not command or not command[0]:
+            return False
+        return super().wall_rebound(fighter, ctx)
+
 
 class Ganondorf(Fighter):
     action_state = CaptainFamilyActionState

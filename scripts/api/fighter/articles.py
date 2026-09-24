@@ -19,7 +19,42 @@ class ArticleId(IntEnum):
     DR_MARIO_VITAMIN = 49
     FOX_LASER = 54
     FALCO_LASER = 55
+    LINK_BOMB = 58
+    YOUNG_LINK_BOMB = 59
+    LINK_BOOMERANG = 60
+    YOUNG_LINK_BOOMERANG = 61
+    LINK_HOOKSHOT = 62
+    YOUNG_LINK_HOOKSHOT = 63
+    LINK_ARROW = 64
+    YOUNG_LINK_ARROW = 65
+    NESS_PK_FIRE = 66
+    NESS_PK_FIRE_FLAME = 67
+    NESS_PK_FLASH = 68
+    NESS_PK_THUNDER = 69
+    NESS_PK_THUNDER_TRAIL_1 = 70
+    NESS_PK_THUNDER_TRAIL_2 = 71
+    NESS_PK_THUNDER_TRAIL_3 = 72
+    NESS_PK_THUNDER_TRAIL_4 = 73
+    LINK_BOW = 76
+    YOUNG_LINK_BOW = 77
+    NESS_PK_FLASH_EXPLOSION = 78
+    SAMUS_BOMB = 93
+    PEACH_BOMBER = 98
+    PEACH_TURNIP = 99
+    PEACH_PARASOL = 103
+    PEACH_TOAD = 104
     LUIGI_FIRE = 105
+    PEACH_TOAD_SPORE = 111
+
+    @property
+    def is_native_callback_owned(self) -> bool:
+        return (
+            58 <= self <= 73
+            or 76 <= self <= 78
+            or self in (93, 98, 99, 111, 124)
+            or 103 <= self <= 104
+            or 114 <= self <= 122
+        )
 
 
 def b0_source_phases(

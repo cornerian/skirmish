@@ -48,6 +48,7 @@ class EventBinding:
     command_index: int | None = None
     deadline: int | None = None
     event_id: int | None = None
+    buttons_all: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"hook": self.hook.value, "callback": self.callback}
@@ -59,6 +60,8 @@ class EventBinding:
             result["actions"] = list(self.actions)
         if self.buttons is not None:
             result["buttons"] = self.buttons
+        if self.buttons_all:
+            result["buttons_all"] = True
         if self.countdown_phase != "physics":
             result["countdown_phase"] = self.countdown_phase
         return result
@@ -66,6 +69,7 @@ class EventBinding:
 
 def _binding(hook: Hook, *, action: Any = None, actions: tuple[Any, ...] = (),
              buttons: tuple[Any, ...] = (), marker: str | None = None,
+             buttons_all: bool = False,
              track: str | None = None, gate: str | None = None,
              countdown: str | None = None,
              countdown_phase: str = "physics",
@@ -79,8 +83,12 @@ def _binding(hook: Hook, *, action: Any = None, actions: tuple[Any, ...] = (),
             names = names or (action_name,)
         if countdown_phase not in ("animation", "physics"):
             raise ValueError("countdown phase must be 'animation' or 'physics'")
+        if not isinstance(buttons_all, bool):
+            raise TypeError("buttons_all must be a bool")
+        if buttons_all and not buttons:
+            raise ValueError("buttons_all requires at least one button")
         binding = EventBinding(hook, function.__name__, action=_action_name(action) if action is not None else None,
-                               actions=names, buttons=_button_mask(buttons),
+                               actions=names, buttons=_button_mask(buttons), buttons_all=buttons_all,
                                marker=marker, track=track, gate=gate,
                                countdown=countdown, countdown_phase=countdown_phase,
                                command_index=command_index, deadline=deadline,
@@ -149,8 +157,14 @@ def _button_mask(buttons: tuple[Any, ...]) -> int | None:
 
 
 class _On:
-    def press(self, *buttons: Any, **kwargs: Any): return _binding(Hook.INPUT_PRESSED, buttons=buttons, actions=kwargs.get("actions", ()))
-    def release(self, *buttons: Any, **kwargs: Any): return _binding(Hook.INPUT_RELEASED, buttons=buttons, actions=kwargs.get("actions", ()))
+    def press(self, *buttons: Any, **kwargs: Any):
+        return _binding(Hook.INPUT_PRESSED, buttons=buttons,
+                        buttons_all=kwargs.get("buttons_all", kwargs.get("require_all_buttons", False)),
+                        actions=kwargs.get("actions", ()))
+    def release(self, *buttons: Any, **kwargs: Any):
+        return _binding(Hook.INPUT_RELEASED, buttons=buttons,
+                        buttons_all=kwargs.get("buttons_all", kwargs.get("require_all_buttons", False)),
+                        actions=kwargs.get("actions", ()))
     def stick(self, function=None, **kwargs):
         decorator = _binding(Hook.STICK_CHANGED, actions=kwargs.get("actions", ()))
         return decorator(function) if callable(function) else decorator
