@@ -38,6 +38,20 @@ class Din(SideSpecial, DirectionalSpecial):
     air = air_start
     _ACTIVE = (ground_start, ground_loop, ground_end, air_start, air_loop, air_end)
 
+    @on.action_enter(ground_start, air_start)
+    def enter(self, fighter: Fighter, ctx: object) -> None:
+        """Reset all four Din Fire command slots on source entry.
+
+        ``ftZd_SpecialS_Enter`` and its aerial counterpart explicitly clear
+        ``cmd_vars[0..3]`` before starting the motion.  Keeping the complete
+        command tuple reset prevents a stale animation cue from spawning an
+        article in a newly entered Din Fire action.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
+
     @on.release(Button.B, actions=(ground_loop, air_loop))
     def release(self, fighter: Fighter, ctx: object) -> bool:
         """End the loop once the source's hold timer permits release.
