@@ -143,16 +143,36 @@ class ShadowBall(NeutralSpecial, _MewtwoSpecial):
                 fighter.set_velocity(0.0, 0.0)
             elif hasattr(fighter, "ground_velocity"):
                 fighter.ground_velocity = 0.0
+        elif hasattr(fighter, "velocity") and hasattr(fighter, "set_velocity"):
+            # ftMewtwo_SpecialAirN_ChangeAction halves self_vel.y before the
+            # first animation frame.  Keep horizontal momentum intact.
+            velocity = fighter.velocity
+            fighter.set_velocity(velocity[0], velocity[1] * 0.5)
 
     @hook.command_changed(3, actions=_STARTS)
     def create_held_shadow(self, fighter: Any, ctx: Any) -> None:
         if _event_value(ctx):
             _fighter_state(fighter).shadow_ball_held = True
 
-    @hook.command_changed(1, actions=_RELEASES)
+    @hook.command_changed(1, actions=_RELEASES + (ground_end, air_end))
     def release_shadow(self, fighter: Any, ctx: Any) -> None:
-        if _event_value(ctx) and _fighter_state(fighter).shadow_ball_held:
-            _fighter_state(fighter).shadow_ball_released = True
+        """Forward the source command marker to the native article host.
+
+        ``ftMt_SpecialN_ReleaseShadowBall`` is called from both End animation
+        callbacks and consumes command variable 1 only when its value is one.
+        The Python boundary cannot manufacture the article, but it can keep
+        the command/state transition exact.  Article launch remains native
+        until the runtime exposes a supported article bridge.
+        """
+        state = _fighter_state(fighter)
+        if _event_value(ctx) != 1 or not state.shadow_ball_held:
+            return
+        state.shadow_ball_released = True
+        state.shadow_ball_held = False
+        state.shadow_ball_charge = 0
+        command = state.command
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (command[0], 2, command[2], command[3])
 
     @hook.before_receive_hit(actions=_ACTIVE)
     def on_damage(self, fighter: Any, ctx: Any) -> None:

@@ -130,6 +130,27 @@ class MewtwoScriptTests(unittest.TestCase):
         self.assertEqual(fighter.changes[-1][0], move.ground_cancel)
         self.assertFalse(fighter.action_state.shadow_ball_held)
 
+    def test_shadow_ball_aerial_entry_halves_vertical_momentum(self):
+        move = self.module.ShadowBall()
+        fighter = _Fighter()
+        fighter.action = move.air_start
+        move.enter(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.velocity, (2.0, 1.5))
+
+    def test_shadow_ball_release_marker_consumes_source_command(self):
+        move = self.module.ShadowBall()
+        fighter = _Fighter()
+        fighter.action = move.ground_end
+        fighter.action_state.shadow_ball_held = True
+        fighter.action_state.shadow_ball_charge = 2
+        fighter.action_state.command = (0, 1, 0, 0)
+
+        move.release_shadow(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+
+        self.assertFalse(fighter.action_state.shadow_ball_held)
+        self.assertEqual(fighter.action_state.shadow_ball_charge, 0)
+        self.assertEqual(fighter.action_state.command[1], 2)
+
     def test_damage_clears_unfinished_shadow_ball_and_disable(self):
         shadow = self.module.ShadowBall()
         fighter = _Fighter()
