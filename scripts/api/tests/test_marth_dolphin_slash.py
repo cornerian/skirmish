@@ -58,44 +58,22 @@ class DolphinSlashTests(unittest.TestCase):
         self.assertFalse(move.steer(fighter, context))
         self.assertEqual(fighter.lstick_angle, 0.9)
 
-    def test_source_throw_flag_turns_even_after_angle_command_is_consumed(self):
-        move = _load_marth().Marth.specials.up
-        fighter = SimpleNamespace(
-            action=move.air,
-            facing=1.0,
-            throw_flags_b3=True,
-            lstick_angle=0.0,
-            action_state=SimpleNamespace(command=(1, 0, 0, 0)),
-        )
-        attrs = SimpleNamespace(x30=0.3, x34=0.3, x38=45.0)
-        context = SimpleNamespace(
-            input=SimpleNamespace(stick=(-0.8, 0.0)),
-            resource=lambda _path: SimpleNamespace(attributes=attrs),
-        )
-
-        self.assertTrue(move.steer(fighter, context))
-        self.assertEqual(fighter.facing, -1.0)
-        self.assertFalse(fighter.throw_flags_b3)
-        self.assertEqual(fighter.lstick_angle, 0.0)
-
-    def test_source_throw_flag_turn_uses_strict_x30_threshold(self):
+    def test_source_angle_uses_strict_x34_threshold(self):
         move = _load_marth().Marth.specials.up
         fighter = SimpleNamespace(
             action=move.ground,
-            facing=1.0,
-            throw_flags_b3=True,
             lstick_angle=0.0,
             action_state=SimpleNamespace(command=(0, 0, 0, 0)),
         )
-        attrs = SimpleNamespace(x30=0.3, x34=0.5, x38=45.0)
+        attrs = SimpleNamespace(x30=0.1, x34=0.3, x38=45.0)
         context = SimpleNamespace(
             input=SimpleNamespace(stick=(0.3, 0.0)),
             resource=lambda _path: SimpleNamespace(attributes=attrs),
         )
 
         self.assertFalse(move.steer(fighter, context))
-        self.assertEqual(fighter.facing, 1.0)
-        self.assertTrue(fighter.throw_flags_b3)
+        context.input.stick = (0.31, 0.0)
+        self.assertTrue(move.steer(fighter, context))
 
 
 if __name__ == "__main__":

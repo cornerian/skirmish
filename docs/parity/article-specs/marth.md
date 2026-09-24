@@ -80,9 +80,10 @@ variable 0 has been consumed (`ftmarsspecialhi.c:90-139`). The travel physics
 uses command variable 2 to switch from launch motion to gravity and air drift
 (`ftmarsspecialhi.c:141-220`).
 
-The Python callback consumes an exposed `fighter.throw_flags_b3` (or context
-fallback) after applying that turn. The native host still owns the animation
-command that raises the flag and the resulting model-part rotation.
+The Python callback currently implements only the strict `x34` launch-angle
+threshold. The native host does not yet produce `throw_flags_b3`, so the x30
+turn branch remains deferred until a typed producer and one-shot consumption
+path exist.
 
 ## Counter
 

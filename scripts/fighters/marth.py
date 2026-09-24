@@ -126,50 +126,33 @@ class DolphinSlash(EmblemUpSpecial):
 
         The source stores the strongest requested launch angle in
         ``fp->lstick_angle`` while command variable two is still clear.  It
-        also consumes ``throw_flags_b3`` to turn when stick X exceeds
-        ``MarsAttributes::x30``.  The four Mars attributes used here are kept
-        under their native offsets in the portable resource table (``x30``,
-        ``x34`` and ``x38``); named aliases are accepted when a host supplies
-        them.
+        The launch attributes are kept under their native offsets in the
+        portable resource table (``x34`` and ``x38``); named aliases are
+        accepted when a host supplies them.  The source x30 throw-flag turn
+        remains a native host gap until its producer exists.
         """
         attributes = resource_attributes(ctx, self.resource)
-        if attributes is None:
+        if attributes is None or getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))[0]:
             return False
-        command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
-        command_zero = bool(command[0]) if isinstance(command, (tuple, list)) and command else False
         threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
         maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
-        facing_threshold = getattr(attributes, "specialhi_turn_threshold", getattr(attributes, "x30", None))
         stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
         try:
             horizontal = float(stick[0])
         except (IndexError, KeyError, TypeError, ValueError):
             return False
-        changed = False
-        if not command_zero and threshold is not None and maximum is not None and abs(horizontal) > threshold:
-            denominator = 1.0 - threshold
-            if denominator > 0.0:
-                angle = float(maximum) * (abs(horizontal) - threshold) / denominator
-                angle = math.radians(angle if horizontal < 0.0 else -angle)
-                previous = float(getattr(fighter, "lstick_angle", 0.0))
-                if abs(angle) > abs(previous):
-                    fighter.lstick_angle = angle
-                    changed = True
-
-        # ``ftCheckThrowB3`` is a one-shot animation command.  Hosts that
-        # expose the native flag let this callback consume it directly;
-        # command zero does not suppress this source branch.
-        throw_flag = bool(getattr(fighter, "throw_flags_b3", False))
-        if not throw_flag:
-            throw_flag = bool(getattr(ctx, "throw_flags_b3", False))
-        if facing_threshold is not None and abs(horizontal) > facing_threshold and throw_flag:
-            fighter.facing = 1.0 if horizontal > 0.0 else -1.0
-            if hasattr(fighter, "throw_flags_b3"):
-                fighter.throw_flags_b3 = False
-            elif hasattr(ctx, "throw_flags_b3"):
-                ctx.throw_flags_b3 = False
-            changed = True
-        return changed
+        if threshold is None or maximum is None or abs(horizontal) <= threshold:
+            return False
+        denominator = 1.0 - threshold
+        if denominator <= 0.0:
+            return False
+        angle = float(maximum) * (abs(horizontal) - threshold) / denominator
+        angle = math.radians(angle if horizontal < 0.0 else -angle)
+        previous = float(getattr(fighter, "lstick_angle", 0.0))
+        if abs(angle) <= abs(previous):
+            return False
+        fighter.lstick_angle = angle
+        return True
 
     @on.animation_end(ground, air)
     def enter_fall_special(self, fighter, ctx) -> bool:
