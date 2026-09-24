@@ -235,16 +235,13 @@ class Hammer(SideSpecial, _KirbySpecial):
 
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx) -> None:
-        """Clear the source hammer article command latch on entry."""
+        """Clear the source hammer command latches on entry."""
         state = getattr(fighter, "action_state", None)
         command = getattr(state, "command", ())
-        if isinstance(command, (tuple, list)) and command:
-            if isinstance(command, tuple):
-                state.command = (0, *command[1:])
-            else:
-                values = list(command)
-                values[0] = 0
-                state.command = values
+        if isinstance(command, tuple) and len(command) >= 2:
+            state.command = (0, 0, *command[2:])
+        elif isinstance(command, list) and len(command) >= 2:
+            state.command = [0, 0, *command[2:]]
 
     @hook.landed(actions=(air,))
     def landing(self, fighter: Fighter, ctx) -> bool:
