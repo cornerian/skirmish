@@ -35,6 +35,8 @@ fn data() -> MatchData {
     for fighter in &mut data.fighters {
         fighter.movement.gravity = 0.0;
         for frame in &mut fighter.jab.frames {
+            frame.bones[1].translation[0] = 0.0;
+            frame.bones[1].translation[2] = 4.0;
             for hit in &mut frame.hitboxes {
                 hit.angle_degrees = 90.0;
                 hit.growth = 0;
