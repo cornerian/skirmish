@@ -55,6 +55,10 @@ pub struct CompiledProgram {
 pub struct InvocationScope<'scope, 'program> {
     owner: u64,
     inner: &'scope mut skirmish_pon_runtime::InvocationScope<'program>,
+    /// Reused backing storage for the transient Pon callback argument list.
+    /// The list is returned after each call; host scopes and tokens remain
+    /// callback-local so proxies retained by Pon expire exactly as before.
+    callback_args: Vec<Value>,
 }
 
 const BOOTSTRAP: &str = r#"
@@ -574,6 +578,7 @@ impl CompiledProgram {
                     let mut scope = InvocationScope {
                         owner: self.identity,
                         inner: scope,
+                        callback_args: Vec::new(),
                     };
                     match body(&mut scope) {
                         Ok(value) => Ok(value),
@@ -655,19 +660,24 @@ impl CompiledProgram {
             .ok_or_else(|| Error::Runtime("native host token overflow".into()))?;
         token_cell.set(token);
         let _guard = host_scope.activate();
-        let mut args = Vec::with_capacity(extra.len() + 1);
+        let args = &mut scope.callback_args;
+        args.clear();
+        args.reserve((extra.len() + 1).saturating_sub(args.capacity()));
         args.push(native_object_value(token, &primary.kind, &primary.path));
         for value in extra {
             args.push(native_to_pon(value, token)?);
         }
-        scope
+        let mut call_args = [Value::Int(index as i64), Value::List(std::mem::take(args))];
+        let result = scope
             .inner
-            .invoke_index(
-                self.dispatch_index,
-                &[Value::Int(index as i64), Value::List(args)],
-            )
+            .invoke_index(self.dispatch_index, &call_args)
             .map(native_to_native)
-            .map_err(|error| Error::Runtime(error.to_string()))?
+            .map_err(|error| Error::Runtime(error.to_string()))
+            .and_then(|result| result);
+        if let Value::List(reusable_args) = std::mem::replace(&mut call_args[1], Value::None) {
+            *args = reusable_args;
+        }
+        result
     }
 }
 

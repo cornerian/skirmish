@@ -60,6 +60,10 @@ class CounterFighter(Fighter):
     @hook.input_pressed("B")
     def use_old_proxy(self, fighter):
         return saved.counter
+
+    @hook.input_pressed("B")
+    def echo_extra(self, fighter, value):
+        return value
 "#;
 
 struct CounterHost {
@@ -91,6 +95,33 @@ fn facade_batch_dispatch_reuses_runtime_scope_but_keeps_callback_state_ordered()
         })
         .unwrap();
     assert_eq!(*counter.lock().unwrap(), 2);
+}
+
+#[test]
+fn facade_batch_dispatch_reuses_argument_capacity_without_changing_extra_values() {
+    let program = CompiledProgram::new(SOURCE, "callback_args.py", []).unwrap();
+    let callback = program.bind_callback("echo_extra");
+    let host = shared_host(CounterHost {
+        counter: Arc::new(Mutex::new(0)),
+    });
+    let fighter = HostRef::new(host, NativeKind::Fighter, "fighter");
+
+    program
+        .with_invocation_scope(|scope| {
+            for value in [7, 11, 19] {
+                assert_eq!(
+                    program.dispatch_in_scope(
+                        scope,
+                        &callback,
+                        fighter.clone(),
+                        &[NativeValue::Int(value)],
+                    )?,
+                    NativeValue::Int(value)
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
 }
 
 #[test]
