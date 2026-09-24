@@ -14,6 +14,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action, ArticleId, Button, export_definition
+from fighters.pikachu import Pikachu
 from fighters.pichu import Pichu, PichuParameters
 
 
@@ -154,30 +155,37 @@ class PichuTests(unittest.TestCase):
         self.assertEqual(fighter.action, Action.FALL)
 
     def test_thunder_command_zero_ends_ground_and_air_loop_phases(self):
-        down_behavior = next(
-            behavior for behavior in self.definition["behaviors"]
-            if behavior["resource"] == "down"
-        )
-        self.assertTrue(any(
-            callback["hook"] == "command_trace_changed"
-            and callback["callback"].endswith("command_changed")
-            for callback in down_behavior["callbacks"]
-        ))
-        move = Pichu.specials.down
-        for loop, hit, end, end_state in (
-            (move.ground_loop, move.ground_hit, move.ground_end, 362),
-            (move.air_loop, move.air_hit, move.air_end, 366),
-        ):
-            move = Pichu.specials.down
-            for phase in (loop, hit):
-                fighter = _Fighter(phase)
-                self.assertFalse(
-                    move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=0)))
-                )
-                self.assertTrue(
-                    move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
-                )
-                self.assertEqual(fighter.action, end)
+        for fighter_type in (Pikachu, Pichu):
+            definition = export_definition(fighter_type).as_dict()
+            down_behavior = next(
+                behavior for behavior in definition["behaviors"]
+                if behavior["resource"] == "down"
+            )
+            self.assertTrue(any(
+                callback["hook"] == "command_trace_changed"
+                and callback["callback"].endswith("command_changed")
+                and "actions" not in callback
+                for callback in down_behavior["callbacks"]
+            ))
+        for fighter_type in (Pikachu, Pichu):
+            move = fighter_type.specials.down
+            for loop, hit, end in (
+                (move.ground_loop, move.ground_hit, move.ground_end),
+                (move.air_loop, move.air_hit, move.air_end),
+            ):
+                for phase in (loop, hit):
+                    fighter = _Fighter(phase)
+                    self.assertFalse(
+                        move.command_changed(
+                            fighter, SimpleNamespace(event=SimpleNamespace(value=0))
+                        )
+                    )
+                    self.assertTrue(
+                        move.command_changed(
+                            fighter, SimpleNamespace(event=SimpleNamespace(value=1))
+                        )
+                    )
+                    self.assertEqual(fighter.action, end)
 
     def test_no_unbacked_article_callback_is_exported(self):
         for behavior in self.definition["behaviors"]:
