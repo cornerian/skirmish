@@ -130,6 +130,23 @@ class JigglypuffTests(unittest.TestCase):
         ctx.input.stick = (1.0, 0.0)
         self.assertFalse(roll.input_pressed(_Fighter(complete=(347,)), ctx))
 
+    def test_roll_entry_clears_all_native_command_slots(self):
+        roll = Roll()
+        fighter = _PoundFighter(facing=-1.0, complete=(346,))
+        ctx = SimpleNamespace(
+            ground_open=True,
+            air_open=False,
+            input=SimpleNamespace(
+                stick=(0.0, 0.0),
+                just_pressed=lambda button: button is Button.B,
+            ),
+            rules=SimpleNamespace(
+                specials=SimpleNamespace(side_stick_threshold=0.5, vertical_threshold=0.5),
+            ),
+        )
+        self.assertTrue(roll.input_pressed(fighter, ctx))
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
     def test_roll_release_and_animation_callbacks_follow_native_exits(self):
         roll = Roll()
         fighter = _Fighter(Roll.ground_loop)
@@ -280,6 +297,12 @@ class JigglypuffTests(unittest.TestCase):
         self.assertEqual((speed, angle, facing), (f32(3.1), expected_angle, -1.0))
         self.assertEqual(fighter.velocity, (2.0, -3.0))
         self.assertEqual(fighter.action_state.command, (0, 7, 8, 9))
+
+    def test_pound_entry_clears_all_native_command_slots(self):
+        pound = Pound()
+        fighter = _PoundFighter(complete=(363,))
+        self.assertTrue(pound.input_pressed(fighter, _pound_context()))
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
     def test_pound_command_zero_ignores_zero_event_or_incomplete_attributes(self):
         fighter = _PoundFighter(Pound.air)

@@ -50,6 +50,14 @@ def _clear_command_zero(fighter: Fighter) -> None:
         action_state.command = (0, *command[1:])
 
 
+def _clear_command_slots(fighter: Fighter) -> None:
+    """Clear all native command variables on Rollout/Pound entry."""
+    action_state = getattr(fighter, "action_state", None)
+    command = getattr(action_state, "command", None)
+    if isinstance(command, (tuple, list)) and len(command) == 4:
+        action_state.command = (0, 0, 0, 0)
+
+
 class Roll(NeutralSpecial):
     """Rollout's native charge, release, turn, and terminal phases.
 
@@ -104,6 +112,8 @@ class Roll(NeutralSpecial):
             )
         if not fighter.has_complete_animation(state):
             return False
+        # ftPr_SpecialN_Enter clears cmd_vars[0..3] before the start motion.
+        _clear_command_slots(fighter)
         start_action(fighter, phase)
         return True
 
@@ -374,6 +384,8 @@ class Pound(SideSpecial):
         phase, state = (self.ground, 363) if grounded else (self.air, 364)
         if not fighter.has_complete_animation(state):
             return False
+        # ftPr_SpecialS_Enter clears cmd_vars[0..3] before the start motion.
+        _clear_command_slots(fighter)
         start_action(fighter, phase)
         return True
 
