@@ -39,6 +39,7 @@ class _Fighter:
         self.action_frame = 0
         self.grounded = grounded
         self.changes = []
+        self.action_state = SimpleNamespace(command=(1, 2, 3, 4))
 
     def change_action(self, action, **kwargs):
         self.action = action
@@ -163,6 +164,20 @@ class YoungLinkTests(unittest.TestCase):
         inactive.release_arrow = releases.append
         self.assertFalse(move.release(inactive, ctx))
         self.assertEqual(releases, [ctx])
+
+    def test_arrow_entry_clears_stale_command_slots(self):
+        move = YoungLinkNeutralSpecial()
+        fighter = _Fighter()
+
+        move.reset_command_window(fighter, SimpleNamespace())
+
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
+        # Short command representations are left intact by the source-shaped
+        # boundary callback, which only models the four native slots.
+        fighter.action_state.command = (1, 2, 3)
+        move.reset_command_window(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (1, 2, 3))
 
     def test_boomerang_empty_branch_and_native_release_forwarding(self):
         move = YoungLinkSideSpecial()

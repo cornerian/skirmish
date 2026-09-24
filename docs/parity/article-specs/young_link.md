@@ -54,6 +54,12 @@ The Python Young Link declaration preserves the empty-row choice and forwards
 the command release. The article's trail animation, collision, absorption,
 and owner transfer remain native callbacks.
 
+The shared fighter callback also clears CLink's four command slots when a new
+ground or aerial Fire Arrow charge begins. This mirrors
+`ftLk_SpecialN_Enter` and `ftLk_SpecialAirN_Enter` in
+`src/melee/ft/kinds/ftLink/ftlinkspecialn.c`, which reset `cmd_vars[0..3]`
+before installing the arrow callbacks.
+
 ## Bomb
 
 `ftLk_SpecialLw_Enter` and `ftLk_SpecialAirLw_Enter` call `it_8029DD58` from

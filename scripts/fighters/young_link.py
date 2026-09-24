@@ -50,6 +50,20 @@ class YoungLinkNeutralSpecial(_FamilyNeutralSpecial):
         air_end: Transition(Action.FALL),
     }
 
+    @on.action_enter(ground_start, air_start)
+    def reset_command_window(self, fighter: Any, ctx: Any) -> None:
+        """Clear the four command slots before a fresh arrow charge.
+
+        ``ftLk_SpecialN_Enter`` and ``ftLk_SpecialAirN_Enter`` clear
+        ``cmd_vars[0..3]`` before installing the shared arrow callbacks.  CLink
+        uses those same Link callbacks, so stale command cues must not carry
+        into a new charge motion.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, 0)
+
     @on.release(Button.B)
     def release(self, fighter: Any, ctx: Any) -> bool:
         """Forward the source release edge before entering the End motion.
