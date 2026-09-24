@@ -146,18 +146,15 @@ class KirbySpecialTests(unittest.TestCase):
         Stone()._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, Stone.ground_hold.action)
 
-    def test_final_cutter_fall_rows_enter_matching_end_rows(self):
+    def test_final_cutter_fall_rows_wait_for_collision_owned_end_transition(self):
         move = FinalCutter()
-        for fall, end, grounded in (
-            (move.ground_fall, move.ground_end, True),
-            (move.air_fall, move.air_end, False),
-        ):
+        for fall in (move.ground_fall, move.air_fall):
             fighter = _Fighter()
             fighter.action = fall
             move._transition_animation_end(
-                fighter, SimpleNamespace(grounded=grounded)
+                fighter, SimpleNamespace(grounded=False)
             )
-            self.assertIs(fighter.action, end.action)
+            self.assertIs(fighter.action, fall)
 
     def test_final_cutter_aerial_descent_lands_in_ground_end(self):
         move = FinalCutter()
@@ -278,14 +275,17 @@ class KirbySpecialTests(unittest.TestCase):
         self.assertTrue(move.release(fighter, ctx))
         self.assertIs(fighter.action, move.ground_end)
 
-    def test_final_cutter_source_phase_chains(self):
+    def test_final_cutter_source_animation_callbacks_reuse_air_rows(self):
         move = FinalCutter()
-        self.assertIs(move.on_end[move.ground_start].target, move.ground_rise)
-        self.assertIs(move.on_end[move.ground_rise].target, move.ground_fall)
-        self.assertIs(move.on_end[move.ground_fall].target, move.ground_end)
+        # ftkirbyspecialhi.c: SpecialHi1_Anim and SpecialHi2_Anim select
+        # SpecialAirHi2 (390) and SpecialAirHi3 (391), respectively.  The
+        # SpecialHi3 callbacks are empty, so collision owns SpecialHi4 (388).
+        self.assertIs(move.on_end[move.ground_start].target, move.air_rise)
+        self.assertIs(move.on_end[move.ground_rise].target, move.air_fall)
         self.assertIs(move.on_end[move.air_start].target, move.air_rise)
         self.assertIs(move.on_end[move.air_rise].target, move.air_fall)
-        self.assertIs(move.on_end[move.air_fall].target, move.air_end)
+        self.assertNotIn(move.ground_fall, move.on_end)
+        self.assertNotIn(move.air_fall, move.on_end)
     def test_stone_entry_initializes_source_timeout_and_surface_hold_pair(self):
         move = Stone()
         fighter = _Fighter()

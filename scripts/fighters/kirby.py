@@ -292,16 +292,14 @@ class FinalCutter(UpSpecial, _KirbySpecial):
         return True
 
     on_end = {
-        # The source animation callbacks advance through each ground row in
-        # order.  The air rows have the same three-stage travel sequence.
-        ground_start: Transition(ground_rise),
-        ground_rise: Transition(ground_fall),
-        # The descending travel rows finish through their matching source end
-        # rows before reaching the ordinary grounded/airborne terminal state.
-        ground_fall: Transition(ground_end),
+        # The source ground callbacks deliberately reuse the aerial travel
+        # motions: SpecialHi1_Anim selects motion 390 (air rise) and
+        # SpecialHi2_Anim selects motion 391 (air fall).  The third travel
+        # callback is empty; collision owns the handoff into SpecialHi4.
+        ground_start: Transition(air_rise),
+        ground_rise: Transition(air_fall),
         air_start: Transition(air_rise),
         air_rise: Transition(air_fall),
-        air_fall: Transition(air_end),
         ground_end: Transition(Action.WAIT),
         air_end: Transition(Action.FALL),
     }
