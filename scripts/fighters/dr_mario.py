@@ -90,10 +90,45 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
     ground = source_phase(347)
     air = source_phase(348)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Clear ``cmd_vars[0]`` before the uppercut motion starts.
+
+        ``ftMr_SpecialHi_Enter`` and its aerial sibling clear the command
+        latch and throw flags before selecting the motion.  The host owns the
+        throw state, so expose the command reset at the script boundary and
+        leave the other command slots intact.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, command[1], command[2], command[3])
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
 
 class DrTornado(DownSpecial, _SourcePair):
     ground = source_phase(349)
     air = source_phase(350)
+
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset the tornado command cues initialized by ``doStartMotion``."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, 0, command[3])
+
+    @hook.command_changed(1, actions=(air,))
+    def tap_command(self, fighter: Fighter, ctx) -> None:
+        """Consume the aerial tap cue used by ``ftMr_SpecialAirLw_Anim``."""
+        event = getattr(ctx, "event", None)
+        if not getattr(event, "value", 0):
+            return
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (command[0], 0, command[2], command[3])
 
 
 class DrMario(Fighter):

@@ -129,6 +129,28 @@ class DrMarioSpecialTests(unittest.TestCase):
         move.projectile_contact(fighter, blocked)
         self.assertFalse(blocked.reflect)
 
+    def test_up_entry_clears_command_zero_and_throw_flags(self):
+        fighter = _Fighter()
+        fighter.throw_flags = 7
+        move = DrMario.specials.up
+        move.enter(fighter, object())
+        self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
+    def test_down_entry_clears_tornado_commands_and_aerial_tap_is_one_shot(self):
+        fighter = _Fighter()
+        move = DrMario.specials.down
+        move.enter(fighter, object())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+
+        class Event:
+            value = 1
+
+        ctx = type("Context", (), {"event": Event()})()
+        fighter.action_state.command = (0, 1, 5, 4)
+        move.tap_command(fighter, ctx)
+        self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
+
 
 if __name__ == "__main__":
     unittest.main()
