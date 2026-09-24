@@ -26,6 +26,20 @@ class Megavitamin(B0ArticleSpecial):
     article_id = ArticleId.DR_MARIO_VITAMIN
     ground, air = b0_source_phases(343, 344)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Reset the shared Mario throw latch when the pill motion starts.
+
+        ``ftMr_SpecialN_Enter`` and ``ftMr_SpecialAirN_Enter`` clear the
+        command zero cue and the fighter's throw flags before selecting the
+        motion.  ``B0ArticleSpecial.enter`` already owns the command reset;
+        keep the Dr. Mario specific latch reset beside it so stale input from
+        an interrupted special cannot create a later pill.
+        """
+        super().enter(fighter, ctx)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
 
 class _SourcePair(DirectionalSpecial):
     """Shared ground/air lifecycle for Mario-family source specials."""
@@ -59,6 +73,11 @@ class SuperSheet(SideSpecial, _SourcePair):
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
+        # The source changeAction path clears the native reflection latch;
+        # animation commands enable it again during the active cape window.
+        flags = getattr(fighter, "flags", None)
+        if flags is not None and hasattr(flags, "reflecting"):
+            flags.reflecting = False
 
     @hook.projectile_contact
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
