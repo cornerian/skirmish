@@ -21,11 +21,19 @@ from skirmish import (
     source_phase,
     b0_source_phases,
 )
+from fighter.helpers import resource_attributes
 
 
 class Fireball(B0ArticleSpecial):
     article_id = ArticleId.LUIGI_FIRE
     ground, air = b0_source_phases(341, 342)
+
+    @hook.action_enter(ground, air)
+    def enter(self, fighter, ctx) -> None:
+        """Reset Luigi's native fireball throw latch on every entry."""
+        super().enter(fighter, ctx)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
 
 class GreenMissile(SideSpecial, DirectionalSpecial):
     """Green Missile's source phases (343 through 354).
@@ -152,6 +160,32 @@ class SuperJumpPunch(UpSpecial, DirectionalSpecial):
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter, ctx) -> None:
+        """Reset the command and throw latches used by native entry."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, command[1], command[2], command[3])
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
+    @hook.animation_end(ground, air)
+    def enter_fall_special(self, fighter, ctx) -> bool:
+        """Match both native Super Jump Punch callbacks' FallSpecial exit."""
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "specialhi_freefall_mobility", None),
+        )
+        landing_lag = getattr(attributes, "specialhi_landing_lag", None)
+        enter = getattr(fighter, "enter_fall_special", None)
+        if mobility is None or landing_lag is None or not callable(enter):
+            return False
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
+
 
 class Cyclone(DownSpecial, DirectionalSpecial):
     """Luigi Cyclone's grounded and aerial source states."""
@@ -194,6 +228,24 @@ class Cyclone(DownSpecial, DirectionalSpecial):
     def finish_air(self, fighter, ctx) -> None:
         """Consume a late command cue before the native move ends."""
         self._consume_air_charge(fighter)
+
+    def _transition_animation_end(self, fighter, ctx) -> None:
+        if fighter.action == self.air:
+            attributes = resource_attributes(ctx, self.resource)
+            landing_lag = getattr(
+                attributes,
+                "cyclone_landing_lag",
+                getattr(attributes, "speciallw_landing_lag", None),
+            )
+            if landing_lag is not None:
+                if landing_lag == 0:
+                    fighter.change_action(Action.FALL)
+                else:
+                    enter = getattr(fighter, "enter_fall_special", None)
+                    if callable(enter):
+                        enter(mobility=1, landing_lag=landing_lag)
+                        return
+        super()._transition_animation_end(fighter, ctx)
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter, ctx) -> bool:

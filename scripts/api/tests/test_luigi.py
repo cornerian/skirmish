@@ -174,6 +174,13 @@ class LuigiNeutralTests(unittest.TestCase):
         self.assertEqual(fighter.action, move.ground)
 
     def test_source_entry_resets_only_luigi_command_slots(self):
+        fireball = Luigi.specials.neutral
+        fighter = _Fighter()
+        fighter.throw_flags = 9
+        fireball.enter(fighter, _context())
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
         missile = Luigi.specials.side
         fighter = _Fighter()
         fighter.action_state.command = (9, 8, 7, 6)
@@ -185,6 +192,46 @@ class LuigiNeutralTests(unittest.TestCase):
         fighter.action_state.command = (9, 8, 7, 6)
         cyclone.enter(fighter, _context())
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 6))
+
+        jump = Luigi.specials.up
+        fighter = _Fighter()
+        fighter.throw_flags = 9
+        jump.enter(fighter, _context())
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
+    def test_super_jump_punch_animation_end_enters_fall_special(self):
+        move = Luigi.specials.up
+        calls = []
+        fighter = SimpleNamespace(
+            action=move.ground,
+            enter_fall_special=lambda **kwargs: calls.append(kwargs),
+        )
+        attributes = SimpleNamespace(
+            specialhi_freefall_air_spd_mul=0.8,
+            specialhi_landing_lag=12.0,
+        )
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(attributes=attributes)
+        )
+
+        self.assertTrue(move.enter_fall_special(fighter, context))
+        self.assertEqual(calls, [{"mobility": 0.8, "landing_lag": 12.0}])
+
+    def test_cyclone_air_animation_end_uses_native_landing_lag(self):
+        move = Luigi.specials.down
+        calls = []
+        fighter = SimpleNamespace(
+            action=move.air,
+            enter_fall_special=lambda **kwargs: calls.append(kwargs),
+        )
+        attributes = SimpleNamespace(cyclone_landing_lag=14)
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(attributes=attributes)
+        )
+
+        move._transition_animation_end(fighter, context)
+        self.assertEqual(calls, [{"mobility": 1, "landing_lag": 14}])
 
     def test_cyclone_air_animation_latches_charge_command(self):
         move = Luigi.specials.down
