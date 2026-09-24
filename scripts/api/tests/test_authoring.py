@@ -1,12 +1,17 @@
 from dataclasses import dataclass, fields
+from enum import Enum
 
 import unittest
 
-from fighter import (AerialMoves, DefenseMoves, Fighter, GetupMoves, GrabMoves,
+from fighter import (AerialMoves, AnimationEventId, DefenseMoves, Fighter, FighterBase, FighterPart, GetupMoves, GrabMoves,
                      GroundedMoves, LedgeMoves, Move, MoveContext, SmashMoves, SpecialMoves,
                      TauntMoves, ThrowMoves, TiltMoves, export_definition, on, register,
-                     validate_fighter, Action, ActionDescriptor, SpecialMove, Transition, action)
+                     validate_fighter, Action, ActionDescriptor, SpecialMove, Transition, action, motion, source_action,
+                     source_phase)
 from fighter.api import MoveError
+from skirmish._loader import _plain
+import skirmish.api as legacy_api
+import skirmish.events as legacy_events
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +64,71 @@ class Fox(Fighter):
 
 
 class AuthoringTests(unittest.TestCase):
+  def test_legacy_import_paths_share_canonical_objects(self):
+    import fighter
+    self.assertIs(legacy_api.Fighter, Fighter)
+    self.assertIs(legacy_api.source_phase, source_phase)
+    self.assertIs(legacy_api.ArticleId, fighter.ArticleId)
+    self.assertIs(legacy_events.on, on)
+    self.assertIs(legacy_events.hook, on)
+
+  def test_loader_plain_normalizes_nested_mapping_keys_for_wire(self):
+    class Branch(Enum):
+      PRIMARY = 7
+
+    authored = {1: {Branch.PRIMARY: ("value", {False: "nested"})}}
+
+    self.assertEqual(_plain(authored), {
+      "1": {"7": ["value", {"False": "nested"}]},
+    })
+
+  def test_loader_plain_normalizes_nested_motion_descriptors(self):
+    authored = motion.command_branch(cases={
+      1: (motion.gravity(0.25, 9.0, 0.0), motion.friction(0.2)),
+    })
+
+    self.assertEqual(_plain(authored), {
+      "callee": "motion.command_branch",
+      "args": [],
+      "kwargs": {
+        "cases": {
+          "1": [
+            {"callee": "motion.gravity", "args": [0.25, 9.0, 0.0], "kwargs": {}},
+            {"callee": "motion.friction", "args": [0.2], "kwargs": {}},
+          ],
+        },
+      },
+    })
+
+  def test_fighter_parts_are_numeric_and_extensible(self):
+    self.assertEqual(FighterPart.L1ST_NB, 23)
+    self.assertIsInstance(FighterPart.L1ST_NB, int)
+
+  def test_animation_event_hook_exports_typed_numeric_bit(self):
+    class NativeEvents(Move):
+      @on.animation_event(AnimationEventId.B0, actions=(Action.SPECIAL_N_START,))
+      def b0(self, fighter, context):
+        return None
+
+    self.assertEqual(AnimationEventId.B0, 0)
+    self.assertEqual(NativeEvents.events()[0].as_dict(), {
+      "hook": "animation_event",
+      "callback": "b0",
+      "actions": ["special_n_start"],
+      "event_id": 0,
+    })
+
+  def test_command_event_index_matches_native_u8_contract(self):
+    class CommandEvents(Move):
+      @on.command_changed(255)
+      def last(self, fighter, context):
+        return None
+
+    self.assertEqual(CommandEvents.events()[0].command_index, 255)
+    for invalid in (True, -1, 256, 1.0):
+      with self.assertRaisesRegex(ValueError, "command index"):
+        on.command_changed(invalid)
+
   def test_transition_rules_are_frozen_inherited_and_context_filtered(self):
     class Parent(SpecialMove):
       ground = action(Action.SPECIAL_S_START)
@@ -169,6 +239,92 @@ class AuthoringTests(unittest.TestCase):
     behavior = next(item for item in exported["behaviors"] if item["id"] == "move_0")
     self.assertEqual(behavior["entry_action"], "special_n_start")
 
+  def test_source_binding_isolated_for_shared_move_types_and_instances(self):
+    phase = source_phase(381, animation=295, marker=source_action(382))
+
+    SharedSource = type(
+      "SharedSource", (SpecialMove,),
+      {
+        "phase": phase,
+        "on_end": {phase: Transition(Action.WAIT)},
+        "on_ground": {phase: Transition(phase, preserve_state=True)},
+        "on_air": {phase: Transition(phase, keep_frame=True)},
+      },
+    )
+
+    shared = SharedSource()
+    specials = SpecialMoves(shared, Fox.specials.side, Fox.specials.up, Fox.specials.down)
+    declarations = {
+      name: getattr(Fox, name) for name in
+      ("attributes", "aerials", "grounded", "tilts", "smashes", "grabs",
+       "throws", "defense", "ledge", "getup", "taunt")
+    }
+    declarations["specials"] = specials
+    first = type("FirstSourceFighter", (Fighter,), declarations)
+    first.name, first.external_ids = "first-source", (1,)
+    first_export = export_definition(first).as_dict()
+
+    second_declarations = dict(declarations, specials=first.specials)
+    second = type("SecondSourceFighter", (Fighter,), second_declarations)
+    second.name, second.external_ids = "second-source", (2,)
+    second_export = export_definition(second).as_dict()
+    self.assertEqual(first_export["actions"]["special.neutral.phase"]["action"], "Action.Source.1:381")
+    self.assertEqual(second_export["actions"]["special.neutral.phase"]["action"], "Action.Source.2:381")
+    self.assertEqual(first_export["actions"]["special.neutral.phase"]["marker"], "Source.1:382")
+    self.assertEqual(second_export["actions"]["special.neutral.phase"]["marker"], "Source.2:382")
+    self.assertEqual(
+      first_export["behaviors"][0]["callbacks"][0]["actions"], ["Source.1:381"]
+    )
+    self.assertEqual(
+      second_export["behaviors"][0]["callbacks"][0]["actions"], ["Source.2:381"]
+    )
+    self.assertIs(SharedSource.phase, phase)
+    self.assertEqual(SharedSource.__transition_rules__[0].source_name, "Source.381")
+    self.assertIsNot(first.specials.neutral, second.specials.neutral)
+    self.assertEqual(
+      [key.action for key in second.specials.neutral.on_end], ["Source.2:381"]
+    )
+    self.assertEqual(
+      [key.action for key in second.specials.neutral.on_ground], ["Source.2:381"]
+    )
+    self.assertEqual(
+      next(iter(second.specials.neutral.on_ground.values())).target.action,
+      "Source.2:381",
+    )
+    self.assertEqual(
+      [key.action for key in second.specials.neutral.on_air], ["Source.2:381"]
+    )
+
+  def test_source_callback_actions_bind_to_owner_identity(self):
+    phase = source_phase(401)
+
+    class CallbackMove(SpecialMove):
+      ground = phase
+
+      @on.animation_end(phase)
+      def finish(self, fighter, context):
+        return None
+
+    declarations = {name: getattr(Fox, name) for name in
+                    ("attributes", "aerials", "grounded", "tilts", "smashes", "grabs",
+                     "throws", "defense", "ledge", "getup", "taunt")}
+    declarations["specials"] = SpecialMoves(
+      CallbackMove(), Fox.specials.side, Fox.specials.up, Fox.specials.down,
+    )
+    callback_fighter = type("CallbackFighter", (Fighter,), declarations)
+    callback_fighter.name, callback_fighter.external_ids = "callback", (23,)
+
+    exported = export_definition(callback_fighter).as_dict()
+    behavior = exported["behaviors"][0]
+    event = next(item for item in behavior["callbacks"]
+                 if item["callback"] == "move_0.finish")
+    self.assertEqual(event["hook"], "animation_ended")
+    self.assertEqual(event["actions"], ["Source.23:401"])
+    self.assertEqual(
+      exported["actions"]["special.neutral.ground"]["action"],
+      "Action.Source.23:401",
+    )
+
   def test_declarative_action_metadata_is_serialized_per_shared_owner(self):
     class Declarative(Move):
       action = action(Action.SPECIAL_N_START, attack="fox.start",
@@ -198,9 +354,32 @@ class AuthoringTests(unittest.TestCase):
     self.assertEqual(exported["actions"]["aerial.neutral"]["source_behavior"], "move_0")
 
 
-  def test_missing_groups_are_rejected(self):
-    with self.assertRaisesRegex(MoveError, "specials"):
-      class Missing(Fighter):
+  def test_fighter_base_provides_all_standard_groups(self):
+    class Minimal(Fighter):
+        name = "minimal"
+        attributes = FoxAttributes
+
+    self.assertNotIn("specials", Minimal.__dict__)
+    specials = Minimal.specials
+    self.assertEqual(
+        [getattr(getattr(specials, root).root, "value", None)
+         for root in ("neutral", "side", "up", "down")],
+        ["neutral", "side", "up", "down"],
+    )
+    self.assertEqual(
+        len({id(getattr(specials, root)) for root in ("neutral", "side", "up", "down")}),
+        4,
+    )
+    self.assertTrue(
+        all(
+            any(event.hook.value == "input_pressed" for event in getattr(specials, root).events())
+            for root in ("neutral", "side", "up", "down")
+        )
+    )
+    self.assertEqual(export_definition(Minimal).as_dict()["name"], "minimal")
+
+    with self.assertRaisesRegex(MoveError, "aerials"):
+      class Missing(FighterBase):
           name = "missing"
           attributes = FoxAttributes
 

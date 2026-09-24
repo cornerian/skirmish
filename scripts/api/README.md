@@ -11,6 +11,12 @@ API edition because exported definition and callback names are part of the
 host contract. Install the wheel with `uv`, or add this directory to a local
 editor environment while authoring.
 
+`fighter` is the canonical implementation package. `skirmish` is the stable
+authoring facade, and the older `skirmish.api` and `skirmish.events` module
+paths remain compatibility aliases for source bundles. They resolve to the
+same descriptor classes and decorator singletons, so a module can use either
+facade without creating a second registration or callback system.
+
 ## Runtime boundary
 
 Fighter modules are evaluated by Skirmish's embedded Pon host. The Python
@@ -44,37 +50,82 @@ The wheel is pure Python and contains no native gameplay dependency.
 
 ## Authoring model
 
-Declare a `Fighter` class with its name, attributes, and eleven typed move
-groups. Ordinary groups such as `AerialMoves()` and `GroundedMoves()` provide
-fresh canonical `ActionMove` defaults. `SpecialMoves` is the exception: it
-requires `neutral`, `side`, `up`, and `down` explicitly.
-
-Use `Action` enum members for canonical engine actions. An `ActionMove` may
-also carry an `ActionDescriptor` and optional resource identity; it describes
-the selected native action and does not implement a Python `run` method.
-Reusing one move instance in multiple slots is supported and preserved in the
-exported behavior identity. To override one default while retaining the rest,
-construct only that slot:
+A canonical roster module declares exactly one concrete `Fighter` subclass.
+The module filename supplies its roster identity, so normal fighter scripts do
+not repeat a `name`, `external_ids`, `roster`, or registration decorator. The
+loader discovers the local subclass and exports it after validation:
 
 ```python
-from scripts.fighters.fox import Fox
-from skirmish import Action, ActionMove, AerialMoves, register
+from skirmish import Action, ActionMove, AerialMoves, Fighter
 
 
-@register
-class TrainingFox(Fox):
-    name = "training_fox"
+class Fox(Fighter):
     aerials = AerialMoves(
-        neutral=ActionMove(Action.ATTACK_AIR_N, resource="fox.aerial.neutral")
+        neutral=ActionMove(Action.ATTACK_AIR_N)
     )
 ```
 
-Special policies subclass `SpecialMove`. Their finite `on_end`, `on_ground`,
-and `on_air` mappings use `Transition` objects to move between action phases;
-the host invokes these through animation and ground/air events. Fox's
-`FoxActionState.command` is declared as a fixed four integer tuple. Runtime
-state is host-owned, and this SDK does not claim full heap freezing or full
-fighter parity.
+`Fighter` supplies fresh defaults for all eleven move groups, including four
+resource-gated `OpenSpecial` defaults. Override only the group or slot that a
+fighter implements. `SpecialMoves.replace(...)` is the compact way to retain
+the other special defaults:
+
+```python
+from skirmish import ArticleId, B0ArticleSpecial, Fighter, source_phase
+
+
+class Fireball(B0ArticleSpecial):
+    article_id = ArticleId.MARIO_FIRE
+    ground_state = 343
+    air_state = 344
+    ground = source_phase(343, animation=295)
+    air = source_phase(344, animation=296)
+
+
+class Mario(Fighter):
+    specials = Fighter.specials.replace(neutral=Fireball())
+```
+
+Source motion states and callback filters are declared together. The exporter
+rewrites source references for the owning fighter identity, including callback
+action filters and transition targets:
+
+```python
+from skirmish import Action, Fighter, SpecialMove, on, source_phase
+
+
+class SpecialN(SpecialMove):
+    ground = source_phase(341)
+
+    @on.animation_end(ground)
+    def finish(self, fighter, context):
+        fighter.change_action(Action.WAIT)
+
+
+class FighterScript(Fighter):
+    specials = Fighter.specials.replace(neutral=SpecialN())
+```
+
+The exported action is namespaced as `Source.<fighter-id>:341`; the callback
+filter uses the same identity. This keeps shared move instances safe when the
+same behavior is reused by multiple fighter declarations.
+
+`NeutralSpecial`, `SideSpecial`, `UpSpecial`, and `DownSpecial` provide only
+the canonical special resource root; complex moves still declare their own
+actions and behavior. Use `Action` enum members for canonical engine actions.
+An `ActionMove` may also carry an `ActionDescriptor` and optional resource
+identity; ordinary move geometry and attributes remain native action data,
+not resource-string metadata. A resource is useful only when a custom move
+intentionally gates behavior on a named native resource. `ActionMove` does
+not implement a Python `run` method. Reusing one move instance in multiple
+slots is supported and preserved in the exported behavior identity.
+
+`FighterBase` is the strict declaration-only base for noncanonical external
+definitions that intentionally provide every move group themselves. Such
+definitions may provide explicit identity (and may use the compatibility
+registration API); this is not part of a normal roster module. Runtime state is
+host-owned, and this SDK does not claim full heap freezing or full fighter
+parity.
 
 For a disposable install smoke test, the repository verification command is:
 

@@ -1,0 +1,221 @@
+"""Bowser's source-backed special motion states.
+
+The native ``ftKoopa`` table supplies the phases and surface lifecycle.  The
+Flame Breath article and side-special victim/item callbacks are deliberately
+not authored here: those depend on the separate item/capture archives, so
+entry remains gated by the corresponding fighter resource.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from skirmish import (
+    Action,
+    Button,
+    DownSpecial,
+    Fighter,
+    NeutralSpecial,
+    SpecialMove,
+    SpecialRoot,
+    SideSpecial,
+    Transition,
+    UpSpecial,
+    directional_b_input,
+    directional_b_reserved,
+    fresh_special_input,
+    hook,
+    source_phase,
+    start_open_special,
+)
+
+
+class _KoopaSpecial(SpecialMove):
+    """Shared resource gate and directional B dispatch for Bowser specials."""
+
+    _ACTIVE: tuple[Any, ...] = ()
+    _ENTRY: tuple[Any, Any]
+
+    @hook.input_pressed(Button.B)
+    def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        # Native IASA consumes B while any source phase is active.  The
+        # separate article/capture effects are unavailable, but the move
+        # itself must still be entered only with its native resource present.
+        if fighter.action in self._ACTIVE:
+            return True
+        if self.root is SpecialRoot.NEUTRAL and not fresh_special_input(ctx, self.resource):
+            return False
+        if not self._direction_matches(ctx):
+            return False
+        return start_open_special(fighter, ctx, *self._ENTRY)
+
+    def _direction_matches(self, ctx: Any) -> bool:
+        if self.root is SpecialRoot.NEUTRAL:
+            return not directional_b_reserved(ctx)
+        if self.root is SpecialRoot.SIDE:
+            return directional_b_input(ctx, self.resource, 0, "side_stick_threshold") is True
+        if self.root is SpecialRoot.UP:
+            return directional_b_input(
+                ctx, self.resource, 1, "vertical_threshold", direction=1
+            ) is True
+        return directional_b_input(
+            ctx, self.resource, 1, "vertical_threshold", direction=-1
+        ) is True
+
+
+class FlameBreath(NeutralSpecial, _KoopaSpecial):
+    """Native states 341–346; Flame Breath's item article is not embedded."""
+
+    ground_start = source_phase(341)
+    ground_loop = source_phase(342, animation_loop=True)
+    ground_end = source_phase(343)
+    air_start = source_phase(344)
+    air_loop = source_phase(345, animation_loop=True)
+    air_end = source_phase(346)
+    _ENTRY = (ground_start, air_start)
+    _ACTIVE = (ground_start, ground_loop, ground_end, air_start, air_loop, air_end)
+
+    on_end = {
+        ground_start: Transition(ground_loop),
+        ground_end: Transition(Action.WAIT),
+        air_start: Transition(air_loop),
+        air_end: Transition(Action.FALL),
+    }
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
+        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_loop: Transition(air_loop, preserve_state=True, keep_frame=True),
+        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+    }
+
+    @hook.input_released(Button.B)
+    def release(self, fighter: Any, ctx: Any) -> None:
+        if fighter.action in (self.ground_start, self.ground_loop):
+            fighter.change_action(self.ground_end)
+        elif fighter.action in (self.air_start, self.air_loop):
+            fighter.change_action(self.air_end)
+
+
+class KoopaKlaw(SideSpecial, _KoopaSpecial):
+    """Native states 347–358; capture/victim callbacks remain omitted."""
+
+    ground_start = source_phase(347)
+    ground_hit = source_phase(348)
+    ground_hold = source_phase(349)
+    ground_wait = source_phase(350, animation_loop=True)
+    ground_end_forward = source_phase(351)
+    ground_end_back = source_phase(352)
+    air_start = source_phase(353)
+    air_hit = source_phase(354)
+    air_hold = source_phase(355)
+    air_wait = source_phase(356, animation_loop=True)
+    air_end_forward = source_phase(357)
+    air_end_back = source_phase(358)
+    _ENTRY = (ground_start, air_start)
+    _ACTIVE = (
+        ground_start, ground_hit, ground_hold, ground_wait,
+        ground_end_forward, ground_end_back,
+        air_start, air_hit, air_hold, air_wait,
+        air_end_forward, air_end_back,
+    )
+
+    # The native hit/hold branch is selected by capture callbacks.  Those
+    # callbacks require the victim archive and therefore cannot be represented
+    # by this fighter-only package.  A missed start still follows the native
+    # start animation's terminal path (wait/fall); the hit and hold states stay
+    # available for a host that supplies the capture callback.
+    on_end = {
+        ground_start: Transition(Action.WAIT),
+        ground_hit: Transition(ground_wait),
+        air_hit: Transition(air_wait),
+        ground_end_forward: Transition(Action.WAIT),
+        ground_end_back: Transition(Action.WAIT),
+        air_start: Transition(Action.FALL),
+        air_end_forward: Transition(Action.FALL),
+        air_end_back: Transition(Action.FALL),
+    }
+
+    @hook.before_hit(actions=(ground_start, air_start))
+    def capture_contact(self, fighter: Any, ctx: Any) -> None:
+        """Enter the source hit phase when the claw contact is confirmed.
+
+        ``ftKp_SpecialS_8013302C``/``801330E4`` are invoked by the native
+        capture contact path.  The victim hand-off remains host-owned, but the
+        fighter motion transition is representable through ``before_hit``.
+        A contact that does not establish a victim then falls through to the
+        native wait phase at animation end.
+        """
+        if fighter.action == self.ground_start:
+            fighter.change_action(self.ground_hit)
+        elif fighter.action == self.air_start:
+            fighter.change_action(self.air_hit)
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_hit: Transition(ground_hit, preserve_state=True, keep_frame=True),
+        air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
+        air_wait: Transition(ground_wait, preserve_state=True, keep_frame=True),
+        air_end_forward: Transition(ground_end_forward, preserve_state=True, keep_frame=True),
+        air_end_back: Transition(ground_end_back, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_hit: Transition(air_hit, preserve_state=True, keep_frame=True),
+        ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
+        ground_wait: Transition(air_wait, preserve_state=True, keep_frame=True),
+        ground_end_forward: Transition(air_end_forward, preserve_state=True, keep_frame=True),
+        ground_end_back: Transition(air_end_back, preserve_state=True, keep_frame=True),
+    }
+
+
+class WhirlingFortress(UpSpecial, _KoopaSpecial):
+    """Native states 359–360; armor/effect callbacks remain native-gated."""
+
+    ground = source_phase(359)
+    air = source_phase(360)
+    _ENTRY = (ground, air)
+    _ACTIVE = (ground, air)
+
+    on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
+    # ftKp_SpecialAirHi_Coll converts back to the ground motion state when
+    # the rising/falling fortress reaches a platform.
+    on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
+    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
+
+class Bomb(DownSpecial, _KoopaSpecial):
+    """Native states 361–363; the ground-pound effect remains resource-gated."""
+
+    ground = source_phase(361)
+    air = source_phase(362)
+    landing = source_phase(363)
+    _ENTRY = (ground, air)
+    _ACTIVE = (ground, air, landing)
+
+    on_end = {
+        ground: Transition(air),
+        landing: Transition(Action.FALL),
+    }
+    on_ground = {air: Transition(landing, preserve_state=True, keep_frame=True)}
+    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
+
+class Bowser(Fighter):
+    specials = Fighter.specials.replace(
+        neutral=FlameBreath(),
+        side=KoopaKlaw(),
+        up=WhirlingFortress(),
+        down=Bomb(),
+    )
+
+
+__all__ = [
+    "Bowser",
+    "FlameBreath",
+    "KoopaKlaw",
+    "WhirlingFortress",
+    "Bomb",
+]

@@ -3,15 +3,20 @@
 from skirmish import (
     Action,
     ActionState,
+    ArticleId,
     Button,
+    CommonParameter,
+    directional_b_input,
     Fighter,
+    fresh_special_input,
     HitContext,
-    MotionBinding,
     MoveContext,
     Parameters,
-    SpecialMove,
+    NeutralSpecial,
+    SideSpecial,
+    UpSpecial,
+    DownSpecial,
     Transition,
-    SpecialMoves,
     action,
     clock,
     f32,
@@ -19,20 +24,13 @@ from skirmish import (
     math,
     motion,
     parameter,
-    register as fighter,
     resource as bind_resource,
-    validation,
-)
-from shared.common import (
-    directional_b_input,
-    FighterBase,
-    fresh_special_input,
-    any_stick_axis_reaches_thresholds,
     resource_attributes,
     special_rules,
     start_action,
     start_open_special,
-    stick_axis_reaches_threshold,
+    validation,
+    any_stick_axis_reaches_thresholds,
 )
 
 
@@ -52,11 +50,10 @@ class FoxActionState(ActionState):
 
 
 class FoxParameters(Parameters):
-    projectile_kind: str = "fox_laser"
+    article_id: ArticleId = ArticleId.FOX_LASER
 
 
-class Blaster(SpecialMove):
-    resource = "neutral"
+class Blaster(NeutralSpecial):
 
     ground_start = action(
         Action.SPECIAL_N_START,
@@ -100,6 +97,10 @@ class Blaster(SpecialMove):
         attack="neutral.end.air",
         command_trace="neutral.script.end.air",
     )
+    _ACTIVE_PHASES = (ground_start, air_start, ground_loop, air_loop)
+    _START_PHASES = (ground_start, air_start)
+    _LOOP_PHASES = (ground_loop, air_loop)
+    _END_PHASES = (ground_end, air_end)
 
     @hook.action_enter(ground_start, air_start)
     def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
@@ -113,18 +114,12 @@ class Blaster(SpecialMove):
             return False
         resource = ctx.resource(self.resource)
 
-        active_actions = (
-            self.ground_start,
-            self.air_start,
-            self.ground_loop,
-            self.air_loop,
-        )
-        if fighter.action in active_actions:
+        if fighter.action in self._ACTIVE_PHASES:
             if fighter.action_state.command[0] != 0:
                 fighter.action_state.repeat_armed = True
             return True
 
-        if fighter.action in (self.ground_end, self.air_end):
+        if fighter.action in self._END_PHASES:
             return True
 
         thresholds = resource.neutral_thresholds
@@ -139,39 +134,27 @@ class Blaster(SpecialMove):
 
         if ctx.ground_open:
             fighter.ground_velocity = 0
-            fighter.velocity[0] = 0
-            fighter.velocity[1] = 0
+            fighter.set_velocity(0, 0)
         return True
 
-    @hook.animation_end(
-        ground_start,
-        air_start,
-        ground_loop,
-        air_loop,
-        ground_end,
-        air_end,
-    )
+    @hook.animation_end(*_ACTIVE_PHASES, *_END_PHASES)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        resource = ctx.resource("neutral")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return
 
-        if fighter.action == self.ground_start:
-            fighter.change_action(self.ground_loop, preserve_state=True)
-        elif fighter.action == self.air_start:
-            fighter.change_action(self.air_loop, preserve_state=True)
-        elif fighter.action == self.ground_loop:
+        if fighter.action in self._START_PHASES:
+            destination = self.ground_loop if fighter.action == self.ground_start else self.air_loop
+            fighter.change_action(destination, preserve_state=True)
+        elif fighter.action in self._LOOP_PHASES:
+            loop = self.ground_loop if fighter.action == self.ground_loop else self.air_loop
             if fighter.action_state.repeat_armed:
-                fighter.change_action(self.ground_loop, preserve_state=True)
+                fighter.change_action(loop, preserve_state=True)
                 fighter.action_state.repeat_armed = False
             else:
-                fighter.change_action(self.ground_end)
-        elif fighter.action == self.air_loop:
-            if fighter.action_state.repeat_armed:
-                fighter.change_action(self.air_loop, preserve_state=True)
-                fighter.action_state.repeat_armed = False
-            else:
-                fighter.change_action(self.air_end)
+                fighter.change_action(
+                    self.ground_end if fighter.action == self.ground_loop else self.air_end
+                )
         elif fighter.action == self.ground_end:
             fighter.change_action(Action.WAIT)
         elif fighter.action == self.air_end:
@@ -188,37 +171,33 @@ class Blaster(SpecialMove):
         if value is None or value == 0:
             return
 
-        resource = ctx.resource("neutral")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return
 
         attributes = resource_attributes(ctx, resource)
-        laser = resource.laser
         ecb = fighter.ecb.current
         ecb_midpoint = (ecb.top[1] + ecb.bottom[1]) * 0.5
         angle = attributes.angle
         if fighter.facing != 1:
             angle = (-angle) + math.pi
 
-        fighter.emit_projectile(
-            kind=ctx.parameters.projectile_kind,
-            position=(
+        fighter.spawn_article(
+            ctx.parameters.article_id,
+            (
                 fighter.position[0],
                 fighter.position[1] + ecb_midpoint,
                 fighter.depth,
             ),
-            angle=angle,
-            speed=attributes.speed,
-            lifetime=laser.lifetime,
-            hitboxes=laser.hitboxes,
-            move_id=laser.move_id,
+            angle,
+            attributes.speed,
         )
         command = fighter.action_state.command
         fighter.action_state.command = (command[0], command[1], 0, command[3])
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
-        resource = ctx.resource("neutral")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return True
 
@@ -257,10 +236,8 @@ class Blaster(SpecialMove):
 
 
 
-class Illusion(SpecialMove):
+class Illusion(SideSpecial):
     """Fox's six-phase Illusion policy, shared by Falco's resource variant."""
-
-    resource = "side"
 
     start_ground_motion = motion.profile(
         ground=(
@@ -271,7 +248,7 @@ class Illusion(SpecialMove):
         air=(
             motion.gravity(
                 acceleration=bind_resource("side.attributes.start_fall_accel"),
-                terminal_velocity=parameter("movement.terminal_velocity"),
+                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
                 delay=bind_resource("side.attributes.gravity_delay"),
             ),
             motion.air_friction(
@@ -286,14 +263,12 @@ class Illusion(SpecialMove):
             motion.target_track(
                 path=bind_resource("side.dash.ground_trans_n"),
                 multiply_by_facing=True,
-                end="no_op",
             ),
         ),
         air=(
             motion.velocity_track(
                 path=bind_resource("side.dash.air_trans_n"),
                 multiply_x_by_facing=True,
-                end="no_op",
             ),
         ),
     )
@@ -308,7 +283,7 @@ class Illusion(SpecialMove):
         air=(
             motion.gravity(
                 acceleration=bind_resource("side.attributes.end_fall_accel"),
-                terminal_velocity=parameter("movement.terminal_velocity"),
+                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
                 delay=bind_resource("side.attributes.end_gravity_delay"),
             ),
             motion.air_friction(
@@ -326,7 +301,6 @@ class Illusion(SpecialMove):
         motion=start_ground_motion,
         profile_delay_field="gravity_delay",
     )
-
     ground_dash = action(
         Action.SPECIAL_S,
         slippi_state=348,
@@ -371,6 +345,11 @@ class Illusion(SpecialMove):
         motion=end_air_motion,
         profile_delay_field="gravity_delay",
     )
+    _START_PHASES = (ground_start, air_start)
+    _DASH_PHASES = (ground_dash, air_dash)
+    _END_PHASES = (ground_end, air_end)
+    _PASSIVE_PHASES = (*_START_PHASES, *_END_PHASES)
+    _COMMAND_RESET_PHASES = (*_START_PHASES, *_DASH_PHASES)
 
     on_end = {
         ground_start: Transition(ground_dash, preserve_state=True),
@@ -390,19 +369,14 @@ class Illusion(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        resource = ctx.resource("side")
+        resource = ctx.resource(self.resource)
         rules = special_rules(ctx)
         if resource is None or rules is None or not ctx.input.just_pressed(Button.B):
             return False
-        if fighter.action in (self.ground_dash, self.air_dash):
+        if fighter.action in self._DASH_PHASES:
             self._enter_end(fighter, resource)
             return True
-        if fighter.action in (
-            self.ground_start,
-            self.ground_end,
-            self.air_start,
-            self.air_end,
-        ):
+        if fighter.action in self._PASSIVE_PHASES:
             return True
         if not (ctx.ground_open or ctx.air_open):
             return False
@@ -421,22 +395,24 @@ class Illusion(SpecialMove):
 
         if horizontal * fighter.facing < -rules.turn_threshold:
             fighter.facing = -fighter.facing
-        if ctx.ground_open:
-            start_action(fighter, self.ground_start)
-        else:
-            start_action(fighter, self.air_start)
+        start_action(fighter, self.ground_start if ctx.ground_open else self.air_start)
         return True
 
-    @hook.action_enter(
-        ground_start,
-        air_start,
-        ground_dash,
-        air_dash,
-        ground_end,
-        air_end,
-    )
+    @hook.action_enter(*_START_PHASES, *_DASH_PHASES, *_END_PHASES)
     def action_enter(self, fighter: Fighter, ctx: MoveContext) -> None:
-        resource = ctx.resource("side")
+        # ftFx_SpecialSStart_Enter and the ground/air dash conversions clear
+        # cmd_vars[2] before the next dash can consume it for ghost spawning.
+        # Keep the other command slots intact because they belong to the
+        # shared action state and may be used by another callback.
+        if fighter.action in self._COMMAND_RESET_PHASES:
+            command = fighter.action_state.command
+            fighter.action_state.command = (
+                command[0],
+                command[1],
+                0,
+                command[3],
+            )
+        resource = ctx.resource(self.resource)
         if resource is None:
             return
         attributes = resource_attributes(ctx, resource)
@@ -446,7 +422,7 @@ class Illusion(SpecialMove):
             fighter.ground_velocity = retained / attributes.entry_speed_div
             fighter.action_state.gravity_delay = attributes.gravity_delay
         elif fighter.action == self.air_start:
-            fighter.velocity = (
+            fighter.set_velocity(
                 fighter.velocity[0] / attributes.entry_speed_div,
                 0.0,
             )
@@ -456,22 +432,16 @@ class Illusion(SpecialMove):
             fighter.ground_velocity = attributes.ground_end_speed * fighter.facing
             fighter.action_state.gravity_delay = attributes.end_gravity_delay
         elif fighter.action == self.air_end:
-            fighter.velocity = (attributes.air_end_speed * fighter.facing, 0.0)
+            fighter.set_velocity(attributes.air_end_speed * fighter.facing, 0.0)
             fighter.action_state.gravity_delay = attributes.end_gravity_delay
 
-    @hook.animation_end(
-        ground_dash,
-        air_dash,
-        air_end,
-    )
+    @hook.animation_end(*_DASH_PHASES, air_end)
     def animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        resource = ctx.resource("side")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return
 
-        if fighter.action == self.ground_dash:
-            self._enter_end(fighter, resource)
-        elif fighter.action == self.air_dash:
+        if fighter.action in self._DASH_PHASES:
             self._enter_end(fighter, resource)
         elif fighter.action == self.air_end:
             attributes = resource_attributes(ctx, resource)
@@ -482,7 +452,7 @@ class Illusion(SpecialMove):
 
     @hook.landed(air_end)
     def landed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        resource = ctx.resource("side")
+        resource = ctx.resource(self.resource)
         escape_air = ctx.resource("escape_air")
         if resource is None or escape_air is None:
             return False
@@ -499,14 +469,13 @@ class Illusion(SpecialMove):
             fighter.ground_velocity = attributes.ground_end_speed * fighter.facing
             fighter.change_action(self.ground_end)
         else:
-            fighter.velocity[0] = attributes.air_end_speed * fighter.facing
-            fighter.velocity[1] = 0.0
+            fighter.set_velocity(attributes.air_end_speed * fighter.facing, 0.0)
             fighter.change_action(self.air_end)
         fighter.action_state.gravity_delay = attributes.end_gravity_delay
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
-        resource = ctx.resource("side")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return True
         rules = special_rules(ctx)
@@ -587,14 +556,13 @@ class Illusion(SpecialMove):
 
 
 
-class FireFox(SpecialMove):
-    resource = "up"
+class FireFox(UpSpecial):
 
     hold_air_motion = motion.profile(
         air=(
             motion.gravity(
                 acceleration=bind_resource("up.attributes.hold_fall_accel"),
-                terminal_velocity=parameter("movement.terminal_velocity"),
+                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
                 delay=bind_resource("up.attributes.gravity_delay"),
             ),
             motion.air_friction(
@@ -631,7 +599,6 @@ class FireFox(SpecialMove):
             motion.velocity_track(
                 path=bind_resource("up.bound.transn_y"),
                 component="y",
-                end="no_op",
             ),
             motion.drift_clamp(
                 maximum=parameter("movement.air_drift_max"),
@@ -699,7 +666,7 @@ class FireFox(SpecialMove):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx: MoveContext) -> bool:
-        resource = ctx.resource("up")
+        resource = ctx.resource(self.resource)
         rules = special_rules(ctx)
         if resource is None or rules is None or not ctx.input.just_pressed(Button.B):
             return False
@@ -725,9 +692,9 @@ class FireFox(SpecialMove):
             fighter.action_state.gravity_delay = attributes.gravity_delay
             return True
 
-        if not (ctx.air_open and not fighter.grounded):
+        if fighter.grounded or not ctx.air_open:
             return False
-        if not (ctx.input.stick[1] >= rules.vertical_threshold):
+        if ctx.input.stick[1] < rules.vertical_threshold:
             return False
 
         velocity_x = fighter.velocity[0] / attributes.entry_speed_div
@@ -746,28 +713,25 @@ class FireFox(SpecialMove):
         bound,
     )
     def action_entered(self, fighter: Fighter, ctx: MoveContext) -> None:
-        resource = ctx.resource("up")
+        resource = ctx.resource(self.resource)
         if resource is None:
             return
         attributes = resource_attributes(ctx, resource)
 
         if fighter.action == self.travel_air:
-            fighter.set_motion_binding(
-                MotionBinding(
-                    facing=fighter.facing,
-                    cosine=math.cos(fighter.action_state.travel_angle),
-                    sine=math.sin(fighter.action_state.travel_angle),
-                    ground_scale=1.0,
-                )
-            )
+            self._bind_travel_motion(fighter, fighter.action_state.travel_angle)
         elif fighter.action == self.bound:
-            fighter.velocity[0] = fighter.velocity[0] * attributes.bound_speed_mul
+            self._scale_horizontal_velocity(fighter, attributes.bound_speed_mul)
+            # ftFx_SpecialHiBound_Enter clears cmd_vars[0] before the bound
+            # animation; the exit marker may set it again on a later frame.
+            command = fighter.action_state.command
+            fighter.action_state.command = (0, command[1], command[2], command[3])
         elif fighter.action == self.fall:
             fighter.clear_special_effect()
 
     @hook.animation_end(hold_ground, hold_air)
     def hold_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        attributes = ctx.resource("up.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return
 
@@ -776,8 +740,8 @@ class FireFox(SpecialMove):
             magnitude = abs(stick[0]) + abs(stick[1])
             angle = math.angle_xy(fighter.floor_normal, stick)
             along_floor = (
-                not (magnitude < attributes.direction_stick_min)
-                and not (angle < math.HALF_PI)
+                magnitude >= attributes.direction_stick_min
+                and angle >= math.HALF_PI
                 and not ctx.on_platform
             )
             if along_floor:
@@ -786,19 +750,11 @@ class FireFox(SpecialMove):
                 fighter.change_action(self.travel_ground)
                 fighter.action_state.travel_remaining = attributes.duration
                 fighter.ground_velocity = attributes.speed * fighter.facing
-                normal_x = -fighter.floor_normal[0] * fighter.facing
-                fighter.action_state.travel_angle = math.atan2(
-                    normal_x,
+                angle = math.atan2(
+                    -fighter.floor_normal[0] * fighter.facing,
                     fighter.floor_normal[1],
                 )
-                fighter.set_motion_binding(
-                    MotionBinding(
-                        facing=fighter.facing,
-                        cosine=math.cos(fighter.action_state.travel_angle),
-                        sine=math.sin(fighter.action_state.travel_angle),
-                        ground_scale=1.0,
-                    )
-                )
+                self._bind_travel_motion(fighter, angle)
                 return
 
             fighter.grounded = False
@@ -818,7 +774,7 @@ class FireFox(SpecialMove):
 
     @hook.animation_end(landing, fall, bound)
     def terminal_animation_end(self, fighter: Fighter, ctx: MoveContext) -> None:
-        attributes = ctx.resource("up.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return
 
@@ -842,7 +798,7 @@ class FireFox(SpecialMove):
     def bound_exit_marker(self, fighter: Fighter, ctx: MoveContext) -> None:
         if fighter.grounded:
             return
-        attributes = ctx.resource("up.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return
         fighter.enter_fall_special(
@@ -864,7 +820,7 @@ class FireFox(SpecialMove):
         if fighter.action != self.travel_air:
             return False
 
-        attributes = ctx.resource("up.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return False
         if (
@@ -875,27 +831,25 @@ class FireFox(SpecialMove):
             return True
 
         gate = math.DEG_TO_RAD * (90.0 + attributes.bound_angle_degrees)
-        if not (math.angle_xy(fighter.floor_normal, ctx.pre_landing.velocity) < gate):
+        if math.angle_xy(fighter.floor_normal, ctx.pre_landing.velocity) >= gate:
             start_action(fighter, self.bound)
-            fighter.velocity[0] = fighter.velocity[0] * attributes.bound_speed_mul
+            self._scale_horizontal_velocity(fighter, attributes.bound_speed_mul)
             return True
 
         fighter.restore_pre_landing()
         fighter.facing = math.facing(fighter.velocity[0])
         facing_velocity = fighter.velocity[0] * fighter.facing
-        fighter.action_state.travel_angle = math.atan2(
+        angle = math.atan2(
             fighter.velocity[1],
             facing_velocity,
         )
-        fighter.set_motion_binding(
-            MotionBinding(
-                facing=fighter.facing,
-                cosine=math.cos(fighter.action_state.travel_angle),
-                sine=math.sin(fighter.action_state.travel_angle),
-                ground_scale=1.0,
-            )
-        )
+        self._bind_travel_motion(fighter, angle)
         return True
+
+    @staticmethod
+    def _scale_horizontal_velocity(fighter: Fighter, multiplier: f32) -> None:
+        velocity = fighter.velocity
+        fighter.set_velocity(velocity[0] * multiplier, velocity[1])
 
     @hook.ground_air_changed(hold_ground, hold_air, travel_ground)
     def ground_air_changed(self, fighter: Fighter, ctx: MoveContext) -> None:
@@ -907,52 +861,37 @@ class FireFox(SpecialMove):
         elif fighter.action == self.travel_ground and not ctx.grounded:
             destination = self.travel_air
         if destination is None:
-            return None
+            return
         fighter.change_action(destination, preserve_state=True, keep_frame=True)
-        return None
 
     @hook.surface_contact(travel_ground, travel_air)
     def surface_contact(self, fighter: Fighter, ctx: MoveContext) -> bool:
         if fighter.action == self.travel_ground:
             normal = fighter.floor_normal
-            fighter.action_state.travel_angle = math.atan2(
+            angle = math.atan2(
                 -normal[0] * fighter.facing,
                 normal[1],
             )
-            fighter.set_motion_binding(
-                MotionBinding(
-                    facing=fighter.facing,
-                    cosine=math.cos(fighter.action_state.travel_angle),
-                    sine=math.sin(fighter.action_state.travel_angle),
-                    ground_scale=1.0,
-                )
-            )
+            self._bind_travel_motion(fighter, angle)
             return True
 
         surface = ctx.ceiling if ctx.ceiling is not None else ctx.wall
         if surface is None:
             return False
-        attributes = ctx.resource("up.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         if attributes is None:
             return False
 
         gate = math.DEG_TO_RAD * (90.0 + attributes.bound_angle_degrees)
-        if not (math.angle_xy(surface.normal, fighter.velocity) < gate):
+        if math.angle_xy(surface.normal, fighter.velocity) >= gate:
             return False
         fighter.facing = math.facing(fighter.velocity[0])
         facing_velocity = fighter.velocity[0] * fighter.facing
-        fighter.action_state.travel_angle = math.atan2(
+        angle = math.atan2(
             fighter.velocity[1],
             facing_velocity,
         )
-        fighter.set_motion_binding(
-            MotionBinding(
-                facing=fighter.facing,
-                cosine=math.cos(fighter.action_state.travel_angle),
-                sine=math.sin(fighter.action_state.travel_angle),
-                ground_scale=1.0,
-            )
-        )
+        self._bind_travel_motion(fighter, angle)
         return True
 
     @hook.validate
@@ -1008,12 +947,14 @@ class FireFox(SpecialMove):
             if not validation.finite(value):
                 return False
         for value in bound.exit_flags:
-            if value != True and value != False:
+            if type(value).__name__ == "NativeMember":
+                value = value._value()
+            if type(value) is not bool:
                 return False
         return True
 
     def _launch_air(self, fighter: Fighter, ctx: MoveContext) -> None:
-        attributes = ctx.resource().attributes
+        attributes = resource_attributes(ctx)
         stick = ctx.input.stick
         minimum = attributes.direction_stick_min
         magnitude = abs(stick[0]) + abs(stick[1])
@@ -1025,39 +966,27 @@ class FireFox(SpecialMove):
 
         fighter.change_action(self.travel_air)
         fighter.action_state.travel_angle = angle
-        fighter.set_motion_binding(
-            MotionBinding(
-                facing=fighter.facing,
-                cosine=math.cos(angle),
-                sine=math.sin(angle),
-                ground_scale=1.0,
-            )
-        )
+        fighter.launch_from_angle(attributes.speed, angle)
         fighter.action_state.travel_remaining = attributes.duration
         fighter.action_state.ground_travel_frames = 0.0
-        # Keep ``facing * (speed * cos(angle))`` grouped like the source.
-        fighter.set_velocity(
-            fighter.facing * (attributes.speed * math.cos(angle)),
-            attributes.speed * math.sin(angle),
-        )
         fighter.max_jumps()
 
+    def _bind_travel_motion(self, fighter: Fighter, angle: f32) -> None:
+        fighter.action_state.travel_angle = angle
+        fighter.set_motion_angle(angle)
 
-
-class Shine(SpecialMove):
+class Shine(DownSpecial):
     """Fox/Falco's five-phase down special (Reflector)."""
-
-    resource = "down"
 
     air_motion = motion.profile(
         air=(
             motion.gravity(
                 acceleration=bind_resource("down.attributes.fall_accel"),
-                terminal_velocity=parameter("movement.terminal_velocity"),
+                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
                 delay=bind_resource("down.attributes.gravity_delay"),
             ),
             motion.drift_or_friction(
-                recovery_step=parameter("rules.specials.air_drift_recovery_step"),
+                recovery_step=parameter(CommonParameter.AIR_DRIFT_RECOVERY_STEP),
             ),
         ),
     )
@@ -1141,31 +1070,27 @@ class Shine(SpecialMove):
         ground_turn,
     )
     _AIR_PHASES = (air_start, air_loop, air_hit, air_end, air_turn)
-    _PHASES = (
-        ground_start,
-        ground_loop,
-        ground_hit,
-        ground_end,
-        ground_turn,
-        air_start,
-        air_loop,
-        air_hit,
-        air_end,
-        air_turn,
-    )
+    _PHASES = (*_GROUND_PHASES, *_AIR_PHASES)
     _START_PHASES = (ground_start, air_start)
     _LOOP_PHASES = (ground_loop, air_loop)
     _TURN_PHASES = (ground_turn, air_turn)
     _HIT_PHASES = (ground_hit, air_hit)
     _END_PHASES = (ground_end, air_end)
-    _ACTIVE_PHASES = (
-        ground_loop,
-        air_loop,
-        ground_turn,
-        air_turn,
-        ground_hit,
-        air_hit,
+    _ACTIVE_PHASES = (*_LOOP_PHASES, *_TURN_PHASES, *_HIT_PHASES)
+    # Air end clears the reflector on exit; ground end intentionally retains
+    # the source's phase handling until its transition completes.
+    _REFLECTING_PHASES = (*_START_PHASES, *_ACTIVE_PHASES, ground_end)
+    _SURFACE_PAIRS = (
+        (ground_start, air_start),
+        (ground_loop, air_loop),
+        (ground_turn, air_turn),
+        (ground_hit, air_hit),
+        (ground_end, air_end),
     )
+    _SURFACE_DESTINATIONS = {
+        **{ground: air for ground, air in _SURFACE_PAIRS},
+        **{air: ground for ground, air in _SURFACE_PAIRS},
+    }
 
     @hook.action_enter(*_START_PHASES)
     def enter_start(self, fighter: Fighter, ctx: MoveContext) -> None:
@@ -1183,22 +1108,7 @@ class Shine(SpecialMove):
 
     @hook.action_exit(*_PHASES)
     def exit_phase(self, fighter: Fighter, ctx: MoveContext) -> None:
-        preserving_platform_drop = (
-            fighter.action == self.air_start
-        )
-        phase_action = (
-            fighter.action == self.ground_start
-            or fighter.action == self.ground_loop
-            or fighter.action == self.ground_turn
-            or fighter.action == self.ground_hit
-            or fighter.action == self.ground_end
-            or fighter.action == self.air_start
-            or fighter.action == self.air_loop
-            or fighter.action == self.air_turn
-            or fighter.action == self.air_hit
-            or fighter.action == self.air_end
-        )
-        if not phase_action and not preserving_platform_drop:
+        if fighter.action not in self._REFLECTING_PHASES:
             fighter.flags.reflecting = False
 
     @hook.input_pressed(Button.B)
@@ -1206,7 +1116,6 @@ class Shine(SpecialMove):
         if fighter.action in self._PHASES:
             return True
         rules = special_rules(ctx)
-        resource = ctx.resource()
         if rules is None or not ctx.input.just_pressed(Button.B):
             return False
 
@@ -1224,18 +1133,24 @@ class Shine(SpecialMove):
         if not (grounded_start or aerial_start):
             return False
 
-        attributes = ctx.resource("down.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         start_action(
             fighter,
             self.ground_start if grounded_start else self.air_start,
         )
+        # ftFox_SpecialLw_SetVars initializes cmd_vars[1] to 4 on a fresh
+        # reflector entry. Keep this separate from enter_start: a platform
+        # drop converts ground_start to air_start while preserving commands.
+        fighter.action_state.command = (0, 4, 0, 0)
         fighter.action_state.release_lag = attributes.release_lag
         fighter.action_state.gravity_delay = attributes.gravity_delay
         fighter.action_state.is_release = False
         fighter.action_state.looping = False
         if aerial_start:
-            fighter.velocity[1] = 0
-            fighter.velocity[0] = fighter.velocity[0] / attributes.air_momentum_div
+            fighter.set_velocity(
+                fighter.velocity[0] / attributes.air_momentum_div,
+                0,
+            )
         return True
 
     @hook.input_released(
@@ -1367,7 +1282,7 @@ class Shine(SpecialMove):
             fighter.change_action(Action.JUMP_SQUAT, preserve_state=True)
             fighter.action_frame = 0
             return True
-        return ctx.aerial_jump() if jump_source is not None else False
+        return jump_source is not None and ctx.aerial_jump()
 
     def _enter_loop(self, fighter: Fighter) -> None:
         destination = self.ground_loop if fighter.grounded else self.air_loop
@@ -1375,7 +1290,7 @@ class Shine(SpecialMove):
         fighter.flags.reflecting = True
 
     def _enter_turn(self, fighter: Fighter, ctx: MoveContext) -> None:
-        attributes = ctx.resource("down.attributes")
+        attributes = resource_attributes(ctx, self.resource)
         destination = self.ground_turn if fighter.grounded else self.air_turn
         self._move_transition(fighter, destination)
         fighter.action_state.turn_frames = attributes.turn_frames - 1
@@ -1390,11 +1305,8 @@ class Shine(SpecialMove):
         self._move_transition(fighter, destination)
 
     def _transfer(self, fighter: Fighter, grounded: bool) -> bool:
-        destination = self._surface_destination(fighter.action, grounded)
-        if destination is None:
-            return False
-        destination_grounded = destination in self._GROUND_PHASES
-        if destination_grounded != grounded:
+        destination = self._SURFACE_DESTINATIONS.get(fighter.action)
+        if destination is None or (destination in self._GROUND_PHASES) != grounded:
             return False
         fighter.change_action(destination, preserve_state=True, keep_frame=True)
         if destination in self._ACTIVE_PHASES:
@@ -1416,32 +1328,6 @@ class Shine(SpecialMove):
             destination,
             preserve_fields=("release_lag", "is_release", "gravity_delay"),
         )
-
-    def _surface_destination(self, current, grounded):
-        if current == self.ground_start:
-            destination = self.air_start
-        elif current == self.air_start:
-            destination = self.ground_start
-        elif current == self.ground_loop:
-            destination = self.air_loop
-        elif current == self.air_loop:
-            destination = self.ground_loop
-        elif current == self.ground_turn:
-            destination = self.air_turn
-        elif current == self.air_turn:
-            destination = self.ground_turn
-        elif current == self.ground_hit:
-            destination = self.air_hit
-        elif current == self.air_hit:
-            destination = self.ground_hit
-        elif current == self.ground_end:
-            destination = self.air_end
-        elif current == self.air_end:
-            destination = self.ground_end
-        else:
-            return None
-        destination_is_grounded = destination in self._GROUND_PHASES
-        return destination if destination_is_grounded == grounded else None
 
     @hook.validate
     def validate(self, ctx: MoveContext) -> bool:
@@ -1496,17 +1382,14 @@ class Shine(SpecialMove):
 
 
 
-@fighter
-class Fox(FighterBase):
+class Fox(Fighter):
     """Fox's resource-backed native fighter definition."""
 
-    name = "fox"
-    external_ids = (2,)
     parameters = FoxParameters
     attributes = FoxParameters
     action_state = FoxActionState
 
-    specials = SpecialMoves(Blaster(), Illusion(), FireFox(), Shine())
+    specials = Fighter.specials.replace(neutral=Blaster(), side=Illusion(), up=FireFox(), down=Shine())
 
 
 __all__ = ["Fox", "Blaster", "Illusion", "FireFox", "Shine", "FoxActionState", "FoxParameters"]

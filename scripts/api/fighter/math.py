@@ -72,7 +72,23 @@ def facing(value: Any) -> Any:
     return f32(_require_native("facing", _facing)(float(value)))
 
 
+def velocity_from_angle(speed: Any, angle: Any, facing: Any = 1.0) -> tuple[Any, Any]:
+    """Return source-grouped binary32 velocity for a directional angle.
+
+    The horizontal component intentionally preserves the source expression's
+    grouping: ``facing * (speed * cos(angle))``.  Inputs are normalized to
+    binary32 before native trigonometry and arithmetic, so each multiply uses
+    the same rounding behavior as the rest of the authoring facade.  As in
+    the native arithmetic, nonfinite values propagate through the result.
+    """
+    values = tuple(f32(value) for value in (speed, angle, facing))
+    speed_value, angle_value, facing_value = values
+    horizontal = facing_value * (speed_value * cos(angle_value))
+    vertical = speed_value * sin(angle_value)
+    return horizontal, vertical
+
+
 __all__ = [
     "PI", "HALF_PI", "DEG_TO_RAD", "pi", "half_pi", "deg_to_rad",
-    "sin", "cos", "atan2", "angle_xy", "facing",
+    "sin", "cos", "atan2", "angle_xy", "facing", "velocity_from_angle",
 ]

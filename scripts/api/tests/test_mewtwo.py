@@ -1,0 +1,173 @@
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+
+ROOT = Path(__file__).parents[3]
+API = ROOT / "scripts" / "api"
+if str(API) not in sys.path:
+    sys.path.insert(0, str(API))
+
+
+def _module():
+    spec = importlib.util.spec_from_file_location(
+        "mewtwo_test", ROOT / "scripts" / "fighters" / "mewtwo.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.Mewtwo.name = "mewtwo"
+    module.Mewtwo.external_ids = (10,)
+    return module
+
+
+class _Input:
+    def __init__(self, stick=(0.0, 0.0)):
+        self.stick = stick
+
+    def just_pressed(self, button):
+        return True
+
+
+class _Fighter:
+    action = None
+    action_frame = 0
+
+    def __init__(self):
+        self.changes = []
+        self.action_state = self._module_state()
+        self.velocity = (2.0, 3.0)
+        self.ground_velocity = 2.0
+        self.flags = SimpleNamespace(reflecting=False)
+
+    @staticmethod
+    def _module_state():
+        return SimpleNamespace(command=(0, 0, 0, 0))
+
+    def has_complete_animation(self, state):
+        return 341 <= state <= 360
+
+    def change_action(self, action, **kwargs):
+        self.changes.append((action, kwargs))
+        self.action = action
+
+    def set_velocity(self, x, y):
+        self.velocity = (x, y)
+
+
+class MewtwoScriptTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = _module()
+        cls.module.Mewtwo.external_ids = (10,)
+
+    def test_source_motion_states_match_ftmewtwo_table(self):
+        state = lambda phase: dict(phase.metadata)["slippi_state"]
+        self.assertEqual(
+            [state(phase) for phase in self.module.ShadowBall._ACTIVE],
+            list(range(341, 351)),
+        )
+        self.assertEqual(
+            [state(phase) for phase in self.module.Teleport._ACTIVE],
+            list(range(353, 359)),
+        )
+        self.assertEqual(
+            [state(phase) for phase in self.module.Confusion._ACTIVE], [351, 352]
+        )
+        self.assertEqual(
+            [state(phase) for phase in self.module.Disable._ACTIVE], [359, 360]
+        )
+
+    def test_special_entry_requires_its_native_resource(self):
+        fighter = _Fighter()
+        context = SimpleNamespace(
+            input=_Input(), ground_open=True, air_open=False, resource=lambda path: None
+        )
+        self.assertFalse(self.module.ShadowBall().input_pressed(fighter, context))
+        self.assertEqual(fighter.changes, [])
+
+    def test_directional_special_uses_shared_dispatch_threshold(self):
+        fighter = _Fighter()
+        context = SimpleNamespace(
+            input=_Input((0.0, 1.0)),
+            ground_open=False,
+            air_open=True,
+            rules=SimpleNamespace(
+                specials=SimpleNamespace(vertical_threshold=0.5, side_stick_threshold=0.5)
+            ),
+            resource=lambda path: object(),
+        )
+        self.assertTrue(self.module.Teleport().input_pressed(fighter, context))
+        self.assertEqual(fighter.changes[0][0], self.module.Teleport.air_start)
+
+    def test_terminal_and_surface_rules_preserve_native_phase_pairs(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.air
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.changes[0][0], move.ground)
+
+        fighter.action = move.ground
+        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.changes[1][0].value, "wait")
+
+    def test_shadow_ball_command_lifecycle_and_lr_cancel_match_source_callbacks(self):
+        move = self.module.ShadowBall()
+        fighter = _Fighter()
+        fighter.action = move.ground_start
+        move.enter(fighter, SimpleNamespace(grounded=True))
+        move.create_held_shadow(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        self.assertTrue(fighter.action_state.shadow_ball_held)
+
+        fighter.action = move.ground_loop
+        move.release_input(fighter, SimpleNamespace())
+        self.assertEqual(fighter.changes[-1][0], move.ground_end)
+        self.assertTrue(fighter.action_state.shadow_ball_released)
+
+        fighter.action = move.ground_loop
+        move.input_pressed(fighter, SimpleNamespace(input=_Input()))
+        self.assertEqual(fighter.changes[-1][0], move.ground_cancel)
+        self.assertFalse(fighter.action_state.shadow_ball_held)
+
+    def test_damage_clears_unfinished_shadow_ball_and_disable(self):
+        shadow = self.module.ShadowBall()
+        fighter = _Fighter()
+        fighter.action_state.shadow_ball_held = True
+        fighter.action_state.shadow_ball_charge = 3
+        shadow.on_damage(fighter, SimpleNamespace())
+        self.assertFalse(fighter.action_state.shadow_ball_held)
+        self.assertEqual(fighter.action_state.shadow_ball_charge, 0)
+
+        disable = self.module.Disable()
+        fighter.action_state.disable_fired = True
+        disable.on_damage(fighter, SimpleNamespace())
+        self.assertFalse(fighter.action_state.disable_fired)
+
+    def test_confusion_reflect_commands_toggle_portable_flag(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.ground
+        move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        self.assertTrue(fighter.flags.reflecting)
+        self.assertTrue(fighter.action_state.confusion_reflecting)
+        move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=2)))
+        self.assertFalse(fighter.flags.reflecting)
+
+    def test_disable_and_teleport_keep_source_local_state(self):
+        disable = self.module.Disable()
+        fighter = _Fighter()
+        fighter.action = disable.air
+        disable.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.velocity[1], 0.0)
+        disable.create_disable(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+        self.assertTrue(fighter.action_state.disable_fired)
+
+        teleport = self.module.Teleport()
+        fighter.velocity = (2.0, 3.0)
+        fighter.action = teleport.air_start
+        teleport.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.velocity, (1.0, 1.5))
+        fighter.action = teleport.air_travel
+        teleport.begin_travel(fighter, SimpleNamespace())
+        self.assertTrue(fighter.action_state.teleport_active)

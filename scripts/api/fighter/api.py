@@ -1,12 +1,16 @@
 """Immutable moveset descriptors and definition export."""
 
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace as dataclass_replace
 import inspect
+import sys
+from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
+from enum import IntEnum
 
 from .actions import Action
 from .events import EventBinding, _action_name
+from .roster import Roster, roster_for_module
 
 if TYPE_CHECKING:
     from .compat import ActionDescriptor
@@ -14,6 +18,17 @@ if TYPE_CHECKING:
 
 class MoveError(ValueError):
     """Raised when a fighter authoring contract is incomplete or invalid."""
+
+
+class FighterPart(IntEnum):
+    """Native fighter-part ordinals used by pose-dependent authoring helpers.
+
+    The numeric value is the source ``FtPart`` ordinal.  Unknown ordinals are
+    intentionally accepted by the native host, so this stays a small useful
+    vocabulary instead of becoming a mirror of every character skeleton.
+    """
+
+    L1ST_NB = 23
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +107,26 @@ class SpecialMoves:
     side: Move
     up: Move
     down: Move
+
+    def replace(self, **changes: Move) -> "SpecialMoves":
+        """Return this moveset with selected move slots replaced.
+
+        The helper keeps fighter declarations focused on the one special they
+        customize while retaining the immutable defaults supplied by
+        :class:`Fighter`.  It deliberately accepts only dataclass fields and
+        actual ``Move`` instances, so a typo cannot silently become a new
+        declaration or a runtime failure.
+        """
+        names = {item.name for item in fields(type(self))}
+        unknown = set(changes) - names
+        if unknown:
+            raise TypeError(
+                f"unknown special move field(s): {', '.join(sorted(unknown))}"
+            )
+        for name, value in changes.items():
+            if not isinstance(value, Move):
+                raise TypeError(f"special move {name!r} must be a Move instance")
+        return dataclass_replace(self, **changes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,7 +304,7 @@ class FighterDefinition:
             if hasattr(value, "as_dict"):
                 return value.as_dict()
             return dict(value) if isinstance(value, MappingProxyType) else value
-        return {
+        exported = {
             "name": self.name,
             "parameters": dict(self.attributes),
             # These keys are consumed by the native FighterDefinition
@@ -289,6 +324,28 @@ class FighterDefinition:
                          "taunt": dict(self.taunt)},
             "behaviors": behaviors,
         }
+        from .compat import resolve_source_action
+        from .compat import SourceAction
+
+        def resolve(value: Any) -> Any:
+            if isinstance(value, SourceAction):
+                return resolve_source_action(value.reference, self.external_ids)
+            if isinstance(value, str):
+                if value.startswith("Action."):
+                    prefix = "Action."
+                    return prefix + resolve_source_action(value[len(prefix):], self.external_ids)
+                return resolve_source_action(value, self.external_ids)
+            if isinstance(value, tuple):
+                return tuple(resolve(item) for item in value)
+            if isinstance(value, list):
+                return [resolve(item) for item in value]
+            if isinstance(value, dict):
+                return {key: resolve(item) for key, item in value.items()}
+            if hasattr(value, "as_dict"):
+                return resolve(value.as_dict())
+            return value
+
+        return resolve(exported)
 
 
 class FighterMeta(type):
@@ -310,12 +367,37 @@ class FighterMeta(type):
 
 
 class Fighter(metaclass=FighterMeta):
-    """Base class for class-defined fighters.
+    """Authoring base with the standard instantiated move groups.
 
-    Subclasses must explicitly provide all required move groups.  The class
-    itself is not registered until the ``@register`` decorator is applied.
+    A roster module only needs to declare ``class Mario(Fighter)`` and
+    specialize the groups it implements.  The loader derives identity from
+    that module's filename, so normal scripts contain no registration or
+    duplicate roster metadata.
     """
     __slots__ = ()
+    __abstract__ = True
+    name: ClassVar[str]
+    attributes: ClassVar[Any]
+    specials: ClassVar[SpecialMoves]
+    aerials: ClassVar[AerialMoves]
+    grounded: ClassVar[GroundedMoves]
+    tilts: ClassVar[TiltMoves]
+    smashes: ClassVar[SmashMoves]
+    grabs: ClassVar[GrabMoves]
+    throws: ClassVar[ThrowMoves]
+    defense: ClassVar[DefenseMoves]
+    ledge: ClassVar[LedgeMoves]
+    getup: ClassVar[GetupMoves]
+    taunt: ClassVar[TauntMoves]
+
+
+class FighterBase(metaclass=FighterMeta):
+    """Strict declaration-only compatibility base.
+
+    New fighter modules should inherit :class:`Fighter`.  This type remains
+    available for external definitions that intentionally provide every move
+    group themselves.
+    """
     __abstract__ = True
     name: ClassVar[str]
     attributes: ClassVar[Any]
@@ -344,6 +426,7 @@ def _validate_group(group: Any, names: tuple[str, ...], label: str, expected: ty
 
 def export_definition(fighter: type[Fighter]) -> FighterDefinition:
     from .registry import validate_fighter
+    resolve_identity(fighter)
     validate_fighter(fighter)
     special_names = tuple(field.name for field in fields(fighter.specials))
     aerial_names = tuple(field.name for field in fields(fighter.aerials))
@@ -394,3 +477,223 @@ def export_definition(fighter: type[Fighter]) -> FighterDefinition:
         behaviors=tuple(getattr(fighter, "behaviors", ())),
         _root_module=fighter.__module__,
     )
+
+
+def resolve_identity(fighter: type[Fighter], module_name: str | None = None) -> None:
+    """Fill script identity from trusted loader provenance or its module."""
+    module_roster = roster_for_module(module_name) if module_name is not None else None
+    if module_name is None and module_roster is None:
+        module_roster = roster_for_module(getattr(fighter, "__module__", ""))
+        module = sys.modules.get(getattr(fighter, "__module__", ""))
+        source_file = getattr(module, "__file__", None)
+        if source_file:
+            module_roster = roster_for_module(Path(source_file).stem)
+    declared_name = fighter.__dict__.get("name")
+    declared_ids = fighter.__dict__.get("external_ids")
+    if declared_ids is not None:
+        if (isinstance(declared_ids, (str, bytes))
+                or not isinstance(declared_ids, (tuple, list))
+                or any(isinstance(identifier, bool) or not isinstance(identifier, int)
+                       for identifier in declared_ids)
+                or len(set(declared_ids)) != len(declared_ids)):
+            raise MoveError("fighter external_ids must contain unique integers")
+    if module_roster is None:
+        if declared_name is None and declared_ids is None:
+            raise MoveError(
+                f"fighter {fighter.__name__!r} needs an explicit name or external_ids "
+                "outside a canonical roster module"
+            )
+        if declared_ids is not None:
+            _bind_source_actions(fighter, tuple(declared_ids))
+        return
+    expected_name = module_roster.slug
+    expected_ids = (module_roster.external_id,)
+    if declared_name is not None and declared_name != expected_name:
+        raise MoveError(
+            f"fighter {fighter.__name__!r} module conflicts with name {declared_name!r}"
+        )
+    if declared_ids is not None and tuple(declared_ids) != expected_ids:
+        raise MoveError(
+            f"fighter {fighter.__name__!r} module conflicts with external_ids {declared_ids!r}"
+        )
+    fighter.name = expected_name
+    fighter.external_ids = expected_ids
+    _bind_source_actions(fighter, expected_ids)
+
+
+def _bind_source_actions(fighter: type[Fighter], external_ids: tuple[int, ...]) -> None:
+    """Bind concrete move descriptors after roster identity is known.
+
+    A move class is reusable authoring data.  Mutating its class attributes
+    here would make the first fighter that resolves it permanently own its
+    source-action identity (Falco and Fox intentionally share move objects,
+    for example).  Instead, source-bearing move classes are specialized per
+    fighter and the groups receive matching immutable instances.  The
+    authored class and its instances remain untouched for the next consumer.
+    """
+    from .compat import ActionDescriptor, SourceAction, bind_source_action, resolve_source_action
+    from .transitions import Transition, _action_key
+
+    def bind_value(value: Any) -> Any:
+        """Bind source actions through the small containers used by moves."""
+        if isinstance(value, ActionDescriptor):
+            action = bind_source_action(value.action, external_ids)
+            metadata = tuple((key, bind_value(item)) for key, item in value.metadata)
+            if action is value.action and all(
+                bound is item for (_, bound), (_, item) in zip(metadata, value.metadata)
+            ):
+                return value
+            return ActionDescriptor(action, metadata, value.animation_loop)
+        if isinstance(value, SourceAction):
+            return bind_source_action(value, external_ids)
+        bound = bind_source_action(value, external_ids)
+        if bound is not value:
+            return bound
+        if isinstance(value, tuple):
+            items = tuple(bind_value(item) for item in value)
+            return value if all(a is b for a, b in zip(items, value)) else items
+        if isinstance(value, list):
+            items = [bind_value(item) for item in value]
+            return value if all(a is b for a, b in zip(items, value)) else items
+        if isinstance(value, dict):
+            items = {bind_value(key): bind_value(item) for key, item in value.items()}
+            return value if all(
+                key is old_key and item is old_item
+                for (key, item), (old_key, old_item) in zip(items.items(), value.items())
+            ) else items
+        if isinstance(value, Transition):
+            target = bind_value(value.target)
+            return value if target is value.target else dataclass_replace(value, target=target)
+        return value
+
+    def bind_rules(rules: tuple[Any, ...]) -> tuple[Any, ...]:
+        bound_rules = []
+        for rule in rules:
+            source_name = resolve_source_action(rule.source_name, external_ids)
+            target = bind_value(rule.transition.target)
+            transition = Transition(
+                target,
+                preserve_state=rule.transition.preserve_state,
+                keep_frame=rule.transition.keep_frame,
+            )
+            bound_rules.append(dataclass_replace(
+                rule,
+                source=_action_key(source_name),
+                source_name=source_name,
+                transition=transition,
+            ))
+        return tuple(bound_rules)
+
+    def bound_type(cls: type[Any]) -> type[Any]:
+        """Return an identity-local subclass when ``cls`` owns source data."""
+        if getattr(cls, "__source_bound_ids__", None) == external_ids:
+            return cls
+        template = getattr(cls, "__source_template__", cls)
+        original_rules = getattr(template, "__transition_rules__", ())
+        rules = bind_rules(original_rules) if original_rules else ()
+        namespace: dict[str, Any] = {}
+        for base in reversed(template.__mro__):
+            for name, value in base.__dict__.items():
+                if name in {
+                    "__dict__", "__weakref__", "__transition_rules__",
+                    # SpecialMove derives its normalized rules from these
+                    # maps during class creation.  Replaying a bound map
+                    # would expose string Source.* keys to that declaration
+                    # hook before the identity-local rules are installed.
+                    "on_end", "on_ground", "on_air",
+                }:
+                    continue
+                bound = bind_value(value)
+                if bound is not value:
+                    namespace[name] = bound
+        if not namespace and rules == original_rules:
+            return cls
+        namespace["__module__"] = template.__module__
+        namespace["__qualname__"] = f"{template.__qualname__}__bound_{external_ids[0]}"
+        namespace["__source_template__"] = template
+        namespace["__source_bound_ids__"] = external_ids
+        # A few move bases validate required declaration fields from the
+        # subclass namespace in ``__init_subclass__`` (for example article
+        # moves require ``article_id`` and paired ground/air phases).  Those
+        # fields must be present while the identity-local subclass is built;
+        # installing them after ``type(...)`` is too late for validation.
+        for required_name in ("article_id", "ground", "air"):
+            if required_name in template.__dict__:
+                namespace[required_name] = bind_value(template.__dict__[required_name])
+        specialized = type(namespace["__qualname__"], (template,), namespace)
+        for map_name in ("on_end", "on_ground", "on_air"):
+            declaration = getattr(template, map_name, None)
+            if isinstance(declaration, dict):
+                bound_map = {}
+                for source, transition in declaration.items():
+                    bound_source = bind_source_action(source, external_ids)
+                    if isinstance(bound_source, str) and bound_source.startswith("Source."):
+                        bound_source = ActionDescriptor(bound_source)
+                    target = bind_value(transition.target)
+                    bound_map[bound_source] = dataclass_replace(transition, target=target)
+                setattr(specialized, map_name, bound_map)
+        if original_rules:
+            specialized.__transition_rules__ = rules
+        return specialized
+
+    def bound_instance(move: Move) -> Move:
+        cls = bound_type(type(move))
+        if cls is type(move):
+            return move
+        specialized = object.__new__(cls)
+        if hasattr(move, "__dict__"):
+            specialized.__dict__.update(move.__dict__)
+        for base in type(move).__mro__:
+            slots = base.__dict__.get("__slots__", ())
+            if isinstance(slots, str):
+                slots = (slots,)
+            for slot in slots:
+                if slot in {"__dict__", "__weakref__"} or not hasattr(move, slot):
+                    continue
+                object.__setattr__(specialized, slot, getattr(move, slot))
+        return specialized
+
+    bound_moves: dict[int, Move] = {}
+
+    for group_name in (
+        "specials", "aerials", "grounded", "tilts", "smashes", "grabs",
+        "throws", "defense", "ledge", "getup", "taunt",
+    ):
+        group = getattr(fighter, group_name, None)
+        if group is None:
+            continue
+        replacements: dict[str, Move] = {}
+        for move_field in fields(type(group)):
+            move = getattr(group, move_field.name)
+            move_key = id(move)
+            if move_key not in bound_moves:
+                bound_moves[move_key] = bound_instance(move)
+            bound = bound_moves[move_key]
+            if bound is not move:
+                replacements[move_field.name] = bound
+        if replacements:
+            setattr(fighter, group_name, dataclass_replace(group, **replacements))
+
+
+# Construct the shared defaults after the classes exist, so ``standard`` can
+# share the Move/SpecialMove definitions without an import cycle.  Fighter is
+# the ordinary public base; FighterBase deliberately remains declaration-only.
+from .standard import OpenSpecial, SpecialRoot
+
+Fighter.specials = SpecialMoves(
+    OpenSpecial(SpecialRoot.NEUTRAL),
+    OpenSpecial(SpecialRoot.SIDE),
+    OpenSpecial(SpecialRoot.UP),
+    OpenSpecial(SpecialRoot.DOWN),
+)
+Fighter.attributes = Attributes()
+Fighter.aerials = AerialMoves()
+Fighter.grounded = GroundedMoves()
+Fighter.tilts = TiltMoves()
+Fighter.smashes = SmashMoves()
+Fighter.grabs = GrabMoves()
+Fighter.throws = ThrowMoves()
+Fighter.defense = DefenseMoves()
+Fighter.ledge = LedgeMoves()
+Fighter.getup = GetupMoves()
+Fighter.taunt = TauntMoves()

@@ -2,7 +2,7 @@
 
 from typing import TypeVar
 
-from .api import (AerialMoves, DefenseMoves, Fighter, GetupMoves, GrabMoves,
+from .api import (AerialMoves, DefenseMoves, Fighter, FighterBase, GetupMoves, GrabMoves,
                   GroundedMoves, LedgeMoves, MoveError, SmashMoves, SpecialMoves, TauntMoves, TiltMoves,
                   ThrowMoves, _validate_group)
 
@@ -10,13 +10,21 @@ T = TypeVar("T", bound=type[Fighter])
 
 
 def validate_fighter(fighter: type[Fighter]) -> None:
-    if not isinstance(fighter, type) or not issubclass(fighter, Fighter):
-        raise MoveError("registered value must be a Fighter subclass")
+    if not isinstance(fighter, type) or not issubclass(fighter, (Fighter, FighterBase)):
+        raise MoveError("registered value must be a Fighter or FighterBase subclass")
     name = getattr(fighter, "name", None)
     if not isinstance(name, str) or not name:
         raise MoveError("fighter name must be a non-empty string")
     if not hasattr(fighter, "attributes"):
         raise MoveError("fighter must define attributes")
+    external_ids = getattr(fighter, "external_ids", ())
+    if isinstance(external_ids, (str, bytes)) or not isinstance(external_ids, (tuple, list)):
+        raise MoveError("fighter external_ids must be a tuple or list of integers")
+    if any(isinstance(identifier, bool) or not isinstance(identifier, int)
+           for identifier in external_ids):
+        raise MoveError("fighter external_ids must contain only integers")
+    if len(set(external_ids)) != len(external_ids):
+        raise MoveError("fighter external_ids must not contain duplicates")
     groups = (
         ("specials", SpecialMoves, ("neutral", "side", "up", "down")),
         ("aerials", AerialMoves, ("neutral", "forward", "back", "up", "down")),

@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any
 
 from fighter.api import MoveWait
-from fighter.compat import ActionDescriptor, MotionBinding, f32, _F32, _normalized_action
+from fighter.compat import ActionDescriptor, CustomAction, SourceAction, MotionBinding, f32, _F32, _normalized_action
 
 try:
     from _skirmish_native import call as _call, call_named as _call_named
@@ -28,8 +28,12 @@ def _require_native() -> tuple[Any, Any, Any, Any]:
 
 _METHODS = {
     "change_action", "set_action", "pass_as", "set_velocity", "apply_hitlag",
-    "emit_projectile", "spawn_special_effect", "clear_special_effect", "enter_fall_special", "jump_input", "aerial_jump", "just_pressed", "resource",
-    "action_finished", "set_motion_binding", "restore_pre_landing", "max_jumps",
+    "emit_projectile", "spawn_article", "spawn_special_effect", "clear_special_effect", "enter_fall_special", "jump_input", "aerial_jump", "just_pressed", "resource",
+    "action_finished", "set_motion_binding", "set_motion_angle", "launch_from_angle", "part_position",
+    "enter_landing_special",
+    "restore_pre_landing", "max_jumps",
+    "has_complete_animation",
+    "special_attribute",
     "frames", "array_length", "validate_attack", "apply", "wait",
 }
 _STATE_PROXIES: dict[tuple[str, str], type["NativeObject"]] = {}
@@ -218,6 +222,7 @@ def unwrap(value: Any) -> Any:
         return {"__skirmish_native__": True, "token": value._token, "kind": value._kind, "path": value._path}
     if isinstance(value, NativeMember): return unwrap(value._value())
     if isinstance(value, ActionDescriptor): return unwrap(value.action)
+    if isinstance(value, (CustomAction, SourceAction)): return value.reference
     if isinstance(value, MotionBinding): return unwrap(value.as_dict())
     if isinstance(value, Enum): return unwrap(value.value)
     if isinstance(value, _F32): return float(value)

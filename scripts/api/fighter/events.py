@@ -1,7 +1,7 @@
 """Finite native event decorators and their serializable metadata."""
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Any, Callable
 
 
@@ -24,6 +24,13 @@ class Hook(str, Enum):
     SURFACE_CONTACT = "surface_contact"
     GROUND_AIR_CHANGED = "ground_air_changed"
     PLATFORM_DROP_DECISION = "platform_drop_decision"
+    ANIMATION_EVENT = "animation_event"
+
+
+class AnimationEventId(IntEnum):
+    """Numeric native animation-event bits exported by the fighter data."""
+
+    B0 = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +47,11 @@ class EventBinding:
     countdown_phase: str = "physics"
     command_index: int | None = None
     deadline: int | None = None
+    event_id: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"hook": self.hook.value, "callback": self.callback}
-        for key in ("action", "marker", "track", "gate", "countdown", "command_index", "deadline"):
+        for key in ("action", "marker", "track", "gate", "countdown", "command_index", "deadline", "event_id"):
             value = getattr(self, key)
             if value is not None:
                 result[key] = value
@@ -61,7 +69,8 @@ def _binding(hook: Hook, *, action: Any = None, actions: tuple[Any, ...] = (),
              track: str | None = None, gate: str | None = None,
              countdown: str | None = None,
              countdown_phase: str = "physics",
-             deadline: int | None = None, command_index: int | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+             deadline: int | None = None, command_index: int | None = None,
+             event_id: int | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
         existing = list(getattr(function, "__fighter_events__", ()))
         names = tuple(_action_name(item) for item in actions)
@@ -74,7 +83,8 @@ def _binding(hook: Hook, *, action: Any = None, actions: tuple[Any, ...] = (),
                                actions=names, buttons=_button_mask(buttons),
                                marker=marker, track=track, gate=gate,
                                countdown=countdown, countdown_phase=countdown_phase,
-                               command_index=command_index, deadline=deadline)
+                               command_index=command_index, deadline=deadline,
+                               event_id=event_id)
         existing.append(binding)
         function.__fighter_events__ = tuple(existing)
         return function
@@ -89,6 +99,9 @@ def _action_name(value: Any) -> str:
         if not value:
             raise ValueError("action reference must be non-empty")
         return value
+    from .compat import CustomAction, SourceAction
+    if isinstance(value, (CustomAction, SourceAction)):
+        return value.reference
     action = getattr(value, "action", None)
     if action is not None and action is not value:
         return _action_name(action)
@@ -155,7 +168,21 @@ class _On:
         return _binding(Hook.SCHEDULED_DEADLINE, countdown=field,
                         actions=kwargs.get("actions", actions),
                         countdown_phase=kwargs.get("phase", "physics"))
-    def command_changed(self, index: int, *actions: Any, **kwargs: Any): return _binding(Hook.COMMAND_TRACE_CHANGED, command_index=index, actions=kwargs.get("actions", actions))
+    def command_changed(self, index: int, *actions: Any, **kwargs: Any):
+        # The native EventBinding ABI stores command_index as u8.  Reject an
+        # invalid index while authoring so a bad callback cannot survive until
+        # definition deserialization (or silently wrap at the bridge).
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= 0xFF:
+            raise ValueError("command index must be an integer in 0..255")
+        return _binding(
+            Hook.COMMAND_TRACE_CHANGED,
+            command_index=index,
+            actions=kwargs.get("actions", actions),
+        )
+    def animation_event(self, event_id: int | AnimationEventId, *actions: Any, **kwargs: Any):
+        if isinstance(event_id, bool) or not isinstance(event_id, int) or not 0 <= event_id < 8:
+            raise ValueError("animation event id must be an integer in 0..7")
+        return _binding(Hook.ANIMATION_EVENT, event_id=int(event_id), actions=kwargs.get("actions", actions))
     def _optional(self, hook, function=None, **kwargs):
         decorator = _binding(hook, **kwargs)
         return decorator(function) if callable(function) else decorator

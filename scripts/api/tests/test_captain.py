@@ -1,11 +1,11 @@
 """Focused contract tests for the partial Captain Falcon authoring module."""
 
-import importlib.util
+import math as scalar_math
 import sys
-import types
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[3]
@@ -15,26 +15,11 @@ if str(API) not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from fighter import Action, Button
+from skirmish import Action, Button, Fighter, FighterBase, action, export_definition, math
+from fighters.captain import CaptainFalcon
 
 
 def _load_captain():
-    # Shared modules are normally supplied by AssetStore; provide the same
-    # namespace for this CPython-only API contract test.
-    if "fighters.captain" in sys.modules:
-        return sys.modules["fighters.captain"].CaptainFalcon
-    shared = types.ModuleType("shared")
-    spec = importlib.util.spec_from_file_location(
-        "shared.common", ROOT / "scripts" / "fighters" / "common.py"
-    )
-    common = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules["shared"] = shared
-    sys.modules["shared.common"] = common
-    spec.loader.exec_module(common)
-    shared.common = common
-    from fighters.captain import CaptainFalcon
-
     return CaptainFalcon
 
 
@@ -171,6 +156,7 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertFalse(ground.action_state.launch_armed)
         move.command_changed(air, self.context(event_value=0))
         self.assertTrue(air.action_state.launch_armed)
+        self.assertEqual(air.action_state.command[0], 0)
 
         resource = SimpleNamespace(attributes=SimpleNamespace(
             specialn_stick_range_y_neg=-1.0,
@@ -184,9 +170,13 @@ class CaptainFalconTests(unittest.TestCase):
             event_value=1,
         )
         air.velocity = [0.0, 0.0]
-        move.command_changed(air, cue_context)
-        self.assertAlmostEqual(air.velocity[0], 2.0 * 0.3826834324, places=6)
-        self.assertAlmostEqual(air.velocity[1], 2.0 * 0.9238795325, places=6)
+        with (
+            patch.object(math, "_cos", scalar_math.cos),
+            patch.object(math, "_sin", scalar_math.sin),
+        ):
+            move.command_changed(air, cue_context)
+        self.assertAlmostEqual(float(air.velocity[0]), 2.0 * 0.3826834324, places=6)
+        self.assertAlmostEqual(float(air.velocity[1]), 2.0 * 0.9238795325, places=6)
 
     def test_enter_clears_pending_command_and_validation_requires_both_traces(self):
         captain = _load_captain()
@@ -227,8 +217,6 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertFalse(move.validate(InvalidContext()))
 
     def test_punch_air_profile_declares_only_the_source_command_one_scale(self):
-        from fighter.api import export_definition
-
         captain = _load_captain()
         exported = export_definition(captain).as_dict()
         action_state = exported["action_state"]
@@ -301,6 +289,31 @@ class CaptainFalconTests(unittest.TestCase):
         context.rules = rules
         self.assertFalse(punch.input_pressed(self.Fighter(None), context))
 
+    def test_falcon_dive_consumes_fresh_b_once(self):
+        class OneShotInput(self.Input):
+            def __init__(self, pressed, stick):
+                super().__init__(pressed, stick)
+                self.calls = 0
+
+            def just_pressed(self, button):
+                self.calls += 1
+                return self.calls == 1 and super().just_pressed(button)
+
+        captain = _load_captain()
+        move = captain.specials.up
+        context = self.context(
+            input_value=OneShotInput((Button.B,), (0.0, 0.75)),
+            air_open=True,
+        )
+        context.rules = SimpleNamespace(
+            specials=SimpleNamespace(vertical_threshold=0.5)
+        )
+        fighter = self.Fighter(None)
+
+        self.assertTrue(move.input_pressed(fighter, context))
+        self.assertEqual(fighter.action, move.air)
+        self.assertEqual(context.input.calls, 1)
+
     def test_falcon_dive_ground_to_air_transition_preserves_state_and_frame(self):
         captain = _load_captain()
         move = captain.specials.up
@@ -336,6 +349,15 @@ class CaptainFalconTests(unittest.TestCase):
             fighter.changes[-1],
             (Action.FALL, {"preserve_state": False, "keep_frame": False}),
         )
+
+    def test_falcon_dive_declares_source_wall_rebound_motion(self):
+        """Keep ftCa_MS_SpecialHiThrow1 available to collision routing."""
+        captain = _load_captain()
+        move = captain.specials.up
+        rebound = move.throw_rebound.as_dict()
+        self.assertEqual(rebound["action"], "Action.Source.0:363")
+        self.assertEqual(rebound["slippi_state"], 363)
+        self.assertEqual(rebound["animation"], 317)
 
     def test_falcon_dive_terminal_and_landing_semantics_use_resource_attributes(self):
         captain = _load_captain()
@@ -493,11 +515,48 @@ class CaptainFalconTests(unittest.TestCase):
             untouched = self.Fighter(move.ground_start)
             untouched.resource_value = missing.resource(move.resource)
             move.before_hit(untouched, SimpleNamespace())
-            self.assertEqual(untouched.action, move.ground_start)
+        self.assertEqual(untouched.action, move.ground_start)
+
+    def test_raptor_boost_reads_hit_context_resource_attributes(self):
+        captain = _load_captain()
+        move = captain.specials.side
+        attrs = SimpleNamespace(specials_gr_vel_x=0.5)
+        hit = SimpleNamespace(resource=lambda path: SimpleNamespace(attributes=attrs))
+        fighter = self.Fighter(move.ground_start)
+        fighter.resource_value = None
+        fighter.velocity = [2.0, 3.0]
+        fighter.ground_velocity = 4.0
+        move.before_hit(fighter, hit)
+        self.assertEqual(fighter.action, move.ground)
+        self.assertEqual(fighter.ground_velocity, 2.0)
+
+    def test_falcon_kick_facing_wall_enters_state_363_rebound(self):
+        captain = _load_captain()
+        move = captain.specials.down
+        fighter = self.Fighter(move.ground)
+        self.assertFalse(move.wall_rebound(fighter, SimpleNamespace(wall=True)))
+        fighter.action_state.command = (1, 0, 0, 0)
+        self.assertTrue(move.wall_rebound(fighter, SimpleNamespace(wall=True)))
+        self.assertIn(str(getattr(fighter.action, "reference", fighter.action)), {"Source.363", "Source.0:363"})
+
+    def test_special_entries_consume_stale_command_slots(self):
+        captain = _load_captain()
+        for move, action in (
+            (captain.specials.side, "ground_start"),
+            (captain.specials.up, "ground"),
+            (captain.specials.down, "ground"),
+        ):
+            fighter = self.Fighter(getattr(move, action))
+            fighter.action_state.command = (7, 6, 5, 4)
+            if move is captain.specials.side:
+                move.action_enter(fighter, SimpleNamespace())
+            elif move is captain.specials.up:
+                move.enter(fighter, SimpleNamespace())
+            else:
+                move.action_enter(fighter, SimpleNamespace())
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
 
     def test_raptor_boost_exports_source_action_metadata(self):
-        from fighter.api import export_definition
-
         captain = _load_captain()
         exported = export_definition(captain).as_dict()
         side = exported["movesets"]["specials"]["side"]
@@ -612,8 +671,6 @@ class CaptainFalconTests(unittest.TestCase):
             self.assertFalse(move.validate(invalid))
 
     def test_raptor_boost_air_follow_through_binds_source_gravity_profile(self):
-        from fighter.api import export_definition
-
         captain = _load_captain()
         exported = export_definition(captain).as_dict()
         side = exported["movesets"]["specials"]["side"]
@@ -650,16 +707,22 @@ class CaptainFalconTests(unittest.TestCase):
 
         move.animation_end(fighter, context)
         self.assertEqual(fighter.action, move.ground_end)
-        move.animation_end(fighter, context)
-        self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
+        move._transition_animation_end(fighter, context)
+        self.assertEqual(
+            fighter.changes[-1],
+            (Action.WAIT, {"preserve_state": False, "keep_frame": False}),
+        )
 
         airborne_ground_kick = self.Fighter(move.ground, grounded=False)
         move.animation_end(airborne_ground_kick, context)
         self.assertEqual(airborne_ground_kick.action, move.ground_end_air)
         self.assertEqual(move.ground_end_air.as_dict()["slippi_state"], 362)
         self.assertEqual(move.ground_end_air.as_dict()["animation"], 315)
-        move.animation_end(airborne_ground_kick, context)
-        self.assertEqual(airborne_ground_kick.changes[-1], (Action.FALL, {}))
+        move._transition_animation_end(airborne_ground_kick, context)
+        self.assertEqual(
+            airborne_ground_kick.changes[-1],
+            (Action.FALL, {"preserve_state": False, "keep_frame": False}),
+        )
 
         context = self.context(input_value=self.Input((Button.B,), (0.0, -0.7)),
                                air_open=True)
@@ -670,10 +733,13 @@ class CaptainFalconTests(unittest.TestCase):
         self.assertEqual(move.air.as_dict()["slippi_state"], 359)
         self.assertEqual(move.air_end.as_dict()["slippi_state"], 361)
 
-        move.animation_end(fighter, context)
+        move._transition_animation_end(fighter, context)
         self.assertEqual(fighter.action, move.air_end)
-        move.animation_end(fighter, context)
-        self.assertEqual(fighter.changes[-1], (Action.FALL, {}))
+        move._transition_animation_end(fighter, context)
+        self.assertEqual(
+            fighter.changes[-1],
+            (Action.FALL, {"preserve_state": False, "keep_frame": False}),
+        )
 
         up_context = self.context(input_value=self.Input((Button.B,), (0.0, 0.7)),
                                   air_open=True)
@@ -698,8 +764,11 @@ class CaptainFalconTests(unittest.TestCase):
             fighter = self.Fighter(airborne)
             self.assertTrue(move.landed(fighter, context))
             self.assertEqual(fighter.changes, [(move.landing, {})])
-            move.animation_end(fighter, context)
-            self.assertEqual(fighter.changes[-1], (Action.WAIT, {}))
+            move._transition_animation_end(fighter, context)
+            self.assertEqual(
+                fighter.changes[-1],
+                (Action.WAIT, {"preserve_state": False, "keep_frame": False}),
+            )
 
     def test_directional_special_dispatch_uses_inclusive_boundaries(self):
         """Keep Captain's B-direction partition stable when helpers are shared."""
@@ -751,12 +820,9 @@ class CaptainFalconTests(unittest.TestCase):
         ))
 
     def test_landing_descriptor_uses_canonical_api_action(self):
-        from fighter import action
         self.assertEqual(action(Action.LANDING).as_dict()["action"], "Action.LANDING")
 
     def test_exports_identity_and_resource_backed_punch(self):
-        from fighter.api import export_definition
-
         captain = _load_captain()
         exported = export_definition(captain).as_dict()
         self.assertEqual(exported["name"], "captain-falcon")
@@ -827,8 +893,12 @@ class CaptainFalconTests(unittest.TestCase):
 
     def test_inherits_all_standard_groups_without_duplicate_declarations(self):
         captain = _load_captain()
+        self.assertTrue(FighterBase.__abstract__)
+        self.assertIs(captain.__bases__[0], Fighter)
+        self.assertTrue(issubclass(captain, Fighter))
+        self.assertNotIn("shared.common", sys.modules)
         fighter_base = captain.__mro__[1]
-        self.assertEqual(fighter_base.__name__, "FighterBase")
+        self.assertEqual(fighter_base.__name__, "Fighter")
         for group in ("aerials", "grounded", "tilts", "smashes", "grabs", "throws", "defense", "ledge", "getup", "taunt"):
             self.assertIs(getattr(captain, group), getattr(fighter_base, group))
 

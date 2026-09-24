@@ -1,0 +1,196 @@
+"""Ness's source-defined special motion states.
+
+The fighter-side callbacks are described here, while PK Flash, PK Fire, and
+PK Thunder articles remain host resources. Their item archives are not part
+of the authoring package, so these moves deliberately stop at the native
+fighter states and never invent projectile behavior. The transition tables
+mirror the animation callbacks in ``ftnessspecialn.c``, ``ftnessspecials.c``,
+``ftnessspecialhi.c``, and ``ftnessspeciallw.c``; article creation, collision
+steering, and landing lag remain host-owned until those resources are
+available.
+"""
+
+from skirmish import (
+    Action,
+    Button,
+    DownSpecial,
+    DirectionalSpecial,
+    Fighter,
+    NeutralSpecial,
+    SideSpecial,
+    Transition,
+    UpSpecial,
+    hook,
+    source_phase,
+)
+
+
+def _phase(state: int, *, loop: bool = False):
+    return source_phase(state, animation_loop=loop)
+
+
+class PKFlash(NeutralSpecial, DirectionalSpecial):
+    ground_start = _phase(348)
+    ground_hold = _phase(349, loop=True)
+    ground_release = _phase(350)
+    ground_end = _phase(351)
+    air_start = _phase(352)
+    air_hold = _phase(353, loop=True)
+    air_release = _phase(354)
+    air_end = _phase(355)
+    ground = ground_start
+    air = air_start
+    _ACTIVE = (
+        ground_start, ground_hold, ground_release,
+        air_start, air_hold, air_release,
+    )
+
+    @hook.input_released(Button.B)
+    def release(self, fighter: Fighter, ctx) -> bool:
+        destination = {
+            self.ground_hold: self.ground_release,
+            self.air_hold: self.air_release,
+        }.get(fighter.action)
+        if destination is None:
+            return False
+        fighter.change_action(destination)
+        return True
+
+    on_end = {
+        ground_start: Transition(ground_hold),
+        air_start: Transition(air_hold),
+        ground_release: Transition(ground_end),
+        air_release: Transition(air_end),
+        ground_end: Transition(Action.WAIT),
+        air_end: Transition(Action.FALL),
+    }
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
+        air_release: Transition(ground_release, preserve_state=True, keep_frame=True),
+        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
+        ground_release: Transition(air_release, preserve_state=True, keep_frame=True),
+        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+    }
+
+
+class PKFire(SideSpecial, DirectionalSpecial):
+    ground = _phase(356)
+    air = _phase(357)
+    _ACTIVE = (ground, air)
+
+    on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
+    on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
+    on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
+
+
+class PKThunder(UpSpecial, DirectionalSpecial):
+    ground_start = _phase(358)
+    ground_hold = _phase(359, loop=True)
+    ground_end = _phase(360)
+    ground_launch = _phase(361)
+    air_start = _phase(362)
+    air_hold = _phase(363, loop=True)
+    air_end = _phase(364)
+    air_launch = _phase(365)
+    air_rebound = _phase(366)
+    ground = ground_start
+    air = air_start
+    _ACTIVE = (
+        ground_start, ground_hold, ground_end, ground_launch,
+        air_start, air_hold, air_end, air_launch, air_rebound,
+    )
+
+    on_end = {
+        ground_start: Transition(ground_hold),
+        air_start: Transition(air_hold),
+        ground_launch: Transition(ground_end),
+        air_launch: Transition(air_end),
+        air_rebound: Transition(Action.FALL),
+        ground_end: Transition(Action.WAIT),
+        air_end: Transition(Action.FALL),
+    }
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
+        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
+        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+    }
+
+
+class PSIMagnet(DownSpecial, DirectionalSpecial):
+    ground_start = _phase(367)
+    ground_hold = _phase(368, loop=True)
+    ground_hit = _phase(369)
+    ground_end = _phase(370)
+    ground_turn = _phase(371)
+    air_start = _phase(372)
+    air_hold = _phase(373, loop=True)
+    air_hit = _phase(374)
+    air_end = _phase(375)
+    air_turn = _phase(376)
+    ground = ground_start
+    air = air_start
+    _ACTIVE = (
+        ground_start, ground_hold, ground_hit, ground_end, ground_turn,
+        air_start, air_hold, air_hit, air_end, air_turn,
+    )
+
+    _RELEASE_TARGETS = {
+        ground_hold: ground_end,
+        ground_hit: ground_end,
+        ground_turn: ground_end,
+        air_hold: air_end,
+        air_hit: air_end,
+        air_turn: air_end,
+    }
+
+    @hook.input_released(Button.B)
+    def release(self, fighter: Fighter, ctx) -> bool:
+        destination = self._RELEASE_TARGETS.get(fighter.action)
+        if destination is None:
+            return False
+        fighter.change_action(destination)
+        return True
+
+    on_end = {
+        ground_start: Transition(ground_hold),
+        air_start: Transition(air_hold),
+        ground_hit: Transition(ground_hold),
+        air_hit: Transition(air_hold),
+        ground_turn: Transition(ground_hold),
+        air_turn: Transition(air_hold),
+        ground_end: Transition(Action.WAIT),
+        air_end: Transition(Action.FALL),
+    }
+    on_ground = {
+        air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
+        air_hold: Transition(ground_hold, preserve_state=True, keep_frame=True),
+        air_hit: Transition(ground_hit, preserve_state=True, keep_frame=True),
+        air_end: Transition(ground_end, preserve_state=True, keep_frame=True),
+        air_turn: Transition(ground_turn, preserve_state=True, keep_frame=True),
+    }
+    on_air = {
+        ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
+        ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
+        ground_hit: Transition(air_hit, preserve_state=True, keep_frame=True),
+        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+        ground_turn: Transition(air_turn, preserve_state=True, keep_frame=True),
+    }
+
+
+class Ness(Fighter):
+    specials = Fighter.specials.replace(
+        neutral=PKFlash(), side=PKFire(), up=PKThunder(), down=PSIMagnet()
+    )
+
+
+__all__ = ["Ness", "PKFlash", "PKFire", "PKThunder", "PSIMagnet"]

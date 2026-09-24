@@ -19,6 +19,8 @@ from fighter import (
     action,
     Action,
     export_definition,
+    SpecialMove,
+    Transition,
 )
 
 
@@ -112,6 +114,54 @@ class ActionMoveTests(unittest.TestCase):
         self.assertEqual(first.action, second.action)
         self.assertIsNot(first, second)
         self.assertEqual(len(distinct_export["behaviors"]), 2)
+
+    def test_ground_air_transition_uses_fighter_state_when_context_is_missing(self):
+        class MoveWithSurfaceTransition(SpecialMove):
+            ground = Action.SPECIAL_S_START
+            air = Action.SPECIAL_AIR_S_START
+            on_ground = {air: Transition(ground)}
+
+        class FighterProxy:
+            action = Action.SPECIAL_AIR_S_START
+            grounded = True
+
+            def __init__(self):
+                self.changes = []
+
+            def change_action(self, action, **kwargs):
+                self.changes.append((action, kwargs))
+
+        fighter = FighterProxy()
+        MoveWithSurfaceTransition()._transition_ground_air(fighter, None)
+        self.assertEqual(fighter.changes, [(Action.SPECIAL_S_START, {
+            "preserve_state": False,
+            "keep_frame": False,
+        })])
+
+    def test_native_source_action_case_normalization_dispatches_bound_transition(self):
+        class NativeMember:
+            def _value(self):
+                return "Source.12:344"
+
+        class SourceMove(SpecialMove):
+            source = action("Source.12:344")
+            target = Action.SPECIAL_S_START
+            on_end = {source: Transition(target)}
+
+        class FighterProxy:
+            action = NativeMember()
+            grounded = True
+
+            def __init__(self):
+                self.changes = []
+
+            def change_action(self, action, **kwargs):
+                self.changes.append((action, kwargs))
+
+        fighter = FighterProxy()
+        SourceMove()._transition_animation_end(fighter, None)
+        self.assertEqual(len(fighter.changes), 1)
+        self.assertEqual(fighter.changes[0][0], Action.SPECIAL_S_START)
 
 
 if __name__ == "__main__":

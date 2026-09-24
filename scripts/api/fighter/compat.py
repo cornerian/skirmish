@@ -19,6 +19,25 @@ class Button(str, Enum):
     A = "A"; B = "B"; X = "X"; Y = "Y"; Z = "Z"; L = "L"; R = "R"
 
 
+class CommonParameter(str, Enum):
+    """Repeated native parameter paths shared by fighter motion profiles.
+
+    The enum keeps the authoring surface typed while retaining the native
+    string path at the descriptor boundary.  Fighter-specific parameters stay
+    as explicit paths because they do not have a stable common meaning.
+    """
+
+    GRAVITY = "movement.gravity"
+    TERMINAL_VELOCITY = "movement.terminal_velocity"
+    AERIAL_FRICTION = "movement.aerial_friction"
+    AIR_DRIFT_RECOVERY_STEP = "rules.specials.air_drift_recovery_step"
+
+    def __str__(self) -> str:
+        # A str-compatible enum should remain interchangeable with the path
+        # expected by direct context/resource lookups as well as serializers.
+        return self.value
+
+
 def _initialize_typed_defaults(instance: Any, cls: type[Any], values: dict[str, Any]) -> None:
     annotations: dict[str, Any] = {}
     defaults: dict[str, Any] = {}
@@ -136,6 +155,23 @@ class MotionBinding:
     sine: float = 0.0
     ground_scale: float = 1.0
 
+    @classmethod
+    def from_angle(
+        cls, angle: float, *, facing: float = 1.0, ground_scale: float = 1.0
+    ) -> "MotionBinding":
+        """Build a directional binding using the host-compatible trig facade."""
+        # Import at call time: compat.py is imported while fighter.math is
+        # still being assembled, and the native facade must remain optional
+        # for descriptor-only tooling.
+        from . import math as fighter_math
+
+        return cls(
+            facing=facing,
+            cosine=fighter_math.cos(angle),
+            sine=fighter_math.sin(angle),
+            ground_scale=ground_scale,
+        )
+
     def __post_init__(self) -> None:
         for name in ("facing", "cosine", "sine", "ground_scale"):
             object.__setattr__(self, name, f32(getattr(self, name)))
@@ -159,13 +195,101 @@ class ActionDescriptor:
         return _normalized_action(self.action) == _normalized_action(other)
 
     def as_dict(self) -> dict[str, Any]:
-        value = self.action.name if isinstance(self.action, Action) else self.action
+        if isinstance(self.action, (CustomAction, SourceAction)):
+            value = self.action.reference
+        else:
+            value = self.action.name if isinstance(self.action, Action) else self.action
+        if isinstance(value, str):
+            value = value.removeprefix("Action.")
         return {"action": f"Action.{value}", "animation_loop": self.animation_loop,
                 **{key: _encode(item) for key, item in self.metadata}}
 
 
 def action(value: Any, *, animation_loop: bool = False, **metadata: Any) -> ActionDescriptor:
     return ActionDescriptor(value, tuple(metadata.items()), animation_loop)
+
+
+@dataclass(frozen=True, slots=True)
+class CustomAction:
+    """A source-defined action identified independently of registration order.
+
+    ``namespace`` is the qualified native fighter namespace and ``key`` is
+    the canonical resource/action key.  The exporter emits one canonical wire
+    reference, so authors never need to maintain magic string collections in
+    fighter modules.
+    """
+
+    namespace: str
+    key: str
+
+    def __post_init__(self) -> None:
+        if not self.namespace or not self.key:
+            raise ValueError("custom action namespace and key must be non-empty")
+        if any(character.isspace() for character in self.namespace + self.key):
+            raise ValueError("custom action namespace and key cannot contain whitespace")
+
+    @property
+    def reference(self) -> str:
+        return f"Custom.{self.namespace}:{self.key}"
+
+    def as_dict(self) -> dict[str, str]:
+        return {"namespace": self.namespace, "key": self.key}
+
+
+def custom_action(namespace: str, key: str) -> CustomAction:
+    return CustomAction(namespace, key)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAction:
+    """Numeric source state resolved against a concrete roster at export."""
+
+    slippi_state: int
+
+    def __post_init__(self) -> None:
+        if isinstance(self.slippi_state, bool) or not isinstance(self.slippi_state, int):
+            raise TypeError("source action state must be an integer")
+        if not 0 <= self.slippi_state <= 0xFFFF_FFFF:
+            raise ValueError("source action state must fit u32")
+
+    @property
+    def reference(self) -> str:
+        return f"Source.{self.slippi_state}"
+
+
+def source_action(slippi_state: int) -> SourceAction:
+    return SourceAction(slippi_state)
+
+
+def source_phase(slippi_state: int, **metadata: Any) -> ActionDescriptor:
+    """Describe a source action while retaining its numeric state metadata."""
+    return action(source_action(slippi_state), slippi_state=slippi_state, **metadata)
+
+
+def resolve_source_action(value: str, external_ids: tuple[int, ...]) -> str:
+    if not value.startswith("Source.") or ":" in value:
+        return value
+    if len(external_ids) != 1:
+        raise ValueError("source actions require one concrete roster external id")
+    return f"Source.{external_ids[0]}:{value.removeprefix('Source.')}"
+
+
+def bind_source_action(value: Any, external_ids: tuple[int, ...]) -> Any:
+    """Bind a numeric source action once a concrete fighter is known.
+
+    Numeric ``SourceAction`` values stay typed while a module is authored.  At
+    identity resolution they become the qualified wire reference required by
+    the native action parser; ordinary actions and descriptors are unchanged.
+    """
+    if isinstance(value, SourceAction):
+        return resolve_source_action(value.reference, external_ids)
+    if isinstance(value, ActionDescriptor) and isinstance(value.action, SourceAction):
+        return ActionDescriptor(
+            resolve_source_action(value.action.reference, external_ids),
+            value.metadata,
+            value.animation_loop,
+        )
+    return value
 
 
 def _normalized_action(value: Any) -> str | None:
@@ -178,10 +302,13 @@ def _normalized_action(value: Any) -> str | None:
         return _normalized_action(value._value())
     if isinstance(value, ActionDescriptor):
         value = value.action
+    if isinstance(value, (CustomAction, SourceAction)):
+        return value.reference
     if isinstance(value, Action):
         value = value.value
     if isinstance(value, str):
-        return value.removeprefix("Action.").replace("_", "").lower()
+        value = value.removeprefix("Action.")
+        return value if value.startswith("Custom.") else value.replace("_", "").lower()
     nested = getattr(value, "action", None)
     if nested is not None and nested is not value:
         return _normalized_action(nested)
@@ -191,15 +318,37 @@ def _normalized_action(value: Any) -> str | None:
 @dataclass(frozen=True, slots=True)
 class _Reference:
     callee: str
-    path: str
+    path: Any
 
-    def __call__(self, path: str) -> "_Reference": return type(self)(self.callee, path)
-    def as_dict(self) -> dict[str, Any]: return {"callee": self.callee, "args": [self.path], "kwargs": {}}
-    def __str__(self) -> str: return self.path
+    def __call__(self, path: Any) -> "_Reference": return type(self)(self.callee, path)
+    def as_dict(self) -> dict[str, Any]: return {"callee": self.callee, "args": [_encode(self.path)], "kwargs": {}}
+    def __str__(self) -> str: return str(self.path)
 
 
 resource = _Reference("resource", "")
 parameter = _Reference("parameter", "")
+
+
+@dataclass(frozen=True, slots=True)
+class _SpecialAttributeRef:
+    layout: int
+    field_id: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {"layout": self.layout, "field_id": self.field_id}
+
+
+def special_attribute(attribute: Any) -> _Reference:
+    """Reference one packed native fighter-specific attribute."""
+    if not isinstance(attribute, Enum):
+        raise TypeError("special_attribute expects a typed attribute enum")
+    layout = getattr(attribute, "layout", None)
+    field_id = getattr(attribute, "field_id", None)
+    if not isinstance(layout, int) or not 0 <= layout <= 0xFF:
+        raise ValueError("special attribute layout must fit u8")
+    if not isinstance(field_id, int) or not 0 <= field_id <= 0xFFFF:
+        raise ValueError("special attribute field id must fit u16")
+    return _Reference("special_attribute", _SpecialAttributeRef(layout, field_id))
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,15 +388,33 @@ def _encode(value: Any) -> Any:
     if hasattr(value, "as_dict"): return value.as_dict()
     if isinstance(value, Enum): return value.value
     if isinstance(value, (tuple, list)): return [_encode(item) for item in value]
-    if isinstance(value, Mapping): return {key: _encode(item) for key, item in value.items()}
+    if isinstance(value, Mapping):
+        # Pon's wire representation only accepts string object keys.  Keep
+        # authoring mappings typed naturally (e.g. command branches keyed by
+        # integer states), and normalize keys only at this export boundary.
+        return {_encode_mapping_key(key): _encode(item) for key, item in value.items()}
     return value
+
+
+def _encode_mapping_key(key: Any) -> str:
+    """Return the string key required by the serialized descriptor ABI."""
+    if isinstance(key, Enum):
+        key = key.value
+    return str(key)
 
 
 def _action_reference(value: Any) -> Any:
     if isinstance(value, ActionDescriptor):
+        if isinstance(value.action, (CustomAction, SourceAction)):
+            return value.action.reference
         action_value = value.action.name if isinstance(value.action, Action) else value.action
+        if isinstance(action_value, str):
+            return action_value if action_value.startswith(("Action.", "Custom.", "Source.")) else f"Action.{action_value}"
         return f"Action.{action_value}"
     if isinstance(value, Action): return f"Action.{value.name}"
+    if isinstance(value, (CustomAction, SourceAction)): return value.reference
+    if isinstance(value, str):
+        return value if value.startswith(("Action.", "Custom.", "Source.")) else f"Action.{value}"
     return _encode(value)
 
 

@@ -5,16 +5,18 @@ parsing source text. It returns only plain dictionaries for Rust metadata and
 retains bound methods in a separate callback table owned by the Pon module.
 """
 
+from collections.abc import Sequence
+from enum import Enum
 from typing import Any
 import inspect
 
-from fighter.api import Fighter, Move, MoveContext, export_definition
+from fighter.api import Fighter, Move, MoveContext, export_definition, resolve_identity
 from fighter.registry import validate_fighter
 from ._native import install_native_properties, unwrap, wrap
 
 
 def discover(namespace: dict[str, Any]) -> type[Fighter]:
-    """Find the one registered Fighter class in an executed module."""
+    """Find the one concrete Fighter class declared in an executed module."""
     module_name = namespace.get("__name__")
     candidates = [
         value
@@ -24,9 +26,16 @@ def discover(namespace: dict[str, Any]) -> type[Fighter]:
         and getattr(value, "__module__", None) == module_name
     ]
     if len(candidates) == 1:
+        canonical_module = namespace.get("__skirmish_canonical_module__")
+        if canonical_module is not None and not isinstance(canonical_module, str):
+            raise ValueError("canonical fighter module metadata must be a string")
+        resolve_identity(candidates[0], canonical_module)
         validate_fighter(candidates[0])
         return candidates[0]
-    raise ValueError("module must export exactly one Fighter subclass")
+    raise ValueError(
+        f"module {module_name!r} must declare exactly one concrete Fighter subclass; "
+        f"found {len(candidates)}"
+    )
 
 
 def export(namespace: dict[str, Any]) -> dict[str, Any]:
@@ -80,10 +89,10 @@ def export(namespace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def dispatch(bundle: dict[str, Any], index: int, args: tuple[Any, ...]) -> Any:
+def dispatch(bundle: dict[str, Any], index: int, args: Sequence[Any]) -> Any:
     """Invoke one retained bound callback by its prepared slot."""
     callbacks = bundle["callbacks"]
-    if not isinstance(index, int) or index < 0 or index >= len(callbacks):
+    if isinstance(index, bool) or not isinstance(index, int) or index < 0 or index >= len(callbacks):
         raise ValueError(f"callback slot {index!r} is not exported")
     callback = callbacks[index]
     wrapped = [wrap(value) for value in args]
@@ -98,7 +107,8 @@ def move_args(
 ) -> tuple[Any, MoveContext]:
     """Build a retained move instance and fresh host context for one step."""
     moves = bundle["moves"]
-    if not isinstance(behavior_index, int) or behavior_index < 0 or behavior_index >= len(moves):
+    if (isinstance(behavior_index, bool) or not isinstance(behavior_index, int)
+            or behavior_index < 0 or behavior_index >= len(moves)):
         raise ValueError(f"move index {behavior_index!r} is not exported")
     return moves[behavior_index], MoveContext(
         fighter=wrap(fighter_descriptor), action=wrap(action_descriptor)
@@ -108,10 +118,20 @@ def move_args(
 def _plain(value: Any) -> Any:
     """Remove authoring scalar wrappers from the metadata wire format."""
     value = unwrap(value)
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        return _plain(as_dict())
     if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items()}
+        return {_plain_key(key): _plain(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     if isinstance(value, float):
         return float(value)
     return value
+
+
+def _plain_key(key: Any) -> str:
+    """Normalize an authoring mapping key for Pon's string-keyed wire format."""
+    if isinstance(key, Enum):
+        key = key.value
+    return str(unwrap(key))
