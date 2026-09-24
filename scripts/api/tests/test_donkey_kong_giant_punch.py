@@ -39,7 +39,7 @@ class _Fighter:
         self.changes = []
 
     def has_complete_animation(self, state):
-        return state in (369, 374)
+        return state in (369, 373, 374, 378)
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -89,6 +89,25 @@ class GiantPunchTests(unittest.TestCase):
         self.assertEqual(fighter.action, self.move.air_cancel)
         self.move._transition_animation_end(fighter, SimpleNamespace(grounded=False))
         self.assertEqual(fighter.action, Action.FALL)
+
+    def test_source_cap_selects_full_entry_from_persisted_arm_swings(self):
+        fighter = _Fighter()
+        fighter.action_state = self.module.DonkeyKongActionState(arm_swings=4)
+        context = self._context()
+        context.resource = lambda path: {"max_arm_swings": 4}
+        self.assertTrue(self.move.input_pressed(fighter, context))
+        self.assertEqual(fighter.action, self.move.ground_full)
+        self.assertEqual(fighter.action_state.release_swings, 4)
+        self.assertEqual(fighter.action_state.arm_swings, 0)
+
+    def test_release_copies_source_arm_swing_count_and_clears_counter(self):
+        fighter = _Fighter()
+        fighter.action = self.move.ground_loop
+        fighter.action_state = self.module.DonkeyKongActionState(arm_swings=3)
+        self.assertTrue(self.move.input_pressed(fighter, self._context()))
+        self.assertEqual(fighter.action, self.move.ground_punch)
+        self.assertEqual(fighter.action_state.release_swings, 3)
+        self.assertEqual(fighter.action_state.arm_swings, 0)
 
 
 if __name__ == "__main__":
