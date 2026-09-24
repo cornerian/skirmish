@@ -36,6 +36,19 @@ class IceShot(NeutralSpecial, DirectionalSpecial):
     on_end = {ground: Transition(Action.WAIT), air: Transition(Action.FALL)}
     on_ground, on_air = frame_preserving_surface_pairs(ground, ground, air, air)
 
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Fighter, ctx: MoveContext) -> None:
+        """Clear the article command latch on both Ice Shot entries.
+
+        ``ftPp_SpecialN_Enter`` and ``ftPp_SpecialAirN_Enter`` clear
+        ``cmd_vars[0]`` before installing the ice article callback.  Preserve
+        the other command slots because this fighter callback owns only slot 0.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and command:
+            state.command = (0, *command[1:])
+
 
 class SquallHammer(SideSpecial, DirectionalSpecial):
     """Squall Hammer's four Popo motion rows (ftPp special S1/S2).

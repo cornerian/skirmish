@@ -30,6 +30,7 @@ class _Fighter:
         self.action = action
         self.action_frame = 0
         self.changes = []
+        self.action_state = SimpleNamespace(command=(7, 6, 5, 4))
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -148,6 +149,14 @@ class IceClimbersTests(unittest.TestCase):
         fighter = _Fighter("Source.14:358")
         down._transition_animation_end(fighter, _context(grounded=False))
         self.assertEqual(fighter.action, Action.FALL)
+
+    def test_ice_shot_entry_clears_only_source_command_slot(self):
+        export_definition(IceClimbers)
+        move = IceClimbers.specials.neutral
+        for phase in (move.ground, move.air):
+            fighter = _Fighter(phase)
+            move.enter(fighter, _context())
+            self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
 
     def test_belay_partner_command_branches_require_native_partner_facts(self):
         export_definition(IceClimbers)
