@@ -1,5 +1,7 @@
 """Roy's source-state special declarations."""
 
+import math
+
 from skirmish import Button, Fighter, source_phase
 from fighter.emblem_family import (
     EmblemDownSpecial,
@@ -106,6 +108,33 @@ class Blazer(EmblemUpSpecial):
 
     ground = source_phase(367)
     air = source_phase(368)
+
+    @on.stick(actions=(ground, air))
+    def steer(self, fighter, ctx) -> bool:
+        """Mirror the shared Mars Dolphin Slash horizontal steering callback."""
+        attributes = resource_attributes(ctx, self.resource)
+        command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
+        if attributes is None or command[0]:
+            return False
+        threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
+        maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        try:
+            horizontal = float(stick[0])
+        except (IndexError, KeyError, TypeError, ValueError):
+            return False
+        if threshold is None or maximum is None or abs(horizontal) <= threshold:
+            return False
+        denominator = 1.0 - threshold
+        if denominator <= 0.0:
+            return False
+        angle = float(maximum) * (abs(horizontal) - threshold) / denominator
+        angle = math.radians(angle if horizontal < 0.0 else -angle)
+        previous = float(getattr(fighter, "lstick_angle", 0.0))
+        if abs(angle) <= abs(previous):
+            return False
+        fighter.lstick_angle = angle
+        return True
 
     @on.animation_end(ground, air)
     def enter_fall_special(self, fighter, ctx) -> bool:

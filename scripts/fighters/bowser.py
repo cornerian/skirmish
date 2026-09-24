@@ -140,6 +140,12 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
     )
     _TURN_PHASES = (ground_hit, ground_wait, air_hit, air_wait)
 
+    @hook.input_pressed(Button.B)
+    def input_pressed(self, fighter: Any, ctx: Any) -> bool:
+        if fighter.action in (self.ground_wait, self.air_wait):
+            return self.hold_capture(fighter, ctx)
+        return super().input_pressed(fighter, ctx)
+
     # The native hit/hold branch is selected by capture callbacks.  Those
     # callbacks require the victim archive and therefore cannot be represented
     # by this fighter-only package.  A missed start still follows the native
@@ -171,7 +177,6 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
         elif fighter.action == self.air_start:
             fighter.change_action(self.air_hit)
 
-    @hook.input_pressed(Button.B)
     def hold_capture(self, fighter: Any, ctx: Any) -> bool:
         """Re-enter the source hold motion when capture B remains held.
 
