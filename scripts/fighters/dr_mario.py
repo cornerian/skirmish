@@ -220,8 +220,30 @@ class DrTornado(DownSpecial, _SourcePair):
 
     @hook.animation_end(air)
     def finish_air(self, fighter: Fighter, ctx) -> bool:
-        """Process a tap cue still present on the source animation's last tick."""
-        return self._consume_air_tap(fighter)
+        """Process the final tap cue and source FallSpecial handoff.
+
+        Dr. Mario uses Mario's ``ftMr_SpecialAirLw_Anim`` callback.  It
+        consumes command 1 before checking the animation end, then enters
+        ``ftCo_80096900`` with mobility 1 when ``speciallw.landing_lag`` is
+        nonzero; zero uses ordinary Fall.
+        """
+        tap_consumed = self._consume_air_tap(fighter)
+        attributes = resource_attributes(ctx, self.resource)
+        landing_lag = getattr(
+            attributes,
+            "speciallw_landing_lag",
+            getattr(attributes, "landing_lag", None),
+        )
+        enter = getattr(fighter, "enter_fall_special", None)
+        if (
+            isinstance(landing_lag, (int, float))
+            and not isinstance(landing_lag, bool)
+            and landing_lag != 0
+            and callable(enter)
+        ):
+            enter(mobility=1, landing_lag=landing_lag)
+            return True
+        return tap_consumed
 
 
 class DrMario(Fighter):

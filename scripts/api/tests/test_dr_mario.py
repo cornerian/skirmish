@@ -237,6 +237,39 @@ class DrMarioSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
         self.assertTrue(fighter.action_state.tornado_charge)
 
+    def test_down_aerial_completion_enters_authored_fall_special(self):
+        move = DrMario.specials.down
+        calls = []
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
+        attributes = type("Attributes", (), {"speciallw_landing_lag": 18})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        self.assertTrue(move.finish_air(fighter, context))
+        self.assertEqual(calls, [{"mobility": 1, "landing_lag": 18}])
+
+    def test_down_aerial_completion_keeps_plain_fall_when_lag_is_zero(self):
+        move = DrMario.specials.down
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 0, 5, 4)
+        fighter.enter_fall_special = lambda **kwargs: self.fail(
+            "zero landing lag must use ordinary Fall"
+        )
+        attributes = type("Attributes", (), {"speciallw_landing_lag": 0})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        self.assertFalse(move.finish_air(fighter, context))
+
 
 if __name__ == "__main__":
     unittest.main()
