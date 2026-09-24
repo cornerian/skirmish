@@ -37,9 +37,12 @@ class _Fighter:
         self.action = action
 
 
-def _context(*, resource=True, stick=(0.0, 0.0), ground=True):
+def _context(*, resource=True, stick=(0.0, 0.0), ground=True, held=None):
+    input_state = SimpleNamespace(stick=stick, just_pressed=lambda button: True)
+    if held is not None:
+        input_state.held_buttons = held
     return SimpleNamespace(
-        input=SimpleNamespace(stick=stick, just_pressed=lambda button: True),
+        input=input_state,
         resource=lambda path: object() if resource else None,
         ground_open=ground,
         air_open=not ground,
@@ -170,6 +173,26 @@ class BowserTests(unittest.TestCase):
         self.assertFalse(side.choose_throw_direction(
             _Fighter(side.ground_start), _context(stick=(1.0, 0.0))
         ))
+
+    def test_klaw_wait_reenters_hold_only_while_b_is_held(self):
+        side = Bowser.specials.side
+        fighter = _Fighter(side.ground_wait)
+        self.assertTrue(side.hold_capture(
+            fighter, _context(held={Button.B})
+        ))
+        self.assertEqual(fighter.action, side.ground_hold)
+
+        fighter = _Fighter(side.air_wait)
+        self.assertTrue(side.hold_capture(
+            fighter, _context(ground=False, held={Button.B})
+        ))
+        self.assertEqual(fighter.action, side.air_hold)
+
+        fighter = _Fighter(side.ground_wait)
+        self.assertTrue(side.hold_capture(
+            fighter, _context(held=set())
+        ))
+        self.assertEqual(fighter.action, side.ground_wait)
 
 
 if __name__ == "__main__":

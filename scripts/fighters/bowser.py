@@ -30,6 +30,22 @@ from skirmish import (
 )
 
 
+def _button_held(ctx: Any, button: Button) -> bool:
+    """Read the host's held-button view with the portable default.
+
+    ``ftKp_SpecialSWait_IASA`` only re-enters the hit motion while B remains
+    held.  Older portable contexts do not expose a held mask, and their
+    input-pressed event already means the button is down, so preserve that
+    behavior as the fallback.
+    """
+    held = getattr(getattr(ctx, "input", None), "held_buttons", None)
+    if held is None:
+        return True
+    if isinstance(held, (tuple, list, set, frozenset)):
+        return button in held
+    return bool(held)
+
+
 class _KoopaSpecial(SpecialMove):
     """Shared resource gate and directional B dispatch for Bowser specials."""
 
@@ -154,6 +170,25 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
             fighter.change_action(self.ground_hit)
         elif fighter.action == self.air_start:
             fighter.change_action(self.air_hit)
+
+    @hook.input_pressed(Button.B)
+    def hold_capture(self, fighter: Any, ctx: Any) -> bool:
+        """Re-enter the source hold motion when capture B remains held.
+
+        The native wait IASA callback consumes a held B by selecting state
+        349/355 (the hit hold motion), while a released B leaves the wait
+        state available for directional throw selection.  The previous
+        fighter-only script consumed the event but never performed this
+        observable transition.
+        """
+        target = {
+            self.ground_wait: self.ground_hold,
+            self.air_wait: self.air_hold,
+        }.get(fighter.action)
+        if target is None or not _button_held(ctx, Button.B):
+            return fighter.action in self._ACTIVE
+        fighter.change_action(target)
+        return True
 
     @hook.stick_changed(actions=_TURN_PHASES)
     def choose_throw_direction(self, fighter: Any, ctx: Any) -> bool:
