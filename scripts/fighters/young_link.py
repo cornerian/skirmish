@@ -49,6 +49,31 @@ class YoungLinkNeutralSpecial(_FamilyNeutralSpecial):
         ground_end: Transition(Action.WAIT),
         air_end: Transition(Action.FALL),
     }
+
+    @on.release(Button.B)
+    def release(self, fighter: Any, ctx: Any) -> bool:
+        """Forward the source release edge before entering the End motion.
+
+        ``ftLk_SpecialNStart_IASA`` and ``ftLk_SpecialNLoop_IASA`` both
+        transition on the first frame with B released.  The article host owns
+        copying charge and launch data into the CLink arrow, so preserve that
+        optional callback at the same boundary before selecting the matching
+        ground or aerial End state.
+        """
+        destination = {
+            self.ground_start: self.ground_end,
+            self.ground_loop: self.ground_end,
+            self.air_start: self.air_end,
+            self.air_loop: self.air_end,
+        }.get(fighter.action)
+        if destination is None:
+            return False
+        release = getattr(fighter, "release_arrow", None)
+        if callable(release):
+            release(ctx)
+        fighter.change_action(destination)
+        return True
+
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),

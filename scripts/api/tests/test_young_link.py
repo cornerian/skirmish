@@ -148,6 +148,22 @@ class YoungLinkTests(unittest.TestCase):
         move._transition_ground_air(fighter, _context(grounded=True))
         self.assertEqual(fighter.action, move.ground)
 
+    def test_arrow_release_forwards_to_article_host_before_end_motion(self):
+        move = YoungLinkNeutralSpecial()
+        fighter = _Fighter(move.ground_loop)
+        releases = []
+        fighter.release_arrow = releases.append
+        ctx = SimpleNamespace(marker="charge-release")
+
+        self.assertTrue(move.release(fighter, ctx))
+        self.assertEqual(releases, [ctx])
+        self.assertEqual(fighter.action, move.ground_end)
+
+        inactive = _Fighter(Action.WAIT)
+        inactive.release_arrow = releases.append
+        self.assertFalse(move.release(inactive, ctx))
+        self.assertEqual(releases, [ctx])
+
     def test_boomerang_empty_branch_and_native_release_forwarding(self):
         move = YoungLinkSideSpecial()
         fighter = _Fighter()
