@@ -140,8 +140,10 @@ class GameAndWatchTests(unittest.TestCase):
         self.assertFalse(move.input_pressed(_Fighter(), _context(resource=False, stick=(1.0, 0.0))))
         self.assertFalse(move.input_pressed(_Fighter(), _context(stick=(0.0, 1.0))))
         fighter = _Fighter()
-        self.assertTrue(move.input_pressed(fighter, _context(stick=(1.0, 0.0))))
-        self.assertEqual(fighter.action, move.ground_1)
+        # Missing native roll data is an explicit unsupported result. The
+        # script must not invent row one or an article outcome.
+        self.assertFalse(move.input_pressed(fighter, _context(stick=(1.0, 0.0))))
+        self.assertEqual(fighter.action, Action.WAIT)
 
         # Native code supplies the roll after excluding its previous two rows;
         # the script applies those weights without creating its own RNG.
@@ -151,6 +153,7 @@ class GameAndWatchTests(unittest.TestCase):
             _context(stick=(1.0, 0.0), judge_weights=(0, 0, 3, 0, 0, 0, 0, 0, 0), judge_roll=0),
         ))
         self.assertEqual(weighted.action, move.ground_3)
+        self.assertEqual(weighted.action_state.judge_selected_value, 3)
 
         excluded = _Fighter()
         self.assertTrue(move.input_pressed(
@@ -161,9 +164,9 @@ class GameAndWatchTests(unittest.TestCase):
 
         # Repeated B while a Judge row is active is consumed without
         # restarting the selected source motion.
-        fighter.action_frame = 7
-        self.assertTrue(move.input_pressed(fighter, _context(stick=(1.0, 0.0))))
-        self.assertEqual(fighter.action_frame, 7)
+        weighted.action_frame = 7
+        self.assertTrue(move.input_pressed(weighted, _context(stick=(1.0, 0.0))))
+        self.assertEqual(weighted.action_frame, 7)
 
     def test_oil_panic_keeps_source_catch_and_shoot_states(self):
         move = OilPanic()
@@ -192,6 +195,7 @@ class GameAndWatchTests(unittest.TestCase):
         ))
         self.assertEqual(fighter.action_state.judge_current, 2)
         self.assertEqual(fighter.action_state.judge_previous, -1)
+        self.assertEqual(fighter.action_state.judge_selected_value, 3)
 
     def test_chef_release_disables_future_source_loops(self):
         move = Chef()

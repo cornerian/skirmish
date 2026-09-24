@@ -128,8 +128,10 @@ through the fighter's hitlag callbacks. A second roll must exclude rows 2 and
 ## Host gaps
 
 The fighter script mirrors the source-local Chef loop-disable flag, Judge
-previous-row shift, and full Oil Panic release calculation when the host
-supplies the corresponding typed inputs and attributes. The authoring layer
+previous-row shift and one-based selected value, and full Oil Panic release
+calculation when the host supplies the corresponding typed inputs and
+attributes. If Judge weights or the native roll are absent, the script returns
+an unsupported input result rather than guessing row one. The authoring layer
 still does not own the native article object lifecycle, bone attachment,
 article hitlag forwarding, absorb callbacks, command-variable traces, or
 article-specific hitbox callbacks. Those gaps block full Chef food, Judge,

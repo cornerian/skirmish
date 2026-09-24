@@ -34,6 +34,8 @@ class GameAndWatchActionState(ActionState):
     chef_loop_disabled: bool = False
     judge_current: int = -1
     judge_previous: int = -1
+    # One-based value for the native Judge article; zero means no roll.
+    judge_selected_value: int = 0
     panic_charge: int = 0
     panic_damage: float = 0.0
     panic_release_damage: float = 0.0
@@ -68,15 +70,15 @@ def _button_held(ctx: Any, button: Button) -> bool:
     return bool(held_buttons)
 
 
-def _judge_phase(ctx: Any, retained_rows: Any = ()) -> int:
+def _judge_phase(ctx: Any, retained_rows: Any = ()) -> int | None:
     """Resolve the native Judge roll when the host exposes its source data.
 
     ``ftGw_SpecialS_GetRandomInt`` excludes the previous two rows and rolls
     against the nine attribute weights.  The authoring API has no RNG or
     fighter-local Judge storage, so a host may provide the already-generated
     ``judge_roll`` and ``judge_previous`` values on the callback context.
-    Invalid or absent optional data falls back to row one instead of making a
-    random choice in Python.
+    Invalid or absent optional data returns ``None`` so the caller can leave
+    the input unconsumed instead of guessing a row.
     """
     lookup = getattr(ctx, "resource", None)
     resource = lookup("side.attributes") if callable(lookup) else None
@@ -85,9 +87,9 @@ def _judge_phase(ctx: Any, retained_rows: Any = ()) -> int:
     roll = getattr(ctx, "judge_roll", None)
     previous = getattr(ctx, "judge_previous", ())
     if not isinstance(weights, (tuple, list)) or len(weights) != 9:
-        return 1
+        return None
     if isinstance(roll, bool) or not isinstance(roll, int) or roll < 0:
-        return 1
+        return None
     excluded = {
         value
         for values in (previous, retained_rows)
@@ -95,17 +97,17 @@ def _judge_phase(ctx: Any, retained_rows: Any = ()) -> int:
         if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 9
     }
     if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in weights):
-        return 1
+        return None
     total = sum(weight for index, weight in enumerate(weights) if index not in excluded)
     if total <= 0 or roll >= total:
-        return 1
+        return None
     for index, weight in enumerate(weights):
         if index in excluded:
             continue
         if roll < weight:
             return index + 1
         roll -= weight
-    return 1
+    return None
 
 
 class _SourcePairSpecial(DirectionalSpecial):
@@ -230,10 +232,8 @@ class Judge(SideSpecial):
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         """Accept only a valid side-B edge; native code chooses the phase.
 
-        The source-side weighted roll needs the Judge/article state API, which
-        is intentionally not guessed here.  Returning the gate result keeps
-        the input contract honest without selecting a phase or fabricating an
-        article callback.
+        The source-side weighted roll needs native Judge data. If it is absent,
+        leave the input unconsumed rather than guessing a phase or article.
         """
         if fighter.action in self._ACTIVE:
             return True
@@ -250,8 +250,11 @@ class Judge(SideSpecial):
         # exclusions as well, then update the pair only after selecting the
         # new weighted row.
         phase_number = _judge_phase(ctx, (state.judge_current, state.judge_previous))
+        if phase_number is None:
+            return False
         state.judge_previous = state.judge_current
         state.judge_current = phase_number - 1
+        state.judge_selected_value = phase_number
         phases = self._SURFACE_PAIRS[phase_number - 1]
         phase = phases[0 if ctx.ground_open else 1]
         start_action(fighter, phase)
