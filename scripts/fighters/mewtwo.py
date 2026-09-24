@@ -63,9 +63,7 @@ def _event_value(ctx: Any) -> int:
     return int(value or 0)
 
 
-def _resource_float(
-    ctx: Any, path: str, *, allow_zero: bool = False
-) -> float | None:
+def _resource_float(ctx: Any, path: str) -> float | None:
     """Read a finite authored move attribute through the host resource API."""
     lookup = getattr(ctx, "resource", None)
     value = lookup(path) if lookup is not None else None
@@ -75,9 +73,7 @@ def _resource_float(
         value = float(value)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(value) or (value == 0.0 and not allow_zero):
-        return None
-    return value
+    return value if math.isfinite(value) and value != 0.0 else None
 
 
 def _set_reflecting(fighter: Any, value: bool) -> None:
@@ -393,17 +389,7 @@ class Teleport(UpSpecial, _MewtwoSpecial):
     @hook.landed(actions=(air_end,))
     def land_end(self, fighter: Any, ctx: Any) -> None:
         """The aerial end state enters SpecialHi landing lag on contact."""
-        # ``ftMt_SpecialAirHi_Coll`` passes the authored landing lag to the
-        # common fall-special entry.  Keep the legacy action fallback for
-        # small descriptor hosts that do not expose that entry point.
-        enter_fall_special = getattr(fighter, "enter_fall_special", None)
-        landing_lag = _resource_float(
-            ctx, "up.attributes.teleport_landing_lag", allow_zero=True
-        )
-        if callable(enter_fall_special) and landing_lag is not None:
-            enter_fall_special(mobility=0, landing_lag=landing_lag)
-        else:
-            fighter.change_action(Action.SPECIAL_HI_LANDING)
+        fighter.change_action(Action.SPECIAL_HI_LANDING)
         _fighter_state(fighter).teleport_active = False
 
     @hook.animation_end(ground_end, air_end)
@@ -416,13 +402,6 @@ class Teleport(UpSpecial, _MewtwoSpecial):
 
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
-        # ``ftMt_SpecialHiLost_Coll`` changes grounded travel to aerial travel
-        # when Mewtwo walks/falls off the ground.
-        ground_travel: Transition(
-            air_travel, preserve_state=True, keep_frame=True
-        ),
-        # The grounded end callback has the same ground-to-air escape path.
-        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
     }
     on_air = {
         ground_start: Transition(air_start, preserve_state=True, keep_frame=True),

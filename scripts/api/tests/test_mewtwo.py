@@ -337,37 +337,3 @@ class MewtwoScriptTests(unittest.TestCase):
         move.land_end(fighter, SimpleNamespace())
         self.assertEqual(fighter.changes[-1][0], self.module.Action.SPECIAL_HI_LANDING)
         self.assertFalse(fighter.action_state.teleport_active)
-
-    def test_teleport_ground_lost_transitions_match_source_collision_callbacks(self):
-        move = self.module.Teleport()
-        fighter = _Fighter()
-
-        fighter.action = move.ground_travel
-        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
-        self.assertEqual(fighter.changes[-1][0], move.air_travel)
-        self.assertEqual(
-            fighter.changes[-1][1], {"preserve_state": True, "keep_frame": True}
-        )
-
-        fighter.action = move.ground_end
-        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
-        self.assertEqual(fighter.changes[-1][0], move.air_end)
-
-    def test_teleport_aerial_end_passes_authored_landing_lag(self):
-        move = self.module.Teleport()
-        fighter = _Fighter()
-        calls = []
-        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
-        fighter.action = move.air_end
-
-        move.land_end(
-            fighter,
-            SimpleNamespace(
-                resource=lambda path: {
-                    "up.attributes.teleport_landing_lag": 12.5,
-                }.get(path),
-            ),
-        )
-
-        self.assertEqual(calls, [{"mobility": 0, "landing_lag": 12.5}])
-        self.assertFalse(fighter.action_state.teleport_active)
