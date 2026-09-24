@@ -79,6 +79,22 @@ class DarkDive(CaptainUpSpecial):
         """Finish the source wall-rebound motion into ordinary falling."""
         fighter.change_action(Action.FALL)
 
+    @on.landed()
+    def landed(self, fighter, ctx):
+        """Resolve an unreleased aerial dive through the source ground path.
+
+        ``ftCa_SpecialAirHi_Coll`` calls ``ft_80083B68`` after the fighter
+        reaches ground when ``specialhi.x2_b1`` is still clear.  The shared
+        family only handles the released branch, so preserve that native
+        ordinary-ground transition locally for Ganondorf.
+        """
+        if fighter.action != self.air:
+            return False
+        if not getattr(fighter.action_state, "dive_released", False):
+            fighter.change_action(Action.WAIT)
+            return True
+        return super().landed(fighter, ctx)
+
 
 class WizardFoot(CaptainDownSpecial):
     ground = source_phase(357, animation=311, attack="down.ground")

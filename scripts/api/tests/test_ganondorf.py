@@ -267,10 +267,12 @@ class GanondorfTests(unittest.TestCase):
         )
         fighter = _Fighter(move.air)
         context = _context(resource_value=SimpleNamespace(attributes=attributes))
-        self.assertFalse(move.landed(fighter, context))
+        self.assertTrue(move.landed(fighter, context))
+        self.assertEqual(fighter.action, Action.WAIT)
         self.assertEqual(fighter.fall_special, [])
 
         fighter.action_state.dive_released = True
+        fighter.action = move.air
         self.assertTrue(move.landed(fighter, context))
         self.assertEqual(
             fighter.fall_special,
