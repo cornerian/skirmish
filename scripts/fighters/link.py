@@ -225,10 +225,13 @@ class LinkDownSpecial(_FamilyDownSpecial):
 
         Native Link checks for an existing Link bomb before starting the
         normal pull animation and routes that item through the common throw
-        state. Article ownership stays in the host; a host that exposes the
-        branch can consume it through this optional callback.
+        state. On the normal pull path it clears ``throw_flags`` before
+        starting the animation. Article ownership stays in the host; a host
+        that exposes the branch can consume it through this optional callback.
         """
         if not getattr(fighter, "link_bomb_held", False):
+            if hasattr(fighter, "throw_flags"):
+                fighter.throw_flags = 0
             return
         reuse = getattr(fighter, "reuse_held_bomb_special", None)
         if callable(reuse):

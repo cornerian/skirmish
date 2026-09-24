@@ -201,10 +201,16 @@ class LinkTests(unittest.TestCase):
     def test_down_entry_forwards_held_bomb_branch_to_article_host(self):
         move = Link.specials.down
         fighter = _Fighter()
+        fighter.throw_flags = 9
+        move.reuse_held_bomb(fighter, SimpleNamespace())
+        self.assertEqual(fighter.throw_flags, 0)
+
         fighter.link_bomb_held = True
         fighter.action = move.ground
+        fighter.throw_flags = 7
         move.reuse_held_bomb(fighter, SimpleNamespace())
         self.assertEqual(fighter.bomb_reuse, [False])
+        self.assertEqual(fighter.throw_flags, 7)
 
         fighter.action = move.air
         move.reuse_held_bomb(fighter, SimpleNamespace())
