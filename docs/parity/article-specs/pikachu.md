@@ -114,6 +114,21 @@ fighter hitlag callbacks.  During the active `SpecialS0` state,
 `mv.pk.unk3.x0 * attrs->x2C + attrs->x28` to the active capsule and consume
 command variable 0 to enter the release path.
 
+The script exposes the source-owned deterministic seams for these callbacks:
+`quick_attack_effect_offset` returns `(0, 0)` for the terminal XRotN effect,
+ground jitter `(6 * rand - 3, 6 * rand - 3)`, or aerial jitter
+`(10 * rand - 5, 10 * rand - 5)`, and returns no effect for Pichu.  The caller
+provides the two already sampled random values; the helper does not replace
+the host RNG.  `thunder_jolt_spawn_position` mirrors the owner scale and
+facing arithmetic while leaving article allocation and ownership to the
+native item host.
+
+The initializer contract is also source complete: `ftPk_Init` names
+`ftDataPikachu`, the four costume model archives and their matching joint and
+material animation archives, the four demo motion files, and the Pikachu
+Thunder Jolt sound `240076` used by both ground and aerial neutral-special
+callbacks.
+
 ## Exact deterministic test vector
 
 Use a ground Pikachu, facing `+1`, at position `(10, 5, 0)`, with the ground

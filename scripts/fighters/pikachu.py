@@ -8,7 +8,7 @@ Article creation and collision driven velocity updates still require host
 surfaces that are not part of the portable fighter API.
 """
 
-from typing import ClassVar
+from typing import ClassVar, Sequence
 
 from skirmish import Fighter, Parameters
 from fighter.electric_family import (
@@ -30,7 +30,9 @@ class PikachuParameters(Parameters):
     """
 
     data_file: str = "PlPk.dat"
+    data_name: str = "ftDataPikachu"
     animation_data_file: str = "PlPkAJ.dat"
+    thunder_jolt_sound: int = 240076
 
 
 class Pikachu(Fighter):
@@ -40,6 +42,24 @@ class Pikachu(Fighter):
         "PlPkRe.dat",
         "PlPkBu.dat",
         "PlPkGr.dat",
+    )
+    costume_joint_files: ClassVar[tuple[str, ...]] = (
+        "PlyPikachu5K_Share_joint",
+        "PlyPikachu5KRe_Share_joint",
+        "PlyPikachu5KBu_Share_joint",
+        "PlyPikachu5KGr_Share_joint",
+    )
+    costume_material_animation_files: ClassVar[tuple[str, ...]] = (
+        "PlyPikachu5K_Share_matanim_joint",
+        "PlyPikachu5KRe_Share_matanim_joint",
+        "PlyPikachu5KBu_Share_matanim_joint",
+        "PlyPikachu5KGr_Share_matanim_joint",
+    )
+    demo_motion_files: ClassVar[tuple[str, ...]] = (
+        "ftDemoResultMotionFilePikachu",
+        "ftDemoIntroMotionFilePikachu",
+        "ftDemoEndingMotionFilePikachu",
+        "ftDemoViWaitMotionFilePikachu",
     )
     specials = ELECTRIC_SPECIALS
 
@@ -78,6 +98,48 @@ def advance_quick_attack_hold(fighter, frames_held: int, hold_limit: int) -> boo
         return False
     fighter.change_action(destination)
     return True
+
+
+def quick_attack_effect_offset(
+    random_x: float = 0.0,
+    random_y: float = 0.0,
+    *,
+    aerial: bool = False,
+    terminal: bool = False,
+    pichu: bool = False,
+) -> tuple[float, float] | None:
+    """Return the source ``efSync_Spawn(1012)`` offset for one callback.
+
+    ``ftPk_SpecialHiStart1_Anim`` decrements its segment counter first.  A
+    terminal callback emits at XRotN without jitter; intermediate ground and
+    aerial callbacks use independent ``HSD_Randf`` samples with widths 6 and
+    10.  Both callbacks suppress the effect for Pichu.  The caller supplies
+    the already sampled values so this helper stays deterministic and does
+    not replace the host RNG.
+    """
+    if pichu:
+        return None
+    if terminal:
+        return (0.0, 0.0)
+    width = 10.0 if aerial else 6.0
+    return (width * float(random_x) - width / 2.0,
+            width * float(random_y) - width / 2.0)
+
+
+def thunder_jolt_spawn_position(
+    position: Sequence[float], offset: Sequence[float], facing: float, scale: float
+) -> tuple[float, float, float]:
+    """Mirror the position arithmetic in ``ftPk_SpecialN_Anim``.
+
+    Ground and aerial callbacks use their respective offset attributes but
+    both pass the fighter's configured ``specialn_itkind`` to the article
+    spawn routine.  Article ownership and allocation remain host-owned.
+    """
+    if len(position) != 3 or len(offset) != 2:
+        raise ValueError("position must have 3 values and offset must have 2")
+    x, y, _ = (float(value) for value in position)
+    dx, dy = (float(value) for value in offset)
+    return (x + float(scale) * dx * float(facing), y + float(scale) * dy, 0.0)
 
 
 SKULL_BASH_COMMAND_ENDS = {
@@ -136,6 +198,8 @@ __all__ = [
     "QUICK_ATTACK_ANIMATION_ENDS",
     "advance_quick_attack_animation",
     "advance_quick_attack_hold",
+    "quick_attack_effect_offset",
+    "thunder_jolt_spawn_position",
     "SKULL_BASH_COMMAND_ENDS",
     "skull_bash_command_transition",
     "Agility",

@@ -20,7 +20,9 @@ from fighters.pikachu import (
     SOURCE_MOTION_STATES,
     advance_quick_attack_animation,
     advance_quick_attack_hold,
+    quick_attack_effect_offset,
     skull_bash_command_transition,
+    thunder_jolt_spawn_position,
 )
 
 
@@ -143,6 +145,27 @@ class PikachuScriptTests(unittest.TestCase):
             self.assertIsNone(skull_bash_command_transition(source, 0))
             self.assertEqual(skull_bash_command_transition(source, 1), destination)
         self.assertIsNone(skull_bash_command_transition(Thunder.ground_end, 1))
+
+    def test_quick_attack_effect_matches_source_jitter_and_pichu_gate(self):
+        self.assertEqual(
+            quick_attack_effect_offset(0.0, 1.0),
+            (-3.0, 3.0),
+        )
+        self.assertEqual(
+            quick_attack_effect_offset(0.0, 1.0, aerial=True),
+            (-5.0, 5.0),
+        )
+        self.assertEqual(
+            quick_attack_effect_offset(0.9, 0.1, terminal=True),
+            (0.0, 0.0),
+        )
+        self.assertIsNone(quick_attack_effect_offset(0.5, 0.5, pichu=True))
+
+    def test_thunder_jolt_spawn_position_matches_source_scaling(self):
+        self.assertEqual(
+            thunder_jolt_spawn_position((10, 5, 9), (3, 2), -1, 2),
+            (4.0, 9.0, 0.0),
+        )
 
 if __name__ == "__main__":
     unittest.main()
