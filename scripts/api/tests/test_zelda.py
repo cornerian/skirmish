@@ -40,6 +40,7 @@ class _Fighter:
         self.position = (1.0, 2.0, 0.0)
         self.facing = -1.0
         self.spawned = []
+        self.fall_special = []
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -47,6 +48,9 @@ class _Fighter:
 
     def spawn_article(self, *args):
         self.spawned.append(args)
+
+    def enter_fall_special(self, **kwargs):
+        self.fall_special.append(kwargs)
 
 
 def _context(*, stick=(0.0, 0.0), grounded=True, resource=True, pressed=True):
@@ -103,7 +107,6 @@ class ZeldaSpecialTests(unittest.TestCase):
         cases = (
             (Zelda.specials.neutral, "Source.18:342", Action.FALL),
             (Zelda.specials.side, "Source.18:348", Action.FALL),
-            (Zelda.specials.up, "Source.18:354", Action.FALL),
             (Zelda.specials.down, "Source.18:358", Action.FALL),
         )
         for move, terminal, expected in cases:
@@ -113,6 +116,18 @@ class ZeldaSpecialTests(unittest.TestCase):
                 self.assertEqual(fighter.action, terminal)
             else:
                 self.assertEqual(fighter.action, expected)
+
+        fighter = _Fighter(Zelda.specials.up.air_move)
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(
+                attributes=SimpleNamespace(x68=0.75, x6C=12.0)
+            )
+        )
+        self.assertTrue(Zelda.specials.up.enter_fall_special(fighter, context))
+        self.assertEqual(
+            fighter.fall_special,
+            [{"mobility": 0.75, "landing_lag": 12.0}],
+        )
 
         for move in (Zelda.specials.neutral, Zelda.specials.side,
                      Zelda.specials.up, Zelda.specials.down):

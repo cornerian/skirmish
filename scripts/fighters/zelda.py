@@ -8,11 +8,13 @@ Transformation likewise exposes no cross-character replacement policy.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from skirmish import (
     Action, ArticleId, Button, DirectionalSpecial, DownSpecial, Fighter,
     NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
 )
+from fighter.helpers import resource_attributes
 
 
 class Nayru(NeutralSpecial, DirectionalSpecial):
@@ -137,10 +139,37 @@ class Farore(UpSpecial, DirectionalSpecial):
     air = air_start
     _ACTIVE = (ground_start, ground_start_1, ground_move, air_start, air_start_1, air_move)
 
+    @on.animation_end(air_move)
+    def enter_fall_special(self, fighter: Fighter, ctx: Any) -> bool:
+        """Enter FallSpecial with the source mobility and landing lag.
+
+        ``ftZd_SpecialAirHi_Anim`` calls ``ftCo_80096900`` when state 354
+        ends, passing Zelda's ``ftZelda_DatAttrs::x68`` and ``x6C``.  A plain
+        ``Action.FALL`` loses both values and makes the aerial recovery
+        immediately interruptible.  Resource exports may use descriptive
+        names; the ``x68``/``x6C`` fallbacks preserve the source layout.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "specialhi_freefall_mobility", getattr(attributes, "x68", None)),
+        )
+        landing_lag = getattr(
+            attributes,
+            "specialhi_landing_lag",
+            getattr(attributes, "x6C", None),
+        )
+        enter = getattr(fighter, "enter_fall_special", None)
+        if mobility is None or landing_lag is None or not callable(enter):
+            return False
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
+
     on_end = {
         ground_start: Transition(ground_start_1), ground_start_1: Transition(ground_move),
         ground_move: Transition(Action.WAIT), air_start: Transition(air_start_1),
-        air_start_1: Transition(air_move), air_move: Transition(Action.FALL),
+        air_start_1: Transition(air_move),
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
