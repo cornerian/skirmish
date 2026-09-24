@@ -39,6 +39,22 @@ class _PeachSpecial(SpecialMove):
 
     _ACTIVE: ClassVar[tuple[Any, ...]] = ()
 
+    @staticmethod
+    def _reset_command_slots(fighter: Any, count: int = 4) -> None:
+        """Clear the native command window when a special motion starts.
+
+        The Peach entry callbacks explicitly clear ``cmd_vars`` before
+        installing their accessory callbacks.  Keeping that reset at the
+        script boundary prevents a cue left by the previous motion from
+        selecting a hit, wall, or jump branch on the new motion.  Hosts that
+        do not expose a command tuple simply keep their existing behavior.
+        """
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", None)
+        if not isinstance(command, (tuple, list)) or len(command) < count:
+            return
+        state.command = (0,) * count + tuple(command[count:])
+
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         if fighter.action in self._ACTIVE:
@@ -74,6 +90,11 @@ class PeachNeutralSpecial(NeutralSpecial, _PeachSpecial):
         ground: Transition(air, preserve_state=True, keep_frame=True),
         ground_hit: Transition(air_hit, preserve_state=True, keep_frame=True),
     }
+
+    @on.action_enter(ground, air)
+    def reset_command_window(self, fighter: Any, ctx: Any) -> None:
+        """Match ``ftPe_SpecialN_Enter``/``reset``'s four-slot clear."""
+        self._reset_command_slots(fighter)
 
     @on.command_changed(1, actions=(ground, air))
     def accessory_hit(self, fighter: Any, ctx: Any) -> None:
@@ -130,6 +151,11 @@ class PeachSideSpecial(SideSpecial, _PeachSpecial):
         ground_start: Transition(air_start, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_end0, preserve_state=True, keep_frame=True),
     }
+
+    @on.action_enter(ground_start, air_start)
+    def reset_command_window(self, fighter: Any, ctx: Any) -> None:
+        """Match ``ftPe_SpecialS_Enter``'s four command-variable reset."""
+        self._reset_command_slots(fighter)
 
     @on.action_enter(ground_start, air_start)
     def enter_start(self, fighter: Any, ctx: Any) -> None:
@@ -196,6 +222,11 @@ class PeachUpSpecial(UpSpecial, _PeachSpecial):
         ground: Transition(air, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
     }
+
+    @on.action_enter(ground, air)
+    def reset_command_window(self, fighter: Any, ctx: Any) -> None:
+        """Match ``ftPe_SpecialHi``'s command 0/1/2 reset."""
+        self._reset_command_slots(fighter, count=3)
 
 
 class PeachDownSpecial(DownSpecial, _PeachSpecial):

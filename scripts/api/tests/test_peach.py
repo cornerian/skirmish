@@ -184,6 +184,20 @@ class PeachSpecialTests(unittest.TestCase):
         )
         self.assertEqual(fighter.changes, [])
 
+    def test_special_entries_clear_native_command_windows(self):
+        for move, action, expected in (
+            (Peach.specials.neutral, Peach.specials.neutral.ground, (0, 0, 0, 0)),
+            (Peach.specials.side, Peach.specials.side.ground_start, (0, 0, 0, 0)),
+            (Peach.specials.up, Peach.specials.up.ground, (0, 0, 0, 8)),
+        ):
+            fighter = _Fighter()
+            fighter.action_state.command = (7, 6, 5, 8)
+            fighter.action = action
+
+            move.reset_command_window(fighter, SimpleNamespace())
+
+            self.assertEqual(fighter.action_state.command, expected)
+
     def test_side_start_waits_for_animation_end_then_selects_block_branch(self):
         side = Peach.specials.side
 
