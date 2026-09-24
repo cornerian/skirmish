@@ -128,7 +128,7 @@ class Blazer(EmblemUpSpecial):
             return False
         attributes = resource_attributes(ctx, self.resource)
         command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
-        if attributes is None or command[0]:
+        if attributes is None:
             return False
         threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
         maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
@@ -137,21 +137,25 @@ class Blazer(EmblemUpSpecial):
             horizontal = float(stick[0])
         except (IndexError, KeyError, TypeError, ValueError):
             return False
-        if threshold is None or maximum is None or abs(horizontal) <= threshold:
-            return False
-        denominator = 1.0 - threshold
-        if denominator <= 0.0:
-            return False
-        angle = float(maximum) * (abs(horizontal) - threshold) / denominator
-        angle = math.radians(angle if horizontal < 0.0 else -angle)
-        previous = float(getattr(fighter, "lstick_angle", 0.0))
         changed = False
-        if abs(angle) > abs(previous):
-            fighter.lstick_angle = angle
-            changed = True
+        # The source angle branch is command-gated and uses x34.
+        if (
+            not command[0]
+            and threshold is not None
+            and maximum is not None
+            and abs(horizontal) > threshold
+        ):
+            denominator = 1.0 - threshold
+            if denominator > 0.0:
+                angle = float(maximum) * (abs(horizontal) - threshold) / denominator
+                angle = math.radians(angle if horizontal < 0.0 else -angle)
+                previous = float(getattr(fighter, "lstick_angle", 0.0))
+                if abs(angle) > abs(previous):
+                    fighter.lstick_angle = angle
+                    changed = True
 
-        # ftCheckThrowB3 independently gates the source facing turn. Keep
-        # this branch guarded for hosts that do not project fighter.facing.
+        # ftCheckThrowB3 independently gates the source facing turn and uses
+        # x30, even when command 0 has already been raised.
         turn_threshold = getattr(
             attributes, "specialhi_turn_threshold", getattr(attributes, "x30", None)
         )

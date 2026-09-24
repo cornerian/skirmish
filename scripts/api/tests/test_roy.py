@@ -157,6 +157,27 @@ class RoyTests(unittest.TestCase):
         self.assertTrue(move.steer(fighter, context))
         self.assertEqual(fighter.facing, 1.0)
 
+    def test_blazer_facing_turn_uses_x30_independently_of_angle_gate(self):
+        move = _load_roy().Roy.specials.up
+        fighter = SimpleNamespace(
+            action=move.air,
+            facing=-1.0,
+            throw_flags_b3=1,
+            lstick_angle=0.0,
+            action_state=SimpleNamespace(command=(1, 0, 0, 0)),
+        )
+        attributes = SimpleNamespace(x34=0.5, x38=45.0, x30=0.2)
+        context = SimpleNamespace(
+            input=SimpleNamespace(stick=(0.3, 0.0)),
+            resource=lambda _path: SimpleNamespace(attributes=attributes),
+        )
+
+        # 0.3 is below the source angle threshold x34 but above facing x30;
+        # command 0 suppresses only angle sampling, not the facing branch.
+        self.assertTrue(move.steer(fighter, context))
+        self.assertEqual(fighter.facing, 1.0)
+        self.assertEqual(fighter.lstick_angle, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
