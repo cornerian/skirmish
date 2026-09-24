@@ -1,5 +1,6 @@
 #![allow(dead_code)] // Shared by integration targets with different setup paths.
 
+use skirmish::fighter::specials::Rules;
 use skirmish::game::script::resources::{Resources, Specials};
 use skirmish::game::{Controller, Match, data::MatchData};
 use std::collections::BTreeMap;
@@ -18,6 +19,15 @@ pub fn profile(mut data: MatchData) -> MatchData {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../fixtures/game/falco-neutral-special.json")).unwrap();
     let mut values = BTreeMap::new();
+    // The neutral B dispatcher shares the common special-input gate. Keep the
+    // synthetic Falco profile's thresholds aligned with the sibling Fox
+    // fixture so the resource-backed move can be entered from neutral.
+    data.rules.specials = Some(Rules {
+        side_stick_threshold: 0.3,
+        turn_threshold: 0.1,
+        vertical_threshold: 0.6,
+        air_drift_recovery_step: 0.02,
+    });
     let mut neutral = fixture["parameters"].clone();
     // The neutral policy consumes the exported command-variable trace.  A
     // command 2 sample on Loop's first animation frame is the fixture's real fire
@@ -52,6 +62,10 @@ pub fn profile(mut data: MatchData) -> MatchData {
         resources: Resources::new(values).unwrap(),
     };
     for fighter in &mut data.fighters {
+        // Bundled source selection is keyed by FighterData.name; the generic
+        // conformance fixture starts with synthetic names, so install the
+        // Falco roster identity alongside its Specials resource.
+        fighter.name = "Falco".to_owned();
         fighter.specials = Some(specials.clone());
     }
     data
