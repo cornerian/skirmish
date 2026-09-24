@@ -36,10 +36,17 @@ class _Fighter:
     def __init__(self, action=None):
         self.action = action
         self.changes = []
+        self.action_state = SimpleNamespace(command=(7, 2, 3, 4))
+        self.position = (1.0, 2.0, 0.0)
+        self.facing = -1.0
+        self.spawned = []
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
         self.action = action
+
+    def spawn_article(self, *args):
+        self.spawned.append(args)
 
 
 def _context(*, stick=(0.0, 0.0), grounded=True, resource=True, pressed=True):
@@ -130,6 +137,31 @@ class ZeldaSpecialTests(unittest.TestCase):
         release = next(item for item in behavior["callbacks"]
                        if item["hook"] == "input_released")
         self.assertEqual(release["actions"], ["Source.18:344", "Source.18:347"])
+
+    def test_din_command_cue_spawns_native_article_and_clears_slot(self):
+        move = Zelda.specials.side
+        fighter = _Fighter(move.ground_loop)
+        ctx = _context()
+        ctx.event = SimpleNamespace(value=1)
+
+        move.spawn(fighter, ctx)
+
+        self.assertEqual(
+            fighter.spawned,
+            [(108, fighter.position, fighter.facing)],
+        )
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+
+    def test_din_command_callback_ignores_zero_cue(self):
+        move = Zelda.specials.side
+        fighter = _Fighter(move.ground_start)
+        ctx = _context()
+        ctx.event = SimpleNamespace(value=0)
+
+        move.spawn(fighter, ctx)
+
+        self.assertEqual(fighter.spawned, [])
+        self.assertEqual(fighter.action_state.command, (7, 2, 3, 4))
 
 
 if __name__ == "__main__":
