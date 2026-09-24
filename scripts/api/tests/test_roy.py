@@ -105,11 +105,32 @@ class RoyTests(unittest.TestCase):
         self.assertFalse(move.choose_phase(fighter, none))
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
+    def test_dancing_blade_terminal_phases_ignore_button_input(self):
+        roy = _load_roy()
+        move = roy.Roy.specials.side
+        for action in (
+            move.ground_4_up, move.ground_4_neutral, move.ground_4_down,
+            move.air_4_up, move.air_4_neutral, move.air_4_down,
+        ):
+            fighter = self._Fighter(action)
+            fighter.action_state.command = (0, 0, 0, 0)
+            context = SimpleNamespace(
+                input=SimpleNamespace(pressed_buttons=0x100, stick=(0.0, 0.0))
+            )
+            self.assertFalse(move.input_pressed(fighter, context))
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
     def test_counter_command_callback_does_not_claim_contact(self):
         move = _load_roy().Roy.specials.down
         hooks = {event.hook.value for event in move.events()}
         self.assertIn("command_trace_changed", hooks)
         self.assertNotIn("before_hit", hooks)
+        fighter = SimpleNamespace(action=move.ground)
+        self.assertFalse(
+            move.command_changed(
+                fighter, SimpleNamespace(event=SimpleNamespace(value=1))
+            )
+        )
 
     def test_blazer_steering_requires_native_throw_projection(self):
         move = _load_roy().Roy.specials.up
@@ -118,7 +139,7 @@ class RoyTests(unittest.TestCase):
             lstick_angle=0.0,
             action_state=SimpleNamespace(command=(0, 0, 0, 0)),
         )
-        attributes = SimpleNamespace(x34=0.3, x38=45.0)
+        attributes = SimpleNamespace(x34=0.3, x38=45.0, x30=0.5)
         context = SimpleNamespace(
             input=SimpleNamespace(stick=(0.8, 0.0)),
             resource=lambda _path: SimpleNamespace(attributes=attributes),
@@ -130,6 +151,11 @@ class RoyTests(unittest.TestCase):
         fighter.throw_flags_b3 = 0
         self.assertTrue(move.steer(fighter, context))
         self.assertNotEqual(fighter.lstick_angle, 0.0)
+
+        fighter.facing = -1.0
+        fighter.throw_flags_b3 = 1
+        self.assertTrue(move.steer(fighter, context))
+        self.assertEqual(fighter.facing, 1.0)
 
 
 if __name__ == "__main__":

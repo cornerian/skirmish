@@ -44,22 +44,30 @@ class DancingBlade(EmblemSideSpecial):
     air_4_neutral = source_phase(365)
     air_4_down = source_phase(366)
 
+    # ftMs_SpecialS4_IASA is empty for terminal fourth-strike motions.
+    _phase_select_actions = (
+        ground_start, ground_2_up, ground_2_down,
+        ground_3_up, ground_3_neutral, ground_3_down,
+        air_start, air_2_up, air_2_down,
+        air_3_up, air_3_neutral, air_3_down,
+    )
+
     @staticmethod
     def _ab_pressed(ctx) -> bool:
         input_state = getattr(ctx, "input", None)
         query = getattr(input_state, "just_pressed", None)
         if callable(query):
-            return bool(query(Button.A) and query(Button.B))
+            return bool(query(Button.A) or query(Button.B))
         # Native callback bridges may expose the serialized button mask rather
-        # than the authoring helper.  Keep the chord atomic in both forms.
+        # than the authoring helper. HSD_PAD_AB is an OR mask in the source.
         buttons = getattr(input_state, "pressed_buttons", 0)
         return bool(buttons & 0x300) if isinstance(buttons, int) else False
 
-    @on.input_pressed(Button.A, Button.B, require_all_buttons=True)
+    @on.input_pressed(Button.A, Button.B)
     def input_pressed(self, fighter, ctx) -> bool:
-        if fighter.action in self._active_actions():
+        if fighter.action in self._phase_select_actions:
             return self.choose_phase(fighter, ctx) if self._ab_pressed(ctx) else False
-        return super().input_pressed(fighter, ctx)
+        return False
 
     def choose_phase(self, fighter, ctx) -> bool:
         """Mirror ftMs's command-var gate and A+B phase selector.
@@ -199,26 +207,15 @@ class Counter(EmblemDownSpecial):
 
     @on.command_changed(1, actions=(ground, air))
     def command_changed(self, fighter, ctx) -> bool:
-        """Arm the source Counter shield before entering its hit phase.
+        """Leave Counter capture and hit-phase entry to native callbacks.
 
-        ``ftMs_SpecialLw`` registers ``MarsAttributes::x64`` when command
-        variable one is raised.  The portable host may provide that descriptor
-        on the callback context and an optional registration method on the
-        fighter; retaining both lookups keeps this callback useful in native
-        and standalone authoring harnesses without fabricating shield fields.
+        ``ftMs_SpecialLw_Anim`` arms ``MarsAttributes::x64`` when command
+        variable one is raised.  The contact callback owns the hit-phase
+        transition, so the script command event remains inert.
         """
-        event = getattr(ctx, "event", None)
-        if getattr(event, "value", 0) != 1:
-            return False
-        descriptor = getattr(ctx, "shield_descriptor", None)
-        if descriptor is None:
-            descriptor = getattr(ctx, "counter_shield", None)
-        register = getattr(fighter, "register_counter_shield", None)
-        if descriptor is None or not callable(register):
-            return False
-        register(descriptor)
-        # Native contact, not this command cue, enters ground_hit/air_hit.
-        return True
+        # ftMs_SpecialLw_Anim arms MarsAttributes::x64, and
+        # ftMs_SpecialLw_80139140 enters 370/372 only after shield contact.
+        return False
 
 
 

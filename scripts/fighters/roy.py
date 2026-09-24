@@ -49,6 +49,14 @@ class DoubleEdgeDance(EmblemSideSpecial):
     air_4_neutral = source_phase(365)
     air_4_down = source_phase(366)
 
+    # ftMs_SpecialS4_IASA is empty for terminal fourth-strike motions.
+    _phase_select_actions = (
+        ground_start, ground_2_up, ground_2_down,
+        ground_3_up, ground_3_neutral, ground_3_down,
+        air_start, air_2_up, air_2_down,
+        air_3_up, air_3_neutral, air_3_down,
+    )
+
     @staticmethod
     def _ab_pressed(ctx) -> bool:
         input_state = getattr(ctx, "input", None)
@@ -60,9 +68,9 @@ class DoubleEdgeDance(EmblemSideSpecial):
 
     @on.input_pressed(Button.A, Button.B)
     def input_pressed(self, fighter, ctx) -> bool:
-        if fighter.action in self._active_actions():
+        if fighter.action in self._phase_select_actions:
             return self.choose_phase(fighter, ctx) if self._ab_pressed(ctx) else False
-        return super().input_pressed(fighter, ctx)
+        return False
 
     def choose_phase(self, fighter, ctx) -> bool:
         if fighter.action not in self._active_actions() or not self._ab_pressed(ctx):
@@ -137,10 +145,24 @@ class Blazer(EmblemUpSpecial):
         angle = float(maximum) * (abs(horizontal) - threshold) / denominator
         angle = math.radians(angle if horizontal < 0.0 else -angle)
         previous = float(getattr(fighter, "lstick_angle", 0.0))
-        if abs(angle) <= abs(previous):
-            return False
-        fighter.lstick_angle = angle
-        return True
+        changed = False
+        if abs(angle) > abs(previous):
+            fighter.lstick_angle = angle
+            changed = True
+
+        # ftCheckThrowB3 independently gates the source facing turn. Keep
+        # this branch guarded for hosts that do not project fighter.facing.
+        turn_threshold = getattr(
+            attributes, "specialhi_turn_threshold", getattr(attributes, "x30", None)
+        )
+        facing = getattr(fighter, "facing", None)
+        if fighter.throw_flags_b3 and turn_threshold is not None and facing is not None:
+            if abs(horizontal) > float(turn_threshold):
+                target = 1.0 if horizontal > 0.0 else -1.0
+                if float(facing) != target:
+                    fighter.facing = target
+                    changed = True
+        return changed
 
     @on.animation_end(ground, air)
     def enter_fall_special(self, fighter, ctx) -> bool:
@@ -166,19 +188,10 @@ class Counter(EmblemDownSpecial):
 
     @on.command_changed(1, actions=(ground, air))
     def command_changed(self, fighter, ctx) -> bool:
-        """Arm the shared Counter hit phase when its native cue fires."""
-        event = getattr(ctx, "event", None)
-        if getattr(event, "value", 0) != 1:
-            return False
-        descriptor = getattr(ctx, "shield_descriptor", None)
-        if descriptor is None:
-            descriptor = getattr(ctx, "counter_shield", None)
-        register = getattr(fighter, "register_counter_shield", None)
-        if descriptor is None or not callable(register):
-            return False
-        register(descriptor)
-        # Native contact, not this command cue, enters ground_hit/air_hit.
-        return True
+        """Leave Counter capture and hit-phase entry to native callbacks."""
+        # ftMs_SpecialLw_Anim arms MarsAttributes::x64, and
+        # ftMs_SpecialLw_80139140 enters 370/372 only after shield contact.
+        return False
 
 
 class Roy(Fighter):

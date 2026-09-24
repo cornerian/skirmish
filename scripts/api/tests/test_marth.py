@@ -138,7 +138,7 @@ class MarthSpecialTests(unittest.TestCase):
         self.assertIs(fighter.action, move.ground_2_up)
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
 
-    def test_dancing_blade_rejects_single_button_and_exports_atomic_chord(self):
+    def test_dancing_blade_accepts_single_button_and_exports_either_button(self):
         move = self.marth.specials.side
 
         class Input:
@@ -156,15 +156,15 @@ class MarthSpecialTests(unittest.TestCase):
                 action_state=SimpleNamespace(command=(0, 0, 0, 0)),
             )
             context = SimpleNamespace(input=Input(buttons))
-            self.assertFalse(move.input_pressed(fighter, context))
-            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+            self.assertTrue(move.input_pressed(fighter, context))
+            self.assertEqual(fighter.action_state.command, (0, 1, 0, 0))
 
         binding = next(
             event for event in move.events()
             if event.hook.value == "input_pressed"
         )
         self.assertEqual(binding.buttons, 0x300)
-        self.assertTrue(binding.buttons_all)
+        self.assertFalse(binding.buttons_all)
 
     def test_dancing_blade_accepts_native_button_mask_fallback(self):
         move = self.marth.specials.side
@@ -177,6 +177,29 @@ class MarthSpecialTests(unittest.TestCase):
         )
         self.assertTrue(move.choose_phase(fighter, context))
         self.assertEqual(fighter.action_state.command, (0, 1, 0, 0))
+
+    def test_dancing_blade_terminal_phases_ignore_button_input(self):
+        move = self.marth.specials.side
+        for action in (
+            move.ground_4_up, move.ground_4_neutral, move.ground_4_down,
+            move.air_4_up, move.air_4_neutral, move.air_4_down,
+        ):
+            fighter = SimpleNamespace(
+                action=action,
+                action_state=SimpleNamespace(command=(0, 0, 0, 0)),
+            )
+            context = SimpleNamespace(
+                input=SimpleNamespace(pressed_buttons=0x100, stick=(0.0, 0.0))
+            )
+            self.assertFalse(move.input_pressed(fighter, context))
+            self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+
+    def test_counter_command_waits_for_native_contact(self):
+        move = self.marth.specials.down
+        fighter = SimpleNamespace(action=move.ground)
+        context = SimpleNamespace(event=SimpleNamespace(value=1))
+        self.assertFalse(move.command_changed(fighter, context))
+        self.assertIs(fighter.action, move.ground)
 
 if __name__ == "__main__":
     unittest.main()
