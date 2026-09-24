@@ -88,6 +88,28 @@ class Pichu(Fighter):
     specials = ELECTRIC_SPECIALS
 
 
+def up_special_effect_offset(
+    random_x: float = 0.0,
+    random_y: float = 0.0,
+    *,
+    aerial: bool = False,
+    terminal: bool = False,
+) -> None:
+    """Return Pichu's up-special effect offset.
+
+    ``ftPk_SpecialHiStart1_Anim`` and
+    ``ftPk_SpecialAirHiStart1_Anim`` both guard their terminal and
+    intermediate ``efSync_Spawn(1012)`` branches with
+    ``fp->kind != FTKIND_PICHU``.  Pichu therefore emits no effect in either
+    phase; the arguments mirror the shared callback boundary so callers do
+    not need a separate kind check.  Random samples are intentionally
+    accepted and ignored because the native branch never consumes them for
+    Pichu.
+    """
+    del random_x, random_y, aerial, terminal
+    return None
+
+
 __all__ = [
     "Pichu",
     "PichuParameters",
@@ -95,4 +117,5 @@ __all__ = [
     "QuickAttack",
     "Agility",
     "Thunder",
+    "up_special_effect_offset",
 ]

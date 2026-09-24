@@ -15,7 +15,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
 
 from fighter import Action, ArticleId, Button, export_definition
 from fighters.pikachu import Pikachu
-from fighters.pichu import Pichu, PichuParameters
+from fighters.pichu import Pichu, PichuParameters, up_special_effect_offset
 
 
 class _Fighter:
@@ -191,6 +191,18 @@ class PichuTests(unittest.TestCase):
         for behavior in self.definition["behaviors"]:
             callbacks = behavior.get("callbacks", [])
             self.assertFalse(any("spawn" in callback["callback"] for callback in callbacks))
+
+    def test_up_special_effect_is_suppressed_at_both_source_callback_boundaries(self):
+        for aerial in (False, True):
+            for terminal in (False, True):
+                self.assertIsNone(
+                    up_special_effect_offset(
+                        random_x=0.99,
+                        random_y=0.01,
+                        aerial=aerial,
+                        terminal=terminal,
+                    )
+                )
 
 
 if __name__ == "__main__":
