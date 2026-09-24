@@ -146,6 +146,17 @@ class PikachuScriptTests(unittest.TestCase):
             self.assertEqual(skull_bash_command_transition(source, 1), destination)
         self.assertIsNone(skull_bash_command_transition(Thunder.ground_end, 1))
 
+    def test_skull_bash_command_accepts_roster_bound_source_actions(self):
+        """Match the native command callback after source roster binding."""
+        for source, destination in (
+            ("Source.13:360", "Source.13:362"),
+            ("Source.13:361", "Source.13:362"),
+            ("Source.13:364", "Source.13:366"),
+            ("Source.13:365", "Source.13:366"),
+        ):
+            self.assertEqual(skull_bash_command_transition(source, 1), destination)
+        self.assertIsNone(skull_bash_command_transition("Source.13:362", 1))
+
     def test_quick_attack_effect_matches_source_jitter_and_pichu_gate(self):
         self.assertEqual(
             quick_attack_effect_offset(0.0, 1.0),

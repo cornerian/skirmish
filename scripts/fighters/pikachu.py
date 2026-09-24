@@ -150,11 +150,55 @@ SKULL_BASH_COMMAND_ENDS = {
 }
 
 
+def _source_state(action) -> int | None:
+    """Read a source state from an authored or roster-bound action.
+
+    Authoring callbacks receive ``SourceAction``/``ActionDescriptor`` values
+    before roster binding, while native hosts may call the same callback with
+    a qualified wire value such as ``Source.13:360``.  The source callback is
+    keyed by the numeric motion state, so accepting both forms keeps the
+    transition stable at that ABI boundary.
+    """
+    state = getattr(action, "slippi_state", None)
+    if isinstance(state, int) and not isinstance(state, bool):
+        return state
+    descriptor = getattr(action, "action", action)
+    state = getattr(descriptor, "slippi_state", None)
+    if isinstance(state, int) and not isinstance(state, bool):
+        return state
+    if isinstance(descriptor, int) and not isinstance(descriptor, bool):
+        return descriptor
+    if isinstance(descriptor, str):
+        value = descriptor.rsplit(":", 1)[-1]
+        if value.isdecimal():
+            return int(value)
+    return None
+
+
 def skull_bash_command_transition(action, command_value):
-    """Return Skull Bash's terminal phase when native command 0 is nonzero."""
+    """Return Skull Bash's terminal phase when native command 0 is nonzero.
+
+    ``ftPk_SpecialLwLoop{0,1}_Anim`` checks command variable 0 before the
+    Thunder contact path and enters the matching ground or aerial end phase.
+    """
     if not command_value:
         return None
-    return SKULL_BASH_COMMAND_ENDS.get(action)
+    destination = SKULL_BASH_COMMAND_ENDS.get(action)
+    if destination is not None:
+        return destination
+    state = _source_state(action)
+    destination_state = {
+        360: 362,
+        361: 362,
+        364: 366,
+        365: 366,
+    }.get(state)
+    if destination_state is None:
+        return None
+    if isinstance(action, str):
+        prefix = action.rsplit(":", 1)[0] if ":" in action else "Source"
+        return f"{prefix}:{destination_state}"
+    return destination_state
 
 
 # Keep the names aligned with the symbols in ``ftpikachu.c``.  A tuple rather
