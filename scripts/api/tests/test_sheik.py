@@ -17,9 +17,11 @@ from fighters.sheik import Chain, Needles, Sheik, Transform, Vanish  # noqa: E40
 
 
 class _Input:
-    def __init__(self, *, pressed: bool = True, buttons=(Button.B,)):
+    def __init__(self, *, pressed: bool = True, buttons=(Button.B,), held=None):
         self.pressed = pressed
         self.buttons = set(buttons)
+        if held is not None:
+            self.held_buttons = set(held)
         self.stick = (0.0, 0.0)
 
     def just_pressed(self, button):
@@ -40,9 +42,9 @@ class _Fighter:
         self.action = action
 
 
-def _context(*, ground: bool = True, resource: bool = True, buttons=(Button.B,)):
+def _context(*, ground: bool = True, resource: bool = True, buttons=(Button.B,), held=None):
     return SimpleNamespace(
-        input=_Input(buttons=buttons),
+        input=_Input(buttons=buttons, held=held),
         resource=lambda path: object() if resource else None,
         ground_open=ground,
         air_open=not ground,
@@ -122,6 +124,16 @@ class SheikTests(unittest.TestCase):
             fighter, _context(buttons=(Button.L,)),
         ))
         self.assertIs(fighter.action, move.ground_start)
+
+    def test_needles_release_wins_over_same_frame_shoulder_cancel(self):
+        """Native IASA checks !held B before its LR cancel branch."""
+        move = Needles()
+        fighter = _Fighter(move.ground_loop)
+        self.assertTrue(move.input_pressed(
+            fighter,
+            _context(buttons=(Button.L,), held=(Button.L,)),
+        ))
+        self.assertIs(fighter.action, move.ground_end)
 
     def test_chain_release_latches_without_bypassing_native_minimum_frame(self):
         move = Chain()

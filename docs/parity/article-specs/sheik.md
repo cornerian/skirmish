@@ -49,6 +49,12 @@ reflection, shield-bounce, and hit-shield callbacks are the native functions
 `it_2725_Logic109_DmgReceived`, `it_2725_Logic109_Reflected`,
 `it_2725_Logic109_ShieldBounced`, and `it_2725_Logic109_HitShield`.
 
+`ftSk_SpecialNLoop_IASA` tests whether B is still held before testing the
+shoulder cancel bit.  A frame that releases B while also pressing L/R enters
+the matching end phase and shoots; L/R cancels only while B remains held.  The
+Python input adapter preserves this ordering when the host exposes its
+held-button view.
+
 ## Chain
 
 `ftSk_SpecialS_CheckInitChain` calls `itSeakChain_Spawn` at the source

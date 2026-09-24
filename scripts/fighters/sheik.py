@@ -14,6 +14,16 @@ from skirmish import (
 )
 
 
+def _button_held(ctx: Any, button: Button) -> bool:
+    """Read the host held-button view, preserving legacy event contexts."""
+    held = getattr(getattr(ctx, "input", None), "held_buttons", None)
+    if held is None:
+        return True
+    if isinstance(held, (tuple, list, set, frozenset)):
+        return button in held
+    return bool(held)
+
+
 class SheikActionState(ActionState):
     """Small script-visible latch mirrored by the native chain IASA.
 
@@ -59,6 +69,16 @@ class Needles(NeutralSpecial, DirectionalSpecial):
                 self.air_loop: self.air_cancel,
             }.get(fighter.action)
             if destination is not None:
+                # ftSk_SpecialN{,AirN}Loop_IASA checks !held B first.  A
+                # frame containing both B release and LR press therefore
+                # shoots the charged needles instead of cancelling.
+                if not _button_held(ctx, Button.B):
+                    end = {
+                        self.ground_loop: self.ground_end,
+                        self.air_loop: self.air_end,
+                    }[fighter.action]
+                    fighter.change_action(end)
+                    return True
                 fighter.change_action(destination)
                 return True
         if callable(just_pressed) and not just_pressed(Button.B):
