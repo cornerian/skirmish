@@ -20,28 +20,36 @@ from fighters.falco import Falco
 
 
 class FoxBlasterTests(unittest.TestCase):
-    def test_blaster_entry_clears_source_planar_velocity_on_ground_and_air(self):
+    def test_blaster_entry_clears_source_ground_velocity_but_preserves_air_momentum(self):
         move = Fox.specials.neutral
 
-        for phase in (move.ground_start, move.air_start):
-            fighter = SimpleNamespace(
-                action=phase,
-                action_state=SimpleNamespace(
-                    command=(7, 6, 5, 4),
-                    repeat_armed=True,
-                    fire_pending=True,
-                ),
-                ground_velocity=3.5,
-                velocity=[2.0, -1.0],
-            )
-            fighter.set_velocity = lambda x, y: setattr(
-                fighter, "velocity", [x, y]
-            )
+        ground = SimpleNamespace(
+            action=move.ground_start,
+            action_state=SimpleNamespace(
+                command=(7, 6, 5, 4), repeat_armed=True, fire_pending=True
+            ),
+            ground_velocity=3.5,
+            velocity=[2.0, -1.0],
+        )
+        ground.set_velocity = lambda x, y: setattr(ground, "velocity", [x, y])
+        move.enter(ground, SimpleNamespace())
+        self.assertEqual(ground.ground_velocity, 0.0)
+        self.assertEqual(ground.velocity, [0.0, 0.0])
 
-            move.enter(fighter, SimpleNamespace())
+        air = SimpleNamespace(
+            action=move.air_start,
+            action_state=SimpleNamespace(
+                command=(7, 6, 5, 4), repeat_armed=True, fire_pending=True
+            ),
+            ground_velocity=3.5,
+            velocity=[2.0, -1.0],
+        )
+        air.set_velocity = lambda x, y: setattr(air, "velocity", [x, y])
+        move.enter(air, SimpleNamespace())
+        self.assertEqual(air.ground_velocity, 3.5)
+        self.assertEqual(air.velocity, [2.0, -1.0])
 
-            self.assertEqual(fighter.ground_velocity, 0.0)
-            self.assertEqual(fighter.velocity, [0.0, 0.0])
+        for fighter in (ground, air):
             self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
             self.assertFalse(fighter.action_state.repeat_armed)
             self.assertFalse(fighter.action_state.fire_pending)
