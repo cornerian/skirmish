@@ -224,7 +224,7 @@ fn bundled_module_remains_rooted_after_sys_modules_eviction_and_gc() {
         .unwrap()
         .materialize(&root)
         .unwrap();
-    let source = "import known\nimport sys\ndef evict(value):\n    known.value = [41]\n    del sys.modules['known']\n    import gc\n    gc.collect()\n    return 0\ndef read(value):\n    return known.value[0]\n";
+    let source = "import known\nimport sys\nimport gc\ndef evict(value):\n    known.value = [41]\n    del sys.modules['known']\n    gc.collect()\n    return 0\ndef read(value):\n    return known.value[0]\n";
     let mut program = Program::new(source, "scope-eviction-main.py", ["evict", "read"])
         .prepare_for_thread_in_bundle(&bundle)
         .unwrap();
