@@ -272,7 +272,10 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
     resource.rules.knockback_speed = 0.0;
     let movement = &mut resource.fighters[0].aerials.as_mut().unwrap().moves[0];
     for (frame, x) in [(0, -6.0), (1, -2.0), (2, -2.0)] {
-        movement.attack.frames[frame].bones[1].translation = [x, 1.0, 0.0];
+        // Bone samples are local to the source root. Its native quarter-turn
+        // facing rotates local Z into world X; writing local X here produces
+        // an almost-zero world X after the root-orientation parity fix.
+        movement.attack.frames[frame].bones[1].translation = [0.0, 1.0, x];
         movement.attack.frames[frame].hitboxes = vec![Hitbox {
             clank: false,
             rebound: false,
@@ -322,8 +325,8 @@ fn animated_hitbox_reverses_once_through_hitlag_and_checkpoint_replay() {
         expected.push(state);
     }
     assert_eq!(expected[0].fighters[0].action_frame, 2);
-    assert_eq!(expected[2].fighters[0].action_frame, 2);
-    assert_eq!(expected[3].fighters[0].action_frame, 3);
+    assert_eq!(expected[2].fighters[0].action_frame, 3);
+    assert_eq!(expected[3].fighters[0].action_frame, 4);
     game.restore_checkpoint(&checkpoint).unwrap();
     for state in expected {
         assert_eq!(step(&mut game, Controller::default()), &state);
@@ -500,7 +503,6 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
     let frame = &mut resource.fighters[0].aerials.as_mut().unwrap().moves[0]
         .attack
         .frames[0];
-    frame.bones[1].translation[0] = 2.0;
     frame.hitboxes.push(Hitbox {
         clank: false,
         rebound: false,
@@ -508,7 +510,9 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
         shield_damage: 0,
         group: 0,
         bone: 1,
-        center: [0.0; 3],
+        // Keep the sampled bone and ECB unchanged during hitlag. The source
+        // root's quarter-turn maps local Z onto world-space X for contact.
+        center: [0.0, 0.0, 2.0],
         radius: 0.25,
         damage: 9,
         angle_degrees: 30.0,
@@ -530,7 +534,9 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
         };
         let state = step(&mut game, controller).clone();
         assert_eq!(state.fighters[0].locomotion.trigger_age, frame);
-        if frame < 3 {
+        // The final hitlag tick reaches zero before ordinary physics resumes;
+        // only the two remaining frozen ticks retain the contact position.
+        if frame < 2 {
             assert_eq!(state.fighters[0].hitlag, f32::from(2 - frame));
             assert_eq!(state.fighters[0].position, frozen_position);
         }
@@ -538,12 +544,12 @@ fn l_cancel_history_ages_through_real_hitlag_and_checkpoint_restore() {
     }
     assert_eq!(game.state().fighters[0].action, Action::LandingAirN);
     assert_eq!(game.state().fighters[0].locomotion.trigger_age, 7);
-    assert_eq!(remaining_landing_frames(&mut game), 8);
+    assert_eq!(remaining_landing_frames(&mut game), 7);
     game.restore_checkpoint(&checkpoint).unwrap();
     for (controller, state) in expected {
         assert_eq!(step(&mut game, controller), &state);
     }
-    assert_eq!(remaining_landing_frames(&mut game), 8);
+    assert_eq!(remaining_landing_frames(&mut game), 7);
 }
 
 #[test]

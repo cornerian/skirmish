@@ -26,7 +26,7 @@ gameplay-affecting effects must retain their simulation semantics. See
 `docs/resources.md` for the consumer requirements; the final export layout is
 owned by the resource task.
 
-- Upstream source: `../../External/melee` relative to this project, or the path
+- Upstream source: `../../../External/melee` relative to this project, or the path
   passed to `skirmish inventory`. Revision is recorded in `upstream.lock.json`.
 - Do not introduce disc/executable dependencies. Reference C snapshots are
   small test fixtures only. Preserve their exact contents and provenance.

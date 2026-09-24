@@ -192,6 +192,14 @@ pub(crate) fn sample(
 ) -> Result<(), Error> {
     let mut next = [None; 4];
     if let Some(frame) = frame {
+        // Native Fighter stores hit capsules in the fixed four-slot x914
+        // array. Reject malformed resources before indexing the equivalent
+        // inline cache instead of panicking on a fifth hitbox.
+        if frame.hitboxes.len() > next.len() {
+            return Err(Error::Data(
+                "attack frame exceeds native four-hitbox capacity".into(),
+            ));
+        }
         for (slot, hit) in frame.hitboxes.iter().enumerate() {
             let scaled = scale(hit.damage as f32);
             if !scaled.is_finite() || scaled < 0.0 {
@@ -221,4 +229,35 @@ pub(crate) fn sample(
     }
     state.hits = next;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{State, sample};
+    use crate::game::data::AttackFrame;
+
+    #[test]
+    fn sample_rejects_more_than_native_four_hitbox_slots() {
+        let frame: AttackFrame = serde_json::from_value(serde_json::json!({
+            "bones": [],
+            "hitboxes": (0..5)
+                .map(|group| serde_json::json!({
+                    "group": group,
+                    "bone": 0,
+                    "center": [0.0, 0.0, 0.0],
+                    "radius": 1.0,
+                    "damage": 1,
+                    "angle_degrees": 45.0,
+                    "growth": 0,
+                    "fixed": 0,
+                    "base": 0,
+                }))
+                .collect::<Vec<_>>(),
+        }))
+        .expect("four-slot overflow fixture");
+
+        let error = sample(&mut State::default(), Some(&frame), None, |damage| damage)
+            .expect_err("fifth native hitbox must be rejected");
+        assert!(error.to_string().contains("four-hitbox capacity"));
+    }
 }

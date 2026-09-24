@@ -25,6 +25,10 @@ pub(crate) struct CallbackSelector {
     pub marker: Option<String>,
     pub countdown: Option<String>,
     pub buttons: Option<u16>,
+    /// Button masks use overlap semantics by default.  Native callers that
+    /// explicitly require a chord set this flag after resolving the binding;
+    /// keeping it separate preserves existing B/L/R style selectors.
+    pub buttons_all: bool,
     pub command_index: Option<u8>,
     pub deadline: Option<u32>,
     pub event_id: Option<u8>,
@@ -61,6 +65,7 @@ impl CallbackSelector {
             marker: binding.marker.clone(),
             countdown: binding.countdown.clone(),
             buttons: binding.buttons,
+            buttons_all: false,
             command_index: binding.command_index,
             deadline: binding.deadline,
             event_id: binding.event_id,
@@ -131,7 +136,7 @@ pub(crate) fn matches(
         let Some(buttons) = event.get(field).and_then(Value::as_u64) else {
             return false;
         };
-        if buttons & u64::from(mask) == 0 {
+        if !button_mask_matches(buttons, mask, selector.buttons_all) {
             return false;
         }
     }
@@ -164,6 +169,19 @@ pub(crate) fn matches(
         }
     }
     true
+}
+
+/// Match a button selector without changing the historical default.  A
+/// normal selector fires when any requested button is present; a chord
+/// selector requires every requested bit and is useful for source branches
+/// such as Melee's A+B Dancing Blade phase chooser.
+fn button_mask_matches(pressed: u64, required: u16, require_all: bool) -> bool {
+    let pressed = pressed & u64::from(required);
+    if require_all {
+        pressed == u64::from(required)
+    } else {
+        pressed != 0
+    }
 }
 
 fn action_matches(
@@ -251,6 +269,7 @@ mod tests {
             countdown_phase: crate::game::script::action_events::CountdownPhase::Physics,
             actions: Vec::new(),
             buttons: None,
+            buttons_all: false,
             command_index: None,
             deadline: None,
             event_id: None,
@@ -306,6 +325,51 @@ mod tests {
             Hook::CommandTraceChanged,
             &selector,
             &json!({"event":{"command_index":2}}),
+            Some(Action::Wait),
+            None,
+        ));
+    }
+
+    #[test]
+    fn button_chord_mode_requires_every_bit_without_changing_overlap_mode() {
+        let chord = crate::game::BUTTON_A | crate::game::BUTTON_B;
+        assert!(button_mask_matches(u64::from(chord), chord, true));
+        assert!(!button_mask_matches(
+            u64::from(crate::game::BUTTON_A),
+            chord,
+            true
+        ));
+        assert!(!button_mask_matches(
+            u64::from(crate::game::BUTTON_B),
+            chord,
+            true
+        ));
+        assert!(button_mask_matches(
+            u64::from(crate::game::BUTTON_A),
+            chord,
+            false
+        ));
+        assert!(button_mask_matches(
+            u64::from(crate::game::BUTTON_B),
+            chord,
+            false
+        ));
+
+        let mut binding = binding(Hook::InputPressed);
+        binding.buttons = Some(chord);
+        let mut selector = CallbackSelector::from_binding(&binding).unwrap();
+        selector.buttons_all = true;
+        assert!(matches(
+            Hook::InputPressed,
+            &selector,
+            &json!({"event":{"pressed":chord}}),
+            Some(Action::Wait),
+            None,
+        ));
+        assert!(!matches(
+            Hook::InputPressed,
+            &selector,
+            &json!({"event":{"pressed":crate::game::BUTTON_A}}),
             Some(Action::Wait),
             None,
         ));

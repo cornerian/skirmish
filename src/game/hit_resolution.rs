@@ -18,7 +18,7 @@ fn should_apply_hitlag(patch: &script::HitPatch) -> bool {
     // The native path keys hitlag from x183C_applied, which is set only when
     // this contact actually applied percent. A script that suppresses damage
     // must therefore not leave the native damage hitlag behind.
-    patch.apply_damage && patch.apply_hitlag && patch.damage as i32 > 0
+    patch.apply_damage && patch.apply_hitlag && shield::environment_damage(patch.damage) > 0
 }
 
 // The original damage transition assigns/merges launch velocity before hitlag,
@@ -194,10 +194,11 @@ pub(crate) fn prepare_hit(
             hurt_height,
         )
     });
-    let attacker_hitlag = combat::hitlag(staled.damage as i32, false, 1.0, &rules.hitlag.physics())
-        .map_err(physics)?;
+    let environment_damage = shield::environment_damage(staled.damage);
+    let attacker_hitlag =
+        combat::hitlag(environment_damage, false, 1.0, &rules.hitlag.physics()).map_err(physics)?;
     let hitlag = combat::hitlag(
-        staled.damage as i32,
+        environment_damage,
         matches!(target.action, Action::Squat | Action::SquatWait),
         1.0,
         &rules.hitlag.physics(),
@@ -413,10 +414,11 @@ pub(crate) fn resolve_prepared_hit(
             hurt_height,
         )
     });
-    let attacker_hitlag = combat::hitlag(patch.damage as i32, false, 1.0, &rules.hitlag.physics())
-        .map_err(physics)?;
+    let environment_damage = shield::environment_damage(patch.damage);
+    let attacker_hitlag =
+        combat::hitlag(environment_damage, false, 1.0, &rules.hitlag.physics()).map_err(physics)?;
     let hitlag = combat::hitlag(
-        patch.damage as i32,
+        environment_damage,
         matches!(target.action, Action::Squat | Action::SquatWait),
         1.0,
         &rules.hitlag.physics(),
@@ -749,6 +751,19 @@ mod tests {
             knockback: 0.0,
             ..HitPatch::default()
         };
+        assert!(should_apply_hitlag(&patch));
+    }
+
+    #[test]
+    fn fractional_damage_uses_native_environment_damage_for_hitlag() {
+        let patch = HitPatch {
+            damage: 0.5,
+            knockback: 0.0,
+            ..HitPatch::default()
+        };
+        // ftcoll's getEnvDmg promotes every nonzero sub-integer damage value
+        // to one before Fighter_ProcessHit computes hitlag.
+        assert_eq!(crate::fighter::shield::environment_damage(patch.damage), 1);
         assert!(should_apply_hitlag(&patch));
     }
 

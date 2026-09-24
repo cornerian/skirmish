@@ -294,6 +294,7 @@ pub(crate) fn resolve(
     f.contacts = [None; 4];
     f.edge_contact = None;
     let mut responded = false;
+    let has_surface_contact_hook = has_surface_contact_hook(data);
     for step in 0..plan.steps {
         f.ecb
             .interpolate(1.0 / (plan.steps - step) as f32)
@@ -303,6 +304,11 @@ pub(crate) fn resolve(
         let mut wall_positions = [None; 2];
         let mut ceiling_position = None;
         let mut surface_contacts = [None; 2];
+        // Keep wall and ceiling contacts for the script SurfaceContact hook
+        // even when native damage response does not claim them. Captain's
+        // `ftCa_SpecialLw_Coll` is one such path: its wall rebound is a
+        // special callback, not a tech/reflect response.
+        let mut script_surface_contacts = [None; 2];
         for (surface, slot, old, point) in [
             (
                 Surface::LeftWall,
@@ -364,6 +370,9 @@ pub(crate) fn resolve(
                 } else {
                     ceiling_position = Some(f.position[1]);
                 }
+                let script_candidate =
+                    &mut script_surface_contacts[usize::from(surface == Surface::Ceiling)];
+                script_candidate.get_or_insert((surface, normal, line_id));
                 let response_eligible = !responded
                     && (crate::fighter::damage::can_surface_tech(f, surface, &rules.damage)
                         || crate::fighter::damage::can_reflect(f, surface, &rules.damage)
@@ -568,24 +577,29 @@ pub(crate) fn resolve(
             f.ecb
                 .squeeze_vertical(&mut f.position, false, after_ceiling, after_floor);
         }
-        if !f.grounded && !responded && crate::fighter::specials::wants_redirect(f.action, data) {
-            let [wall, ceiling] = surface_contacts;
-            // `ftFx_SpecialAirHi_Coll`'s own non-ground branch: a single
-            // hook decides both candidates together (ceiling checked
-            // first, then whichever wall, matching the source's own
-            // do-while order internally) rather than this file's own
-            // per-candidate tech/reflect loop below, since only one move
-            // (today) ever wants this and its own angle gate needs both
-            // contacts available at once.
+        if should_dispatch_surface_contact(
+            f.grounded,
+            responded,
+            has_surface_contact_hook,
+            script_surface_contacts,
+        ) {
+            let [wall, ceiling] = script_surface_contacts;
+            // A single hook decides both candidates together (ceiling checked
+            // first, then whichever wall), matching source special collision
+            // routines such as `ftCa_SpecialLw_Coll`. Native damage
+            // tech/reflect handling below still owns contacts the hook does
+            // not consume.
             let strip_surface =
                 |c: Option<(Surface, [f32; 3], usize)>| c.map(|(_, normal, line)| (normal, line));
-            if crate::fighter::specials::air_contact(
-                f,
-                data,
-                rules,
-                strip_surface(ceiling),
-                strip_surface(wall),
-            )? {
+            if (wall.is_some() || ceiling.is_some())
+                && crate::fighter::specials::air_contact(
+                    f,
+                    data,
+                    rules,
+                    strip_surface(ceiling),
+                    strip_surface(wall),
+                )?
+            {
                 responded = true;
             }
         }
@@ -951,6 +965,26 @@ fn physics(error: impl core::fmt::Display) -> Error {
     Error::Physics(error.to_string())
 }
 
+fn has_surface_contact_hook(data: &FighterData) -> bool {
+    data.script_resources
+        .get()
+        .and_then(|cache| cache.program())
+        .is_some_and(|program| {
+            program
+                .has_hook(crate::game::script::Hook::SurfaceContact)
+                .unwrap_or(false)
+        })
+}
+
+fn should_dispatch_surface_contact(
+    grounded: bool,
+    responded: bool,
+    has_hook: bool,
+    contacts: [Option<(Surface, [f32; 3], usize)>; 2],
+) -> bool {
+    !grounded && !responded && has_hook && contacts.iter().any(Option::is_some)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -983,6 +1017,35 @@ mod tests {
             flags: stage::ENABLED | kind,
             ..stage::Line::default()
         }
+    }
+
+    #[test]
+    fn surface_hook_dispatch_accepts_special_contact_without_redirect_metadata() {
+        let wall = (Surface::LeftWall, [-1.0, 0.0, 0.0], 7);
+        assert!(should_dispatch_surface_contact(
+            false,
+            false,
+            true,
+            [Some(wall), None]
+        ));
+        assert!(!should_dispatch_surface_contact(
+            false,
+            false,
+            false,
+            [Some((Surface::LeftWall, [-1.0, 0.0, 0.0], 7)), None]
+        ));
+        assert!(!should_dispatch_surface_contact(
+            true,
+            false,
+            true,
+            [Some((Surface::LeftWall, [-1.0, 0.0, 0.0], 7)), None]
+        ));
+        assert!(!should_dispatch_surface_contact(
+            false,
+            true,
+            true,
+            [Some((Surface::LeftWall, [-1.0, 0.0, 0.0], 7)), None]
+        ));
     }
 
     #[test]

@@ -645,7 +645,15 @@ impl Dispatcher {
     pub fn dispatch(&self, event: &Event) -> Vec<SubscriptionId> {
         self.subscriptions
             .get(&event.kind())
-            .map(|ids| ids.iter().copied().collect())
+            // Deserialized rollback data is untrusted at this boundary.  A
+            // malformed table may contain an ID in a kind bucket without a
+            // corresponding owner record; never route such an orphan.
+            .map(|ids| {
+                ids.iter()
+                    .filter(|id| self.owners.contains_key(id))
+                    .copied()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -726,6 +734,31 @@ mod tests {
         assert!(dispatcher.is_empty());
         assert!(dispatcher.dispatch(&event).is_empty());
         assert_eq!(dispatcher.next_id, u64::MAX);
+    }
+
+    #[test]
+    fn dispatch_drops_deserialized_orphan_subscription_ids() {
+        let owner = OwnerId::new(7);
+        let valid = SubscriptionId(1);
+        let orphan = SubscriptionId(2);
+        let mut ids = BTreeSet::new();
+        ids.insert(valid);
+        ids.insert(orphan);
+        let mut subscriptions = BTreeMap::new();
+        subscriptions.insert(EventKind::InputPressed, ids);
+        let mut owners = BTreeMap::new();
+        owners.insert(valid, owner);
+        let dispatcher = Dispatcher {
+            subscriptions,
+            owners,
+            next_id: 3,
+        };
+        let event = Event::InputPressed {
+            frame: 1,
+            player: 0,
+            buttons: 1,
+        };
+        assert_eq!(dispatcher.dispatch(&event), vec![valid]);
     }
 
     #[test]

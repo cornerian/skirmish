@@ -65,6 +65,12 @@ impl EffectState {
     /// effect family before replacing it, without requiring callers to retain
     /// every individual handle.
     pub fn clear_resource(&mut self, resource: &str) -> usize {
+        // Native effect cleanup callbacks often run when the effect was
+        // never created (for example, a special ending before its accessory
+        // cue). Avoid scanning the ownership list in that common no-op case.
+        if self.owned.is_empty() || resource.is_empty() {
+            return 0;
+        }
         let before = self.owned.len();
         self.owned.retain(|effect| effect.resource != resource);
         before - self.owned.len()
@@ -148,5 +154,16 @@ mod tests {
         assert_eq!(state.owned[0].resource, "effects/pk-thunder-trail");
         assert_eq!(state.clear_resource("effects/missing"), 0);
         assert_eq!(state.spawn("effects/replacement".into(), None), Ok(4));
+    }
+
+    #[test]
+    fn clear_resource_empty_fast_path_preserves_id_sequence() {
+        let mut state = EffectState::default();
+        assert_eq!(state.clear_resource("effects/missing"), 0);
+        assert_eq!(state.clear_resource(""), 0);
+        assert_eq!(state.spawn("effects/fireball".into(), None), Ok(1));
+        assert_eq!(state.clear_resource(""), 0);
+        assert_eq!(state.owned.len(), 1);
+        assert_eq!(state.next_id, 2);
     }
 }

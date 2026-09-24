@@ -13,7 +13,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-const MASH_BUTTONS: u32 = 0x8000_0F00;
+// `HSD_PAD_AB | HSD_PAD_XY | HSD_PAD_LR`, plus the host's logical shoulder
+// edge bit used when an analog trigger crosses its press threshold.
+const MASH_BUTTONS: u32 = 0x8000_0F60;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1923,6 +1925,19 @@ mod tests {
         assert_eq!(timer, 2.0);
         assert_eq!(state.axes, [-1, 1]);
         assert_eq!(state.shake_frame, 0);
+
+        // `ftCommon_GrabMash` includes HSD_PAD_LR in its button mask; a fresh
+        // digital shoulder press must reduce the escape timer like A/B/X/Y.
+        let mut shoulder_timer = 5.0;
+        assert!(mash(
+            &mut shoulder_timer,
+            &mut MashState::default(),
+            crate::game::BUTTON_L as u32,
+            [0.0; 2],
+            2.0,
+            0.5,
+        ));
+        assert_eq!(shoulder_timer, 3.0);
     }
 
     #[test]

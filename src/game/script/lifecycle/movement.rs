@@ -86,6 +86,9 @@ pub(crate) fn fall(movement: &mut Movement, gravity: f32, terminal: f32) -> Resu
 
 pub(crate) fn friction_air(movement: &mut Movement, friction: f32) -> Result<(), String> {
     require_finite(friction, "air friction")?;
+    if friction < 0.0 {
+        return Err("air friction must be nonnegative".into());
+    }
     movement.friction_air(friction);
     validate_native(movement)
 }
@@ -148,5 +151,17 @@ mod tests {
             assert!(fall(&mut movement, gravity, terminal).is_err());
             assert_eq!(movement, before);
         }
+    }
+
+    #[test]
+    fn friction_air_rejects_negative_deceleration_before_mutation() {
+        let mut movement = Movement {
+            self_velocity: [1.0, -0.5, 0.25],
+            ..Movement::default()
+        };
+        let before = movement;
+
+        assert!(friction_air(&mut movement, -0.2).is_err());
+        assert_eq!(movement, before);
     }
 }

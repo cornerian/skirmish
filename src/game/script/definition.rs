@@ -129,6 +129,9 @@ pub struct EventBinding {
     pub actions: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_button_mask")]
     pub buttons: Option<u16>,
+    /// Require every button in `buttons` for this callback to match.
+    #[serde(default)]
+    pub buttons_all: bool,
     #[serde(default)]
     pub command_index: Option<u8>,
     #[serde(default)]

@@ -437,6 +437,10 @@ pub struct Program {
     /// match registration can share immutable resource metadata.
     pub(crate) compiled: Option<std::sync::Arc<starlark::CompiledProgram>>,
     hook_indices: [Option<usize>; Hook::COUNT],
+    /// Hooks whose only possible callback is an unconditional root callback.
+    /// Dispatch can use this metadata to avoid building selector context on
+    /// the frame hot path.
+    fast_root_callbacks: [bool; Hook::COUNT],
     callback_bindings: [Vec<callback_routing::ResolvedCallback>; Hook::COUNT],
     /// Callback handles nested below `fighter.behaviors`.  These are indexed
     /// once at resource load; lifecycle dispatch can then select an owner by
@@ -456,6 +460,19 @@ impl PartialEq for Program {
 }
 
 impl Eq for Program {}
+
+fn is_unconditional_selector(selector: &callback_routing::CallbackSelector) -> bool {
+    selector.action.is_none()
+        && selector.actions.is_empty()
+        && selector.marker.is_none()
+        && selector.countdown.is_none()
+        && selector.buttons.is_none()
+        && !selector.buttons_all
+        && selector.command_index.is_none()
+        && selector.deadline.is_none()
+        && selector.event_id.is_none()
+        && selector.gate.is_none()
+}
 
 impl Serialize for Program {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -1528,10 +1545,12 @@ impl Program {
                     binding.callback
                 )));
             }
+            let mut selector = callback_routing::CallbackSelector::from_binding(binding)
+                .map_err(Error::Invalid)?;
+            selector.buttons_all = binding.buttons_all;
             callback_bindings[binding.hook.index()].push(callback_routing::ResolvedCallback {
                 callback: compiled.bind_callback(&binding.callback),
-                selector: callback_routing::CallbackSelector::from_binding(binding)
-                    .map_err(Error::Invalid)?,
+                selector,
             });
         }
         let behavior_bindings = manifest
@@ -1546,10 +1565,12 @@ impl Program {
                             binding.callback
                         )));
                     }
+                    let mut selector = callback_routing::CallbackSelector::from_binding(binding)
+                        .map_err(Error::Invalid)?;
+                    selector.buttons_all = binding.buttons_all;
                     result[binding.hook.index()].push(callback_routing::ResolvedCallback {
                         callback: compiled.bind_callback(&binding.callback),
-                        selector: callback_routing::CallbackSelector::from_binding(binding)
-                            .map_err(Error::Invalid)?,
+                        selector,
                     });
                 }
                 Ok(result)
@@ -1562,12 +1583,18 @@ impl Program {
                     .any(|callbacks| !callbacks[index].is_empty()))
             .then_some(index)
         });
+        let fast_root_callbacks = std::array::from_fn(|index| {
+            behavior_bindings.is_empty()
+                && callback_bindings[index].len() == 1
+                && is_unconditional_selector(&callback_bindings[index][0].selector)
+        });
         let dependency_sources = assets.dependencies(&source)?;
         Ok(Self {
             source: Arc::from(source),
             dependency_sources: Arc::new(dependency_sources),
             compiled: Some(compiled),
             hook_indices,
+            fast_root_callbacks,
             callback_bindings,
             behavior_bindings,
             metadata: Arc::new(manifest),
@@ -1743,23 +1770,33 @@ impl Program {
                 context_state.action_state,
             ));
         }
-        let context = serde_json::json!({
-            "event": {"kind": hook.name(), "action": fighter.action},
+        let fast_root = self.fast_root_callbacks[hook.index()];
+        let context = (!fast_root).then(|| {
+            serde_json::json!({
+                "event": {"kind": hook.name(), "action": fighter.action},
+            })
         });
-        let current_action = parse_action(&fighter.action);
+        let current_action = if fast_root {
+            None
+        } else {
+            parse_action(&fighter.action)
+        };
         let resource_ref = context_state.resources.as_deref();
         // Root bindings are immutable after resource load. Keep one slice for
         // both selection and the empty fast path; dispatch is a frame hot path
         // and should not repeatedly resolve the same hook index.
         let root_bindings = self.callback_bindings(None, hook);
         let selected_root = root_bindings.iter().filter(|binding| {
-            callback_routing::matches(
-                hook,
-                &binding.selector,
-                &context,
-                current_action,
-                resource_ref,
-            )
+            fast_root
+                || callback_routing::matches(
+                    hook,
+                    &binding.selector,
+                    context
+                        .as_ref()
+                        .expect("selector context for normal dispatch"),
+                    current_action,
+                    resource_ref,
+                )
         });
         let selected_behaviors = self
             .behavior_bindings
@@ -1781,7 +1818,9 @@ impl Program {
                 callback_routing::matches(
                     hook,
                     &binding.selector,
-                    &context,
+                    context
+                        .as_ref()
+                        .expect("selector context for normal dispatch"),
                     current_action,
                     resource_ref,
                 )
@@ -2178,7 +2217,7 @@ mod action_name_tests {
 
 #[cfg(test)]
 mod dispatch_guard_tests {
-    use super::{HitPatch, HitView, LocalState, neutral_script_result};
+    use super::{HitPatch, HitView, LocalState, is_unconditional_selector, neutral_script_result};
     use crate::game::script::Hook;
     use crate::game::script::callback_routing::{CallbackSelector, matches};
 
@@ -2212,6 +2251,25 @@ mod dispatch_guard_tests {
         assert_eq!(result.action_state, action_state);
         assert_eq!(result.hit, Some(baseline));
         assert!(result.commands.is_empty());
+    }
+
+    #[test]
+    fn fast_path_accepts_only_the_empty_selector() {
+        let default = CallbackSelector::default();
+        assert!(is_unconditional_selector(&default));
+
+        let mut action = default.clone();
+        action.action = Some(crate::game::Action::SpecialNStart);
+        assert!(!is_unconditional_selector(&action));
+
+        let mut button = default.clone();
+        button.buttons = Some(1);
+        assert!(!is_unconditional_selector(&button));
+
+        let mut chord = default;
+        chord.buttons = Some(3);
+        chord.buttons_all = true;
+        assert!(!is_unconditional_selector(&chord));
     }
 }
 
@@ -2280,9 +2338,12 @@ mod combat_resource_tests {
                 .expect("resource fixture builds"),
         );
         let assets = AssetStore::builtins();
-        let program =
-            Program::new_registered(include_str!("../../scripts/fighters/captain.py"), &assets)
-                .expect("Captain source and registered shared assets compile");
+        let source = include_str!("../../scripts/fighters/captain.py").replace(
+            "class CaptainFalcon(Fighter):",
+            "class CaptainFalcon(Fighter):\n    name = \"captain_falcon\"\n    external_ids = (0,)",
+        );
+        let program = Program::new_registered(source, &assets)
+            .expect("Captain source and registered shared assets compile");
         let persistent = LocalState::new();
         let action_state = LocalState::new();
         let fighter = FighterView {

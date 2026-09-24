@@ -816,9 +816,10 @@ fn optional_transform(
         })
         .transpose()?;
     match (transform, boolean) {
-        (Some(transform), Some(true)) => {
-            if transform == TrackTransform::BindingScale {
-                Ok(TrackTransform::BindingScale)
+        (Some(transform), Some(flag)) => {
+            let binding_scale = transform == TrackTransform::BindingScale;
+            if binding_scale == flag {
+                Ok(transform)
             } else {
                 Err(MotionLinkError::InvalidKeywordType {
                     constructor: constructor.to_owned(),
@@ -826,10 +827,6 @@ fn optional_transform(
                 })
             }
         }
-        (Some(_), Some(false)) => Err(MotionLinkError::InvalidKeywordType {
-            constructor: constructor.to_owned(),
-            keyword: boolean_key.to_owned(),
-        }),
         // The long-form transform and legacy boolean are aliases. Permit
         // them together when they express the same binding-scale mode.
         (Some(transform), None) => Ok(transform),
@@ -1935,6 +1932,26 @@ mod tests {
             descriptor.air.first(),
             Some(AirOperationDescriptor::VelocityTrack(track))
                 if track.x_transform == TrackTransform::BindingScale
+        ));
+    }
+
+    #[test]
+    fn absolute_transform_and_false_legacy_alias_are_accepted_together() {
+        let operation = constructor(
+            "motion.velocity_track",
+            json!({
+                "path": "motion.velocity",
+                "transform": "absolute",
+                "multiply_x_by_facing": false,
+            }),
+        );
+        let profile = constructor("motion.profile", json!({"air": [operation]}));
+        let descriptor = MotionDescriptor::from_compiled_constructor(&profile)
+            .expect("equivalent absolute aliases should agree");
+        assert!(matches!(
+            descriptor.air.first(),
+            Some(AirOperationDescriptor::VelocityTrack(track))
+                if track.x_transform == TrackTransform::Absolute
         ));
     }
 

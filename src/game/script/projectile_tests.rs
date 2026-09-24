@@ -109,6 +109,38 @@ fn typed_article_match() -> Match {
     Match::new(data, 7).expect("typed article fixture")
 }
 
+fn typed_falco_article_match() -> Match {
+    let mut data: MatchData = serde_json::from_str(FIXTURE).expect("synthetic fixture");
+    data.fighters[0].specials = Some(crate::game::script::resources::Specials {
+        character: "falco".into(),
+        special_attributes: None,
+        animations: None,
+        articles: Some(BTreeMap::from([(
+            ArticleId::FALCO_LASER,
+            ArticleResource::Ray {
+                lifetime: 100.0,
+                move_id: 37,
+                hitboxes: vec![
+                    serde_json::from_value(json!({
+                        "group": 0,
+                        "bone": 0,
+                        "center": [0.25, 0.0, 0.0],
+                        "radius": 0.5,
+                        "damage": 3,
+                        "angle_degrees": 0.0,
+                        "growth": 100,
+                        "fixed": 5,
+                        "base": 0
+                    }))
+                    .unwrap(),
+                ],
+            },
+        )])),
+        resources: crate::game::script::resources::Resources::default(),
+    });
+    Match::new(data, 7).expect("typed Falco article fixture")
+}
+
 fn typed_gravity_article_match() -> Match {
     let mut data: MatchData = serde_json::from_str(FIXTURE).expect("synthetic fixture");
     data.fighters[0].specials = Some(
@@ -312,6 +344,42 @@ fn typed_article_spawn_stages_only_numeric_compact_command() {
     );
     assert_eq!(projectile.lifetime, 18.0);
     assert_eq!(projectile.hitboxes[0].damage, 3);
+}
+
+#[test]
+fn typed_falco_laser_spawn_preserves_native_kind_and_exported_lifetime() {
+    let m = typed_falco_article_match();
+    let mut host = host_for(&m);
+    host.call(
+        "fighter.spawn_article",
+        &[
+            NativeValue::Int(i64::from(ArticleId::FALCO_LASER.0)),
+            NativeValue::List(vec![
+                NativeValue::F32(1.0),
+                NativeValue::F32(2.0),
+                NativeValue::F32(0.0),
+            ]),
+            NativeValue::F32(0.0),
+            NativeValue::F32(5.0),
+        ],
+    )
+    .expect("Falco laser article call");
+    let mut state = m.state().clone();
+    let mut fighter = state.fighters[0].clone();
+    host.commit_into(&mut fighter, None)
+        .expect("Falco laser article commit");
+    state.fighters[0] = fighter;
+
+    specials::emit_projectiles(m.data(), &mut state).expect("Falco laser drain");
+    let projectile = state.projectiles.first().expect("Falco laser spawned");
+    assert_eq!(
+        projectile.kind,
+        crate::game::projectile::ProjectileKind::FalcoLaser
+    );
+    assert_eq!(projectile.lifetime, 100.0);
+    assert_eq!(projectile.speed, 5.0);
+    assert_eq!(projectile.hitboxes[0].growth, 100);
+    assert_eq!(projectile.hitboxes[0].fixed, 5);
 }
 
 #[test]

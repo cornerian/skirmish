@@ -386,4 +386,35 @@ mod tests {
         );
         assert_eq!(disabled.input_timer, INPUT_DISABLED);
     }
+
+    #[test]
+    fn fighter_without_wall_jump_capability_cannot_trigger_on_contact() {
+        // ftWallJump_8008169C gates the complete callback on can_walljump;
+        // this remains false for fighters while knockback handling owns them.
+        let mut state = State {
+            input_timer: 0,
+            wall_side: -1.0,
+            used: 2,
+            ..State::default()
+        };
+        let before = state.clone();
+        let trigger = interrupt(
+            &mut state,
+            false,
+            Some(Contact {
+                wall_side: -1.0,
+                wall_velocity_x: Some(0.0),
+                position_delta_x: -3.0,
+            }),
+            1.0,
+            Controller {
+                stick: [1.0, 0.0],
+                ..Controller::default()
+            },
+            0,
+            &rules(),
+        );
+        assert!(trigger.is_none());
+        assert_eq!(state, before);
+    }
 }

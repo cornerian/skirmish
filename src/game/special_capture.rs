@@ -318,6 +318,20 @@ fn release_without_hit(state: &mut MatchState, holder: usize, victim: usize) {
     state.fighters[holder].special_capture = State::default();
     state.fighters[victim].special_capture = State::default();
 
+    // `ftCo_800DD168` tears down the holder's victim callback as well as the
+    // captured side.  A forced victim break (death, stock loss, or an
+    // invalid restored action) must therefore leave Captain's catch motion;
+    // otherwise SpecialHiCatch survives without a relation and can never
+    // reach its normal grounded/airborne terminal state.
+    if state.fighters[holder].action == Action::SpecialHiCatch {
+        let action = if state.fighters[holder].grounded {
+            Action::Wait
+        } else {
+            Action::Fall
+        };
+        crate::game::simulation::enter(&mut state.fighters[holder], action);
+    }
+
     let action = if state.fighters[victim].grounded {
         Action::Wait
     } else {
@@ -710,6 +724,7 @@ mod tests {
         break_for_player(&mut state, 1);
         assert!(state.fighters[0].special_capture.is_empty());
         assert!(state.fighters[1].special_capture.is_empty());
+        assert_eq!(state.fighters[0].action, Action::Wait);
         assert_eq!(state.fighters[1].action, Action::Fall);
 
         state.fighters[0].action = Action::SpecialHiCatch;
@@ -718,6 +733,7 @@ mod tests {
         break_for_player(&mut state, 0);
         assert!(state.fighters[0].special_capture.is_empty());
         assert!(state.fighters[1].special_capture.is_empty());
+        assert_eq!(state.fighters[0].action, Action::Wait);
         assert_eq!(state.fighters[1].action, Action::Wait);
     }
 }

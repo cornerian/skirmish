@@ -372,6 +372,19 @@ enum Outcome {
     Despawn,
 }
 
+/// Match the item scheduler's lifetime ordering (`Item_80269528`): expired
+/// items are destroyed before their physics and collision callbacks run, and
+/// every live item loses one frame before those callbacks.  Terrain contact
+/// may subsequently arm a one-frame lifetime, which is consumed on the next
+/// step.
+fn tick_lifetime(projectile: &mut Projectile) -> bool {
+    if projectile.lifetime <= 0.0 {
+        return true;
+    }
+    projectile.lifetime -= 1.0;
+    projectile.lifetime <= 0.0
+}
+
 fn step(
     data: &MatchData,
     state: &mut State,
@@ -379,6 +392,9 @@ fn step(
     stage: &Stage<'_>,
     index: usize,
 ) -> Result<Outcome, super::Error> {
+    if tick_lifetime(&mut state.projectiles[index]) {
+        return Ok(Outcome::Despawn);
+    }
     let owner = state.projectiles[index].owner;
     let victim = 1 - owner;
 
@@ -801,11 +817,6 @@ fn step(
         }
     }
 
-    // Lifetime countdown (`it_80275158`).
-    state.projectiles[index].lifetime -= 1.0;
-    if state.projectiles[index].lifetime <= 0.0 {
-        return Ok(Outcome::Despawn);
-    }
     Ok(Outcome::Keep)
 }
 
@@ -815,7 +826,7 @@ mod tests {
         ArticleLaunch, GravityProjectileState, ProjectileBehavior, ProjectileContactPolicy,
         ProjectileKind, ProjectilePersistence, ProjectileReflection, ProjectileShield, dot,
         facing_from_velocity, gravity_step, normalize_angle, reset_ray_after_terrain_contact,
-        spawn, speed, surface_bounce,
+        spawn, speed, surface_bounce, tick_lifetime,
     };
     use crate::game::script::resources::ArticleId;
 
@@ -955,5 +966,25 @@ mod tests {
         ray.lifetime = 60.0;
         reset_ray_after_terrain_contact(&mut ray);
         assert_eq!(ray.lifetime, 1.0);
+    }
+
+    #[test]
+    fn lifetime_is_consumed_before_projectile_callbacks() {
+        let mut instances = crate::fighter::state::stale::InstanceCounter::default();
+        let mut projectile = spawn(
+            ProjectileKind::FoxLaser,
+            ProjectileBehavior::Ray,
+            0,
+            [0.0, 0.0, 0.0],
+            0.0,
+            1.0,
+            1.0,
+            Vec::new(),
+            1,
+            &mut instances,
+        );
+        assert!(tick_lifetime(&mut projectile));
+        assert_eq!(projectile.lifetime, 0.0);
+        assert!(tick_lifetime(&mut projectile));
     }
 }

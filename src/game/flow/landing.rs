@@ -35,10 +35,12 @@ pub(crate) fn squat_window(fighter: &Fighter, data: &FighterData) -> bool {
     fighter.grounded
         && fighter.landing_allow_interrupt
         && owns_action(fighter.action)
-        && data
-            .movement
-            .normal_landing_lag
-            .is_some_and(|lag| (fighter.action_frame as f32) < 1.0 + lag)
+        && data.movement.normal_landing_lag.is_some_and(|lag| {
+            // Keep the first IASA gate here as well as in `interruptible`.
+            // ftCo_Landing_IASA returns while `cur_anim_frame < lag`, before
+            // it reaches the later squat-window check.
+            (fighter.action_frame as f32) >= lag && (fighter.action_frame as f32) < 1.0 + lag
+        })
 }
 
 #[cfg(test)]
@@ -72,6 +74,11 @@ mod tests {
         assert!(!squat_window(fighter, &data));
 
         fighter.landing_allow_interrupt = true;
+        assert!(squat_window(fighter, &data));
+
+        fighter.action_frame = 2;
+        assert!(!squat_window(fighter, &data));
+        fighter.action_frame = 3;
         assert!(squat_window(fighter, &data));
 
         // Source special landings use the same lag data but enter with

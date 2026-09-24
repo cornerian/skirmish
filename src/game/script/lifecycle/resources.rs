@@ -1845,6 +1845,12 @@ fn link_article_resources(
                     move_id,
                     contact,
                 } => {
+                    if let Some(name) = link_native_article(*id) {
+                        return Err(Error::Invalid(format!(
+                            "unsupported Link article {name} id {}",
+                            id.0
+                        )));
+                    }
                     if let Some(name) = peach_native_article(*id) {
                         return Err(Error::Invalid(format!(
                             "unsupported Peach article {name} id {}",
@@ -1926,6 +1932,23 @@ fn peach_native_article(id: ArticleId) -> Option<&'static str> {
         103 => Some("parasol"),
         104 => Some("Toad"),
         111 => Some("Toad spore"),
+        _ => None,
+    }
+}
+
+/// Link and Young Link articles have stateful native item logic (attachment,
+/// return/stick states, pickup, and bomb fuse transitions).  They must not be
+/// accepted as generic gravity projectiles until that item substrate exists.
+fn link_native_article(id: ArticleId) -> Option<&'static str> {
+    match id.0 {
+        58 => Some("bomb"),
+        59 => Some("Young Link bomb"),
+        60 => Some("boomerang"),
+        61 => Some("Young Link boomerang"),
+        62 => Some("hookshot"),
+        63 => Some("Young Link hookshot"),
+        64 => Some("arrow"),
+        65 => Some("Young Link fire arrow"),
         _ => None,
     }
 }
@@ -2323,6 +2346,7 @@ mod tests {
                 compiled: None,
                 hook_indices: [None; crate::game::script::Hook::COUNT],
                 callback_bindings: std::array::from_fn(|_| Vec::new()),
+                fast_root_callbacks: [false; crate::game::script::Hook::COUNT],
                 behavior_bindings: Vec::new(),
                 metadata: Arc::new(definition),
                 move_registry: Arc::new(
@@ -2589,6 +2613,19 @@ mod tests {
             error
                 .to_string()
                 .contains("unsupported Peach article turnip id 99")
+        );
+    }
+
+    #[test]
+    fn link_article_ids_are_reserved_for_stateful_native_items() {
+        for id in 58..=65 {
+            assert!(
+                super::link_native_article(crate::game::script::resources::ArticleId(id)).is_some(),
+                "Link article id {id} must not enter generic gravity handling"
+            );
+        }
+        assert!(
+            super::link_native_article(crate::game::script::resources::ArticleId(66)).is_none()
         );
     }
 
@@ -2971,6 +3008,7 @@ mod tests {
             compiled: None,
             hook_indices: [None; crate::game::script::Hook::COUNT],
             callback_bindings: std::array::from_fn(|_| Vec::new()),
+            fast_root_callbacks: [false; crate::game::script::Hook::COUNT],
             behavior_bindings: Vec::new(),
             metadata: Arc::new(definition),
             move_registry: Arc::new(
@@ -3038,6 +3076,7 @@ mod tests {
                 compiled: None,
                 hook_indices: [None; crate::game::script::Hook::COUNT],
                 callback_bindings: std::array::from_fn(|_| Vec::new()),
+                fast_root_callbacks: [false; crate::game::script::Hook::COUNT],
                 behavior_bindings: Vec::new(),
                 metadata: Arc::new(definition),
                 move_registry: Arc::new(
@@ -3206,6 +3245,7 @@ mod tests {
             compiled: None,
             hook_indices: [None; crate::game::script::Hook::COUNT],
             callback_bindings: std::array::from_fn(|_| Vec::new()),
+            fast_root_callbacks: [false; crate::game::script::Hook::COUNT],
             behavior_bindings: Vec::new(),
             metadata,
             move_registry: Arc::new(

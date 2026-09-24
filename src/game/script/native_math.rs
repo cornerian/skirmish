@@ -123,6 +123,21 @@ mod tests {
             )
             .unwrap()
             .with_file(
+                "fighter/articles.py",
+                include_str!("../../../scripts/api/fighter/articles.py"),
+            )
+            .unwrap()
+            .with_file(
+                "fighter/special_attributes.py",
+                include_str!("../../../scripts/api/fighter/special_attributes.py"),
+            )
+            .unwrap()
+            .with_file(
+                "fighter/captain_family.py",
+                include_str!("../../../scripts/api/fighter/captain_family.py"),
+            )
+            .unwrap()
+            .with_file(
                 "fighter/helpers.py",
                 include_str!("../../../scripts/api/fighter/helpers.py"),
             )
