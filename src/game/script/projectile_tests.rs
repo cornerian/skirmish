@@ -170,7 +170,9 @@ fn typed_gravity_article_match() -> Match {
                         "base": 10
                     }],
                     "contact": {
-                        "reflection": "none",
+                    // Partial fixture: source Logic87_Reflected owns this
+                    // callback; the host reflection path is unsupported here.
+                    "reflection": "none",
                         "shield": "bounce",
                         "persistence": "despawn"
                     }

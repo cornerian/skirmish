@@ -336,11 +336,11 @@ fn surface_bounce(velocity: [f32; 2], normal: [f32; 3], surface_multiplier: f32)
 }
 
 fn luigi_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
-    speed <= threshold
+    speed < threshold
 }
 
 fn mario_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
-    speed <= threshold
+    speed < threshold
 }
 
 const LUIGI_FIREBALL_TERRAIN_EFFECT_ID: u16 = 1288;
@@ -971,9 +971,10 @@ mod tests {
     }
 
     #[test]
-    fn luigi_fireball_terrain_policy_despawns_at_or_below_source_threshold() {
+    fn luigi_fireball_terrain_policy_requires_speed_below_source_threshold() {
         assert!(luigi_fireball_terrain_despawns(0.5, 0.5));
         assert!(luigi_fireball_terrain_despawns(0.25, 0.5));
+        assert!(!luigi_fireball_terrain_despawns(0.5, 0.5));
         assert!(!luigi_fireball_terrain_despawns(0.5001, 0.5));
     }
 
@@ -987,6 +988,7 @@ mod tests {
             0.75
         ));
         assert!(!mario_fireball_terrain_despawns(spawn_speed, 0.75));
+        assert!(!mario_fireball_terrain_despawns(0.75, 0.75));
     }
 
     #[test]

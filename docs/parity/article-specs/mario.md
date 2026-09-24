@@ -28,6 +28,10 @@ reflection, absorption, clank, and wall effects are item-owned callbacks:
 `itMarioFireball_Logic87_DmgDealt`, `...Reflected`, `...HitShield`,
 `...Absorbed`, and `...Clanked`.
 
+The typed host currently leaves Mario fireball reflection unsupported. Tests
+using `reflection: "none"` are partial resource fixtures and do not claim
+parity with `...Reflected`.
+
 ## Cape article and reflection
 
 Side special uses states 345 and 346 (`ftMr_MS_SpecialS` and
