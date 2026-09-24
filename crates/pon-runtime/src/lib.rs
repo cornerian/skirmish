@@ -1408,7 +1408,11 @@ fn root_module_values(roots: &mut safety::PersistentRoots, module: *mut PyObject
     // across large SDK namespaces. Visit the live namespace in place so the
     // callback path does not allocate a temporary Vec for every module.
     roots.push(module);
-    let _ = pon_runtime::import::for_each_module_object_attr(module, |value| roots.push(value));
+    // SAFETY: the visitor only appends already-owned pointers to `roots`; it
+    // never calls back into Pon import or module mutation APIs.
+    let _ = unsafe {
+        pon_runtime::import::for_each_module_object_attr(module, |value| roots.push(value))
+    };
 }
 
 fn diagnostic() -> String {

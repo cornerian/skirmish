@@ -3046,7 +3046,13 @@ pub fn module_object_attr_values(module_object: *mut PyObject) -> Option<Vec<*mu
 /// Callers use this while a parked module is being rooted.  Keeping the
 /// import-state lock across the visit is intentional: the callback only
 /// publishes already-owned pointers and must not re-enter module mutation.
-pub fn for_each_module_object_attr(
+///
+/// # Safety
+///
+/// `visit` must not call back into module import, lookup, or mutation APIs.
+/// Those APIs acquire the same import-state lock and would deadlock while the
+/// visitor is running.
+pub unsafe fn for_each_module_object_attr(
     module_object: *mut PyObject,
     mut visit: impl FnMut(*mut PyObject),
 ) -> Option<()> {
@@ -3508,7 +3514,9 @@ mod tests {
         .unwrap();
         let expected = module_object_attr_values(module).unwrap();
         let mut visited = Vec::new();
-        assert!(for_each_module_object_attr(module, |value| visited.push(value)).is_some());
+        // SAFETY: this test visitor only appends raw pointers to a local Vec.
+        assert!(unsafe { for_each_module_object_attr(module, |value| visited.push(value)) }
+            .is_some());
         assert_eq!(visited, expected);
     }
 

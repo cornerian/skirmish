@@ -214,6 +214,36 @@ fn bundled_scopes_restore_owned_modules_between_programs() {
 }
 
 #[test]
+fn bundled_module_remains_rooted_after_sys_modules_eviction_and_gc() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let root = root();
+    let bundle = SourceBundle::new("scope-eviction")
+        .with_file("known.py", "value = 11\n")
+        .unwrap()
+        .materialize(&root)
+        .unwrap();
+    let source = "import known\nimport sys\ndef evict(value):\n    known.value = [41]\n    del sys.modules['known']\n    import gc\n    gc.collect()\n    return 0\ndef read(value):\n    return known.value[0]\n";
+    let mut program = Program::new(source, "scope-eviction-main.py", ["evict", "read"])
+        .prepare_for_thread_in_bundle(&bundle)
+        .unwrap();
+    let evict = program.callback_index("evict").unwrap();
+    let read = program.callback_index("read").unwrap();
+
+    assert_eq!(
+        program.invoke_index(evict, &[Value::Int(0)]).unwrap(),
+        Value::Int(0)
+    );
+    assert_eq!(
+        program.invoke_index(read, &[Value::Int(0)]).unwrap(),
+        Value::Int(41),
+        "the imported module must remain rooted through sys.modules eviction"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn callback_error_wins_over_frozen_identity_error_and_latches() {
     let _guard = TEST_LOCK
         .lock()

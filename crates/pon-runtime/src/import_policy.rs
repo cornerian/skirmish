@@ -288,7 +288,11 @@ struct CachedModulesGuard {
 
 fn root_module_values(roots: &mut crate::safety::PersistentRoots, module: *mut PyObject) {
     roots.push(module);
-    let _ = pon_runtime::import::for_each_module_object_attr(module, |value| roots.push(value));
+    // SAFETY: the visitor only appends already-owned pointers to `roots`; it
+    // never calls back into Pon import or module mutation APIs.
+    let _ = unsafe {
+        pon_runtime::import::for_each_module_object_attr(module, |value| roots.push(value))
+    };
 }
 
 impl CachedModulesGuard {

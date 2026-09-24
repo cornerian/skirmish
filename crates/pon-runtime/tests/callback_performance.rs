@@ -5,7 +5,7 @@
 
 use std::{hint::black_box, time::Instant};
 
-use skirmish_pon_runtime::{Program, Value};
+use skirmish_pon_runtime::{Program, SourceBundle, Value};
 
 const ITERATIONS: usize = 20_000;
 const SAMPLES: usize = 7;
@@ -78,6 +78,58 @@ fn cached_pon_callback_vs_rust_integer_event_transform() {
             .map(|sample| sample.as_nanos())
             .collect::<Vec<_>>(),
         pon_checksum
+    );
+}
+
+#[test]
+#[ignore = "manual release benchmark; timing is machine-dependent"]
+fn bundled_module_root_recapture_profile() {
+    let root = tempfile::tempdir().expect("temporary bundle root");
+    let bundle = SourceBundle::new("callback-root-profile")
+        .with_file("known.py", "value = 0\n")
+        .expect("bundle source")
+        .materialize(root.path())
+        .expect("materialize bundle");
+    let source =
+        "import known\ndef touch(value):\n    known.value = [value]\n    return known.value[0]\n";
+    let mut pon = Program::new(source, "callback-root-profile-main.py", ["touch"])
+        .prepare_for_thread_in_bundle(&bundle)
+        .expect("compile bundled callback");
+    let callback = pon.callback_index("touch").expect("touch callback");
+
+    for index in 0..WARMUP {
+        assert_eq!(
+            pon.invoke_index(callback, &[Value::Int(index as i64)]),
+            Ok(Value::Int(index as i64))
+        );
+    }
+    let mut samples = Vec::with_capacity(SAMPLES);
+    let mut checksum = 0i64;
+    for _ in 0..SAMPLES {
+        let start = Instant::now();
+        for index in 0..ITERATIONS {
+            let value = black_box((index % 97) as i64);
+            let result = pon
+                .invoke_index(callback, &[Value::Int(value)])
+                .expect("bundled callback");
+            checksum = checksum.wrapping_add(match result {
+                Value::Int(value) => value,
+                other => panic!("bundled callback returned {other:?}"),
+            });
+        }
+        samples.push(start.elapsed());
+    }
+    eprintln!(
+        "pon-bundled-root-profile pin=ab9067dbd2899c64c4d67a4bc27b8ad49472b126 iterations={} samples={} warmup={} median_ns={} samples_ns={:?} checksum={}",
+        ITERATIONS,
+        SAMPLES,
+        WARMUP,
+        median_nanos(&samples),
+        samples
+            .iter()
+            .map(|sample| sample.as_nanos())
+            .collect::<Vec<_>>(),
+        checksum
     );
 }
 
