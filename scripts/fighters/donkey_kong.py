@@ -148,6 +148,13 @@ class GiantPunch(NeutralSpecial):
         state.cancel_pending = False
         if fighter.action in (self.ground_start, self.air_start):
             state.release_swings = 0
+        # ftDk_SpecialN_Enter calls ftCommon_8007D7FC and explicitly clears
+        # self_vel.y for both grounded start and full-charge entries.  The
+        # aerial entry keeps its incoming vertical velocity.
+        if fighter.action in (self.ground_start, self.ground_full):
+            velocity = getattr(fighter, "velocity", None)
+            if velocity is not None and len(velocity) >= 2:
+                fighter.velocity = (velocity[0], 0.0)
 
     def _entry(self, fighter: Fighter, ctx: MoveContext, grounded: bool):
         state = _dk_state(fighter)

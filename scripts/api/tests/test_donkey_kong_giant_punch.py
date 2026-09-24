@@ -137,6 +137,21 @@ class GiantPunchTests(unittest.TestCase):
         self.assertEqual(fighter.changes, [(Action.FALL, {})])
         self.assertEqual(fighter.fall_special, [])
 
+    def test_grounded_punch_entry_clears_vertical_velocity_but_air_entry_preserves_it(self):
+        grounded = _Fighter()
+        grounded.velocity = (2.0, 3.0)
+        self.assertTrue(self.move.input_pressed(grounded, self._context()))
+        self.move.enter(grounded, self._context())
+        self.assertEqual(grounded.velocity, (2.0, 0.0))
+
+        aerial = _Fighter()
+        aerial.velocity = (2.0, 3.0)
+        self.assertTrue(self.move.input_pressed(
+            aerial, self._context(ground_open=False, air_open=True)
+        ))
+        self.move.enter(aerial, self._context(ground_open=False, air_open=True))
+        self.assertEqual(aerial.velocity, (2.0, 3.0))
+
 
 if __name__ == "__main__":
     unittest.main()
