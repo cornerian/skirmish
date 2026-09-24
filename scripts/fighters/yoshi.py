@@ -32,13 +32,16 @@ class _YoshiSpecial:
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx) -> bool:
+        # Native IASA callbacks only run their active-state handling on a
+        # fresh B edge.  In particular, Egg Roll's loop release is an input
+        # edge, while its terminal phases have no B callback at all.
+        if not fresh_special_input(ctx, self.resource):
+            return False
         if fighter.action in self._ACTIVE:
             active_handler = getattr(self, "_on_active_input", None)
             if active_handler is not None:
                 active_handler(fighter)
             return True
-        if not fresh_special_input(ctx, self.resource):
-            return False
         if self.root is SpecialRoot.NEUTRAL:
             allowed = not directional_b_reserved(ctx)
         elif self.root is SpecialRoot.SIDE:
@@ -86,14 +89,16 @@ class EggLay(NeutralSpecial, _YoshiSpecial):
     )
     on_end = {
         ground: Transition(Action.WAIT),
-        ground_tongue: Transition(Action.WAIT),
+        # The source N1_1 animation only changes motion when cmd_vars[0] and
+        # a target item are present.  With no tongue/article state, its
+        # animation-end callback deliberately leaves the phase active.
         ground_egg: Transition(Action.WAIT),
-        ground_swallow: Transition(Action.WAIT),
+        # N1_0 has the same conditional handoff, keyed by a captured victim.
         ground_end: Transition(Action.WAIT),
         air: Transition(Action.FALL),
-        air_tongue: Transition(Action.FALL),
+        # Air N1_1 and N1_0 likewise wait for their native article/victim
+        # command instead of falling through at animation end.
         air_egg: Transition(Action.FALL),
-        air_swallow: Transition(Action.FALL),
         air_end: Transition(Action.FALL),
     }
     # The source motion table has one ground and one air state for each of

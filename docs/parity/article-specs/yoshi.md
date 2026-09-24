@@ -19,6 +19,9 @@ Egg Lay's state selection is command and victim dependent. The source uses
 `ftyoshispecialn.c:changeMotionState`, `inlineB0`, and `inlineA1`. A generic
 phase end must therefore not claim that every phase always advances to the
 next phase; article availability and victim capture select the branch.
+The script leaves the tongue/capture phases (347/349 and 352/354) without a
+generic animation-end transition so they remain active until the source
+command branch is satisfied.
 
 Egg Roll's grounded B entry also has a source-specific handoff. Both special
 entry functions call `Fighter_ChangeMotionState(..., 0x168, ...)`, which is

@@ -133,6 +133,41 @@ class YoshiSpecialTests(unittest.TestCase):
         move._transition_animation_end(fighter, _context(ground=False))
         self.assertEqual(fighter.action, "Source.17:368")
 
+    def test_egg_lay_capture_phases_wait_for_native_article_commands(self):
+        move = Yoshi.specials.neutral
+        # N1_1/N1_0 and their aerial variants only leave through the source
+        # command-variable/article or victim branches.  No generic animation
+        # end transition may turn an unarmed phase into Wait/Fall.
+        for phase in (
+            move.ground_tongue,
+            move.ground_swallow,
+            move.air_tongue,
+            move.air_swallow,
+        ):
+            fighter = _Fighter(phase)
+            move._transition_animation_end(
+                fighter,
+                _context(
+                    ground=phase in (move.ground_tongue, move.ground_swallow)
+                ),
+            )
+            self.assertIs(fighter.action, phase)
+
+    def test_egg_roll_release_requires_fresh_b_edge(self):
+        move = Yoshi.specials.side
+        fighter = _Fighter(move.ground_loop)
+        self.assertFalse(
+            move.input_pressed(
+                fighter,
+                _context(stick=(1.0, 0.0), pressed=False),
+            )
+        )
+        self.assertIs(fighter.action, move.ground_loop)
+
+        fighter = _Fighter(move.ground_loop)
+        self.assertTrue(move.input_pressed(fighter, _context(stick=(1.0, 0.0))))
+        self.assertIs(fighter.action, move.ground_end)
+
     def test_neutral_preserves_each_source_phase_across_surface_changes(self):
         move = Yoshi.specials.neutral
         for ground, air in (
