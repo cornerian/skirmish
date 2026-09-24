@@ -2269,9 +2269,7 @@ fn dispatch_script_phase(
     if !program.has_callback_for_action(hook, fighter.action, behavior_index, Some(&resources)) {
         return Ok(());
     }
-    let context = serde_json::json!({
-        "event": {"kind": hook.name(), "action": fighter.action},
-    });
+    let context = phase_context(hook, fighter.action);
     crate::game::script::lifecycle::invoke_with_native(
         hook,
         fighter,
@@ -2287,6 +2285,28 @@ fn dispatch_script_phase(
         },
     )?;
     Ok(())
+}
+
+fn phase_context(hook: crate::game::script::Hook, action: Action) -> serde_json::Value {
+    serde_json::json!({
+        "event": {"kind": hook.name(), "action": action},
+    })
+}
+
+#[cfg(test)]
+mod phase_hook_tests {
+    use super::*;
+
+    #[test]
+    fn phase_context_preserves_action_and_native_order() {
+        let context = phase_context(crate::game::script::Hook::Physics, Action::Wait);
+        assert_eq!(context["event"]["kind"], "physics");
+        assert_eq!(context["event"]["action"], serde_json::json!(Action::Wait));
+        assert!(
+            crate::game::script::Hook::Physics.index()
+                < crate::game::script::Hook::Collision.index()
+        );
+    }
 }
 
 fn move_fighter(
