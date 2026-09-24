@@ -12,6 +12,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from fighter import ArticleId
 from fighters.pikachu import Pikachu, PikachuParameters
 
 
@@ -21,7 +22,21 @@ class PikachuMetadataTests(unittest.TestCase):
         self.assertEqual(PikachuParameters().data_file, "PlPk.dat")
         self.assertEqual(PikachuParameters().data_name, "ftDataPikachu")
         self.assertEqual(PikachuParameters().animation_data_file, "PlPkAJ.dat")
+        self.assertEqual(
+            (
+                PikachuParameters().thunder_article_id,
+                PikachuParameters().thunder_jolt_ground_article_id,
+                PikachuParameters().thunder_jolt_air_article_id,
+            ),
+            (
+                ArticleId.PIKACHU_THUNDER,
+                ArticleId.PIKACHU_TJOLT_GROUND,
+                ArticleId.PIKACHU_TJOLT_AIR,
+            ),
+        )
+        self.assertTrue(PikachuParameters().up_special_effects)
         self.assertEqual(PikachuParameters().thunder_jolt_sound, 240076)
+        self.assertEqual(PikachuParameters().neutral_spawn_command, 0)
         self.assertEqual(
             Pikachu.costume_files,
             ("PlPkNr.dat", "PlPkRe.dat", "PlPkBu.dat", "PlPkGr.dat"),

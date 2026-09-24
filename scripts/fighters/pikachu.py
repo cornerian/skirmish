@@ -10,7 +10,7 @@ surfaces that are not part of the portable fighter API.
 
 from typing import ClassVar, Sequence
 
-from skirmish import Fighter, Parameters
+from skirmish import ArticleId, Fighter, Parameters
 from fighter.electric_family import (
     ELECTRIC_SPECIALS,
     ElectricAgility as Agility,
@@ -32,7 +32,19 @@ class PikachuParameters(Parameters):
     data_file: str = "PlPk.dat"
     data_name: str = "ftDataPikachu"
     animation_data_file: str = "PlPkAJ.dat"
+    # ``ftPk_Init_OnLoad`` registers xDC, specialn_itkind, and
+    # specialairn_itkind as the Thunder, ground Jolt, and aerial Jolt
+    # article archives.  Keep these identities available at the same host
+    # boundary as Pichu's corresponding initializer metadata.
+    thunder_article_id: ArticleId = ArticleId.PIKACHU_THUNDER
+    thunder_jolt_ground_article_id: ArticleId = ArticleId.PIKACHU_TJOLT_GROUND
+    thunder_jolt_air_article_id: ArticleId = ArticleId.PIKACHU_TJOLT_AIR
+    # The shared Pikachu callbacks emit the up-special effect for Pikachu;
+    # only the Pichu kind is explicitly suppressed in ``ftPk_SpecialHi``.
+    up_special_effects: bool = True
     thunder_jolt_sound: int = 240076
+    # ``ftPk_SpecialN_Anim`` consumes command variable 0 as its spawn edge.
+    neutral_spawn_command: int = 0
 
 
 class Pikachu(Fighter):
