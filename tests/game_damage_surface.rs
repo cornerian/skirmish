@@ -60,7 +60,7 @@ fn pose_track(bones: &[Bone], frames: u32, translation: [f32; 2]) -> Vec<Vec<Bon
     (0..frames)
         .map(|frame| {
             let mut pose = bones.to_vec();
-            pose[1].translation[0] += translation[0] + frame as f32 * 0.25;
+            pose[1].translation[2] += translation[0] + frame as f32 * 0.25;
             pose[1].translation[1] += translation[1] + frame as f32 * 0.25;
             pose
         })
