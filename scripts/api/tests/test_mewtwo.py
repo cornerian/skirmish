@@ -169,11 +169,15 @@ class MewtwoScriptTests(unittest.TestCase):
         move = self.module.Confusion()
         fighter = _Fighter()
         fighter.action = move.ground
+        fighter.action_state.command = (0, 1, 7, 8)
         move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
         self.assertTrue(fighter.flags.reflecting)
         self.assertTrue(fighter.action_state.confusion_reflecting)
+        self.assertEqual(fighter.action_state.command, (0, 0, 7, 8))
+        fighter.action_state.command = (0, 2, 7, 8)
         move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=2)))
         self.assertFalse(fighter.flags.reflecting)
+        self.assertEqual(fighter.action_state.command, (0, 0, 7, 8))
 
     def test_confusion_entry_clears_stale_command_and_grab_latches(self):
         move = self.module.Confusion()
@@ -182,9 +186,21 @@ class MewtwoScriptTests(unittest.TestCase):
         fighter.action_state.command = (1, 2, 3, 4)
         fighter.action_state.confusion_grabbed = True
         move.enter(fighter, SimpleNamespace())
-        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+        self.assertEqual(fighter.action_state.command, (0, 0, 3, 4))
         self.assertFalse(fighter.action_state.confusion_grabbed)
         self.assertFalse(fighter.action_state.confusion_reflecting)
+
+    def test_confusion_grab_consumes_only_command_zero(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.ground
+        fighter.victim_gobj = object()
+        fighter.action_state.command = (1, 2, 3, 4)
+
+        move.grab_command(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+
+        self.assertTrue(fighter.action_state.confusion_grabbed)
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
 
     def test_confusion_grab_command_requires_and_records_a_victim(self):
         move = self.module.Confusion()
@@ -202,16 +218,22 @@ class MewtwoScriptTests(unittest.TestCase):
         disable = self.module.Disable()
         fighter = _Fighter()
         fighter.action = disable.air
+        fighter.action_state.command = (9, 8, 7, 6)
         disable.enter(fighter, SimpleNamespace())
         self.assertEqual(fighter.velocity[1], 0.0)
+        self.assertEqual(fighter.action_state.command, (0, 8, 7, 6))
+        fighter.action_state.command = (4, 3, 2, 1)
         disable.create_disable(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
         self.assertTrue(fighter.action_state.disable_fired)
+        self.assertEqual(fighter.action_state.command, (0, 3, 2, 1))
 
         teleport = self.module.Teleport()
         fighter.velocity = (2.0, 3.0)
         fighter.action = teleport.air_start
+        fighter.action_state.command = (4, 3, 2, 1)
         teleport.enter(fighter, SimpleNamespace())
         self.assertEqual(fighter.velocity, (1.0, 1.5))
+        self.assertEqual(fighter.action_state.command, (0, 3, 2, 1))
         fighter.action = teleport.air_travel
         teleport.begin_travel(fighter, SimpleNamespace())
         self.assertTrue(fighter.action_state.teleport_active)

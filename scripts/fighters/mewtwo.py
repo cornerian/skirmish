@@ -75,6 +75,16 @@ def _state(phase: Any) -> int:
     return dict(phase.metadata)["slippi_state"]
 
 
+def _clear_command_slot(fighter: Any, index: int) -> None:
+    """Consume one native command variable while preserving the others."""
+    state = _fighter_state(fighter)
+    command = state.command
+    if isinstance(command, (tuple, list)) and len(command) >= 4:
+        values = list(command)
+        values[index] = 0
+        state.command = tuple(values)
+
+
 class _MewtwoSpecial:
     """Shared B dispatch and native ground/air lifecycle for Mewtwo moves."""
 
@@ -242,10 +252,11 @@ class Confusion(SideSpecial, _MewtwoSpecial):
     @hook.action_enter(ground, air)
     def enter(self, fighter: Any, ctx: Any) -> None:
         state = _fighter_state(fighter)
-        # Both ftMt_SpecialS_Enter and ftMt_SpecialAirS_Enter clear command
-        # variables, throw flags, and the reflector latch.  Ground/air
-        # transitions then re-arm the grab without carrying a stale command.
-        state.command = (0, 0, 0, 0)
+        # ftMt_SpecialS_Enter and ftMt_SpecialAirS_Enter clear cmd_vars[0] and
+        # cmd_vars[1]. The remaining command slots belong to the shared
+        # animation stream and must survive the entry boundary.
+        _clear_command_slot(fighter, 0)
+        _clear_command_slot(fighter, 1)
         state.confusion_grabbed = False
         _set_reflecting(fighter, False)
         # The native air boost is one-shot across a ground/air phase
@@ -280,14 +291,17 @@ class Confusion(SideSpecial, _MewtwoSpecial):
             victim = getattr(fighter, "victim_gobj", None)
         if victim is not None:
             _fighter_state(fighter).confusion_grabbed = True
+            _clear_command_slot(fighter, 0)
 
     @hook.command_changed(1, actions=(ground, air))
     def reflect_command(self, fighter: Any, ctx: Any) -> None:
         value = _event_value(ctx)
         if value == 1:
             _set_reflecting(fighter, True)
+            _clear_command_slot(fighter, 1)
         elif value == 2:
             _set_reflecting(fighter, False)
+            _clear_command_slot(fighter, 1)
 
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
@@ -313,6 +327,7 @@ class Teleport(UpSpecial, _MewtwoSpecial):
     def enter(self, fighter: Any, ctx: Any) -> None:
         # Both source start handlers clear ground movement.  Aerial Teleport
         # preserves momentum but halves it before choosing its launch vector.
+        _clear_command_slot(fighter, 0)
         if fighter.action == self.ground_start:
             if hasattr(fighter, "ground_velocity"):
                 fighter.ground_velocity = 0.0
@@ -385,6 +400,9 @@ class Disable(DownSpecial, _MewtwoSpecial):
     def enter(self, fighter: Any, ctx: Any) -> None:
         state = _fighter_state(fighter)
         state.disable_fired = False
+        # ftMt_SpecialLw_Enter and ftMt_SpecialAirLw_Enter clear cmd_vars[0]
+        # before the accessory callback can consume a new spawn marker.
+        _clear_command_slot(fighter, 0)
         if fighter.action == self.air and hasattr(fighter, "set_velocity"):
             velocity = getattr(fighter, "velocity", (0.0, 0.0))
             fighter.set_velocity(velocity[0], 0.0)
@@ -396,6 +414,7 @@ class Disable(DownSpecial, _MewtwoSpecial):
         # it without coupling the authoring script to item internals.
         if _event_value(ctx):
             _fighter_state(fighter).disable_fired = True
+            _clear_command_slot(fighter, 0)
 
     @hook.before_receive_hit(actions=_ACTIVE)
     def on_damage(self, fighter: Any, ctx: Any) -> None:

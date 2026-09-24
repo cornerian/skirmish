@@ -80,17 +80,19 @@ bounce callbacks are the `itMewtwoShadowball_Logic101_*` functions in
 ## Confusion reflect and capture
 
 Ground and aerial Confusion are states 351 and 352. Entry resets command
-variables 0 and 1 and the one-shot aerial boost. Command variable 0 is
-consumed by `ftMewtwo_SetGrabVictim`: if a victim exists, the common grab
-attachment `ftCo_800DE2A8` runs and the victim is released from its prior
-state with `ftCo_80090780`.
+variables 0 and 1 and the one-shot aerial boost; command variables 2 and 3
+remain owned by the shared animation stream. Command variable 0 is consumed
+by `ftMewtwo_SetGrabVictim` when a victim exists: the common grab attachment
+`ftCo_800DE2A8` runs, the victim is released from its prior state with
+`ftCo_80090780`, and command variable 0 is cleared.
 
 Command variable 1 is consumed by `ftMt_SpecialS_ReflectThink`:
 
 * value 1 calls `ftColl_CreateReflectHit` with
   `x1C_MEWTWO_CONFUSION_REFLECTION`, sets the fighter reflecting flag, and
-  installs `ftMt_SpecialS_OnReflect`;
-* value 2 removes reflection and clears the callback;
+  installs `ftMt_SpecialS_OnReflect`; command variable 1 is then cleared;
+* value 2 removes reflection, clears the callback, and clears command variable
+  1;
 * value 0 does nothing.
 
 The current script can expose command markers and a portable reflecting flag,
@@ -115,6 +117,17 @@ delegates to `it_80273030`. `itMewtwoDisable_Logic67_Destroyed` clears the
 fighter's owner pointer, while `itMewtwoDisable_Logic67_EvtUnk` removes owner
 interaction references. Fighter damage/death paths call
 `ftMt_SpecialLw_RemoveDisable`.
+
+Both Disable entry handlers clear command variable 0 before starting the
+motion. The create callback consumes command variable 0 after attempting the
+spawn, preventing one animation marker from spawning repeatedly.
+
+Teleport start handlers for states 353 and 356 likewise clear command
+variable 0 on entry. The aerial start divides horizontal and vertical
+velocity by the two Teleport velocity attributes; the grounded start clears
+ground and self velocity. The aerial travel collision callback increments the
+source timer before allowing the aerial-to-ground transition, and only
+transitions when the configured timer permits it.
 
 ## Conformance test vector
 
