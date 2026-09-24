@@ -8,6 +8,7 @@ native motion graph and its safe lifecycle only.
 
 from __future__ import annotations
 
+import math
 from typing import Any, ClassVar
 
 from skirmish import (
@@ -60,6 +61,19 @@ def _fighter_state(fighter: Any) -> MewtwoActionState:
 def _event_value(ctx: Any) -> int:
     value = getattr(getattr(ctx, "event", None), "value", 0)
     return int(value or 0)
+
+
+def _resource_float(ctx: Any, path: str) -> float | None:
+    """Read a finite authored move attribute through the host resource API."""
+    lookup = getattr(ctx, "resource", None)
+    value = lookup(path) if lookup is not None else None
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value != 0.0 else None
 
 
 def _set_reflecting(fighter: Any, value: bool) -> None:
@@ -341,8 +355,15 @@ class Teleport(UpSpecial, _MewtwoSpecial):
             if hasattr(fighter, "set_velocity"):
                 fighter.set_velocity(0.0, 0.0)
         elif hasattr(fighter, "velocity") and hasattr(fighter, "set_velocity"):
+            # ftMt_SpecialAirHiStart_Enter divides each component by its
+            # authored Mewtwo attribute.  The host resource callback is the
+            # exact boundary for those attrs; without both valid values we
+            # leave velocity untouched rather than inventing a divisor.
             velocity = fighter.velocity
-            fighter.set_velocity(velocity[0] * 0.5, velocity[1] * 0.5)
+            divisor_x = _resource_float(ctx, "up.attributes.teleport_vel_div_x")
+            divisor_y = _resource_float(ctx, "up.attributes.teleport_vel_div_y")
+            if divisor_x is not None and divisor_y is not None:
+                fighter.set_velocity(velocity[0] / divisor_x, velocity[1] / divisor_y)
         _fighter_state(fighter).teleport_active = False
 
     @hook.action_enter(ground_travel, air_travel)

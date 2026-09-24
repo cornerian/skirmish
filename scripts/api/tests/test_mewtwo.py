@@ -153,6 +153,49 @@ class MewtwoScriptTests(unittest.TestCase):
         move.enter(fighter, SimpleNamespace(grounded=False))
         self.assertEqual(fighter.velocity, (2.0, 1.5))
 
+    def test_teleport_aerial_entry_uses_authored_velocity_divisors(self):
+        move = self.module.Teleport()
+        fighter = _Fighter()
+        fighter.action = move.air_start
+
+        attributes = {
+            "up.attributes.teleport_vel_div_x": 4.0,
+            "up.attributes.teleport_vel_div_y": 3.0,
+        }
+        move.enter(
+            fighter,
+            SimpleNamespace(
+                resource=lambda path: attributes.get(path),
+            ),
+        )
+
+        self.assertEqual(fighter.velocity, (0.5, 1.0))
+
+    def test_teleport_aerial_entry_fails_closed_without_authored_divisors(self):
+        move = self.module.Teleport()
+        fighter = _Fighter()
+        fighter.action = move.air_start
+
+        move.enter(fighter, SimpleNamespace(resource=lambda path: None))
+
+        self.assertEqual(fighter.velocity, (2.0, 3.0))
+
+    def test_teleport_aerial_entry_fails_closed_for_invalid_authored_divisor(self):
+        move = self.module.Teleport()
+        fighter = _Fighter()
+        fighter.action = move.air_start
+        attributes = {
+            "up.attributes.teleport_vel_div_x": 0.0,
+            "up.attributes.teleport_vel_div_y": float("nan"),
+        }
+
+        move.enter(
+            fighter,
+            SimpleNamespace(resource=lambda path: attributes.get(path)),
+        )
+
+        self.assertEqual(fighter.velocity, (2.0, 3.0))
+
     def test_shadow_ball_release_marker_consumes_source_command(self):
         move = self.module.ShadowBall()
         fighter = _Fighter()
@@ -247,7 +290,15 @@ class MewtwoScriptTests(unittest.TestCase):
         fighter.velocity = (2.0, 3.0)
         fighter.action = teleport.air_start
         fighter.action_state.command = (4, 3, 2, 1)
-        teleport.enter(fighter, SimpleNamespace())
+        teleport.enter(
+            fighter,
+            SimpleNamespace(
+                resource=lambda path: {
+                    "up.attributes.teleport_vel_div_x": 2.0,
+                    "up.attributes.teleport_vel_div_y": 2.0,
+                }.get(path),
+            ),
+        )
         self.assertEqual(fighter.velocity, (1.0, 1.5))
         self.assertEqual(fighter.action_state.command, (0, 3, 2, 1))
         fighter.action = teleport.air_travel
