@@ -233,6 +233,19 @@ class IceClimbersTests(unittest.TestCase):
         )
         self.assertEqual(fighter.action.action, "Source.14:344")
 
+        # The source compares d² with scale_y * xD0².  Scaling the radius
+        # itself would incorrectly accept this 15-unit separation.
+        partner.position = (15.0, 0.0)
+        fighter = _Fighter(side.ground_start, scale_y=4.0)
+        side.enter(
+            fighter,
+            SimpleNamespace(
+                entity_at_index=lambda index: partner,
+                resource=lambda path: resource,
+            ),
+        )
+        self.assertEqual(fighter.action, side.ground_start)
+
         # Missing lifecycle or scale facts fail closed rather than guessing.
         partner.lifecycle = None
         fighter = _Fighter(side.ground_start)
@@ -374,8 +387,12 @@ class IceClimbersTests(unittest.TestCase):
         export_definition(IceClimbers)
         up = IceClimbers.specials.up
         resource = SimpleNamespace(
-            attributes=SimpleNamespace(xD0=5.0, x7C=5.0),
+            attributes=SimpleNamespace(x7C=5.0),
         )
+        side_resource = SimpleNamespace(
+            attributes=SimpleNamespace(x7C=100.0),
+        )
+        resource_paths = []
         partner = SimpleNamespace(
             available=True,
             lifecycle="active",
@@ -384,7 +401,9 @@ class IceClimbersTests(unittest.TestCase):
         context = lambda: SimpleNamespace(
             event=_Event(1),
             entity_at_index=lambda index: partner,
-            resource=lambda path: resource,
+            resource=lambda path: (resource_paths.append(path), resource)[1]
+            if path == "up.attributes"
+            else (resource_paths.append(path), side_resource)[1],
         )
 
         fighter = _Fighter("Source.14:347")
@@ -400,6 +419,8 @@ class IceClimbersTests(unittest.TestCase):
         fighter = _Fighter("Source.14:347")
         up.partner_fallback(fighter, context())
         self.assertEqual(fighter.action, "Source.14:347")
+        self.assertIn("up.attributes", resource_paths)
+        self.assertNotIn("side.attributes", resource_paths)
 
     def test_belay_exports_native_command_branch_hooks(self):
         definition = export_definition(IceClimbers).as_dict()

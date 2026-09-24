@@ -103,7 +103,14 @@ def _resource_attribute(ctx: Any, path: str, name: str) -> float | None:
     return value if math.isfinite(value) and value >= 0.0 else None
 
 
-def _partner_in_range(fighter: Any, ctx: Any, radius_attr: str) -> bool | None:
+def _partner_in_range(
+    fighter: Any,
+    ctx: Any,
+    radius_attr: str,
+    resource_path: str,
+    *,
+    scale_by_y: bool = False,
+) -> bool | None:
     """Mirror the source Nana range test from generic entity facts."""
     partner = _partner_projection(ctx)
     if partner is _NO_RESOLVER or partner is None:
@@ -130,22 +137,28 @@ def _partner_in_range(fighter: Any, ctx: Any, radius_attr: str) -> bool | None:
         return None
     if not math.isfinite(dx) or not math.isfinite(dy):
         return None
-    scale_y = getattr(fighter, "scale_y", _MISSING)
-    if scale_y is _MISSING:
-        scale = getattr(fighter, "scale", _MISSING)
-        if isinstance(scale, (tuple, list)) and len(scale) >= 2:
-            scale_y = scale[1]
-        elif isinstance(scale, (int, float)) and not isinstance(scale, bool):
-            scale_y = scale
-    radius = _resource_attribute(ctx, "side.attributes", radius_attr)
-    if radius is None or scale_y is _MISSING:
+    radius = _resource_attribute(ctx, resource_path, radius_attr)
+    if radius is None:
         return None
-    try:
-        radius = radius * float(scale_y)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(radius):
-        return None
+    if scale_by_y:
+        scale_y = getattr(fighter, "scale_y", _MISSING)
+        if scale_y is _MISSING:
+            scale = getattr(fighter, "scale", _MISSING)
+            if isinstance(scale, (tuple, list)) and len(scale) >= 2:
+                scale_y = scale[1]
+            elif isinstance(scale, (int, float)) and not isinstance(scale, bool):
+                scale_y = scale
+        if scale_y is _MISSING:
+            return None
+        try:
+            scale_y = float(scale_y)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(scale_y) or scale_y < 0.0:
+            return None
+        # ftNn_Init_80123954 compares distance² against scale_y * dd².
+        return dx * dx + dy * dy < scale_y * radius * radius
+    # ftPp_SpecialHiStart_* compares distance directly against x7C.
     return dx * dx + dy * dy < radius * radius
 
 
@@ -218,7 +231,9 @@ class SquallHammer(SideSpecial, DirectionalSpecial):
             values = [0] * min(len(command), 4)
             values.extend(command[4:])
             state.command = type(command)(values) if isinstance(command, tuple) else values
-        in_range = _partner_in_range(fighter, ctx, "xD0")
+        in_range = _partner_in_range(
+            fighter, ctx, "xD0", "side.attributes", scale_by_y=True
+        )
         if in_range is True:
             target = self.ground_partner if fighter.action is self.ground_start else self.air_partner
             fighter.change_action(target)
@@ -320,7 +335,7 @@ class Belay(UpSpecial, DirectionalSpecial):
         event = getattr(ctx, "event", None)
         if not getattr(event, "value", 0):
             return
-        in_range = _partner_in_range(fighter, ctx, "x7C")
+        in_range = _partner_in_range(fighter, ctx, "x7C", "up.attributes")
         if in_range is None and _partner_projection(ctx) is _NO_RESOLVER:
             in_range = _partner_available(ctx)
         if in_range is not False:
