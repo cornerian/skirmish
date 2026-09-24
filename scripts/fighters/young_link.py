@@ -151,9 +151,15 @@ class YoungLinkUpSpecial(_FamilyUpSpecial):
     @on.animation_end(air)
     def enter_fall_special(self, fighter: Any, ctx: Any) -> bool:
         enter = getattr(fighter, "enter_fall_special", None)
-        if not callable(enter):
+        if callable(enter):
+            enter(mobility=1)
+            return True
+        # Keep the source terminal transition safe for lightweight hosts that
+        # have not exposed the native FallSpecial helper yet.
+        change = getattr(fighter, "change_action", None)
+        if not callable(change):
             return False
-        enter(mobility=1)
+        change(Action.FALL)
         return True
 
 

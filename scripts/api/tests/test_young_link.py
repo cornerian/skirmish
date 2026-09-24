@@ -202,7 +202,8 @@ class YoungLinkTests(unittest.TestCase):
         self.assertEqual(calls, [{"mobility": 1}])
 
         missing = _Fighter(move.air, grounded=False)
-        self.assertFalse(move.enter_fall_special(missing, SimpleNamespace()))
+        self.assertTrue(move.enter_fall_special(missing, SimpleNamespace()))
+        self.assertEqual(missing.action, Action.FALL)
 
     def test_held_bomb_branch_is_optional_and_reports_airborne_state(self):
         move = YoungLinkDownSpecial()
