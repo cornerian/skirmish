@@ -44,10 +44,12 @@ class CaptainFalconTests(unittest.TestCase):
             self.facing = 1.0
             self.resource_value = None
             self.changes = []
+            self.command_at_change = []
             self.fall_special = []
 
         def change_action(self, action, **kwargs):
             self.changes.append((action, kwargs))
+            self.command_at_change.append(self.action_state.command)
             self.action = action
 
         def enter_fall_special(self, **kwargs):
@@ -577,6 +579,7 @@ class CaptainFalconTests(unittest.TestCase):
             )
         )
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+        self.assertEqual(fighter.command_at_change, [(0, 0, 0, 0)])
         self.assertIn(str(getattr(fighter.action, "reference", fighter.action)), {"Source.363", "Source.0:363"})
 
     def test_special_entries_consume_stale_command_slots(self):
