@@ -197,34 +197,6 @@ class Counter(EmblemDownSpecial):
     air = source_phase(371)
     air_hit = source_phase(372)
 
-    @on.command_changed(1, actions=(ground, air))
-    def command_changed(self, fighter, ctx) -> bool:
-        """Arm the source Counter shield before entering its hit phase.
-
-        ``ftMs_SpecialLw`` registers ``MarsAttributes::x64`` when command
-        variable one is raised.  The portable host may provide that descriptor
-        on the callback context and an optional registration method on the
-        fighter; retaining both lookups keeps this callback useful in native
-        and standalone authoring harnesses without fabricating shield fields.
-        """
-        event = getattr(ctx, "event", None)
-        if getattr(event, "value", 0) != 1:
-            return False
-        descriptor = getattr(ctx, "shield_descriptor", None)
-        if descriptor is None:
-            descriptor = getattr(ctx, "counter_shield", None)
-        register = getattr(fighter, "register_counter_shield", None)
-        if descriptor is not None and callable(register):
-            register(descriptor)
-        fighter_action = fighter.action
-        if fighter_action == self.ground:
-            fighter.change_action(self.ground_hit)
-            return True
-        if fighter_action == self.air:
-            fighter.change_action(self.air_hit)
-            return True
-        return False
-
 
 
 class Marth(Fighter):

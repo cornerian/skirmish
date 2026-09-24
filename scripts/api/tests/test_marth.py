@@ -178,20 +178,5 @@ class MarthSpecialTests(unittest.TestCase):
         self.assertTrue(move.choose_phase(fighter, context))
         self.assertEqual(fighter.action_state.command, (0, 1, 0, 0))
 
-    def test_counter_registers_source_shield_before_hit_phase(self):
-        move = self.marth.specials.down
-        shield = object()
-        calls = []
-        fighter = SimpleNamespace(
-            action=move.ground,
-            register_counter_shield=calls.append,
-            change_action=lambda action: setattr(fighter, "action", action),
-        )
-        context = SimpleNamespace(event=SimpleNamespace(value=1), shield_descriptor=shield)
-        self.assertTrue(move.command_changed(fighter, context))
-        self.assertEqual(calls, [shield])
-        self.assertIs(fighter.action, move.ground_hit)
-
-
 if __name__ == "__main__":
     unittest.main()

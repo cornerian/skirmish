@@ -281,20 +281,6 @@ class EmblemDownSpecial(DownSpecial, _EmblemFamilySpecial):
             }
         super().__init_subclass__(**kwargs)
 
-    @on.command_changed(1, actions=(ground, air))
-    def command_changed(self, fighter: Any, ctx: Any) -> bool:
-        """Enter ftMars's hit phase when command variable 1 is armed."""
-        value = getattr(getattr(ctx, "event", None), "value", 0)
-        if value != 1:
-            return False
-        if fighter.action == self.ground:
-            fighter.change_action(self.ground_hit)
-            return True
-        if fighter.action == self.air:
-            fighter.change_action(self.air_hit)
-            return True
-        return False
-
 __all__ = [
     "EmblemNeutralSpecial",
     "EmblemSideSpecial",

@@ -99,27 +99,13 @@ class EmblemFamilyTests(unittest.TestCase):
         self.assertTrue(move.choose_phase(fighter, neutral))
         self.assertEqual(fighter.action, move.ground_4_neutral)
 
-    def test_counter_command_one_enters_shared_hit_phase(self):
+    def test_counter_contact_callbacks_remain_unsupported_without_native_runtime(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
             module = _load(module_name)
             move = getattr(module, fighter_name).specials.down
-            ctx = SimpleNamespace(event=SimpleNamespace(value=1))
-            for start, hit in ((move.ground, move.ground_hit), (move.air, move.air_hit)):
-                fighter = self._Fighter(start)
-                self.assertTrue(move.command_changed(fighter, ctx))
-                self.assertEqual(fighter.action, hit)
-                self.assertEqual(fighter.changes, [(hit, {})])
-
-            # The native callback only reacts to the animation command's
-            # value one, and only while the entry phase is active.
-            fighter = self._Fighter(move.ground)
-            ctx.event.value = 0
-            self.assertFalse(move.command_changed(fighter, ctx))
-            self.assertEqual(fighter.action, move.ground)
-            fighter = self._Fighter(move.ground_hit)
-            ctx.event.value = 1
-            self.assertFalse(move.command_changed(fighter, ctx))
-            self.assertEqual(fighter.action, move.ground_hit)
+            hooks = {event.hook.value for event in move.events()}
+            self.assertNotIn("command_trace_changed", hooks)
+            self.assertNotIn("before_hit", hooks)
 
     def test_neutral_command_zero_enters_fully_charged_end_phase(self):
         for module_name, fighter_name in (("marth", "Marth"), ("roy", "Roy")):
