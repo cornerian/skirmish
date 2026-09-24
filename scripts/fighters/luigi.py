@@ -30,8 +30,12 @@ class Fireball(B0ArticleSpecial):
 
     @hook.action_enter(ground, air)
     def enter(self, fighter, ctx) -> None:
-        """Reset Luigi's native fireball throw latch on every entry."""
+        """Reset Luigi's native fireball command and throw latches on entry."""
         super().enter(fighter, ctx)
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, command[1], command[2], command[3])
         if hasattr(fighter, "throw_flags"):
             fighter.throw_flags = 0
 

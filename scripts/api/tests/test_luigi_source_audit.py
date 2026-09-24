@@ -10,10 +10,23 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from fighters.luigi import Cyclone
+from fighters.luigi import Cyclone, Fireball
 
 
 class LuigiSourceAuditTests(unittest.TestCase):
+    def test_fireball_entry_clears_command_slot_zero_before_spawn_callback(self):
+        """ftLg_SpecialN_Enter clears cmd_vars[0] and throw_flags."""
+        move = Fireball()
+        fighter = SimpleNamespace(
+            action_state=SimpleNamespace(command=(9, 2, 3, 4)),
+            throw_flags=7,
+        )
+
+        move.enter(fighter, SimpleNamespace())
+
+        self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
     def test_cyclone_charge_command_is_consumed_before_animation_end(self):
         move = Cyclone()
         fighter = SimpleNamespace(
