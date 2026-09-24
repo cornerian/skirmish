@@ -48,6 +48,7 @@ from .special_attributes import (
     DonkeyKongAttribute,
     JigglypuffPoundAttribute,
     JigglypuffRolloutAttribute,
+    KirbyAttribute,
     SamusAttribute,
 )
 from .standard import (
@@ -84,7 +85,7 @@ __all__ = [
     "velocity_from_angle",
     "ArticleId", "B0ArticleSpecial", "b0_source_phases", "Roster", "NeutralSpecial", "SideSpecial", "UpSpecial", "DownSpecial", "OpenSpecial", "SpecialRoot",
     "DirectionalSpecial", "directional_match",
-    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "JigglypuffRolloutAttribute", "SamusAttribute",
+    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "JigglypuffRolloutAttribute", "KirbyAttribute", "SamusAttribute",
     "CaptainNeutralSpecial", "CaptainSideSpecial", "CaptainUpSpecial", "CaptainDownSpecial",
     "any_stick_axis_reaches_thresholds", "directional_b_input", "directional_b_reserved", "directional_fresh_b",
     "fresh_special_input", "resource_attributes", "special_rules", "start_action",

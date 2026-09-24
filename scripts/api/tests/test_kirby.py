@@ -11,7 +11,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from fighter import Action, Button, export_definition  # noqa: E402
+from fighter import Action, Button, KirbyAttribute, export_definition  # noqa: E402
 from fighters.kirby import (  # noqa: E402
     FinalCutter,
     Hammer,
@@ -37,6 +37,13 @@ class _Fighter:
         self.action_frame = 0
         self.facing = 1.0
         self.action_state = SimpleNamespace(command=(0, 0, 0, 0))
+
+    def special_attribute(self, attribute):
+        return {
+            KirbyAttribute.STONE_MAX_TIME: 20,
+            KirbyAttribute.STONE_MIN_TIME: 5,
+            KirbyAttribute.STONE_GRAVITY: 0.1,
+        }.get(attribute)
 
     def enter_fall_special(self, **kwargs):
         self.fall_special = kwargs
@@ -76,7 +83,7 @@ class KirbySpecialTests(unittest.TestCase):
                 Kirby.specials.up,
                 Kirby.specials.down,
             )],
-            ["neutral", "side", "up", "down"],
+            ["neutral", "side", "up", "specials.special_attributes"],
         )
 
     def test_entries_are_resource_gated_and_directional(self):
@@ -215,7 +222,13 @@ class KirbySpecialTests(unittest.TestCase):
         move = Stone()
         fighter = _Fighter()
         fighter.action = move.ground_hold.action
-        self.assertTrue(move.release(fighter, SimpleNamespace()))
+        fighter.action_frame = 4
+        fighter.action_state.stone_remaining = 20
+        ctx = SimpleNamespace()
+        self.assertFalse(move.release(fighter, ctx))
+        self.assertIs(fighter.action, move.ground_hold.action)
+        fighter.action_state.stone_remaining = 15
+        self.assertTrue(move.release(fighter, ctx))
         self.assertIs(fighter.action, move.ground_end)
 
     def test_final_cutter_source_phase_chains(self):
@@ -226,6 +239,30 @@ class KirbySpecialTests(unittest.TestCase):
         self.assertIs(move.on_end[move.air_start].target, move.air_rise)
         self.assertIs(move.on_end[move.air_rise].target, move.air_fall)
         self.assertIs(move.on_end[move.air_fall].target, move.air_end)
+    def test_stone_entry_initializes_source_timeout_and_surface_hold_pair(self):
+        move = Stone()
+        fighter = _Fighter()
+        fighter.action = move.ground_start.action
+        move.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.stone_remaining, 20)
+        fighter.action = move.air_hold.action
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.ground_hold.action)
+        self.assertEqual(fighter.changes[-1][1], {
+            "preserve_state": True,
+            "keep_frame": True,
+        })
+
+    def test_stone_timeout_releases_ground_and_air_variants(self):
+        move = Stone()
+        for source, target in (
+            (move.ground_hold, move.ground_end),
+            (move.air_hold, move.air_end),
+        ):
+            fighter = _Fighter()
+            fighter.action = source.action
+            move.timeout(fighter, SimpleNamespace())
+            self.assertIs(fighter.action, target)
 
     def test_hammer_air_landing_enters_fall_special_lag(self):
         move = Hammer()

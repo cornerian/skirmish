@@ -117,3 +117,17 @@ class JigglypuffRolloutAttribute(_Attribute):
     HIT_TOGGLE_PERIOD = (17, 6)  # x9C
     WALL_SPEED_SCALE = (18, 6)  # xD4
     TURN_STICK_THRESHOLD = (19, 6)  # x68
+
+class KirbyAttribute(_Attribute):
+    """Typed fields from ``ftKb_DatAttrs``'s Stone block."""
+
+    STONE_MAX_TIME = (59, 6)  # +0xEC
+    STONE_MIN_TIME = (60, 6)  # +0xF0
+    STONE_MIN_SLANT_ANGLE = (61, 6)  # +0xF4
+    STONE_MAX_SLANT_ANGLE = (62, 6)  # +0xF8
+    STONE_SLIDE_ACCELERATION = (63, 6)  # +0xFC
+    STONE_SLIDE_MAX_SPEED = (64, 6)  # +0x100
+    STONE_GRAVITY = (65, 6)  # +0x104
+    STONE_HP = (66, 6)  # +0x108
+    STONE_RESISTANCE = (67, 6)  # +0x10C
+    STONE_FREEFALL_TOGGLE = (69, 6)  # +0x114

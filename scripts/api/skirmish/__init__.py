@@ -13,7 +13,7 @@ from fighter import (
     start_action, start_complete_special, start_fresh_open_special, start_open_special,
     stick_axis_reaches_threshold,
     ArticleId, B0ArticleSpecial, b0_source_phases, Roster, DirectionalSpecial, NeutralSpecial, SideSpecial, UpSpecial, DownSpecial, OpenSpecial, SpecialRoot, directional_match, custom_action, source_action, source_phase,
-    DonkeyKongAttribute, JigglypuffPoundAttribute, JigglypuffRolloutAttribute, SamusAttribute,
+    DonkeyKongAttribute, JigglypuffPoundAttribute, JigglypuffRolloutAttribute, KirbyAttribute, SamusAttribute,
     CaptainNeutralSpecial, CaptainSideSpecial, CaptainUpSpecial, CaptainDownSpecial,
 )
 from fighter import hook, math
@@ -28,7 +28,7 @@ __all__ = [
     "on", "hook", "math", "register", "registered_fighters", "validate_fighter", "resolve_identity",
     "velocity_from_angle",
     "ArticleId", "B0ArticleSpecial", "b0_source_phases", "Roster", "DirectionalSpecial", "NeutralSpecial", "SideSpecial", "UpSpecial", "DownSpecial", "OpenSpecial", "SpecialRoot", "directional_match",
-    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "JigglypuffRolloutAttribute", "SamusAttribute",
+    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "JigglypuffRolloutAttribute", "KirbyAttribute", "SamusAttribute",
     "CaptainNeutralSpecial", "CaptainSideSpecial", "CaptainUpSpecial", "CaptainDownSpecial",
     "any_stick_axis_reaches_thresholds", "directional_b_input", "directional_b_reserved", "directional_fresh_b",
     "fresh_special_input", "resource_attributes", "special_rules", "start_action",

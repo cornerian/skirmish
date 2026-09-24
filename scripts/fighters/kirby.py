@@ -8,9 +8,12 @@ recreate dynamic copied specials or article behavior.
 
 from skirmish import (
     Action,
+    ActionState,
     Button,
+    CommonParameter,
     DownSpecial,
     Fighter,
+    KirbyAttribute,
     NeutralSpecial,
     SideSpecial,
     SpecialRoot,
@@ -21,9 +24,18 @@ from skirmish import (
     fresh_special_input,
     frame_preserving_surface_pairs,
     hook,
+    motion,
+    parameter,
+    special_attribute,
     source_phase,
     start_action,
 )
+
+
+class KirbyActionState(ActionState):
+    """Native fighter-local fields used by Kirby's Stone callbacks."""
+
+    stone_remaining: int = 0
 
 
 class _KirbySpecial:
@@ -267,14 +279,53 @@ class FinalCutter(UpSpecial, _KirbySpecial):
 class Stone(DownSpecial, _KirbySpecial):
     """Stone's entry, held, and release phases."""
 
+    resource = "specials.special_attributes"
+    _ATTRIBUTES = tuple(KirbyAttribute)
     ground_start = source_phase(393)
-    ground_hold = source_phase(394, animation_loop=True)
+    ground_hold = source_phase(
+        394,
+        animation_loop=True,
+        motion=motion.profile(ground=(motion.ground_friction_above_walk(),)),
+    )
     ground_end = source_phase(395)
     air_start = source_phase(396)
-    air_hold = source_phase(397, animation_loop=True)
+    air_hold = source_phase(
+        397,
+        animation_loop=True,
+        motion=motion.profile(
+            air=(motion.gravity(
+                acceleration=special_attribute(KirbyAttribute.STONE_GRAVITY),
+                terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
+                delay=0,
+            ),),
+        ),
+    )
     air_end = source_phase(398)
     ground, air = ground_start, air_start
     _ACTIVE = (ground_start, ground_hold, ground_end, air_start, air_hold, air_end)
+
+    @staticmethod
+    def _state(fighter):
+        state = getattr(fighter, "action_state", None)
+        if state is None:
+            state = type("KirbyStoneState", (), {})()
+            fighter.action_state = state
+        return state
+
+    @hook.action_enter(ground_start, air_start)
+    def enter(self, fighter: Fighter, ctx) -> None:
+        """Mirror ``ftKb_SpecialLw[_Air]_Enter``'s timer initialization."""
+        max_time = fighter.special_attribute(KirbyAttribute.STONE_MAX_TIME)
+        if max_time is not None:
+            self._state(fighter).stone_remaining = int(max_time)
+
+    @hook.countdown("stone_remaining", ground_hold, air_hold, phase="physics")
+    def timeout(self, fighter: Fighter, ctx) -> None:
+        """The source IASA releases automatically when the timer reaches zero."""
+        if fighter.action == self.ground_hold.action:
+            fighter.change_action(self.ground_end)
+        elif fighter.action == self.air_hold.action:
+            fighter.change_action(self.air_end)
 
     @hook.input_released(Button.B)
     def release(self, fighter: Fighter, ctx) -> bool:
@@ -284,6 +335,16 @@ class Stone(DownSpecial, _KirbySpecial):
             self.air_hold.action: self.air_end,
         }.get(fighter.action)
         if destination is None:
+            return False
+        minimum = fighter.special_attribute(KirbyAttribute.STONE_MIN_TIME)
+        if minimum is None:
+            return False
+        remaining = getattr(self._state(fighter), "stone_remaining", None)
+        maximum = fighter.special_attribute(KirbyAttribute.STONE_MAX_TIME)
+        if remaining is not None and maximum is not None:
+            if remaining > maximum - int(minimum):
+                return False
+        elif getattr(fighter, "action_frame", 0) < int(minimum):
             return False
         fighter.change_action(destination)
         return True
@@ -298,6 +359,11 @@ class Stone(DownSpecial, _KirbySpecial):
         ground_start, ground_hold, air_start, air_hold
     )
     _ground, _air = frame_preserving_surface_pairs(
+        ground_hold, ground_hold, air_hold, air_hold
+    )
+    on_ground.update(_ground)
+    on_air.update(_air)
+    _ground, _air = frame_preserving_surface_pairs(
         ground_end, ground_end, air_end, air_end
     )
     on_ground.update(_ground)
@@ -305,6 +371,7 @@ class Stone(DownSpecial, _KirbySpecial):
 
 
 class Kirby(Fighter):
+    action_state = KirbyActionState
     specials = Fighter.specials.replace(
         neutral=Inhale(),
         side=Hammer(),
@@ -313,4 +380,4 @@ class Kirby(Fighter):
     )
 
 
-__all__ = ["Kirby", "Inhale", "Hammer", "FinalCutter", "Stone"]
+__all__ = ["Kirby", "KirbyActionState", "Inhale", "Hammer", "FinalCutter", "Stone"]
