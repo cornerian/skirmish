@@ -301,6 +301,22 @@ class Bomb(DownSpecial, _KoopaSpecial):
     on_ground = {air: Transition(landing, preserve_state=True, keep_frame=True)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
+    def _transition_animation_end(self, fighter: Any, ctx: Any) -> None:
+        """Enter the aerial pound at the native launch frame.
+
+        ``ftKp_SpecialLw_Anim`` calls ``ftKp_SpecialLw_80134988`` when the
+        ground pound ends.  That helper changes to motion 362 at animation
+        frame 30, rather than restarting the aerial motion at frame zero.
+        The generic transition descriptor has no frame target, but the
+        portable fighter proxy exposes ``action_frame`` for this source
+        callback.
+        """
+        if fighter.action == self.ground:
+            fighter.change_action(self.air)
+            fighter.action_frame = 30
+            return
+        super()._transition_animation_end(fighter, ctx)
+
 
 class Bowser(Fighter):
     action_state = BowserActionState

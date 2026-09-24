@@ -148,6 +148,13 @@ class BowserTests(unittest.TestCase):
         down._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, Action.FALL)
 
+    def test_bowser_bomb_ground_end_enters_aerial_motion_at_frame_30(self):
+        down = Bowser.specials.down
+        fighter = _Fighter(down.ground)
+        down._transition_animation_end(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, down.air)
+        self.assertEqual(fighter.action_frame, 30)
+
     def test_item_and_capture_effects_are_not_fabricated(self):
         for name, action in self.definition["actions"].items():
             if name.startswith("special."):
