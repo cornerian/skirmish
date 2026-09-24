@@ -245,6 +245,34 @@ class ElectricDownSpecial(DownSpecial, _ElectricEntry):
         fighter.change_action(destination)
         return True
 
+    @on.command_changed(
+        0, actions=("Source.360", "Source.361", "Source.364", "Source.365")
+    )
+    def command_changed(self, fighter: Any, ctx: MoveContext) -> bool:
+        """Exit Thunder loop or hit phases when native command 0 is set."""
+        event = getattr(ctx, "event", None)
+        if not getattr(event, "value", 0):
+            return False
+        destination = {
+            self.ground_loop: self.ground_end,
+            self.ground_hit: self.ground_end,
+            self.air_loop: self.air_end,
+            self.air_hit: self.air_end,
+        }.get(fighter.action)
+        if destination is None:
+            # Roster binding qualifies shared source actions per fighter.
+            state = getattr(getattr(fighter.action, "action", None), "slippi_state", None)
+            destination = {
+                360: self.ground_end,
+                361: self.ground_end,
+                364: self.air_end,
+                365: self.air_end,
+            }.get(state)
+        if destination is None:
+            return False
+        fighter.change_action(destination)
+        return True
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         names = ("ground_start", "ground_loop", "ground_hit", "ground_end",
                  "air_start", "air_loop", "air_hit", "air_end")

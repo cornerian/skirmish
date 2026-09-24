@@ -14,12 +14,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action, ArticleId, Button, export_definition
-from fighters.pichu import (
-    PICHU_THUNDER_COMMAND_ENDS,
-    Pichu,
-    PichuParameters,
-    pichu_thunder_command_transition,
-)
+from fighters.pichu import Pichu, PichuParameters
 
 
 class _Fighter:
@@ -159,19 +154,30 @@ class PichuTests(unittest.TestCase):
         self.assertEqual(fighter.action, Action.FALL)
 
     def test_thunder_command_zero_ends_ground_and_air_loop_phases(self):
+        down_behavior = next(
+            behavior for behavior in self.definition["behaviors"]
+            if behavior["resource"] == "down"
+        )
+        self.assertTrue(any(
+            callback["hook"] == "command_trace_changed"
+            and callback["callback"].endswith("command_changed")
+            for callback in down_behavior["callbacks"]
+        ))
         move = Pichu.specials.down
         for loop, hit, end, end_state in (
             (move.ground_loop, move.ground_hit, move.ground_end, 362),
             (move.air_loop, move.air_hit, move.air_end, 366),
         ):
-            self.assertIn(end_state, PICHU_THUNDER_COMMAND_ENDS.values())
-            self.assertIsNone(pichu_thunder_command_transition(loop, 0))
-            self.assertEqual(
-                pichu_thunder_command_transition(loop, 1), end_state
-            )
-            self.assertEqual(
-                pichu_thunder_command_transition(hit, 1), end_state
-            )
+            move = Pichu.specials.down
+            for phase in (loop, hit):
+                fighter = _Fighter(phase)
+                self.assertFalse(
+                    move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=0)))
+                )
+                self.assertTrue(
+                    move.command_changed(fighter, SimpleNamespace(event=SimpleNamespace(value=1)))
+                )
+                self.assertEqual(fighter.action, end)
 
     def test_no_unbacked_article_callback_is_exported(self):
         for behavior in self.definition["behaviors"]:

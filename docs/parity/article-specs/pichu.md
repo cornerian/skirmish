@@ -53,9 +53,8 @@ landing-lag transition.
 The down-special loop callbacks also check command variable 0 before testing
 Thunder contact.  A nonzero value exits ground loop or hit (states 360/361)
 to ground end (362), and exits aerial loop or hit (364/365) to aerial end
-(366).  The portable script exposes this source transition through
-`pichu_thunder_command_transition`; a zero command leaves the current phase
-unchanged.
+(366).  The shared portable Thunder callback exports this command transition
+for both Pikachu and Pichu; a zero command leaves the current phase unchanged.
 
 The Jolt article initializes its owner links and effect state in
 `itPikachutjoltground.c` / `itpikachutjoltair.c`, follows the source surface
