@@ -167,7 +167,9 @@ class YoungLinkSideSpecial(_FamilySideSpecial):
             if abs(stick[0]) < threshold:
                 return
         window = getattr(specials, "dash_smash_window", None)
-        if window is not None and getattr(fighter, "action_frame", 0) > window:
+        # Native on21EC accepts the dash-smash command only while x673 is
+        # strictly below the configured window (plus the common offset).
+        if window is not None and getattr(fighter, "action_frame", 0) >= window:
             return
         update = getattr(fighter, "update_boomerang_trajectory", None)
         if callable(update):

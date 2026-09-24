@@ -217,6 +217,12 @@ class YoungLinkTests(unittest.TestCase):
             SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
         )
         self.assertEqual(updates, [])
+        fighter.action_frame = 3
+        move.boomerang_release(
+            fighter,
+            SimpleNamespace(event=event, input=SimpleNamespace(stick=(1.0, 0.0)), rules=rules),
+        )
+        self.assertEqual(updates, [])
         fighter.action_frame = 2
         move.boomerang_release(
             fighter,
