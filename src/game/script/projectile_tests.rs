@@ -438,7 +438,7 @@ fn mario_fireball_spawn_uses_article_owned_launch() {
     assert_eq!(projectile.half_life, Some(30.0));
     assert!(matches!(
         projectile.behavior,
-        crate::game::projectile::ProjectileBehavior::Gravity(_)
+        crate::game::projectile::ProjectileBehavior::MarioFireball(_)
     ));
 }
 

@@ -150,6 +150,10 @@ pub struct GravityProjectileState {
 pub enum ProjectileBehavior {
     Ray,
     Gravity(GravityProjectileState),
+    /// Mario's `itMariofireball_UnkMotion0_*` callbacks.  It shares the
+    /// optimized falling and swept collision primitives with gravity
+    /// articles, while retaining a distinct native behavior identity.
+    MarioFireball(GravityProjectileState),
 }
 
 /// One in-flight projectile. `hitboxes` are this instance's own fixed
@@ -273,7 +277,9 @@ pub(crate) fn spawn(
         speed,
         half_life: match behavior {
             ProjectileBehavior::Ray => None,
-            ProjectileBehavior::Gravity(gravity) => Some(gravity.half_life),
+            ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) => {
+                Some(gravity.half_life)
+            }
         },
         velocity,
         facing: facing_from_velocity(vx),
@@ -443,7 +449,9 @@ fn step(
 
     // Item physics runs before the environment pass. Gravity articles retain
     // the already-computed vector, avoiding repeated trig in the hot path.
-    if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior {
+    if let ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) =
+        state.projectiles[index].behavior
+    {
         state.projectiles[index].velocity = gravity_step(
             state.projectiles[index].velocity,
             gravity.gravity,
@@ -512,7 +520,9 @@ fn step(
     )
     .map_err(|e: crate::collision::stage::StageError| super::Error::Physics(e.to_string()))?;
     if let Some((_surface, contact)) = terrain_contact {
-        if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior {
+        if let ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) =
+            state.projectiles[index].behavior
+        {
             let incoming = dot(
                 [
                     state.projectiles[index].velocity[0],
@@ -555,13 +565,19 @@ fn step(
     // `down::Reflect.max_damage` (`ftColl_80077464`, `ftcoll.c:764`).
     let reflection_enabled = match state.projectiles[index].behavior {
         ProjectileBehavior::Ray => true,
-        ProjectileBehavior::Gravity(gravity) => {
+        ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) => {
             gravity.contact.reflection == ProjectileReflection::ReverseOwner
         }
     };
     let typed_reflection = matches!(
         state.projectiles[index].behavior,
         ProjectileBehavior::Gravity(GravityProjectileState {
+            contact: ProjectileContactPolicy {
+                reflection: ProjectileReflection::ReverseOwner,
+                ..
+            },
+            ..
+        }) | ProjectileBehavior::MarioFireball(GravityProjectileState {
             contact: ProjectileContactPolicy {
                 reflection: ProjectileReflection::ReverseOwner,
                 ..
@@ -710,7 +726,8 @@ fn step(
         )
         .map_err(|e| super::Error::Physics(e.to_string()))?;
         if overlaps && let Some(normal) = normalize(sub(contact.position, center)) {
-            if let ProjectileBehavior::Gravity(gravity) = state.projectiles[index].behavior
+            if let ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) =
+                state.projectiles[index].behavior
                 && gravity.contact.shield == ProjectileShield::Despawn
             {
                 return Ok(Outcome::Despawn);
@@ -847,6 +864,12 @@ fn step(
             let persists = matches!(
                 state.projectiles[index].behavior,
                 ProjectileBehavior::Gravity(GravityProjectileState {
+                    contact: ProjectileContactPolicy {
+                        persistence: ProjectilePersistence::Persist,
+                        ..
+                    },
+                    ..
+                }) | ProjectileBehavior::MarioFireball(GravityProjectileState {
                     contact: ProjectileContactPolicy {
                         persistence: ProjectilePersistence::Persist,
                         ..
