@@ -128,10 +128,14 @@ pub struct State {
     pub turn_frames: f32,
     pub turn_has_turned: bool,
     /// `mv.co.turn.just_turned`: set by Turn's animation callback for the
-    /// single IASA pass after the facing flip.  The source only converts a
-    /// smash Turn to Dash during this pass, after `fn_800C9C2C` has armed
-    /// `x8`; an ordinary Turn must remain Turn while that flag is false.
+    /// animation callback. The input callback runs before that animation
+    /// callback in the source, so the pulse is consumed on the next frame by
+    /// `turn_just_turned_pending` below.
     pub turn_just_turned: bool,
+    /// Deferred `just_turned` pulse consumed by the following IASA pass.
+    /// Keeping this separate models the source callback order without
+    /// reordering the simulator's shared animation phase.
+    pub turn_just_turned_pending: bool,
     pub turn_smash: bool,
     pub dash_initial_delta: f32,
     /// `mv.co.dash.x4`: true when this Dash was entered by `try_dash`/a
@@ -194,6 +198,7 @@ impl Default for State {
             turn_frames: 0.0,
             turn_has_turned: false,
             turn_just_turned: false,
+            turn_just_turned_pending: false,
             turn_smash: false,
             dash_initial_delta: 0.0,
             dash_from_input: true,
@@ -522,6 +527,7 @@ fn start_turn(f: &mut Fighter, p: &Parameters, smash: bool) {
     f.locomotion.turn_frames = if smash { 0.0 } else { p.standing_turn_frames };
     f.locomotion.turn_has_turned = false;
     f.locomotion.turn_just_turned = false;
+    f.locomotion.turn_just_turned_pending = false;
     f.locomotion.turn_smash = smash;
 }
 
@@ -1071,12 +1077,25 @@ pub(crate) fn update_actions(
             } else {
                 -f.facing
             };
+            // Turn's IASA callback precedes Turn_Anim in the source. A
+            // just-turned pulse produced by this frame's animation therefore
+            // cannot be consumed until the next frame.
+            let just_turned = if f.locomotion.turn_just_turned {
+                f.locomotion.turn_just_turned = false;
+                f.locomotion.turn_just_turned_pending = true;
+                false
+            } else if f.locomotion.turn_just_turned_pending {
+                f.locomotion.turn_just_turned_pending = false;
+                true
+            } else {
+                false
+            };
             let smash_this_frame = input.stick[0] * facing_after >= p.dash_threshold
                 && f.locomotion.tilt_x_age < p.dash_window;
             if smash_this_frame {
                 f.locomotion.turn_smash = true;
             }
-            if f.locomotion.turn_just_turned
+            if just_turned
                 && f.locomotion.turn_smash
                 && input.stick[0] * facing_after >= p.dash_threshold
             {
@@ -1095,8 +1114,6 @@ pub(crate) fn update_actions(
                 // completion, not ftCo_Dash_CheckInput, so dash.x4 = 0.
                 start_dash(f, p, false);
             }
-            // `ftCo_Turn_IASA` clears just_turned after its one pass.
-            f.locomotion.turn_just_turned = false;
         }
         Action::SquatWait => {
             if try_dash(f, p, input) {

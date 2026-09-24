@@ -47,7 +47,10 @@ fn hitbox() -> Hitbox {
         element: Default::default(),
         group: 0,
         bone: 1,
-        center: [1.5, 0.0, 0.0],
+        // Fighter poses apply the native +90 degree Y root rotation before
+        // composing child bones.  Source-authored forward offsets therefore
+        // use local +Z, which maps to world +X for the default facing.
+        center: [0.0, 0.0, 1.5],
         radius: 1.25,
         damage: 9,
         shield_damage: 0,
