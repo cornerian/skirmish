@@ -9,6 +9,7 @@ from skirmish import (
     Action,
     ActionState,
     Button,
+    CommonParameter,
     Fighter,
     MoveContext,
     NeutralSpecial,
@@ -16,10 +17,18 @@ from skirmish import (
     Transition,
     hook,
     motion,
+    parameter,
     special_attribute,
     source_phase,
     start_complete_special,
 )
+
+
+class _HashableCases(dict):
+    """Keep nested motion case maps usable as action descriptor keys."""
+
+    def __hash__(self):
+        return hash(tuple((key, repr(value)) for key, value in self.items()))
 
 
 class DonkeyKongActionState(ActionState):
@@ -213,10 +222,29 @@ _AIR = source_phase(
     382,
     motion=motion.profile(
         air=(
-            motion.gravity_multiplier(
+            # ftDk_SpecialAirHi_Phys uses ordinary gravity after the aerial
+            # collision callback raises cmd_vars[0].  The old declaration
+            # always applied DK's reduced multiplier, so landing on a
+            # platform and continuing in the aerial phase had the wrong
+            # vertical acceleration.
+            motion.command_branch(
                 index=0,
-                value=0,
-                multiplier=special_attribute(DonkeyKongAttribute.SPECIAL_HI_AERIAL_GRAVITY),
+                cases=_HashableCases({
+                    0: (motion.gravity_multiplier(
+                        index=0,
+                        value=0,
+                        multiplier=special_attribute(
+                            DonkeyKongAttribute.SPECIAL_HI_AERIAL_GRAVITY
+                        ),
+                    ),),
+                    1: (
+                        motion.gravity(
+                            acceleration=parameter(CommonParameter.GRAVITY),
+                            terminal_velocity=parameter(CommonParameter.TERMINAL_VELOCITY),
+                            delay=0,
+                        ),
+                    ),
+                }),
             ),
             motion.stick_steering(
                 threshold=0.0,

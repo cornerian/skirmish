@@ -104,10 +104,12 @@ class DonkeyKongTests(unittest.TestCase):
         ground = actions["special.up.ground"]["motion"]["kwargs"]["ground"][0]
         air_operations = actions["special.up.air"]["motion"]["kwargs"]["air"]
         gravity, air = air_operations
-        self.assertEqual(gravity["callee"], "motion.gravity_multiplier")
-        self.assertEqual(gravity["kwargs"]["index"], 0)
-        self.assertEqual(gravity["kwargs"]["value"], 0)
-        self.assertEqual(gravity["kwargs"]["multiplier"]["args"][0], {"layout": 3, "field_id": 1})
+        self.assertEqual(gravity["callee"], "motion.command_branch")
+        reduced_gravity = gravity["kwargs"]["cases"]["0"][0]
+        self.assertEqual(reduced_gravity["callee"], "motion.gravity_multiplier")
+        self.assertEqual(reduced_gravity["kwargs"]["index"], 0)
+        self.assertEqual(reduced_gravity["kwargs"]["value"], 0)
+        self.assertEqual(reduced_gravity["kwargs"]["multiplier"]["args"][0], {"layout": 3, "field_id": 1})
         self.assertEqual(ground["callee"], "motion.stick_steering")
         self.assertEqual(air["callee"], "motion.stick_steering")
         self.assertEqual(ground["kwargs"]["threshold"], 0.0)
@@ -116,6 +118,22 @@ class DonkeyKongTests(unittest.TestCase):
         self.assertEqual(ground["kwargs"]["target"]["args"][0], {"layout": 3, "field_id": 2})
         self.assertEqual(air["kwargs"]["acceleration"]["args"][0], {"layout": 3, "field_id": 5})
         self.assertEqual(air["kwargs"]["target"]["args"][0], {"layout": 3, "field_id": 3})
+
+    def test_spinning_kong_air_gravity_switches_after_collision_command(self):
+        """ftDk_SpecialAirHi_Phys uses normal gravity once cmd_vars[0] is set."""
+        actions = export_definition(self.module.DonkeyKong).as_dict()["actions"]
+        operations = actions["special.up.air"]["motion"]["kwargs"]["air"]
+        branch = operations[0]
+        self.assertEqual(branch["callee"], "motion.command_branch")
+        self.assertEqual(branch["kwargs"]["index"], 0)
+        cases = branch["kwargs"]["cases"]
+        self.assertEqual(cases["0"][0]["callee"], "motion.gravity_multiplier")
+        self.assertEqual(cases["0"][0]["kwargs"]["value"], 0)
+        self.assertEqual(cases["1"][0]["callee"], "motion.gravity")
+        self.assertEqual(
+            cases["1"][0]["kwargs"]["acceleration"]["args"][0],
+            "movement.gravity",
+        )
 
     def test_up_b_enters_ground_or_air_phase_only_with_upward_direction(self):
         fighter = _Fighter()

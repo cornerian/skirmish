@@ -63,6 +63,23 @@ and cancel transitions. Native ownership still covers the charge counter,
 capsules, effect IDs, damage scaling, and landing lag because those fields are
 not part of the current script API.
 
+## Headbutt, Spinning Kong, and Hand Slap audit
+
+The side special (Headbutt) has no fighter IASA command branch: its ground and
+air animations run to completion, then return to Wait or Fall. Spinning Kong
+uses command variable 0 as a gravity mode: value 0 applies
+`SpecialHi.x50_AERIAL_GRAVITY`, while a nonzero value uses ordinary fighter
+gravity. The script declaration preserves that branch in its air motion
+descriptor; this matters after the aerial collision callback sets the command.
+
+Hand Slap starts at state 383, enters looping state 384 when the start motion
+ends, and only samples B during the loop IASA callback. A B press latches one
+additional loop; the loop animation consumes that latch at its end, otherwise
+it enters end state 385. State 385 returns to Wait when complete, while state
+386 is the landing continuation that exits through collision. These command
+and hitbox callbacks remain native-owned until the script API exposes the
+effect and collision resources.
+
 ## Cargo and grab object dependencies
 
 Donkey Kong's cargo hold, walk, turn, jump, landing, and throw states are
