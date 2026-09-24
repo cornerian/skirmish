@@ -225,9 +225,10 @@ class DrTornado(DownSpecial, _SourcePair):
         Dr. Mario uses Mario's ``ftMr_SpecialAirLw_Anim`` callback.  It
         consumes command 1 before checking the animation end, then enters
         ``ftCo_80096900`` with mobility 1 when ``speciallw.landing_lag`` is
-        nonzero; zero uses ordinary Fall.
+        nonzero; zero uses ordinary Fall.  Consuming a tap alone never
+        suppresses that terminal transition.
         """
-        tap_consumed = self._consume_air_tap(fighter)
+        self._consume_air_tap(fighter)
         attributes = resource_attributes(ctx, self.resource)
         landing_lag = getattr(
             attributes,
@@ -243,7 +244,7 @@ class DrTornado(DownSpecial, _SourcePair):
         ):
             enter(mobility=1, landing_lag=landing_lag)
             return True
-        return tap_consumed
+        return False
 
 
 class DrMario(Fighter):

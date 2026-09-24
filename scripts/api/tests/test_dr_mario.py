@@ -233,7 +233,45 @@ class DrMarioSpecialTests(unittest.TestCase):
         fighter.action = move.air
         fighter.action_state.command = (0, 1, 5, 4)
 
-        self.assertTrue(move.finish_air(fighter, object()))
+        self.assertFalse(move.finish_air(fighter, object()))
+        self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
+
+    def test_down_aerial_completion_with_tap_enters_authored_fall_special(self):
+        move = DrMario.specials.down
+        calls = []
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 1, 5, 4)
+        fighter.enter_fall_special = lambda **kwargs: calls.append(kwargs)
+        attributes = type("Attributes", (), {"speciallw_landing_lag": 18})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        self.assertTrue(move.finish_air(fighter, context))
+        self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
+        self.assertEqual(calls, [{"mobility": 1, "landing_lag": 18}])
+
+    def test_down_aerial_completion_with_tap_keeps_plain_fall_at_zero_lag(self):
+        move = DrMario.specials.down
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (0, 1, 5, 4)
+        fighter.enter_fall_special = lambda **kwargs: self.fail(
+            "zero landing lag must use ordinary Fall"
+        )
+        attributes = type("Attributes", (), {"speciallw_landing_lag": 0})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        self.assertFalse(move.finish_air(fighter, context))
         self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
         self.assertTrue(fighter.action_state.tornado_charge)
 
