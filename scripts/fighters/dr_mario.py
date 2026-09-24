@@ -20,6 +20,7 @@ from skirmish import (
     hook,
     source_phase,
 )
+from fighter.helpers import resource_attributes
 
 
 class Megavitamin(B0ArticleSpecial):
@@ -133,6 +134,27 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
             state.command = (0, command[1], command[2], command[3])
         if hasattr(fighter, "throw_flags"):
             fighter.throw_flags = 0
+
+    @hook.animation_end(ground, air)
+    def enter_fall_special(self, fighter: Fighter, ctx) -> bool:
+        """Match ``ftMr_SpecialHi_Anim``'s shared FallSpecial exit.
+
+        Dr. Mario's motion table points at Mario's up-special animation
+        callbacks, so both ground and aerial entries call the common
+        ``ftCo_80096900`` fall-special transition when the animation ends.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "specialhi_freefall_mobility", None),
+        )
+        landing_lag = getattr(attributes, "specialhi_landing_lag", None)
+        enter = getattr(fighter, "enter_fall_special", None)
+        if mobility is None or landing_lag is None or not callable(enter):
+            return False
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
 
 
 class DrTornado(DownSpecial, _SourcePair):

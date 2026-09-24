@@ -170,6 +170,25 @@ class DrMarioSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
         self.assertEqual(fighter.throw_flags, 0)
 
+    def test_up_animation_end_enters_source_fall_special(self):
+        move = DrMario.specials.up
+        calls = []
+        fighter = type("FallSpecialFighter", (), {
+            "enter_fall_special": lambda self, **kwargs: calls.append(kwargs),
+        })()
+        attributes = type("Attributes", (), {
+            "specialhi_freefall_air_spd_mul": 0.8,
+            "specialhi_landing_lag": 12.0,
+        })()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        self.assertTrue(move.enter_fall_special(fighter, context))
+        self.assertEqual(calls, [{"mobility": 0.8, "landing_lag": 12.0}])
+
     def test_down_entry_clears_tornado_commands_and_aerial_tap_latches_charge(self):
         fighter = _Fighter()
         move = DrMario.specials.down
