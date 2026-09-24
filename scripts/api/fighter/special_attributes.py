@@ -87,3 +87,33 @@ class JigglypuffPoundAttribute(_Attribute):
     MAX_LAUNCH_ANGLE = (2, 5)
     LAUNCH_SPEED = (3, 5)
     VELOCITY_MULTIPLIER = (4, 5)
+
+
+class JigglypuffRolloutAttribute(_Attribute):
+    """Typed view of the native ``ftPurinAttributes`` Rollout fields.
+
+    The field ids are the compact script-resource ids.  The comments retain
+    the source member names so resources can be populated from the pinned
+    decomp without copying tuning values into the script.
+    """
+
+    CHARGE_INITIAL = (0, 6)  # ftPurinAttributes::xA0
+    CHARGE_MAX = (1, 6)  # xA4
+    CHARGE_RATE = (2, 6)  # xA8
+    CHARGE_ANGLE_DEGREES = (3, 6)  # xAC
+    TURN_DECELERATION = (4, 6)  # x6C
+    TURN_EFFECT_INTERVAL = (5, 6)  # x70
+    GROUND_RELEASE_OFFSET = (6, 6)  # xB8
+    CHARGE_DECAY = (7, 6)  # xB4
+    RELEASE_VELOCITY = (8, 6)  # xC0
+    GROUND_SPEED_LIMIT = (9, 6)  # x4C
+    GROUND_SPEED_CAP = (10, 6)  # x50
+    GROUND_SLOPE_INFLUENCE = (11, 6)  # xC8
+    AIR_DECELERATION = (12, 6)  # x58
+    AIR_MIN_SPEED = (13, 6)  # x5C
+    HIT_SPEED_THRESHOLD = (14, 6)  # xCC
+    DAMAGE_BASE = (15, 6)  # x80
+    DAMAGE_SPEED_SCALE = (16, 6)  # x84
+    HIT_TOGGLE_PERIOD = (17, 6)  # x9C
+    WALL_SPEED_SCALE = (18, 6)  # xD4
+    TURN_STICK_THRESHOLD = (19, 6)  # x68

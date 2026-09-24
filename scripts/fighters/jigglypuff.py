@@ -1,9 +1,10 @@
 """Jigglypuff's source-defined special motion families."""
 
-from fighter import JigglypuffPoundAttribute
+from fighter import JigglypuffPoundAttribute, JigglypuffRolloutAttribute
 
 from skirmish import (
     Action,
+    ActionState,
     Button,
     CommonParameter,
     Fighter,
@@ -77,6 +78,15 @@ class Roll(NeutralSpecial):
     air_end_right = _phase_action(361)
     hit = _phase_action(362)
 
+    class State(ActionState):
+        charge = 0.0
+        capsule_enabled = True
+        capsule_group = 0
+        capsule_damage = 0
+        capsule_frames = 0
+
+    action_state = State
+
     _START = (ground_start_left, ground_start_right, air_start_left, air_start_right)
     _CHARGE = (ground_loop, ground_full, air_loop, air_full)
     _ACTIVE = _START + _CHARGE + (
@@ -104,15 +114,128 @@ class Roll(NeutralSpecial):
             )
         if not fighter.has_complete_animation(state):
             return False
+        state_data = getattr(fighter, "action_state", None)
+        if state_data is not None:
+            state_data.charge = self._attribute(
+                fighter, JigglypuffRolloutAttribute.CHARGE_INITIAL, 0.0
+            )
+            state_data.capsule_enabled = True
+            state_data.capsule_group = 0
+            state_data.capsule_damage = 0
+            state_data.capsule_frames = 0
         start_action(fighter, phase)
         return True
 
     @hook.input_released(Button.B)
     def release(self, fighter: Fighter, ctx) -> None:
         if fighter.action in (self.ground_loop, self.ground_full):
+            self._seed_release_velocity(fighter, grounded=True)
             fighter.change_action(self.ground_release, preserve_state=True, keep_frame=True)
         elif fighter.action in (self.air_loop, self.air_full):
+            self._seed_release_velocity(fighter, grounded=False)
             fighter.change_action(self.air_release, preserve_state=True, keep_frame=True)
+
+    @staticmethod
+    def _attribute(fighter, attribute, default=None):
+        getter = getattr(fighter, "special_attribute", None)
+        if getter is None:
+            return default
+        value = getter(attribute)
+        return default if value is None or not validation.finite(value) else value
+
+    def advance_charge(self, fighter: Fighter) -> float:
+        """Apply one native charge animation step and return the clamped charge."""
+        state = getattr(fighter, "action_state", None)
+        if state is None:
+            return 0.0
+        rate = self._attribute(fighter, JigglypuffRolloutAttribute.CHARGE_RATE)
+        limit = self._attribute(fighter, JigglypuffRolloutAttribute.CHARGE_MAX)
+        if rate is None or limit is None:
+            return state.charge
+        state.charge = min(limit, state.charge + rate)
+        return state.charge
+
+    def _seed_release_velocity(self, fighter: Fighter, *, grounded: bool) -> None:
+        state = getattr(fighter, "action_state", None)
+        charge = getattr(state, "charge", None)
+        if charge is None:
+            return
+        base = self._attribute(fighter, JigglypuffRolloutAttribute.CHARGE_INITIAL)
+        scale = self._attribute(fighter, JigglypuffRolloutAttribute.RELEASE_VELOCITY)
+        if base is None or scale is None:
+            return
+        speed = fighter.facing * scale * (charge - base)
+        if grounded:
+            fighter.ground_velocity = speed
+            fighter.set_velocity(speed, 0.0)
+        else:
+            fighter.set_velocity(speed, fighter.velocity[1])
+
+    def release_physics(self, fighter: Fighter, *, grounded: bool, slope=0.0) -> float:
+        """Run one source Rollout release physics step.
+
+        This is exposed as a small native callback boundary: the host can call
+        it from its per-frame fighter phase without evaluating Python motion
+        code for every fighter.
+        """
+        state = getattr(fighter, "action_state", None)
+        charge = getattr(state, "charge", None)
+        offset = self._attribute(fighter, JigglypuffRolloutAttribute.GROUND_RELEASE_OFFSET)
+        scale = self._attribute(fighter, JigglypuffRolloutAttribute.RELEASE_VELOCITY)
+        if charge is None or offset is None or scale is None:
+            return 0.0
+        if grounded:
+            influence = self._attribute(
+                fighter, JigglypuffRolloutAttribute.GROUND_SLOPE_INFLUENCE, 0.0
+            )
+            speed = fighter.facing * scale * (charge - offset)
+            speed += influence * speed * abs(slope)
+            for attribute in (
+                JigglypuffRolloutAttribute.GROUND_SPEED_LIMIT,
+                JigglypuffRolloutAttribute.GROUND_SPEED_CAP,
+            ):
+                limit = self._attribute(fighter, attribute)
+                if limit is not None and abs(speed) > limit:
+                    speed = (-limit if speed < 0 else limit)
+            fighter.ground_velocity = speed
+            fighter.set_velocity(speed, 0.0)
+        else:
+            speed = fighter.facing * scale * (charge - offset)
+            decel = self._attribute(fighter, JigglypuffRolloutAttribute.AIR_DECELERATION, 0.0)
+            speed -= decel if speed > 0 else -decel
+            minimum = self._attribute(fighter, JigglypuffRolloutAttribute.AIR_MIN_SPEED)
+            if minimum is not None and abs(speed) < minimum:
+                speed = -minimum if speed < 0 else minimum
+            fighter.set_velocity(speed, fighter.velocity[1])
+        return speed
+
+    def capsule_step(self, fighter: Fighter) -> int | None:
+        """Apply the source speed gate, damage formula, and group cadence."""
+        state = getattr(fighter, "action_state", None)
+        if state is None:
+            return None
+        speed = abs(
+            fighter.ground_velocity
+            if fighter.action in (self.ground_release, self.ground_turn)
+            else fighter.velocity[0]
+        )
+        threshold = self._attribute(fighter, JigglypuffRolloutAttribute.HIT_SPEED_THRESHOLD)
+        if threshold is not None and speed < threshold:
+            state.capsule_enabled = False
+            return None
+        state.capsule_enabled = True
+        base = self._attribute(fighter, JigglypuffRolloutAttribute.DAMAGE_BASE)
+        scale = self._attribute(fighter, JigglypuffRolloutAttribute.DAMAGE_SPEED_SCALE)
+        if base is None or scale is None:
+            return None
+        state.capsule_damage = max(1, int(float(scale * (base + speed))))
+        period = self._attribute(fighter, JigglypuffRolloutAttribute.HIT_TOGGLE_PERIOD)
+        if period is not None and period > 0:
+            state.capsule_frames += 1
+            if state.capsule_frames >= period:
+                state.capsule_frames = 0
+                state.capsule_group = (state.capsule_group + 1) & 1
+        return state.capsule_damage
 
     @hook.stick_changed(actions=(ground_release,))
     def reverse(self, fighter: Fighter, ctx) -> bool:
@@ -170,11 +293,17 @@ class Roll(NeutralSpecial):
         velocity = fighter.velocity
         if not isinstance(velocity, (tuple, list)) or len(velocity) < 2:
             return False
+        scale = self._attribute(
+            fighter, JigglypuffRolloutAttribute.WALL_SPEED_SCALE, 1.0
+        )
         if hasattr(fighter, "set_velocity"):
-            fighter.set_velocity(-velocity[0], velocity[1])
+            fighter.set_velocity(-velocity[0] * scale, velocity[1])
         fighter.facing = -fighter.facing
         if hasattr(fighter, "ground_velocity"):
-            fighter.ground_velocity = -fighter.ground_velocity
+            fighter.ground_velocity = -fighter.ground_velocity * scale
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            state.charge *= scale
         return True
 
     @hook.animation_end(hit)

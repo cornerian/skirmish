@@ -44,7 +44,12 @@ except ImportError:  # compat descriptors are supplied by the native facade buil
 from .registry import register, registered_fighters, validate_fighter
 from .articles import ArticleId, B0ArticleSpecial, b0_source_phases
 from .roster import Roster
-from .special_attributes import DonkeyKongAttribute, JigglypuffPoundAttribute, SamusAttribute
+from .special_attributes import (
+    DonkeyKongAttribute,
+    JigglypuffPoundAttribute,
+    JigglypuffRolloutAttribute,
+    SamusAttribute,
+)
 from .standard import (
     DirectionalSpecial,
     DownSpecial,
@@ -79,7 +84,7 @@ __all__ = [
     "velocity_from_angle",
     "ArticleId", "B0ArticleSpecial", "b0_source_phases", "Roster", "NeutralSpecial", "SideSpecial", "UpSpecial", "DownSpecial", "OpenSpecial", "SpecialRoot",
     "DirectionalSpecial", "directional_match",
-    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "SamusAttribute",
+    "DonkeyKongAttribute", "JigglypuffPoundAttribute", "JigglypuffRolloutAttribute", "SamusAttribute",
     "CaptainNeutralSpecial", "CaptainSideSpecial", "CaptainUpSpecial", "CaptainDownSpecial",
     "any_stick_axis_reaches_thresholds", "directional_b_input", "directional_b_reserved", "directional_fresh_b",
     "fresh_special_input", "resource_attributes", "special_rules", "start_action",
