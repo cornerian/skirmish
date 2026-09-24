@@ -66,6 +66,12 @@ class IceClimbersTests(unittest.TestCase):
             (view.handle, view.owner_port, view.ordinal, view.available),
             (0, -1, -1, False),
         )
+        positional = EntityView(True, "active", 7, (1.0, 2.0), (3.0, 4.0), -1.0)
+        self.assertEqual(
+            (positional.available, positional.lifecycle, positional.motion_state),
+            (True, "active", 7),
+        )
+        self.assertEqual((positional.handle, positional.owner_port, positional.ordinal), (0, -1, -1))
         with self.assertRaises(ValueError):
             MoveContext(None, None).entity_at_index(-1)
 

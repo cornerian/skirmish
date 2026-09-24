@@ -297,6 +297,7 @@ mod tests {
             store.resolve_owned_handle(fresh.handle(), EntityOwner::new(0, 1)),
             Some(fresh)
         );
+        assert_eq!(EntityId::from_handle(fresh.handle()), fresh);
     }
 
     #[test]
