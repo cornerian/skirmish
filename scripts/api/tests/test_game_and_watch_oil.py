@@ -63,6 +63,27 @@ class OilPanicTests(unittest.TestCase):
         self.assertTrue(move.input_pressed(fighter, _context(2)))
         self.assertIs(fighter.action, move.ground)
 
+    def test_partial_catch_returns_to_absorb_loop_on_animation_end(self):
+        move = OilPanic()
+        fighter = _Fighter()
+        fighter.action = move.ground_catch
+
+        move.catch_animation_end(fighter, _context(2))
+
+        self.assertIs(fighter.action, move.ground)
+
+    def test_full_catch_exits_to_wait_or_fall_on_animation_end(self):
+        move = OilPanic()
+        grounded = _Fighter()
+        grounded.action = move.ground_catch
+        move.catch_animation_end(grounded, _context(3))
+        self.assertIs(grounded.action, Action.WAIT)
+
+        aerial = _Fighter()
+        aerial.action = move.air_catch
+        move.catch_animation_end(aerial, _context(3))
+        self.assertIs(aerial.action, Action.FALL)
+
     def test_chef_command_frame_restarts_motion_when_loop_is_available(self):
         move = Chef()
         fighter = _Fighter()

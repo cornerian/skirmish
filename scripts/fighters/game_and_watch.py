@@ -307,10 +307,8 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
     }
     on_end = {
         ground: Transition(Action.WAIT),
-        ground_catch: Transition(Action.WAIT),
         ground_shoot: Transition(Action.WAIT),
         air: Transition(Action.FALL),
-        air_catch: Transition(Action.FALL),
         air_shoot: Transition(Action.FALL),
     }
 
@@ -318,6 +316,26 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
     def enter(self, fighter: Any, ctx: Any) -> None:
         state = _fighter_state(fighter)
         state.panic_release_damage = 0.0
+
+    @on.animation_end(ground_catch, air_catch)
+    def catch_animation_end(self, fighter: Any, ctx: Any) -> None:
+        """Finish the absorb animation like ``SpecialLwCatch_Anim``.
+
+        The native callback returns to the absorb loop while the bucket is
+        partial, and exits to wait/fall only once the bucket is full.  The
+        generic end table cannot express that charge-dependent branch.
+        """
+        state = _fighter_state(fighter)
+        charge = getattr(ctx, "panic_charge", state.panic_charge)
+        if not isinstance(charge, int) or isinstance(charge, bool):
+            charge = state.panic_charge
+        else:
+            state.panic_charge = charge
+        if charge >= 3:
+            fighter.change_action(Action.WAIT if fighter.action is self.ground_catch else Action.FALL)
+            return
+        target = self.ground if fighter.action is self.ground_catch else self.air
+        fighter.change_action(target)
 
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
