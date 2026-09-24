@@ -32,6 +32,11 @@ The typed host currently leaves Mario fireball reflection unsupported. Tests
 using `reflection: "none"` are partial resource fixtures and do not claim
 parity with `...Reflected`.
 
+The ordinary `...HitShield` callback destroys the fireball. The separate
+`...ShieldBounced` callback can preserve and reflect it in the source, but
+the typed host has no distinct callback event yet and therefore does not
+claim that bounce path.
+
 ## Cape article and reflection
 
 Side special uses states 345 and 346 (`ftMr_MS_SpecialS` and

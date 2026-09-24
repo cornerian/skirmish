@@ -343,6 +343,17 @@ fn mario_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
     speed < threshold
 }
 
+fn terrain_contact_is_incoming(velocity: [f32; 2], normal: [f32; 3]) -> bool {
+    dot([velocity[0], velocity[1], 0.0], normal) < 0.0
+}
+
+/// Mario's ordinary HitShield callback destroys the fireball.  The source's
+/// separate ShieldBounced callback is not represented by this host contact
+/// path, so it must not be inferred from the authored generic shield policy.
+fn mario_fireball_hit_shield_despawns(behavior: &ProjectileBehavior) -> bool {
+    matches!(behavior, ProjectileBehavior::MarioFireball(_))
+}
+
 const LUIGI_FIREBALL_TERRAIN_EFFECT_ID: u16 = 1288;
 
 /// Fox laser stage collision arms the native one-frame expiry timer instead
@@ -537,15 +548,7 @@ fn step(
             // below the authored speed threshold; otherwise it emits the
             // Mario fire effect (1147) and continues without the generic
             // gravity article's surface bounce.
-            let incoming = dot(
-                [
-                    state.projectiles[index].velocity[0],
-                    state.projectiles[index].velocity[1],
-                    0.0,
-                ],
-                contact.normal,
-            );
-            if incoming < 0.0 {
+            if terrain_contact_is_incoming(state.projectiles[index].velocity, contact.normal) {
                 state.projectiles[index].position = contact.position;
                 if mario_fireball_terrain_despawns(
                     speed(state.projectiles[index].velocity),
@@ -777,9 +780,12 @@ fn step(
         )
         .map_err(|e| super::Error::Physics(e.to_string()))?;
         if overlaps && let Some(normal) = normalize(sub(contact.position, center)) {
-            if let ProjectileBehavior::Gravity(gravity) | ProjectileBehavior::MarioFireball(gravity) =
-                state.projectiles[index].behavior
-                && gravity.contact.shield == ProjectileShield::Despawn
+            if mario_fireball_hit_shield_despawns(&state.projectiles[index].behavior)
+                || matches!(
+                    state.projectiles[index].behavior,
+                    ProjectileBehavior::Gravity(gravity)
+                        if gravity.contact.shield == ProjectileShield::Despawn
+                )
             {
                 return Ok(Outcome::Despawn);
             }
@@ -943,7 +949,8 @@ mod tests {
         ArticleHandle, ArticleLaunch, GravityProjectileState, ProjectileBehavior,
         ProjectileContactPolicy, ProjectileKind, ProjectilePersistence, ProjectileReflection,
         ProjectileShield, dot, facing_from_velocity, gravity_step, luigi_fireball_terrain_despawns,
-        normalize_angle, reset_ray_after_terrain_contact, spawn, speed, surface_bounce,
+        mario_fireball_hit_shield_despawns, mario_fireball_terrain_despawns, normalize_angle,
+        reset_ray_after_terrain_contact, spawn, speed, surface_bounce, terrain_contact_is_incoming,
         tick_lifetime,
     };
     use crate::game::script::resources::ArticleId;
@@ -972,7 +979,7 @@ mod tests {
 
     #[test]
     fn luigi_fireball_terrain_policy_requires_speed_below_source_threshold() {
-        assert!(luigi_fireball_terrain_despawns(0.5, 0.5));
+        assert!(luigi_fireball_terrain_despawns(0.4999, 0.5));
         assert!(luigi_fireball_terrain_despawns(0.25, 0.5));
         assert!(!luigi_fireball_terrain_despawns(0.5, 0.5));
         assert!(!luigi_fireball_terrain_despawns(0.5001, 0.5));
@@ -994,6 +1001,37 @@ mod tests {
     #[test]
     fn luigi_fireball_terrain_contact_uses_source_effect() {
         assert_eq!(LUIGI_FIREBALL_TERRAIN_EFFECT_ID, 1288);
+    }
+
+    #[test]
+    fn mario_fireball_terrain_effect_requires_incoming_velocity() {
+        let normal = [0.0, 1.0, 0.0];
+        assert!(terrain_contact_is_incoming([0.0, -1.0], normal));
+        assert!(!terrain_contact_is_incoming([0.0, 1.0], normal));
+        assert!(!terrain_contact_is_incoming([1.0, 0.0], normal));
+    }
+
+    #[test]
+    fn mario_fireball_normal_shield_hit_despawns() {
+        let behavior = ProjectileBehavior::MarioFireball(GravityProjectileState {
+            gravity: 0.0,
+            terminal_velocity: 0.0,
+            surface_multiplier: 1.0,
+            terrain_stop_speed: 0.5,
+            half_life: 0.0,
+            contact: CONTACT,
+        });
+        assert!(mario_fireball_hit_shield_despawns(&behavior));
+        assert!(!mario_fireball_hit_shield_despawns(
+            &ProjectileBehavior::Gravity(GravityProjectileState {
+                gravity: 0.0,
+                terminal_velocity: 0.0,
+                surface_multiplier: 1.0,
+                terrain_stop_speed: 0.5,
+                half_life: 0.0,
+                contact: CONTACT,
+            },)
+        ));
     }
 
     #[test]
