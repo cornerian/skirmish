@@ -121,6 +121,9 @@ class YoshiSpecialTests(unittest.TestCase):
         fighter = _Fighter(move.air)
         move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, "Source.17:356")
+        fighter = _Fighter(move.air_landing)
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
+        self.assertEqual(fighter.action, move.ground_end)
 
         move = Yoshi.specials.down
         fighter = _Fighter("Source.17:368")
