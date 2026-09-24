@@ -351,7 +351,10 @@ fn source_fireball_hit_shield_despawns(
     behavior: &ProjectileBehavior,
 ) -> bool {
     matches!(behavior, ProjectileBehavior::MarioFireball(_))
-        || matches!(kind, ProjectileKind::Gravity(ArticleId::LUIGI_FIRE))
+        || matches!(
+            kind,
+            ProjectileKind::LuigiFire | ProjectileKind::Gravity(ArticleId::LUIGI_FIRE)
+        )
 }
 
 const LUIGI_FIREBALL_TERRAIN_EFFECT_ID: u16 = 1288;
@@ -1017,7 +1020,7 @@ mod tests {
             &behavior,
         ));
         assert!(source_fireball_hit_shield_despawns(
-            ProjectileKind::Gravity(ArticleId::LUIGI_FIRE),
+            ProjectileKind::LuigiFire,
             &ProjectileBehavior::Gravity(GravityProjectileState {
                 gravity: 0.0,
                 terminal_velocity: 0.0,

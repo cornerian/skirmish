@@ -15,6 +15,10 @@ pinned `External/melee` checkout.
 | Article motion | `itLuigifireball_UnkMotion0_Anim` decrements the lifetime; `UnkMotion0_Phys` applies falling physics; `UnkMotion0_Coll` destroys on collision below `attrs.xC` speed and otherwise emits the Luigi fire effect `1288`. |
 | Contact callbacks | `itLuigiFireball_Logic89_DmgDealt`, `Clanked`, `HitShield`, and `Absorbed` return true; `Reflected` delegates to `it_80273030`; `ShieldBounced` delegates to `itColl_BounceOffShield`. |
 
+The normal `HitShield` callback therefore consumes the fireball. The separate
+`ShieldBounced` callback is a distinct source event; the typed host preserves
+that distinction and leaves its bounce handoff unsupported.
+
 ### Test vector
 
 For a fireball spawned at `(0, 0, 0)` with facing `-1`, article attributes

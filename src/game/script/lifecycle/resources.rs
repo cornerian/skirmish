@@ -318,18 +318,24 @@ impl ResourceCache {
         let id = match kind {
             ProjectileKind::FoxLaser => ArticleId::FOX_LASER,
             ProjectileKind::FalcoLaser => ArticleId::FALCO_LASER,
-            ProjectileKind::LuigiFire => return None,
+            ProjectileKind::LuigiFire => ArticleId::LUIGI_FIRE,
             ProjectileKind::Gravity(_) => return None,
         };
         let meta = self.article(id)?;
-        let ArticleBehavior::Ray {
-            lifetime: article_lifetime,
-            move_id: article_move_id,
-            hitboxes: article_hitboxes,
-            ..
-        } = &meta.behavior
-        else {
-            return None;
+        let (article_lifetime, article_move_id, article_hitboxes) = match &meta.behavior {
+            ArticleBehavior::Ray {
+                lifetime,
+                move_id,
+                hitboxes,
+                ..
+            }
+            | ArticleBehavior::LuigiFireball {
+                lifetime,
+                move_id,
+                hitboxes,
+                ..
+            } => (lifetime, move_id, hitboxes),
+            _ => return None,
         };
         (*article_lifetime == lifetime
             && *article_move_id == move_id
@@ -2896,6 +2902,53 @@ mod tests {
         assert_eq!(
             cache.projectile_hitboxes("neutral.laser.hitboxes").unwrap()[0].damage,
             3
+        );
+    }
+
+    #[test]
+    fn legacy_projectile_meta_lookup_accepts_luigi_typed_article() {
+        let fixture = include_str!("../../../../tests/fixtures/game/integration-match.json");
+        let base: crate::game::MatchData = serde_json::from_str(fixture).unwrap();
+        let mut data = base.fighters[0].clone();
+        let hitbox = gravity_hitbox();
+        data.specials = Some(crate::game::script::resources::Specials {
+            character: "cache-luigi-fireball".into(),
+            special_attributes: None,
+            animations: None,
+            articles: Some(BTreeMap::from([(
+                crate::game::script::resources::ArticleId::LUIGI_FIRE,
+                crate::game::script::resources::ArticleResource::LuigiFireball {
+                    speed: 1.5,
+                    lifetime: 18.0,
+                    gravity: 0.08,
+                    terminal_velocity: 2.4,
+                    terrain_stop_speed: 0.5,
+                    effect_id: 1288,
+                    hitboxes: vec![hitbox],
+                    move_id: 37,
+                    contact:
+                        crate::game::script::resources::LuigiFireballContactPolicy::SourceLogic89,
+                },
+            )])),
+            resources: Resources::new(BTreeMap::from([(
+                "neutral".into(),
+                json!({"laser": {
+                    "lifetime": 18.0,
+                    "move_id": 37,
+                    "hitboxes": [gravity_hitbox()]
+                }}),
+            )]))
+            .unwrap(),
+        });
+        let cache = ResourceCache::build(Some(&data), None, false).unwrap();
+        assert_eq!(
+            cache.legacy_article(
+                crate::game::projectile::ProjectileKind::LuigiFire,
+                "neutral.laser.hitboxes",
+                18.0,
+                37,
+            ),
+            Some(crate::game::script::resources::ArticleId::LUIGI_FIRE)
         );
     }
 
