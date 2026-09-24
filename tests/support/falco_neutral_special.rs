@@ -3,6 +3,7 @@
 use skirmish::fighter::specials::Rules;
 use skirmish::game::script::resources::{Resources, Specials};
 use skirmish::game::{Controller, Match, data::MatchData};
+use skirmish::game::wall_jump::{Attributes as WallJumpAttributes, Rules as WallJumpRules};
 use std::collections::BTreeMap;
 
 /// Install the invented `tests/fixtures/game/falco-neutral-special.json`
@@ -27,6 +28,17 @@ pub fn profile(mut data: MatchData) -> MatchData {
         turn_threshold: 0.1,
         vertical_threshold: 0.6,
         air_drift_recovery_step: 0.02,
+    });
+    // Falco's source registration exports `can_walljump`; provide the
+    // matching synthetic profile so attribute projection remains valid while
+    // this neutral-special fixture uses the real Falco roster identity.
+    data.rules.wall_jump = Some(WallJumpRules {
+        tilt_deadzone: 0.3,
+        input_window: 5.0,
+        stick_threshold: 0.7,
+        tilt_window: 3.0,
+        startup_frames: 0,
+        vertical_velocity_base: 0.5,
     });
     let mut neutral = fixture["parameters"].clone();
     // The neutral policy consumes the exported command-variable trace.  A
@@ -66,6 +78,15 @@ pub fn profile(mut data: MatchData) -> MatchData {
         // conformance fixture starts with synthetic names, so install the
         // Falco roster identity alongside its Specials resource.
         fighter.name = "Falco".to_owned();
+        fighter.wall_jump = Some(WallJumpAttributes {
+            can_walljump: false,
+            minimum_approach_speed: 0.2,
+            horizontal_velocity: 3.0,
+            vertical_velocity: 4.0,
+            blend_frames: 0,
+            dynamics_variant: 0,
+            frames: vec![fighter.bones.clone()],
+        });
         fighter.specials = Some(specials.clone());
     }
     data
