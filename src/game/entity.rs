@@ -34,6 +34,19 @@ impl EntityId {
     pub const fn generation(self) -> u32 {
         self.generation
     }
+
+    /// Compact opaque value suitable for crossing the script boundary.
+    pub const fn handle(self) -> u64 {
+        ((self.generation as u64) << 8) | self.index as u64
+    }
+
+    /// Decode a script handle. Store lookup still validates slot generation.
+    pub const fn from_handle(handle: u64) -> Self {
+        Self {
+            index: handle as u8,
+            generation: (handle >> 8) as u32,
+        }
+    }
 }
 
 /// Match ownership identity.  A port may own multiple entities, distinguished
@@ -183,6 +196,13 @@ impl EntityStore {
         self.payload(id)
     }
 
+    /// Resolve a script handle only when it still belongs to the requested
+    /// owner. This rejects both stale generations and cross-owner handles.
+    pub fn resolve_owned_handle(&self, handle: u64, owner: EntityOwner) -> Option<EntityId> {
+        let id = EntityId::from_handle(handle);
+        (self.owner(id) == Some(owner)).then_some(id)
+    }
+
     /// Advance live entities in deterministic slot order without allocation.
     pub fn advance(&mut self) {
         for index in 0..MAX_ENTITIES {
@@ -269,6 +289,14 @@ mod tests {
         assert_ne!(old.generation(), fresh.generation());
         assert!(!store.contains(old));
         assert_eq!(store.owner(fresh), Some(EntityOwner::new(0, 1)));
+        assert_eq!(
+            store.resolve_owned_handle(old.handle(), EntityOwner::new(0, 1)),
+            None
+        );
+        assert_eq!(
+            store.resolve_owned_handle(fresh.handle(), EntityOwner::new(0, 1)),
+            Some(fresh)
+        );
     }
 
     #[test]
@@ -281,6 +309,10 @@ mod tests {
         assert_eq!(store.get_owned(first, EntityOwner::new(1, 0)), None);
         assert!(!store.remove_owned(first, EntityOwner::new(1, 0)));
         assert!(store.contains(first));
+        assert_eq!(
+            store.resolve_owned_handle(first.handle(), EntityOwner::new(1, 0)),
+            None
+        );
     }
 
     #[test]

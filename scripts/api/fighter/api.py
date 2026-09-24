@@ -59,6 +59,11 @@ class MoveContext:
 class EntityView:
     """Read-only shape returned by ``MoveContext.entity_at_index``."""
 
+    # Opaque slot/generation identity. Native commands can validate this
+    # handle against the callback owner before any future mutation API uses it.
+    handle: int = 0
+    owner_port: int = -1
+    ordinal: int = -1
     available: bool = False
     lifecycle: str = "unavailable"
     motion_state: int = 0

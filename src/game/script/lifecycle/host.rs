@@ -157,7 +157,11 @@ impl LifecycleHost {
         let rest = path.strip_prefix("context.entity_at_index[")?;
         let (ordinal, field) = rest.split_once("]")?;
         let ordinal = ordinal.parse::<u8>().ok()?;
-        let payload = entities.payload_for_owner(owner_port, ordinal)?;
+        let id = entities.find_owner(game::entity::EntityOwner::new(
+            owner_port,
+            u16::from(ordinal),
+        ))?;
+        let payload = entities.payload(id)?;
         match field {
             "" => Some(NativeValue::Object(NativeObject {
                 kind: NativeKind::Value,
@@ -165,6 +169,9 @@ impl LifecycleHost {
             })),
             ".available" => Some(NativeValue::Bool(true)),
             ".lifecycle" => Some(NativeValue::String("active".into())),
+            ".handle" => Some(NativeValue::Int(id.handle() as i64)),
+            ".owner_port" => Some(NativeValue::Int(i64::from(owner_port))),
+            ".ordinal" => Some(NativeValue::Int(i64::from(ordinal))),
             ".motion_state" => Some(NativeValue::Int(i64::from(payload.motion_state))),
             ".position" => Some(NativeValue::Vec2([
                 payload.position[0],
@@ -2334,6 +2341,26 @@ mod tests {
         assert_eq!(
             LifecycleHost::project_entity_path(&entities, 2, "context.entity_at_index[1].position"),
             Some(NativeValue::Vec2([3.0, 4.0]))
+        );
+        let handle = entities
+            .find_owner(EntityOwner::new(2, 1))
+            .expect("inserted entity")
+            .handle();
+        assert_eq!(
+            LifecycleHost::project_entity_path(&entities, 2, "context.entity_at_index[1].handle"),
+            Some(NativeValue::Int(handle as i64))
+        );
+        assert_eq!(
+            LifecycleHost::project_entity_path(
+                &entities,
+                2,
+                "context.entity_at_index[1].owner_port"
+            ),
+            Some(NativeValue::Int(2))
+        );
+        assert_eq!(
+            LifecycleHost::project_entity_path(&entities, 2, "context.entity_at_index[1].ordinal"),
+            Some(NativeValue::Int(1))
         );
         assert_eq!(
             LifecycleHost::project_entity_path(&entities, 5, "context.entity_at_index[1].position"),

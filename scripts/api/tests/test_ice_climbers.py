@@ -13,7 +13,7 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from fighter import Action, Button, export_definition
+from fighter import Action, Button, EntityView, MoveContext, export_definition
 from fighters.ice_climbers import Belay, Blizzard, IceClimbers, IceShot, SquallHammer
 
 
@@ -59,6 +59,16 @@ def _context(stick=(0.0, 0.0), *, resource_value=object(), grounded=True):
 
 
 class IceClimbersTests(unittest.TestCase):
+    def test_generic_entity_view_exposes_stable_identity_shape(self):
+        view = MoveContext(None, None).entity_at_index(1)
+        self.assertIsInstance(view, EntityView)
+        self.assertEqual(
+            (view.handle, view.owner_port, view.ordinal, view.available),
+            (0, -1, -1, False),
+        )
+        with self.assertRaises(ValueError):
+            MoveContext(None, None).entity_at_index(-1)
+
     def test_export_binds_popo_source_states_and_keeps_nana_states_out(self):
         exported = export_definition(IceClimbers).as_dict()
         self.assertEqual(exported["name"], "ice-climbers")
