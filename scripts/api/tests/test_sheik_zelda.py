@@ -42,10 +42,14 @@ class _Fighter:
         self.action = action
 
 
-def _context(*, stick=(0.0, 0.0), ground=True, resource=True, pressed=True):
+def _context(*, stick=(0.0, 0.0), ground=True, resource=True, pressed=True,
+             attributes=None):
+    resource_value = (
+        object() if attributes is None else SimpleNamespace(attributes=attributes)
+    )
     return SimpleNamespace(
         input=_Input(stick, pressed),
-        resource=lambda path: object() if resource else None,
+        resource=lambda path: resource_value if resource else None,
         ground_open=ground,
         air_open=not ground,
         grounded=ground,
@@ -101,7 +105,20 @@ class SheikZeldaSpecialTests(unittest.TestCase):
                     # Farore's source callback enters FallSpecial with Zelda
                     # attributes; its dedicated test covers that handoff.
                     continue
-                move._transition_animation_end(instance, _context(ground=False))
+                terminal_context = _context(ground=False)
+                if fighter is Sheik and move is Sheik.specials.neutral:
+                    # States 347/348 call ordinary Fall when x10 is zero;
+                    # nonzero x10 is covered by the focused Sheik test.
+                    terminal_context = _context(
+                        ground=False, attributes=SimpleNamespace(x10=0.0),
+                    )
+                if fighter is Sheik and move is Sheik.specials.neutral:
+                    # The source callback owns this terminal branch; invoke
+                    # it directly because the lightweight transition helper
+                    # only exercises declarative on_end mappings.
+                    move.enter_air_fall(instance, terminal_context)
+                else:
+                    move._transition_animation_end(instance, terminal_context)
                 if ((fighter is Sheik and move is Sheik.specials.up)
                         or (fighter is Zelda and move in (Zelda.specials.up, Zelda.specials.down))):
                     # Sheik state 360 and Zelda states 354/357 enter
