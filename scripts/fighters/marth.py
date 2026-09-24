@@ -122,17 +122,17 @@ class DolphinSlash(EmblemUpSpecial):
 
     @on.stick(actions=(ground, air))
     def steer(self, fighter, ctx) -> bool:
-        """Apply ``ftMs_SpecialHi_IASA``'s horizontal stick steering.
+        """Apply angle sampling only when the native throw projection exists.
 
-        The source stores the strongest requested launch angle in
-        ``fp->lstick_angle`` while command variable two is still clear.  It
-        The launch attributes are kept under their native offsets in the
-        portable resource table (``x34`` and ``x38``); named aliases are
-        accepted when a host supplies them.  The source x30 throw-flag turn
-        remains a native host gap until its producer exists.
+        ``ftMs_SpecialHi_IASA`` also consumes ``ftCheckThrowB3``.  The host
+        does not currently project that ``throw_flags_b3`` bit, so an isolated
+        callback must not claim to reproduce the source turn or angle path.
         """
+        if not hasattr(fighter, "throw_flags_b3"):
+            return False
         attributes = resource_attributes(ctx, self.resource)
-        if attributes is None or getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))[0]:
+        command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
+        if attributes is None or command[0]:
             return False
         threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
         maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
@@ -179,6 +179,34 @@ class Counter(EmblemDownSpecial):
     ground_hit = source_phase(370)
     air = source_phase(371)
     air_hit = source_phase(372)
+
+    @on.command_changed(1, actions=(ground, air))
+    def command_changed(self, fighter, ctx) -> bool:
+        """Arm the source Counter shield before entering its hit phase.
+
+        ``ftMs_SpecialLw`` registers ``MarsAttributes::x64`` when command
+        variable one is raised.  The portable host may provide that descriptor
+        on the callback context and an optional registration method on the
+        fighter; retaining both lookups keeps this callback useful in native
+        and standalone authoring harnesses without fabricating shield fields.
+        """
+        event = getattr(ctx, "event", None)
+        if getattr(event, "value", 0) != 1:
+            return False
+        descriptor = getattr(ctx, "shield_descriptor", None)
+        if descriptor is None:
+            descriptor = getattr(ctx, "counter_shield", None)
+        register = getattr(fighter, "register_counter_shield", None)
+        if descriptor is not None and callable(register):
+            register(descriptor)
+        fighter_action = fighter.action
+        if fighter_action == self.ground:
+            fighter.change_action(self.ground_hit)
+            return True
+        if fighter_action == self.air:
+            fighter.change_action(self.air_hit)
+            return True
+        return False
 
 
 

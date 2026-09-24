@@ -1,4 +1,4 @@
-"""Source-backed Dolphin Slash steering contracts for Marth."""
+"""Host capability guard for Marth's Dolphin Slash IASA callback."""
 
 import importlib.util
 import sys
@@ -23,7 +23,7 @@ def _load_marth():
 
 
 class DolphinSlashTests(unittest.TestCase):
-    def test_horizontal_stick_selects_stronger_source_angle(self):
+    def test_steering_requires_native_throw_flags_projection(self):
         move = _load_marth().Marth.specials.up
         fighter = SimpleNamespace(
             action=move.air,
@@ -36,27 +36,8 @@ class DolphinSlashTests(unittest.TestCase):
             resource=lambda _path: SimpleNamespace(attributes=attrs),
         )
 
-        self.assertTrue(move.steer(fighter, context))
-        self.assertAlmostEqual(fighter.lstick_angle, -0.560998688, places=6)
-
-    def test_source_angle_is_monotonic_and_command_zero_gate_is_preserved(self):
-        move = _load_marth().Marth.specials.up
-        attrs = SimpleNamespace(specialhi_facing_threshold=0.3, specialhi_angle_limit=45.0)
-        context = SimpleNamespace(
-            input=SimpleNamespace(stick=(-0.8, 0.0)),
-            resource=lambda _path: SimpleNamespace(attributes=attrs),
-        )
-        fighter = SimpleNamespace(
-            action=move.ground,
-            lstick_angle=0.9,
-            action_state=SimpleNamespace(command=(0, 0, 0, 0)),
-        )
         self.assertFalse(move.steer(fighter, context))
-        self.assertEqual(fighter.lstick_angle, 0.9)
-
-        fighter.action_state.command = (1, 0, 0, 0)
-        self.assertFalse(move.steer(fighter, context))
-        self.assertEqual(fighter.lstick_angle, 0.9)
+        self.assertEqual(fighter.lstick_angle, 0.0)
 
     def test_source_angle_uses_strict_x34_threshold(self):
         move = _load_marth().Marth.specials.up

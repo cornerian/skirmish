@@ -74,16 +74,11 @@ States 367 and 368 share `ftMs_SpecialHi_Anim` and
 `ftMs_SpecialAirHi_Anim`. Animation completion enters `FallSpecial` with
 `allow_interrupt = false`, mobility `MarsAttributes::x28`, and landing lag
 `x2C` (`ftmarsspecialhi.c:58-86`). During IASA, horizontal stick input above
-`x34` updates the launch angle up to `x38`; the one-shot `throw_flags_b3` cue can
-turn the fighter when the stick strictly exceeds `x30`, including after command
-variable 0 has been consumed (`ftmarsspecialhi.c:90-139`). The travel physics
-uses command variable 2 to switch from launch motion to gravity and air drift
+`x34` updates the launch angle up to `x38`; the separate `ftCheckThrowB3`
+branch can turn the fighter when the stick exceeds `x30`
+(`ftmarsspecialhi.c:90-139`). The travel physics uses command variable 2 to
+switch from launch motion to gravity and air drift
 (`ftmarsspecialhi.c:141-220`).
-
-The Python callback currently implements only the strict `x34` launch-angle
-threshold. The native host does not yet produce `throw_flags_b3`, so the x30
-turn branch remains deferred until a typed producer and one-shot consumption
-path exist.
 
 ## Counter
 
@@ -119,7 +114,10 @@ The current host can represent Marth's phase graph, atomic Dancing Blade
 button chord, command-variable transitions, source landing-lag forwarding,
 and surface pairing. It does not yet expose the source sword capsule table,
 `ShieldDesc`/victim-contact callback ABI, Counter's `x19A4` collision result,
-hitlag callback slots, or the native `MarsAttributes` layout. Those interfaces
-block exact sword hitbox timing, Counter victim damage, and Dolphin Slash
-steering/physics parity without fabricating resource fields or collision
-state.
+hitlag callback slots, the native `MarsAttributes` layout, or the
+`throw_flags_b3` projection consumed by `ftCheckThrowB3`. Those interfaces
+block exact sword hitbox timing, Counter victim damage, Dolphin Slash's turn
+branch, and complete steering/physics parity without fabricating resource
+fields or collision state. The script keeps the callback capability gated on
+that native projection and does not claim steering parity from manually
+seeded angle tests.
