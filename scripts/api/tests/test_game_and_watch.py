@@ -41,11 +41,13 @@ class _Fighter:
 
 def _context(*, grounded=True, resource=True, stick=(0.0, 0.0), pressed=True,
              judge_weights=None, judge_roll=None, judge_previous=(),
-             rescue_landing=None, panic_damage_mul=None, panic_damage_add=None,
+             rescue_landing=None, rescue_stick_range=None, rescue_angle=None,
+             panic_damage_mul=None, panic_damage_add=None,
              panic_damage=None, panic_charge=None, chef_b_held=None):
     resource_value = SimpleNamespace(
         attributes=SimpleNamespace(
             judge_roll=judge_weights, rescue_landing=rescue_landing,
+            rescue_stick_range=rescue_stick_range, rescue_angle=rescue_angle,
             panic_damage_mul=panic_damage_mul, panic_damage_add=panic_damage_add,
         )
     )
@@ -125,6 +127,26 @@ class GameAndWatchTests(unittest.TestCase):
             no_lag, _context(grounded=False, rescue_landing=0)
         )
         self.assertEqual(no_lag.action, Action.FALL)
+
+    def test_fire_rescue_steers_once_past_source_stick_threshold(self):
+        move = Fire()
+        fighter = _Fighter(move.air)
+        self.assertFalse(move.steer(
+            fighter, _context(grounded=False, stick=(0.5, 0.0),
+                              rescue_stick_range=0.5, rescue_angle=60.0)
+        ))
+        self.assertTrue(move.steer(
+            fighter, _context(grounded=False, stick=(-0.8, 0.0),
+                              rescue_stick_range=0.5, rescue_angle=60.0)
+        ))
+        self.assertEqual(fighter.facing, -1.0)
+        self.assertAlmostEqual(fighter.lstick_angle, 18.0)
+        fighter.lstick_angle = 0.0
+        self.assertFalse(move.steer(
+            fighter, _context(grounded=False, stick=(0.9, 0.0),
+                              rescue_stick_range=0.5, rescue_angle=60.0)
+        ))
+        self.assertEqual(fighter.lstick_angle, 0.0)
 
     def test_judge_declares_all_phases_without_random_or_article_callbacks(self):
         move = Judge()

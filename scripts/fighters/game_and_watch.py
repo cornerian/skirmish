@@ -39,6 +39,7 @@ class GameAndWatchActionState(ActionState):
     panic_charge: int = 0
     panic_damage: float = 0.0
     panic_release_damage: float = 0.0
+    rescue_steered: bool = False
 
 
 def _fighter_state(fighter: Any) -> GameAndWatchActionState:
@@ -266,6 +267,42 @@ class Fire(UpSpecial, _SourcePairSpecial):
 
     ground = source_phase(373)
     air = source_phase(374)
+
+    @on.action_enter(ground, air)
+    def enter(self, fighter: Any, ctx: Any) -> None:
+        _fighter_state(fighter).rescue_steered = False
+
+    @on.stick(actions=(ground, air))
+    def steer(self, fighter: Any, ctx: Any) -> bool:
+        """Apply Fire Rescue's one time horizontal stick angle adjustment.
+
+        ``ftGw_SpecialAirHi_IASA`` accepts input beyond the rescue stick
+        threshold once, turns toward that input, and stores the resulting
+        angle in ``lstick_angle``.  The grounded callback shares this logic.
+        """
+        state = _fighter_state(fighter)
+        if state.rescue_steered:
+            return False
+        attrs = _resource_attributes(ctx, "up.attributes")
+        threshold = getattr(attrs, "rescue_stick_range", getattr(attrs, "x58", None))
+        maximum = getattr(attrs, "rescue_angle", getattr(attrs, "x5C", None))
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        try:
+            horizontal = float(stick[0])
+            threshold = float(threshold)
+            maximum = float(maximum)
+        except (IndexError, KeyError, TypeError, ValueError):
+            return False
+        if not all(value == value and abs(value) != float("inf") for value in
+                   (horizontal, threshold, maximum)):
+            return False
+        if abs(horizontal) <= threshold:
+            return False
+        fighter.facing = 1.0 if horizontal > 0.0 else -1.0
+        angle = (abs(horizontal) - threshold) * fighter.facing * maximum
+        fighter.lstick_angle = -angle
+        state.rescue_steered = True
+        return True
 
     def _transition_animation_end(self, fighter: Any, ctx: Any) -> None:
         """Match Fire Rescue's landing-attribute branch at animation end."""
