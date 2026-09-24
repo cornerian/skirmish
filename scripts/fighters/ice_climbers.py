@@ -193,24 +193,23 @@ def nana_lifecycle_reset(follower: Any) -> None:
 
 def _dispatch_nana_mutation(ctx: Any, frame: NanaFollowerFrame) -> bool:
     """Send a character-neutral partner mutation when the host exposes it."""
-    entity_set = getattr(ctx, "entity_set", None)
+    try:
+        entity_set = getattr(ctx, "entity_set", None)
+    except (AttributeError, RuntimeError):
+        return False
     if not callable(entity_set) or frame.action_state is None or frame.position is None:
         return False
     try:
         target = ctx.entity_at_index(1)
-    except (AttributeError, TypeError, ValueError):
+    except (AttributeError, RuntimeError, TypeError, ValueError):
         return False
     handle = getattr(target, "handle", _MISSING)
     if isinstance(handle, bool) or not isinstance(handle, int) or handle < 0:
         return False
     velocity = frame.velocity or (0.0, 0.0)
     facing = frame.facing if frame.facing is not None else 1.0
-    try:
-        entity_set(handle, frame.action_state, frame.position, velocity, facing)
-    except (AttributeError, TypeError, ValueError):
-        return False
+    entity_set(handle, frame.action_state, frame.position, velocity, facing)
     return True
-    return False
 
 
 def _source_state(action: Any) -> int | None:
@@ -274,7 +273,10 @@ def _partner_projection(ctx: Any) -> Any | None:
     probes only a generic ``entity_at_index(1)`` capability.  Missing,
     malformed, and foreign objects remain unavailable to source branches.
     """
-    resolve = getattr(ctx, "entity_at_index", None)
+    try:
+        resolve = getattr(ctx, "entity_at_index", None)
+    except (AttributeError, RuntimeError):
+        return _NO_RESOLVER
     if not callable(resolve):
         return _NO_RESOLVER
     try:

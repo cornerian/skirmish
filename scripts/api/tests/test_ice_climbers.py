@@ -160,6 +160,14 @@ class IceClimbersTests(unittest.TestCase):
         # Unknown native capabilities remain inert and do not raise.
         move.sync_follower(fighter, SimpleNamespace(entity_at_index=lambda index: partner))
 
+        class NativeGap:
+            def __getattribute__(self, name):
+                if name in {"entity_at_index", "entity_set"}:
+                    raise RuntimeError("native method unavailable")
+                return object.__getattribute__(self, name)
+
+        move.sync_follower(fighter, NativeGap())
+
         up = IceClimbers.specials.up
         belay = _Fighter(up.ground_start_0)
         del partner.anchor_position
