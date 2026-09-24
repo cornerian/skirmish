@@ -178,9 +178,9 @@
                 "parent": 0,
                 "classical_scale": false,
                 "translation": [
-                  1.5,
+                  0.0,
                   1.0,
-                  0.0
+                  1.5
                 ],
                 "rotation": [
                   0.0,
@@ -200,8 +200,8 @@
                 "bone": 1,
                 "center": [
                   0.0,
-                  -1.0,
-                  0.0
+                  0.0,
+                  1.0
                 ],
                 "radius": 1.25,
                 "damage": 10,
@@ -237,9 +237,9 @@
                 "parent": 0,
                 "classical_scale": false,
                 "translation": [
-                  1.5,
+                  0.0,
                   1.0,
-                  0.0
+                  1.5
                 ],
                 "rotation": [
                   0.0,
@@ -259,8 +259,8 @@
                 "bone": 1,
                 "center": [
                   0.0,
-                  -1.0,
-                  0.0
+                  0.0,
+                  1.0
                 ],
                 "radius": 1.25,
                 "damage": 10,
@@ -521,9 +521,9 @@
                 "parent": 0,
                 "classical_scale": false,
                 "translation": [
-                  1.5,
+                  0.0,
                   1.0,
-                  0.0
+                  1.5
                 ],
                 "rotation": [
                   0.0,
@@ -543,8 +543,8 @@
                 "bone": 1,
                 "center": [
                   0.0,
-                  -1.0,
-                  0.0
+                  0.0,
+                  1.0
                 ],
                 "radius": 1.25,
                 "damage": 10,
@@ -580,9 +580,9 @@
                 "parent": 0,
                 "classical_scale": false,
                 "translation": [
-                  1.5,
+                  0.0,
                   1.0,
-                  0.0
+                  1.5
                 ],
                 "rotation": [
                   0.0,
@@ -602,8 +602,8 @@
                 "bone": 1,
                 "center": [
                   0.0,
-                  -1.0,
-                  0.0
+                  0.0,
+                  1.0
                 ],
                 "radius": 1.25,
                 "damage": 10,

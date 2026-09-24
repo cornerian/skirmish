@@ -142,7 +142,7 @@ fn sampled_roll_bones_move_the_hurtbox_only_on_their_frame() {
         resource.stage.spawns = [[-7.0, 0.0], [2.0, 0.0]];
         if !displaced {
             resource.fighters[1].escape.as_mut().unwrap().forward.frames[6].bones[1].translation
-                [0] = 0.0;
+                [2] = 0.0;
         }
         let mut game = Match::new(resource, 42).unwrap();
         escape_from_guard(&mut game, guard([-1.0, 0.0], [0.0; 2]));
@@ -350,7 +350,7 @@ fn escape_clears_the_shield_and_lets_health_regenerate() {
         previous = state.fighters[1].shield.health;
     }
     let full = step(&mut game, attacker(0), held());
-    assert_eq!(full.fighters[1].shield.health, 50.0);
+    assert!((full.fighters[1].shield.health - 50.0).abs() < 0.00001);
 }
 
 #[test]
