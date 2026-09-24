@@ -824,7 +824,12 @@ fn step(
         let facing = state.projectiles[index].facing;
         let position = state.projectiles[index].position;
         let mut connected = false;
-        'hitboxes: for hit in state.projectiles[index].hitboxes.clone() {
+        // Iterate by index and clone only the small hitbox record. Cloning the
+        // Vec here allocated once per active projectile on every frame; the
+        // record clone keeps the borrow independent while `apply_hit` mutates
+        // match state and does not allocate.
+        'hitboxes: for hit_index in 0..state.projectiles[index].hitboxes.len() {
+            let hit = state.projectiles[index].hitboxes[hit_index].clone();
             let offset = [
                 position[0] + hit.center[0] * facing,
                 position[1] + hit.center[1],
