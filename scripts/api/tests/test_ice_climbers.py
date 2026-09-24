@@ -228,6 +228,37 @@ class IceClimbersTests(unittest.TestCase):
         )
         self.assertEqual(fighter.action.action, "Source.14:354")
 
+    def test_belay_accepts_only_a_generic_second_entity_projection(self):
+        export_definition(IceClimbers)
+        up = IceClimbers.specials.up
+
+        class Partner:
+            available = False
+            launching = True
+
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(
+            fighter,
+            SimpleNamespace(event=_Event(1), entity_at_index=lambda index: Partner()),
+        )
+        self.assertEqual(fighter.action.action, "Source.14:350")
+
+        fighter = _Fighter("Source.14:348")
+        up.partner_launch(
+            fighter,
+            SimpleNamespace(event=_Event(1), entity_at_index=lambda index: Partner()),
+        )
+        self.assertEqual(fighter.action.action, "Source.14:354")
+
+        # A resolver that cannot produce a typed partner fact must not guess
+        # from the command trace and must leave the native row untouched.
+        fighter = _Fighter("Source.14:347")
+        up.partner_fallback(
+            fighter,
+            SimpleNamespace(event=_Event(1), entity_at_index=lambda index: object()),
+        )
+        self.assertEqual(fighter.action, "Source.14:347")
+
     def test_belay_exports_native_command_branch_hooks(self):
         definition = export_definition(IceClimbers).as_dict()
         behavior_id = definition["movesets"]["specials"]["up"]

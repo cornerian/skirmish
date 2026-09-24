@@ -26,6 +26,34 @@ from skirmish import (
 )
 
 
+_MISSING = object()
+
+
+def _partner_fact(ctx: Any, name: str) -> bool | None:
+    """Read a generic host entity fact, failing closed when unavailable.
+
+    The native source resolves Nana through ``Player_GetEntityAtIndex``.  The
+    current callback context does not promise that resolver, so the script
+    accepts the existing explicit projection first and otherwise probes only a
+    generic ``entity_at_index(1)`` capability.  It never treats a missing,
+    malformed, or foreign object as an available partner.
+    """
+    explicit = getattr(ctx, f"partner_{name}", _MISSING)
+    if isinstance(explicit, bool):
+        return explicit
+    resolve = getattr(ctx, "entity_at_index", None)
+    if not callable(resolve):
+        return None
+    try:
+        partner = resolve(1)
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return None
+    if partner is None:
+        return False
+    value = getattr(partner, name, _MISSING)
+    return value if isinstance(value, bool) else None
+
+
 class IceShot(NeutralSpecial, DirectionalSpecial):
     """Ice Shot's fighter phases; the ice article remains native-owned."""
 
@@ -156,7 +184,7 @@ class Belay(UpSpecial, DirectionalSpecial):
         than guessing from the command value alone.
         """
         event = getattr(ctx, "event", None)
-        if not getattr(event, "value", 0) or getattr(ctx, "partner_available", None) is not False:
+        if not getattr(event, "value", 0) or _partner_fact(ctx, "available") is not False:
             return
         current = getattr(fighter.action, "action", fighter.action)
         ground_start = getattr(self.ground_start_0, "action", self.ground_start_0)
@@ -167,7 +195,7 @@ class Belay(UpSpecial, DirectionalSpecial):
     def partner_launch(self, fighter: Any, ctx: MoveContext) -> None:
         """Enter AirHiThrow2 when native Nana launch state is observed."""
         event = getattr(ctx, "event", None)
-        if not getattr(event, "value", 0) or getattr(ctx, "partner_launching", None) is not True:
+        if not getattr(event, "value", 0) or _partner_fact(ctx, "launching") is not True:
             return
         # ftPp_SpecialHi_8012280C always selects motion state 354, including
         # when the command arrived on the ground throw row.
