@@ -181,6 +181,157 @@ pub enum ThrowDirection {
     Down,
 }
 
+// `source_action_id(1, state)` is stable, but hashing every cargo state on
+// every fighter's frame would put avoidable work in the input hot path. These
+// are the precomputed Donkey Kong source identities for states 351..372.
+const DK_CARGO_HOLD_IDS: [u64; 10] = [
+    0x538a4b9a5ee0ac5f,
+    0xa311c84486757bd0,
+    0x146a123c3a0fbc95,
+    0x631c7033da0a02ae,
+    0xd474ba2b8da44373,
+    0x22fc7865df4c6e14,
+    0x9454c25d92e6aed9,
+    0xe307205532e0f4f2,
+    0x545f6a4ce67b35b7,
+    0xa33c6801d4c79748,
+];
+const DK_CARGO_THROW_IDS: [u64; 8] = [
+    0x1494b1f98861d80d,
+    0x63470ff1285c1e26,
+    0xd49f59e8dbf65eeb,
+    0x232718232d9e898c,
+    0x947f621ae138ca51,
+    0xe331c0128133106a,
+    0x548a0a0a34cd512f,
+    0xa2bc88c9e9d144e0,
+];
+// Common `ftCo_MS_ThrownFF..ThrownFLw` are 271..274. Their source namespace
+// is the common fighter namespace (external id 0), rather than DK's 369..372
+// SpecialN states which happen to follow DK's cargo table.
+const COMMON_CARGO_VICTIM_THROW_IDS: [u64; 4] = [
+    0xf712b806ec38c2bc,
+    0xa8b59989e8e2b393,
+    0x375d4f92354872ce,
+    0xe8aaf19a954e2cb5,
+];
+
+fn custom_id(action: Action) -> Option<u64> {
+    match action {
+        Action::Custom(id) => Some(id.get()),
+        _ => None,
+    }
+}
+
+fn cargo_hold_index(action: Action) -> Option<usize> {
+    let id = custom_id(action)?;
+    DK_CARGO_HOLD_IDS
+        .iter()
+        .position(|&candidate| candidate == id)
+}
+
+fn cargo_throw_index(action: Action) -> Option<usize> {
+    let id = custom_id(action)?;
+    DK_CARGO_THROW_IDS
+        .iter()
+        .position(|&candidate| candidate == id)
+}
+
+fn cargo_throw_base_action(action: Action) -> Option<Action> {
+    match cargo_throw_index(action)? % 4 {
+        0 => Some(Action::ThrowF),
+        1 => Some(Action::ThrowB),
+        2 => Some(Action::ThrowHi),
+        3 => Some(Action::ThrowLw),
+        _ => unreachable!(),
+    }
+}
+
+fn cargo_victim_throw_action(action: Action) -> Option<Action> {
+    let throw = cargo_throw_index(action)?;
+    Some(Action::Custom(crate::game::CustomActionId::new(
+        COMMON_CARGO_VICTIM_THROW_IDS[throw % 4],
+    )))
+}
+
+fn donkey_cargo_wait_action_for(name: &str, has_victim: bool) -> Option<Action> {
+    if name == "donkey-kong" && has_victim {
+        Some(Action::Custom(crate::game::CustomActionId::new(
+            DK_CARGO_HOLD_IDS[0],
+        )))
+    } else {
+        None
+    }
+}
+
+fn donkey_cargo_wait_action(fighter: &Fighter, data: &FighterData) -> Option<Action> {
+    donkey_cargo_wait_action_for(data.name.as_str(), fighter.grab.victim.is_some())
+}
+
+/// Selects a Donkey Kong cargo throw from the common cargo-wait callback.
+///
+/// `ftCo_CargoWait` dispatches `ftCo_8009BF3C`, whose input helper checks the
+/// currently held A/B mask (rather than a fresh edge), gives horizontal stick
+/// input priority, and never consults the C-stick.  Keep this separate from
+/// [`direction`], which implements ordinary grab's fresh main/C-stick
+/// crossings, so a character-specific host callback can use the exact cargo
+/// contract without changing ordinary grab semantics.
+pub fn cargo_throw_direction(
+    pressed_buttons: u16,
+    stick: [f32; 2],
+    facing: f32,
+    thresholds: [f32; 3],
+) -> Option<ThrowDirection> {
+    if pressed_buttons & (crate::game::BUTTON_A | crate::game::BUTTON_B) == 0 {
+        return None;
+    }
+    let [horizontal, up, down] = thresholds;
+    if stick[0].abs() >= horizontal {
+        return Some(if stick[0] * facing > 0.0 {
+            ThrowDirection::Forward
+        } else {
+            ThrowDirection::Backward
+        });
+    }
+    if stick[1] >= up {
+        Some(ThrowDirection::Up)
+    } else if stick[1] <= down {
+        Some(ThrowDirection::Down)
+    } else {
+        None
+    }
+}
+
+/// Resolve the native Donkey Kong cargo hold transition to a source action.
+///
+/// `ftCo_8009C02C` accepts input from the cargo wait, walk, turn, jump,
+/// landing, and wait2 states, then selects the common cargo throw states
+/// 361..364 (ground) or 365..368 (air).  The source uses the fighter's held
+/// A/B mask and main stick through `ftCo_8009BF3C`; this host seam keeps that
+/// behavior character-scoped while leaving ordinary `CatchWait` input on its
+/// existing fresh main/C-stick path.
+pub fn cargo_throw_action(
+    current: Action,
+    grounded: bool,
+    pressed_buttons: u16,
+    stick: [f32; 2],
+    facing: f32,
+    thresholds: [f32; 3],
+) -> Option<Action> {
+    cargo_hold_index(current)?;
+    let direction = cargo_throw_direction(pressed_buttons, stick, facing, thresholds)?;
+    let direction_offset = match direction {
+        ThrowDirection::Forward => 0,
+        ThrowDirection::Backward => 1,
+        ThrowDirection::Up => 2,
+        ThrowDirection::Down => 3,
+    };
+    let state = (if grounded { 361 } else { 365 }) + direction_offset;
+    Some(Action::Custom(crate::game::CustomActionId::new(
+        DK_CARGO_THROW_IDS[state as usize - 361],
+    )))
+}
+
 /// `ftCo_800DD1E4` direction priority for main and C-stick crossings.
 pub fn direction(
     current: [f32; 2],
@@ -677,6 +828,21 @@ fn valid_throw_clock(holder: &Fighter, victim: &Fighter) -> bool {
 }
 
 fn pair_actions(holder: Action, victim: Action) -> bool {
+    if let (Some(expected), Some(actual)) = (
+        cargo_victim_throw_action(holder),
+        custom_id(victim).map(crate::game::CustomActionId::new),
+    ) {
+        return expected == Action::Custom(actual);
+    }
+    if cargo_hold_index(holder).is_some() {
+        return matches!(
+            victim,
+            Action::CaptureWaitHi
+                | Action::CaptureDamageHi
+                | Action::CaptureWaitLw
+                | Action::CaptureDamageLw
+        );
+    }
     matches!(
         (holder, victim),
         (
@@ -882,17 +1048,19 @@ pub(crate) fn owns_action(action: Action) -> bool {
 }
 
 pub(crate) fn holder_action(action: Action) -> bool {
-    matches!(
-        action,
-        Action::CatchPull
-            | Action::CatchDashPull
-            | Action::CatchWait
-            | Action::CatchAttack
-            | Action::ThrowF
-            | Action::ThrowB
-            | Action::ThrowHi
-            | Action::ThrowLw
-    )
+    cargo_hold_index(action).is_some()
+        || cargo_throw_index(action).is_some()
+        || matches!(
+            action,
+            Action::CatchPull
+                | Action::CatchDashPull
+                | Action::CatchWait
+                | Action::CatchAttack
+                | Action::ThrowF
+                | Action::ThrowB
+                | Action::ThrowHi
+                | Action::ThrowLw
+        )
 }
 
 pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData) -> bool {
@@ -946,11 +1114,14 @@ pub(crate) fn update_fighter_animation(fighter: &mut Fighter, data: &FighterData
     if complete {
         simulation::enter(
             fighter,
-            if fighter.grounded {
-                Action::Wait
-            } else {
-                Action::Fall
-            },
+            (fighter.action == Action::ThrowF)
+                .then(|| donkey_cargo_wait_action(fighter, data))
+                .flatten()
+                .unwrap_or(if fighter.grounded {
+                    Action::Wait
+                } else {
+                    Action::Fall
+                }),
         );
     }
     complete
@@ -977,6 +1148,25 @@ pub(crate) fn update_actions(
     rules: Option<&Rules>,
     controller: Controller,
 ) -> bool {
+    if fighter.grab.victim.is_some() {
+        if let Some(rules) = rules {
+            if let Some(action) = cargo_throw_action(
+                fighter.action,
+                fighter.grounded,
+                controller.buttons,
+                controller.stick,
+                fighter.facing,
+                [
+                    rules.horizontal_threshold,
+                    rules.up_threshold,
+                    rules.down_threshold,
+                ],
+            ) {
+                simulation::enter(fighter, action);
+                return true;
+            }
+        }
+    }
     let pressed = controller.buttons & !fighter.previous_input.buttons;
     if owns_action(fighter.action) {
         if fighter.action == Action::CatchWait {
@@ -1189,11 +1379,19 @@ pub(crate) fn update_pairs(
                 frozen[victim] = true;
             }
             action
-                if throw_for_action(&parameters.throws, action).is_some_and(|throw| {
+                if throw_for_action(
+                    &parameters.throws,
+                    cargo_throw_base_action(action).unwrap_or(action),
+                )
+                .is_some_and(|throw| {
                     state.fighters[holder].action_frame == throw.release_frame
                 }) =>
             {
-                let throw = throw_for_action(&parameters.throws, action).unwrap();
+                let throw = throw_for_action(
+                    &parameters.throws,
+                    cargo_throw_base_action(action).unwrap_or(action),
+                )
+                .unwrap();
                 let hit = throw.hit;
                 let staled = crate::game::staling::hit(
                     &state.fighters[holder].staling,
@@ -1246,6 +1444,12 @@ pub(crate) fn synchronize_actions(data: &MatchData, state: &mut MatchState) -> R
             continue;
         };
         let holder_action = state.fighters[holder].action;
+        if let Some(victim_action) = cargo_victim_throw_action(holder_action) {
+            if state.fighters[victim].action != victim_action {
+                simulation::enter(&mut state.fighters[victim], victim_action);
+            }
+            continue;
+        }
         let victim_action = match holder_action {
             Action::ThrowF => Action::ThrownF,
             Action::ThrowB => Action::ThrownB,
@@ -1287,8 +1491,12 @@ pub(crate) fn paired_throw_release(
     let holder = state.fighters[player].grab.captor.unwrap_or(player);
     state.fighters[holder].grab.victim?;
     let parameters = data.fighters[holder].grab.as_ref()?;
-    throw_for_action(&parameters.throws, state.fighters[holder].action)
-        .map(|throw_| throw_.release_frame)
+    let action = state.fighters[holder].action;
+    throw_for_action(
+        &parameters.throws,
+        cargo_throw_base_action(action).unwrap_or(action),
+    )
+    .map(|throw_| throw_.release_frame)
 }
 
 pub(crate) fn advance_action_frame(fighter: &mut Fighter, release_frame: Option<u32>) -> bool {
@@ -1311,6 +1519,8 @@ pub(crate) fn release_broken_pairs(state: &mut MatchState) {
         if !holder_action(state.fighters[holder].action) {
             detach(state, holder, victim);
             if captured(state.fighters[victim].action)
+                || custom_id(state.fighters[victim].action)
+                    .is_some_and(|id| COMMON_CARGO_VICTIM_THROW_IDS.contains(&id))
                 || matches!(
                     state.fighters[victim].action,
                     Action::ThrownF | Action::ThrownB | Action::ThrownHi | Action::ThrownLw
@@ -1958,6 +2168,152 @@ mod tests {
             direction([0.0, -0.7], [0.0; 2], [0.8, 0.8], [0.0; 2], 1.0, thresholds,),
             Some(ThrowDirection::Forward)
         );
+    }
+
+    #[test]
+    fn cargo_throw_uses_held_ab_main_stick_and_horizontal_priority() {
+        let thresholds = [0.7, 0.6, -0.6];
+        assert_eq!(
+            cargo_throw_direction(crate::game::BUTTON_A, [0.8, 0.8], 1.0, thresholds),
+            Some(ThrowDirection::Forward)
+        );
+        assert_eq!(
+            cargo_throw_direction(crate::game::BUTTON_B, [-0.8, 0.8], 1.0, thresholds),
+            Some(ThrowDirection::Backward)
+        );
+        assert_eq!(
+            cargo_throw_direction(crate::game::BUTTON_A, [0.0, 0.8], 1.0, thresholds),
+            Some(ThrowDirection::Up)
+        );
+        assert_eq!(
+            cargo_throw_direction(crate::game::BUTTON_B, [0.0, -0.8], 1.0, thresholds),
+            Some(ThrowDirection::Down)
+        );
+        assert_eq!(cargo_throw_direction(0, [0.8, 0.0], 1.0, thresholds), None);
+        assert_eq!(
+            cargo_throw_direction(crate::game::BUTTON_A, [0.0, 0.0], 1.0, thresholds),
+            None
+        );
+    }
+
+    #[test]
+    fn cargo_throw_uses_typed_directional_release_frames() {
+        fn throw(release_frame: u32) -> Throw {
+            Throw {
+                move_id: None,
+                weight_independent: false,
+                poses: vec![Vec::new(); release_frame as usize + 1],
+                poses_blend_frames: 0,
+                poses_dynamics_variant: 0,
+                release_frame,
+                hit: ThrowHit {
+                    damage: 0,
+                    angle_degrees: 0.0,
+                    growth: 0,
+                    fixed: 0,
+                    base: 0,
+                },
+            }
+        }
+
+        // Exported SetThrowFlagsRelease rows 315..318 are 15, 15, 14, 15
+        // for forward, backward, up, and down cargo throws respectively.
+        let throws = Throws {
+            forward: throw(15),
+            backward: throw(15),
+            up: throw(14),
+            down: throw(15),
+        };
+        for (action, expected) in [
+            (Action::ThrowF, 15),
+            (Action::ThrowB, 15),
+            (Action::ThrowHi, 14),
+            (Action::ThrowLw, 15),
+        ] {
+            assert_eq!(
+                throw_for_action(&throws, action).unwrap().release_frame,
+                expected
+            );
+        }
+        for (index, expected) in [15, 15, 14, 15].into_iter().enumerate() {
+            let cargo = Action::Custom(crate::game::CustomActionId::new(DK_CARGO_THROW_IDS[index]));
+            let base = cargo_throw_base_action(cargo).unwrap();
+            assert_eq!(
+                throw_for_action(&throws, base).unwrap().release_frame,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn cargo_throw_action_maps_native_hold_to_ground_or_air_source_state() {
+        let thresholds = [0.7, 0.6, -0.6];
+        let cargo_wait = Action::Custom(crate::game::script::source_action_id(1, 351));
+        let cargo_wait2 = Action::Custom(crate::game::script::source_action_id(1, 360));
+        assert_eq!(
+            cargo_throw_action(
+                cargo_wait,
+                true,
+                crate::game::BUTTON_A,
+                [0.8, 0.0],
+                1.0,
+                thresholds
+            ),
+            Some(Action::Custom(crate::game::script::source_action_id(
+                1, 361
+            )))
+        );
+        assert_eq!(
+            cargo_throw_action(
+                cargo_wait2,
+                false,
+                crate::game::BUTTON_B,
+                [0.0, -0.8],
+                1.0,
+                thresholds
+            ),
+            Some(Action::Custom(crate::game::script::source_action_id(
+                1, 368
+            )))
+        );
+        assert_eq!(
+            cargo_throw_action(
+                Action::CatchWait,
+                true,
+                crate::game::BUTTON_A,
+                [0.8, 0.0],
+                1.0,
+                thresholds
+            ),
+            None
+        );
+        assert_eq!(
+            cargo_throw_action(cargo_wait, true, 0, [0.8, 0.0], 1.0, thresholds),
+            None
+        );
+        let cargo_forward = Action::Custom(crate::game::CustomActionId::new(DK_CARGO_THROW_IDS[0]));
+        let victim_forward = Action::Custom(crate::game::CustomActionId::new(
+            COMMON_CARGO_VICTIM_THROW_IDS[0],
+        ));
+        assert_eq!(
+            victim_forward,
+            Action::Custom(crate::game::script::source_action_id(0, 271))
+        );
+        assert!(pair_actions(cargo_wait, Action::CaptureWaitLw));
+        assert!(pair_actions(cargo_forward, victim_forward));
+        assert!(!pair_actions(cargo_forward, Action::CaptureWaitLw));
+        assert!(!pair_actions(cargo_forward, Action::Wait));
+    }
+
+    #[test]
+    fn donkey_cargo_wait_requires_dk_and_a_live_victim() {
+        let expected = Action::Custom(crate::game::script::source_action_id(1, 351));
+        assert_eq!(
+            donkey_cargo_wait_action_for("donkey-kong", true),
+            Some(expected)
+        );
+        assert_eq!(donkey_cargo_wait_action_for("donkey-kong", false), None);
+        assert_eq!(donkey_cargo_wait_action_for("mario", true), None);
     }
 
     #[test]

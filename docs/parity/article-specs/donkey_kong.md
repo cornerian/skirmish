@@ -99,3 +99,21 @@ opponent and throw flags remain fighter and object state owned by the native
 grab system. A script declaration can expose the motion graph, but cannot
 recreate target attachment, cargo object lifetime, throw direction selection,
 or common cargo collision callbacks without a native object bridge.
+
+The native host enters source state 351 (`ftDk_MS_ThrowFWait0`) when a Donkey
+Kong forward throw animation completes with a live captured victim. Cargo input
+then follows `ftCo_8009BF3C`: held A/B, main stick only, horizontal priority,
+and source states 361..368. The victim is paired with common
+`ftCo_MS_ThrownFF..ThrownFLw` states 271..274, and the host reuses the
+directional throw resource for release damage. The typed exporter maps the
+`SetThrowFlagsRelease` rows 315..318 to `Throw.release_frame` values 15, 15,
+14, and 15 (forward, backward, up, and down), and the native host consumes
+those values for cargo release timing.
+
+Retail `ftCo_CargoThrow*_Anim` calls `ftCo_800DD724`, whose animation command
+variable 0 freezes the throw animation and calls `ftCo_800DE920`, while its
+release command invokes `ftCo_800DE2A8` and `ftCo_800DE7C0`. The current
+`FighterData` resource model still does not expose those cargo animation
+command rows or callbacks, so command-variable freeze/resume and callback
+side effects remain unsupported; typed release-frame selection is sourced
+from the exported throw resource.
