@@ -121,6 +121,15 @@ class LuigiNeutralTests(unittest.TestCase):
         self.assertTrue(move.release_charge(fighter, _context(grounded=False, resources=("side",), stick=(1.0, 0.0), directional=True)))
         self.assertEqual(fighter.action, move.air)
 
+    def test_green_missile_charge_animation_end_stays_in_hold(self):
+        move = Luigi.specials.side
+        for phase in (move.ground_hold, move.air_hold):
+            fighter = _Fighter()
+            fighter.action = phase
+            move._transition_animation_end(fighter, SimpleNamespace(grounded=phase is move.ground_hold))
+            self.assertEqual(fighter.action, phase)
+            self.assertFalse(fighter.changes)
+
     def test_green_missile_launch_waits_for_source_command(self):
         move = Luigi.specials.side
         fighter = _Fighter()

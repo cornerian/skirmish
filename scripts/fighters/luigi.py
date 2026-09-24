@@ -115,8 +115,12 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         ``ftLg_SpecialS_Anim`` and its misfire sibling enter flight only when
         command slot 0 is raised by the launch animation.  The ground S2 row
         has an empty source animation callback; only the aerial S2 callback
-        enters the end row.
+        enters the end row.  The charge callbacks reset their animation when
+        it ends and remain in the hold state until release or native charge
+        completion, so a plain animation-end event must not launch them.
         """
+        if fighter.action in (self.ground_hold, self.air_hold):
+            return
         if fighter.action in self._LAUNCH and not self._command_ready(fighter, ctx):
             return
         if fighter.action == self.ground_s2:
