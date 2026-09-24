@@ -141,7 +141,7 @@ class DolphinSlash(EmblemUpSpecial):
             return False
         attributes = resource_attributes(ctx, self.resource)
         command = getattr(getattr(fighter, "action_state", None), "command", (0, 0, 0, 0))
-        if attributes is None or command[0]:
+        if attributes is None:
             return False
         threshold = getattr(attributes, "specialhi_facing_threshold", getattr(attributes, "x34", None))
         maximum = getattr(attributes, "specialhi_angle_limit", getattr(attributes, "x38", None))
@@ -154,7 +154,7 @@ class DolphinSlash(EmblemUpSpecial):
             return False
         previous = float(getattr(fighter, "lstick_angle", 0.0))
         changed = False
-        if abs(horizontal) > threshold:
+        if not command[0] and abs(horizontal) > threshold:
             denominator = 1.0 - threshold
             if denominator > 0.0:
                 angle = float(maximum) * (abs(horizontal) - threshold) / denominator

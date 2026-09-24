@@ -76,6 +76,27 @@ class DolphinSlashTests(unittest.TestCase):
         self.assertEqual(fighter.facing, -1.0)
         self.assertEqual(fighter.lstick_angle, 0.0)
 
+    def test_facing_turn_is_independent_of_angle_command_gate(self):
+        move = _load_marth().Marth.specials.up
+        fighter = SimpleNamespace(
+            action=move.air,
+            facing=-1.0,
+            lstick_angle=0.0,
+            throw_flags_b3=1,
+            action_state=SimpleNamespace(command=(1, 0, 0, 0)),
+        )
+        attrs = SimpleNamespace(x30=0.2, x34=0.5, x38=45.0)
+        context = SimpleNamespace(
+            input=SimpleNamespace(stick=(0.3, 0.0)),
+            resource=lambda _path: SimpleNamespace(attributes=attrs),
+        )
+
+        # The source command gate suppresses only angle sampling.  x30 still
+        # controls the independent ftCheckThrowB3 facing branch.
+        self.assertTrue(move.steer(fighter, context))
+        self.assertEqual(fighter.facing, 1.0)
+        self.assertEqual(fighter.lstick_angle, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
