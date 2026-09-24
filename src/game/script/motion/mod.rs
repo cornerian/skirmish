@@ -12,7 +12,7 @@
 //! needed for transitions which preserve a frame, re-enter an action, or
 //! transfer between ground and air during the same simulation frame.
 
-use crate::fighter::{helpers, Movement};
+use crate::fighter::{Movement, helpers};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

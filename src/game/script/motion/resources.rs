@@ -14,9 +14,9 @@
 
 use super::lifecycle_resources::ResourceCache;
 use super::motion::{
-    AirOperation, CommandBranch, GravityMultiplier, GroundOperation, MotionProfile, ScalarTrack,
-    StickSteering, TrackEnd, TrackTransform, VelocitySample, VelocityTrack, COMMAND_SLOTS,
-    MAX_COMMAND_VALUE,
+    AirOperation, COMMAND_SLOTS, CommandBranch, GravityMultiplier, GroundOperation,
+    MAX_COMMAND_VALUE, MotionProfile, ScalarTrack, StickSteering, TrackEnd, TrackTransform,
+    VelocitySample, VelocityTrack,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
