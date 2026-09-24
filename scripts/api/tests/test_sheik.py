@@ -114,6 +114,29 @@ class SheikTests(unittest.TestCase):
         self.assertFalse(move.release(fighter, _context()))
         self.assertIs(fighter.action, Chain.ground_start)
 
+    def test_needles_air_terminal_uses_source_landing_lag_boundary(self):
+        """Air cancel/end use FallSpecial only when source x10 is nonzero."""
+        move = Needles()
+        for source in (move.air_cancel, move.air_end):
+            ordinary = _Fighter(source)
+            self.assertTrue(move.enter_air_fall(
+                ordinary,
+                _context(ground=False, attributes=SimpleNamespace(x10=0.0)),
+            ))
+            self.assertIs(ordinary.action, Action.FALL)
+
+            special = _Fighter(source)
+            special.fall_special = []
+            special.enter_fall_special = lambda **kwargs: special.fall_special.append(kwargs)
+            self.assertTrue(move.enter_air_fall(
+                special,
+                _context(ground=False, attributes=SimpleNamespace(x10=12.0)),
+            ))
+            self.assertEqual(
+                special.fall_special,
+                [{"mobility": 1, "landing_lag": 12.0}],
+            )
+
     def test_needles_loop_shoulder_input_cancels_charge(self):
         move = Needles()
         for source, target in (

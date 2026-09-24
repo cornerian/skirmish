@@ -108,10 +108,36 @@ class Needles(NeutralSpecial, DirectionalSpecial):
         fighter.change_action(destination)
         return True
 
+    @on.animation_end(air_cancel, air_end)
+    def enter_air_fall(self, fighter: Fighter, ctx: Any) -> bool:
+        """Match the source aerial cancel/end FallSpecial branch.
+
+        ``ftSk_SpecialAirNCancel_Anim`` and ``ftSk_SpecialAirNEnd_Anim``
+        call ordinary Fall when ``ftSeakAttributes.x10`` is zero and call
+        ``ftCo_80096900(..., 1, 0, true, 1, x10)`` otherwise.  The resource
+        fallback keeps the source offset explicit until Sheik attributes are
+        typed; movement remains the host's FallSpecial contract.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        landing_lag = getattr(
+            attributes,
+            "specialn_landing_lag",
+            getattr(attributes, "x10", None),
+        )
+        if landing_lag is None:
+            return False
+        if landing_lag == 0:
+            fighter.change_action(Action.FALL)
+            return True
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            return False
+        enter(mobility=1, landing_lag=landing_lag)
+        return True
+
     on_end = {
         ground_start: Transition(ground_loop), air_start: Transition(air_loop),
         ground_cancel: Transition(Action.WAIT), ground_end: Transition(Action.WAIT),
-        air_cancel: Transition(Action.FALL), air_end: Transition(Action.FALL),
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
