@@ -1,0 +1,18 @@
+{
+  "first_divergent_frame": -44,
+  "checked_frames": 79,
+  "exporter_feature_base": "f79db40",
+  "exporter_manifest_revision": "b6c952bff4ea8745b5f84b1f49534126ab613013",
+  "decomp_revision": "0bac93a5ee2f985dac6220bd36ed7078ae6ac0c9",
+  "match_data_pairing": "captain-falcon-marth-fd",
+  "replay": "tests/fixtures/slippi/11-captain-falcon-marth-final-destination.slp",
+  "replay_sha256": "1d9540602c6217a0aa5e7cc00ff3145c667ae2f4a8a9e81282ec51d671c98281",
+  "initialization_sha256": "7ef9f61766f63db3e9d2967fb2e05fdc86c1077156455ea72bc8d79d3eac3cd7",
+  "difference": {
+    "port": "P4",
+    "field": "position.y",
+    "expected": "0x411f5bd6",
+    "actual": "0x411f5bd5"
+  },
+  "note": "Provisional measurement only; this baseline records the first observed timeline mismatch against an unmodified Captain/Marth export produced by an exporter descendant containing feature f79db40. It is not a parity claim. The run used default last_recorded timeline validation with the tracked replay and an initialization produced by make-initialization. The exporter manifest reports unsupported Marth specials, tilts, smashes, jab combo, and taunt categories; no resource or script edits were made for this measurement."
+}
