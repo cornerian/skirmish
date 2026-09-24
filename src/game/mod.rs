@@ -10,6 +10,7 @@ pub mod clank;
 pub mod collision;
 pub(crate) mod combat_history;
 pub mod data;
+pub mod entity;
 pub mod flow;
 pub mod grab;
 pub(crate) mod hit_resolution;
@@ -793,6 +794,8 @@ pub struct State {
     pub phase: Phase,
     pub stage: stage_motion::State,
     pub fighters: [Fighter; 2],
+    /// Stable identities for fighters and future secondary entities.
+    pub entities: entity::EntityStore,
     /// In-flight fired projectiles (`game::projectile`), included in
     /// checkpoints like every other match-state field.
     pub projectiles: Vec<projectile::Projectile>,

@@ -50,6 +50,8 @@ pub(crate) fn initial_state(data: &MatchData, seed: u32, slots: [u32; 2]) -> Res
                 &mut attack_instances,
             )?,
         ],
+        entities: entity::EntityStore::for_fighters(slots)
+            .map_err(|error| Error::Data(error.to_string()))?,
         projectiles: vec![],
         next_article_handle: 1,
         rng_seed: seed,
