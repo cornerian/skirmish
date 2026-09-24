@@ -165,10 +165,6 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         air: Transition(ground_start, preserve_state=True, keep_frame=True),
         air_loop: Transition(ground_loop, preserve_state=True, keep_frame=True),
         air_turn: Transition(ground_turn, preserve_state=True, keep_frame=True),
-        # ftYs_SpecialAirSLanding_Coll calls ftYs_SpecialS_8012F0DC(arg1=0)
-        # when the landing phase leaves ground, which selects motion 359
-        # (SpecialAirSEnd) at the current frame before its terminal callback.
-        air_landing: Transition(ground_end, preserve_state=True, keep_frame=True),
     }
     on_air = {
         ground_start: Transition(ground, preserve_state=True, keep_frame=True),

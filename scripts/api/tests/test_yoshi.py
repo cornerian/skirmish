@@ -123,7 +123,9 @@ class YoshiSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action, "Source.17:356")
         fighter = _Fighter(move.air_landing)
         move._transition_ground_air(fighter, SimpleNamespace(grounded=True))
-        self.assertEqual(fighter.action, move.ground_end)
+        # ftYs_SpecialAirSLanding_Coll is guarded by a non-ground collision
+        # result, so grounded contact leaves phase 363 active.
+        self.assertEqual(fighter.action, move.air_landing)
 
         move = Yoshi.specials.down
         fighter = _Fighter("Source.17:368")
