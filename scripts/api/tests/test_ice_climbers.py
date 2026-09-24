@@ -14,7 +14,18 @@ for path in (ROOT / "scripts" / "api", ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from fighter import Action, Button, EntityView, MoveContext, export_definition
-from fighters.ice_climbers import Belay, Blizzard, IceClimbers, IceShot, SquallHammer
+from fighters.ice_climbers import (
+    Belay,
+    Blizzard,
+    IceClimbers,
+    IceShot,
+    NANA_MOTION_STATES,
+    NanaFollowerFrame,
+    SquallHammer,
+    nana_follow_frame,
+    nana_lifecycle_reset,
+    nana_state_for_leader,
+)
 
 
 class _Input:
@@ -59,6 +70,55 @@ def _context(stick=(0.0, 0.0), *, resource_value=object(), grounded=True):
 
 
 class IceClimbersTests(unittest.TestCase):
+    def test_nana_source_motion_graph_is_character_neutral_policy(self):
+        # ftNana's table declares 359..366; ftPp special S/Hi source rows
+        # select these states through ftNn_Init_80123954 and 801230D0.
+        self.assertEqual(NANA_MOTION_STATES, frozenset(range(359, 367)))
+        self.assertEqual(nana_state_for_leader(343, grounded=True, partner_in_range=True), 359)
+        self.assertEqual(nana_state_for_leader(346, grounded=False, partner_in_range=True), 360)
+        self.assertIsNone(nana_state_for_leader(343, grounded=True, partner_in_range=False))
+        self.assertEqual(
+            [nana_state_for_leader(state, grounded=True, partner_in_range=True)
+             for state in range(347, 357)],
+            [361, 361, 361, None, None, 361, 361, 361, None, None],
+        )
+
+    def test_nana_follow_frame_copies_source_velocity_facing_rate_and_anchor(self):
+        leader = SimpleNamespace(velocity=(2.5, -1.0), facing=-1.0, animation_rate=0.75)
+        follower = SimpleNamespace(available=True)
+        frame = nana_follow_frame(
+            leader,
+            follower,
+            leader_motion=344,
+            grounded=True,
+            anchor_position=(12.0, 8.0),
+        )
+        self.assertIsInstance(frame, NanaFollowerFrame)
+        self.assertEqual(frame.action_state, 359)
+        self.assertEqual(frame.position, (12.0, 8.0))
+        self.assertEqual(frame.velocity, (2.5, -1.0))
+        self.assertEqual(frame.facing, -1.0)
+        self.assertEqual(frame.animation_rate, 0.75)
+
+        leader.hitlag = True
+        self.assertEqual(
+            nana_follow_frame(leader, follower, leader_motion=347, grounded=True).animation_rate,
+            0.0,
+        )
+
+    def test_nana_lifecycle_reset_clears_source_command_and_attachment_fields(self):
+        follower = SimpleNamespace(
+            action_state=SimpleNamespace(command=(7, 6, 5, 4)),
+            article=11,
+            attached_to=42,
+            hitlag=True,
+        )
+        nana_lifecycle_reset(follower)
+        self.assertEqual(follower.action_state.command, (0, 0, 0, 0))
+        self.assertIsNone(follower.article)
+        self.assertIsNone(follower.attached_to)
+        self.assertFalse(follower.hitlag)
+
     def test_generic_entity_view_exposes_stable_identity_shape(self):
         view = MoveContext(None, None).entity_at_index(1)
         self.assertIsInstance(view, EntityView)

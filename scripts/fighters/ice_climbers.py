@@ -10,6 +10,7 @@ source position, lifecycle, and authored radius facts are present.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from skirmish import (
@@ -30,6 +31,129 @@ from skirmish import (
 
 _MISSING = object()
 _NO_RESOLVER = object()
+
+
+# Nana's states are deliberately kept out of Popo's exported action table.
+# These constants describe the follower graph consumed by a host that owns
+# both entities.  They mirror ftNana's motion table and the source checks in
+# ftNn_Init_801230D0/80123954.
+NANA_SIDE_GROUND = 359
+NANA_SIDE_AIR = 360
+NANA_BELAY_START = 361
+NANA_BELAY_THROW_0 = 362
+NANA_BELAY_THROW_2 = 363
+NANA_BELAY_START_FALLBACK = 364
+NANA_BELAY_THROW_1 = 365
+NANA_BELAY_LAUNCH = 366
+NANA_MOTION_STATES = frozenset(range(359, 367))
+
+
+@dataclass(frozen=True, slots=True)
+class NanaFollowerFrame:
+    """The character neutral part of one source Nana synchronization step.
+
+    ``position`` is intentionally optional: the retail code gets it from
+    Popo's R4thNb and Nana's XRotN joints, which are not exposed by the
+    generic entity projection.  A host with those joints can provide the
+    already resolved anchor position; the script still owns action, velocity,
+    facing, and animation-rate policy.
+    """
+
+    action_state: int | None
+    position: tuple[float, float] | None
+    velocity: tuple[float, float] | None
+    facing: float | None
+    animation_rate: float | None
+
+
+def nana_state_for_leader(
+    leader_motion: int,
+    *,
+    grounded: bool,
+    partner_in_range: bool,
+    partner_available: bool = True,
+) -> int | None:
+    """Return Nana's source action for a Popo special motion.
+
+    The side special only starts Nana's 359/360 motion when she is in range;
+    the aerial/ground row follows the leader's surface.  Belay's source
+    startup rows (347..349 and 352..354) keep Nana in 361 until the native
+    command/collision path advances her; Popo's fallback rows (350/355) do
+    not start Nana. Missing or dead partners produce no action request.
+    """
+    if not partner_available or not partner_in_range:
+        return None
+    if leader_motion in (343, 344, 345, 346):
+        return NANA_SIDE_GROUND if grounded else NANA_SIDE_AIR
+    if leader_motion in (347, 348, 349, 352, 353, 354):
+        return NANA_BELAY_START
+    return None
+
+
+def nana_follow_frame(
+    leader: Any,
+    follower: Any,
+    *,
+    leader_motion: int,
+    grounded: bool,
+    partner_in_range: bool = True,
+    anchor_position: tuple[float, float] | None = None,
+) -> NanaFollowerFrame:
+    """Compute source follower state from read-only generic entity facts.
+
+    Side-special Nana copies Popo's velocity, facing, and animation rate.
+    Belay startup follows the same source anchor while Popo remains in rows
+    347..352.  The optional anchor is the only way to represent the retail
+    joint placement without fabricating a screen-space offset.
+    """
+    available = getattr(follower, "available", False) is True
+    action_state = nana_state_for_leader(
+        leader_motion,
+        grounded=grounded,
+        partner_in_range=partner_in_range,
+        partner_available=available,
+    )
+    velocity = getattr(leader, "velocity", None)
+    if not (isinstance(velocity, (tuple, list)) and len(velocity) >= 2):
+        velocity = None
+    else:
+        velocity = (float(velocity[0]), float(velocity[1]))
+    facing = getattr(leader, "facing", None)
+    if isinstance(facing, bool) or not isinstance(facing, (int, float)):
+        facing = None
+    else:
+        facing = float(facing)
+    rate = getattr(leader, "animation_rate", None)
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)):
+        rate = None
+    else:
+        # ftNn's hitlag branch forces Nana's rate to zero; hosts expose that
+        # source flag as ``hitlag`` when they have it.
+        rate = 0.0 if getattr(leader, "hitlag", False) is True else float(rate)
+    return NanaFollowerFrame(
+        action_state=action_state,
+        position=anchor_position,
+        velocity=velocity,
+        facing=facing,
+        animation_rate=rate,
+    )
+
+
+def nana_lifecycle_reset(follower: Any) -> None:
+    """Apply the source Nana death/detach reset to an exposed mutable proxy.
+
+    Every assignment is capability-checked so this remains usable with the
+    current read-only ``EntityView``.  A native host can expose these fields
+    without adding character-specific Rust logic.
+    """
+    state = getattr(follower, "action_state", None)
+    command = getattr(state, "command", None)
+    if isinstance(command, (tuple, list)):
+        values = [0] * len(command)
+        state.command = type(command)(values) if isinstance(command, tuple) else values
+    for name, value in (("article", None), ("attached_to", None), ("hitlag", False)):
+        if hasattr(follower, name):
+            setattr(follower, name, value)
 
 
 def _partner_projection(ctx: Any) -> Any | None:
@@ -393,4 +517,15 @@ class IceClimbers(Fighter):
     )
 
 
-__all__ = ["IceClimbers", "IceShot", "SquallHammer", "Belay", "Blizzard"]
+__all__ = [
+    "IceClimbers",
+    "IceShot",
+    "SquallHammer",
+    "Belay",
+    "Blizzard",
+    "NanaFollowerFrame",
+    "NANA_MOTION_STATES",
+    "nana_state_for_leader",
+    "nana_follow_frame",
+    "nana_lifecycle_reset",
+]
