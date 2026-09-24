@@ -97,6 +97,10 @@ class SheikZeldaSpecialTests(unittest.TestCase):
                 })
                 terminal = getattr(move, "air_end", getattr(move, "air_move", move.air))
                 instance = _Fighter(terminal)
+                if hasattr(move, "aerial_move_end"):
+                    # Farore's source callback enters FallSpecial with Zelda
+                    # attributes; its dedicated test covers that handoff.
+                    continue
                 move._transition_animation_end(instance, _context(ground=False))
                 if ((fighter is Sheik and move is Sheik.specials.up)
                         or (fighter is Zelda and move in (Zelda.specials.up, Zelda.specials.down))):

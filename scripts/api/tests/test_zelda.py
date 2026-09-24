@@ -41,7 +41,7 @@ class _Fighter:
         self.position = (1.0, 2.0, 0.0)
         self.facing = -1.0
         self.spawned = []
-        self.fall_special = []
+        self.fall_special = None
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -50,8 +50,8 @@ class _Fighter:
     def spawn_article(self, *args):
         self.spawned.append(args)
 
-    def enter_fall_special(self, **kwargs):
-        self.fall_special.append(kwargs)
+    def enter_fall_special(self, *, mobility, landing_lag):
+        self.fall_special = {"mobility": mobility, "landing_lag": landing_lag}
 
 
 def _context(*, stick=(0.0, 0.0), grounded=True, resource=True, pressed=True):
@@ -183,6 +183,24 @@ class ZeldaSpecialTests(unittest.TestCase):
         release = next(item for item in behavior["callbacks"]
                        if item["hook"] == "input_released")
         self.assertEqual(release["actions"], ["Source.18:344", "Source.18:347"])
+
+    def test_farore_aerial_move_uses_source_fall_special_attributes(self):
+        move = Zelda.specials.up
+        attributes = SimpleNamespace(x68=0.75, x6C=13.0)
+        ctx = _context()
+        ctx.resource = lambda path: SimpleNamespace(attributes=attributes) if path == "up" else None
+        fighter = _Fighter(move.air_move)
+
+        self.assertTrue(move.aerial_move_end(fighter, ctx))
+        self.assertEqual(
+            fighter.fall_special,
+            {"mobility": 0.75, "landing_lag": 13.0},
+        )
+
+        attributes.x6C = 0.0
+        fighter = _Fighter(move.air_move)
+        self.assertTrue(move.aerial_move_end(fighter, ctx))
+        self.assertEqual(fighter.fall_special["landing_lag"], 0.0)
 
     def test_din_command_cue_spawns_native_article_and_clears_slot(self):
         move = Zelda.specials.side

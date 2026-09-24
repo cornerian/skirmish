@@ -13,6 +13,7 @@ from typing import Any
 from skirmish import (
     Action, ArticleId, Button, DirectionalSpecial, DownSpecial, Fighter,
     NeutralSpecial, SideSpecial, Transition, UpSpecial, on, source_phase,
+    resource_attributes,
 )
 from fighter.helpers import resource_attributes
 
@@ -226,6 +227,30 @@ class Farore(UpSpecial, DirectionalSpecial):
         ground_start_1: Transition(air_start_1, preserve_state=True, keep_frame=True),
         ground_move: Transition(air_move, preserve_state=True, keep_frame=True),
     }
+
+    @on.animation_end(air_move)
+    def aerial_move_end(self, fighter: Fighter, ctx: object) -> bool:
+        """Match ``ftZd_SpecialAirHi_Anim``'s source FallSpecial handoff."""
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "x68", None),
+        )
+        landing_lag = getattr(
+            attributes,
+            "specialhi_landing_lag",
+            getattr(attributes, "x6C", None),
+        )
+        if mobility is None or landing_lag is None:
+            fighter.change_action(Action.FALL)
+            return True
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            fighter.change_action(Action.FALL)
+            return True
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
 
 
 class TransformOutcome(str, Enum):
