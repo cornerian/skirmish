@@ -210,10 +210,10 @@ class PeachUpSpecial(UpSpecial, _PeachSpecial):
     # the common fall-special state, while the source end callback uses that
     # same state after applying Peach's mobility and landing-lag attributes.
     on_end = {
-        ground: Transition(Action.FALL),
+        ground: Transition(Action.SPECIAL_HI_FALL),
         ground_end: Transition(Action.SPECIAL_HI_FALL),
-        air: Transition(Action.FALL),
-        air_end: Transition(Action.FALL),
+        air: Transition(Action.SPECIAL_HI_FALL),
+        air_end: Transition(Action.SPECIAL_HI_FALL),
     }
     on_ground = {
         air: Transition(ground, preserve_state=True, keep_frame=True),

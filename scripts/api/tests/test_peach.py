@@ -150,15 +150,28 @@ class PeachSpecialTests(unittest.TestCase):
         fighter = _Fighter()
         fighter.action = up.ground
         up._transition_animation_end(fighter, _context())
-        # ftPe_SpecialHiStart_Anim (361) enters common FallSpecial directly;
-        # state 362 is reached by the landing collision callback instead.
-        self.assertIs(fighter.action, Action.FALL)
+        # ftPe_SpecialHiStart_Anim (361) enters common FallSpecial directly.
+        self.assertIs(fighter.action, Action.SPECIAL_HI_FALL)
 
         fighter = _Fighter()
         fighter.action = up.ground_end
         up._transition_animation_end(fighter, _context())
         # ftPe_SpecialHiEnd_Anim calls ftCo_80096900, entering FallSpecial
         # after the grounded end motion completes.
+        self.assertIs(fighter.action, Action.SPECIAL_HI_FALL)
+
+        fighter = _Fighter()
+        fighter.action = up.air
+        up._transition_animation_end(fighter, _context(ground_open=False, air_open=True))
+        # The aerial start callback uses the same ftCo_800CEFE0 FallSpecial
+        # handoff as the grounded callback.
+        self.assertIs(fighter.action, Action.SPECIAL_HI_FALL)
+
+        fighter = _Fighter()
+        fighter.action = up.air_end
+        up._transition_animation_end(fighter, _context(ground_open=False, air_open=True))
+        # ftPe_SpecialAirHiEnd_Anim delegates to ftPe_SpecialHiEnd_Anim,
+        # which calls ftCo_80096900 as well.
         self.assertIs(fighter.action, Action.SPECIAL_HI_FALL)
 
     def test_native_command_branches_only_select_wall_end_phase(self):
