@@ -88,7 +88,8 @@ The pinned fighter sources were audited alongside the article callbacks:
 * `ftpeachspeciallw.c` sends a held turnip to the common light throw and
   otherwise spawns an article; weighted turnip selection remains article
   host work.
-* `ftpeachspecialhi.c` owns parasol attachment and fall-special handoff;
+* `ftpeachspecialhi.c` owns parasol attachment and fall-special handoff for
+  both the start and end callbacks;
   `itpeachexplode.c` owns the Bomber's 60-frame article lifetime. Their
   object and effect callbacks remain outside the fighter script boundary.
 

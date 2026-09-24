@@ -157,7 +157,9 @@ class PeachSpecialTests(unittest.TestCase):
         fighter = _Fighter()
         fighter.action = up.ground_end
         up._transition_animation_end(fighter, _context())
-        self.assertIs(fighter.action, Action.WAIT)
+        # ftPe_SpecialHiEnd_Anim calls ftCo_80096900, entering FallSpecial
+        # after the grounded end motion completes.
+        self.assertIs(fighter.action, Action.SPECIAL_HI_FALL)
 
     def test_native_command_branches_only_select_wall_end_phase(self):
         neutral = Peach.specials.neutral

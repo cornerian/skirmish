@@ -206,13 +206,12 @@ class PeachUpSpecial(UpSpecial, _PeachSpecial):
     air_end = source_phase(364)
     _ACTIVE = (ground, ground_end, air, air_end)
 
-    # Parasol/fall-special article handling is native-only.  The start phases
-    # therefore terminate into the generic fall state instead of inventing a
-    # parasol article phase; the later source end rows retain their native
-    # finite ground/air exits when a host supplies them.
+    # Parasol attachment remains native-only.  The start phases terminate into
+    # the common fall-special state, while the source end callback uses that
+    # same state after applying Peach's mobility and landing-lag attributes.
     on_end = {
         ground: Transition(Action.FALL),
-        ground_end: Transition(Action.WAIT),
+        ground_end: Transition(Action.SPECIAL_HI_FALL),
         air: Transition(Action.FALL),
         air_end: Transition(Action.FALL),
     }
