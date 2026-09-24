@@ -11,7 +11,9 @@ sys.path.insert(0, str(ROOT / "scripts" / "api"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from fighter import Action, Button, export_definition
-from fighters.game_and_watch import Chef, Fire, GameAndWatch, Judge, OilPanic
+from fighters.game_and_watch import (
+    Chef, Fire, GameAndWatch, GameAndWatchActionState, Judge, OilPanic,
+)
 
 
 class _Input:
@@ -216,6 +218,24 @@ class GameAndWatchTests(unittest.TestCase):
         ))
         self.assertEqual(fighter.action_state.panic_release_damage, 22.0)
         self.assertEqual(fighter.action_state.panic_damage, 0.0)
+
+    def test_oil_panic_uses_retained_full_charge_when_context_omits_charge(self):
+        move = OilPanic()
+        fighter = _Fighter()
+        fighter.action_state = GameAndWatchActionState()
+        fighter.action_state.panic_charge = 3
+        fighter.action_state.panic_damage = 8.0
+
+        self.assertTrue(move.input_pressed(
+            fighter,
+            _context(
+                stick=(0.0, -1.0), panic_damage_mul=2.0,
+                panic_damage_add=1.0,
+            ),
+        ))
+        self.assertIs(fighter.action, move.ground_shoot)
+        self.assertEqual(fighter.action_state.panic_release_damage, 17.0)
+        self.assertEqual(fighter.action_state.panic_charge, 0)
 
 
 if __name__ == "__main__":

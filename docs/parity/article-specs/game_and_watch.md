@@ -5,6 +5,13 @@ This is the source contract for the fighter owned by
 `/mnt/shared/Projects/Code/External/melee`, at the revision used by the
 parity effort.
 
+The script currently exposes fighter-side motion entry, surface transitions,
+source command gates, Judge row retention, and the typed Fire Rescue landing
+branch. Chef food, Judge, Oil Panic, Rescue, and Parachute article behavior
+remains a native bridge concern: production article resources and their
+runtime callbacks are not available in the authoring layer, so this document
+does not claim complete article behavior.
+
 ## Article IDs
 
 The native article table is initialized in

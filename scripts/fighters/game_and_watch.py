@@ -327,11 +327,17 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
             and bool(ctx.ground_open or ctx.air_open)
         ):
             return False
+        state = _fighter_state(fighter)
         ground = bool(ctx.ground_open)
-        charge = getattr(ctx, "panic_charge", None)
+        charge = getattr(ctx, "panic_charge", state.panic_charge)
+        if not isinstance(charge, int) or isinstance(charge, bool):
+            charge = state.panic_charge
+        else:
+            state.panic_charge = charge
         if isinstance(charge, int) and not isinstance(charge, bool) and charge >= 3:
-            state = _fighter_state(fighter)
             accumulated = getattr(ctx, "panic_damage", state.panic_damage)
+            if not isinstance(accumulated, (int, float)) or isinstance(accumulated, bool):
+                accumulated = state.panic_damage
             attrs = _resource_attributes(ctx, "down.attributes")
             multiplier = getattr(attrs, "panic_damage_mul", None)
             addition = getattr(attrs, "panic_damage_add", None)
