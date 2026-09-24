@@ -249,6 +249,18 @@ class YoungLinkAppeal(Move):
     action = _phase(342, attack="taunt.right")
     left = _phase(343, attack="taunt.left")
 
+    @on.animation_end(action, left)
+    def animation_end(self, fighter: Any, ctx: Any) -> None:
+        """Return from either CLink Z-air row through the common terminal path.
+
+        ``ftCl_AppealS_Anim`` calls ``ft_8008A2BC`` after the appeal motion
+        runs out.  That common helper selects grounded Wait or aerial Fall;
+        leaving these two source motions without an explicit terminal rule
+        would strand a portable host in the taunt action.
+        """
+        grounded = getattr(ctx, "grounded", getattr(fighter, "grounded", True))
+        fighter.change_action(Action.WAIT if grounded else Action.FALL)
+
     @on.command_changed(1, actions=(action, left))
     def milk_command(self, fighter: Any, ctx: Any) -> None:
         """Forward CLink's command-triggered milk spawn/cleanup boundary.

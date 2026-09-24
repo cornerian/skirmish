@@ -90,6 +90,16 @@ class YoungLinkTests(unittest.TestCase):
             "taunt.left",
         )
 
+    def test_c_link_appeal_rows_use_grounded_or_aerial_terminal_transition(self):
+        move = YoungLinkAppeal()
+        grounded = _Fighter(grounded=True)
+        move.animation_end(grounded, SimpleNamespace(grounded=True))
+        self.assertEqual(grounded.action, Action.WAIT)
+
+        airborne = _Fighter(grounded=False)
+        move.animation_end(airborne, SimpleNamespace(grounded=False))
+        self.assertEqual(airborne.action, Action.FALL)
+
     def test_c_link_appeal_command_values_bound_milk_lifecycle(self):
         move = YoungLinkAppeal()
         fighter = _Fighter()
