@@ -23,7 +23,9 @@ boundary.
 
 `it/kinds/itmariofireball.c` initializes velocity from the item attributes as
 `facing * speed * cos(angle)` and `speed * sin(angle)`, applies the lifetime,
-and uses the collision callback to bounce or terminate. Damage, shield,
+and uses `itMariofireball_UnkMotion0_Coll`: after `it_8027781C` reports a
+terrain collision, it compares the current 2D velocity magnitude with the
+stop threshold and emits effect 1147 without an incoming-normal gate. Damage, shield,
 reflection, absorption, clank, and wall effects are item-owned callbacks:
 `itMarioFireball_Logic87_DmgDealt`, `...Reflected`, `...HitShield`,
 `...Absorbed`, and `...Clanked`.
