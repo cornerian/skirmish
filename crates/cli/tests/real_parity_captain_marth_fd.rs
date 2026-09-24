@@ -19,6 +19,41 @@ const BASELINE: &str = concat!(
     "/../../tests/fixtures/slippi/parity/captain-marth-fd-baseline.json"
 );
 
+fn configured_cli() -> Command {
+    let archive = env::var("SKIRMISH_PON_STDLIB").ok();
+    let digest = env::var("SKIRMISH_PON_STDLIB_SHA256").ok();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_skirmish"));
+    match (archive, digest) {
+        (Some(archive), Some(digest)) => {
+            assert!(
+                PathBuf::from(&archive).is_file(),
+                "SKIRMISH_PON_STDLIB must point to a readable archive: {archive}"
+            );
+            assert_eq!(
+                digest.len(),
+                64,
+                "SKIRMISH_PON_STDLIB_SHA256 must be a 64-character digest"
+            );
+            command.args([
+                "--pon-stdlib",
+                archive.as_str(),
+                "--pon-stdlib-sha256",
+                digest.as_str(),
+            ]);
+        }
+        (None, None) => panic!(
+            concat!(
+                "SKIRMISH_PON_STDLIB and SKIRMISH_PON_STDLIB_SHA256 are required when ",
+                "SKIRMISH_CAPTAIN_MARTH_FD_DATA opts into the replay ratchet"
+            )
+        ),
+        (Some(_), None) | (None, Some(_)) => {
+            panic!("SKIRMISH_PON_STDLIB and SKIRMISH_PON_STDLIB_SHA256 must be set together")
+        }
+    }
+    command
+}
+
 #[test]
 fn ratchets_the_provisional_captain_marth_fd_timeline_when_opted_in() {
     let Ok(root) = env::var("SKIRMISH_CAPTAIN_MARTH_FD_DATA") else {
@@ -40,7 +75,7 @@ fn ratchets_the_provisional_captain_marth_fd_timeline_when_opted_in() {
     let initialization_path = directory.path().join("initialization.json");
     let report_path = directory.path().join("report.json");
 
-    let make = Command::new(env!("CARGO_BIN_EXE_skirmish"))
+    let make = configured_cli()
         .arg("make-initialization")
         .arg("--match-data")
         .arg(&match_data_path)
@@ -59,7 +94,7 @@ fn ratchets_the_provisional_captain_marth_fd_timeline_when_opted_in() {
 
     // A mismatch is expected for this provisional measurement.  The command
     // still writes the report, which is the value ratcheted below.
-    let _ = Command::new(env!("CARGO_BIN_EXE_skirmish"))
+    let _ = configured_cli()
         .arg("validate-replay")
         .arg(REPLAY)
         .arg("--initialization")
