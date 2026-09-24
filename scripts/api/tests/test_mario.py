@@ -209,8 +209,31 @@ class MarioNeutralTests(unittest.TestCase):
     def test_super_jump_punch_entry_clears_only_native_command_latch(self):
         move = SuperJumpPunch()
         fighter = _Fighter()
+        fighter.throw_flags = 9
         move.enter(fighter, _context())
         self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+        self.assertEqual(fighter.throw_flags, 0)
+
+    def test_super_jump_punch_animation_end_enters_fall_special(self):
+        move = SuperJumpPunch()
+        calls = []
+        fighter = SimpleNamespace(
+            action=move.ground,
+            enter_fall_special=lambda **kwargs: calls.append(kwargs),
+        )
+        attributes = SimpleNamespace(
+            specialhi_freefall_air_spd_mul=0.8,
+            specialhi_landing_lag=12.0,
+        )
+        context = SimpleNamespace(
+            resource=lambda path: SimpleNamespace(attributes=attributes)
+        )
+
+        self.assertTrue(move.enter_fall_special(fighter, context))
+        self.assertEqual(
+            calls,
+            [{"mobility": 0.8, "landing_lag": 12.0}],
+        )
 
     def test_tornado_aerial_tap_consumes_native_command_cue(self):
         move = MarioTornado()

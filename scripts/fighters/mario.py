@@ -21,6 +21,7 @@ from skirmish import (
     hook,
     source_phase,
 )
+from fighter.helpers import resource_attributes
 
 
 class Fireball(B0ArticleSpecial):
@@ -130,6 +131,31 @@ class SuperJumpPunch(UpSpecial, _SourcePair):
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, command[1], command[2], command[3])
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
+    @hook.animation_end(ground, air)
+    def enter_fall_special(self, fighter: Fighter, ctx) -> bool:
+        """Match ``ftMr_SpecialHi_Anim``'s shared FallSpecial exit.
+
+        Both source callbacks call ``ftCo_80096900`` with Mario's freefall
+        mobility and special landing lag.  The native fighter host owns the
+        actual fall-special action and may expose it through
+        ``enter_fall_special``; keep the callback optional for lightweight
+        authoring contexts.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        mobility = getattr(
+            attributes,
+            "specialhi_freefall_air_spd_mul",
+            getattr(attributes, "specialhi_freefall_mobility", None),
+        )
+        landing_lag = getattr(attributes, "specialhi_landing_lag", None)
+        enter = getattr(fighter, "enter_fall_special", None)
+        if mobility is None or landing_lag is None or not callable(enter):
+            return False
+        enter(mobility=mobility, landing_lag=landing_lag)
+        return True
 
 
 class MarioTornado(DownSpecial, _SourcePair):
