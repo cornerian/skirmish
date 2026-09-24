@@ -156,7 +156,6 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
     on_end = {
         ground_start: Transition(Action.WAIT),
         ground_hit: Transition(ground_wait),
-        air_hit: Transition(air_wait),
         ground_end_forward: Transition(Action.WAIT),
         ground_end_back: Transition(Action.WAIT),
         air_start: Transition(Action.FALL),
@@ -178,6 +177,15 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
             fighter.change_action(self.ground_hit)
         elif fighter.action == self.air_start:
             fighter.change_action(self.air_hit)
+
+    @hook.animation_end(air_hit)
+    def finish_hit(self, fighter: Any, ctx: Any) -> None:
+        """Keep a held capture latched when the hit animation completes."""
+        if _button_held(ctx, Button.B):
+            target = self.air_hold
+        else:
+            target = self.air_wait
+        fighter.change_action(target)
 
     def hold_capture(self, fighter: Any, ctx: Any) -> bool:
         """Re-enter the source hold motion when capture B remains held.

@@ -125,7 +125,7 @@ class BowserTests(unittest.TestCase):
         side._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, "Source.5:350")
         fighter = _Fighter("Source.5:354")
-        side._transition_animation_end(fighter, SimpleNamespace(grounded=False))
+        side.finish_hit(fighter, _context(ground=False, held=set()))
         self.assertEqual(fighter.action, "Source.5:356")
         fighter = _Fighter("Source.5:353")
         side._transition_ground_air(fighter, SimpleNamespace(grounded=True))
@@ -200,6 +200,18 @@ class BowserTests(unittest.TestCase):
         fighter = _Fighter(side.ground_wait)
         self.assertTrue(side.hold_capture(fighter, _context(held=0x100)))
         self.assertEqual(fighter.action, side.ground_wait)
+
+    def test_klaw_hit_finishes_into_hold_without_a_second_press(self):
+        side = Bowser.specials.side
+        # Ground hit has already taken the native no-victim path; only the
+        # aerial hit callback branches on the latched B state.
+        fighter = _Fighter(side.air_hit)
+        side.finish_hit(fighter, _context(ground=False, held={Button.B}))
+        self.assertEqual(fighter.action, side.air_hold)
+
+        fighter = _Fighter(side.air_hit)
+        side.finish_hit(fighter, _context(ground=False, held=0x100))
+        self.assertEqual(fighter.action, side.air_wait)
 
 
 if __name__ == "__main__":

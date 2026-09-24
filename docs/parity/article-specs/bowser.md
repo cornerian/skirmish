@@ -101,3 +101,20 @@ owner-linked item object, article ECB/surface-normal state, deterministic
 article RNG stream, or effect cleanup operation.  Implementing the flame in
 Python without those seams would fabricate behavior and would not satisfy the
 source contract above.
+
+## Fighter phase audit
+
+The fighter script covers the four native special families and their source
+phase ranges:
+
+| Family | Source phases | Scripted timing |
+| --- | --- | --- |
+| Flame Breath | 341–346 (`ftkoopaspecialn.c`) | Start enters the loop, B release enters 343/346, and ground/air changes preserve the current frame. |
+| Koopa Klaw | 347–358 (`ftkoopaspecials.c`) | Start contact enters hit; the ground hit path reaches wait 350, while the aerial hit path enters 355 when B is latched and otherwise reaches wait 356; directional input selects forward/back throw ends. |
+| Whirling Fortress | 359–360 (`ftkoopaspecialhi.c`) | Ground and air phases convert on contact and finish to wait/fall. Native armor, effects, and velocity callbacks remain outside the fighter-only API. |
+| Bowser Bomb | 361–363 (`ftkoopaspeciallw.c`) | Ground pound changes to aerial phase, landing selects 363, and landing animation finishes in fall. The native aerial entry seeks animation frame 30, which the generic transition descriptor cannot encode. |
+
+The Klaw hold check follows `ftKp_SpecialSWait_IASA`: native code tests
+`held_buttons & HSD_PAD_B`, where `HSD_PAD_B` is `1 << 9`. The portable
+adapter tests bit `0x200` for integer button masks, and its hit animation-end
+callback preserves a latched B press without requiring a second press.
