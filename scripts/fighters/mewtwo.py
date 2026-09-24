@@ -242,12 +242,16 @@ class Confusion(SideSpecial, _MewtwoSpecial):
     @hook.action_enter(ground, air)
     def enter(self, fighter: Any, ctx: Any) -> None:
         state = _fighter_state(fighter)
-        # The native boost is one-shot across a ground/air phase transition;
-        # a fresh grounded entry starts a new Confusion and clears the latch.
+        # Both ftMt_SpecialS_Enter and ftMt_SpecialAirS_Enter clear command
+        # variables, throw flags, and the reflector latch.  Ground/air
+        # transitions then re-arm the grab without carrying a stale command.
+        state.command = (0, 0, 0, 0)
+        state.confusion_grabbed = False
+        _set_reflecting(fighter, False)
+        # The native air boost is one-shot across a ground/air phase
+        # transition; a fresh grounded entry starts a new Confusion.
         if fighter.action == self.ground:
             state.confusion_air_boosted = False
-            state.confusion_grabbed = False
-            _set_reflecting(fighter, False)
         # ftMt_SpecialAirS_Enter applies the one-time air boost.  Resource
         # authors may expose it as ``side.attributes.air_boost``; absent data
         # deliberately leaves the host's current velocity untouched.
@@ -345,6 +349,14 @@ class Teleport(UpSpecial, _MewtwoSpecial):
         fighter.change_action(Action.SPECIAL_HI_LANDING)
         _fighter_state(fighter).teleport_active = False
 
+    @hook.animation_end(ground_end, air_end)
+    def end_travel(self, fighter: Any, ctx: Any) -> None:
+        # The source end callbacks leave the teleport travel phase and restore
+        # normal fighter control.  Clear the portable latch at that boundary
+        # even when a host delivers animation completion before its transition
+        # callback.
+        _fighter_state(fighter).teleport_active = False
+
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
     }
@@ -388,6 +400,12 @@ class Disable(DownSpecial, _MewtwoSpecial):
     @hook.before_receive_hit(actions=_ACTIVE)
     def on_damage(self, fighter: Any, ctx: Any) -> None:
         """ftMt_SpecialLw_SetCall destroys Disable when the owner is hit."""
+        _fighter_state(fighter).disable_fired = False
+
+    @hook.animation_end(ground, air)
+    def end_disable(self, fighter: Any, ctx: Any) -> None:
+        # ftMt_SpecialLw_Anim and ftMt_SpecialAirLw_Anim destroy the Disable
+        # article before entering WAIT/FALL.
         _fighter_state(fighter).disable_fired = False
 
     on_ground = {air: Transition(ground, preserve_state=True, keep_frame=True)}

@@ -175,6 +175,17 @@ class MewtwoScriptTests(unittest.TestCase):
         move.reflect_command(fighter, SimpleNamespace(event=SimpleNamespace(value=2)))
         self.assertFalse(fighter.flags.reflecting)
 
+    def test_confusion_entry_clears_stale_command_and_grab_latches(self):
+        move = self.module.Confusion()
+        fighter = _Fighter()
+        fighter.action = move.air
+        fighter.action_state.command = (1, 2, 3, 4)
+        fighter.action_state.confusion_grabbed = True
+        move.enter(fighter, SimpleNamespace())
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
+        self.assertFalse(fighter.action_state.confusion_grabbed)
+        self.assertFalse(fighter.action_state.confusion_reflecting)
+
     def test_confusion_grab_command_requires_and_records_a_victim(self):
         move = self.module.Confusion()
         fighter = _Fighter()
@@ -204,6 +215,15 @@ class MewtwoScriptTests(unittest.TestCase):
         fighter.action = teleport.air_travel
         teleport.begin_travel(fighter, SimpleNamespace())
         self.assertTrue(fighter.action_state.teleport_active)
+
+        teleport.end_travel(fighter, SimpleNamespace())
+        self.assertFalse(fighter.action_state.teleport_active)
+
+        disable = self.module.Disable()
+        fighter.action = disable.ground
+        fighter.action_state.disable_fired = True
+        disable.end_disable(fighter, SimpleNamespace())
+        self.assertFalse(fighter.action_state.disable_fired)
 
     def test_teleport_aerial_landing_honors_timer_and_special_lag(self):
         move = self.module.Teleport()
