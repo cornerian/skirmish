@@ -15,8 +15,12 @@ from skirmish import (
 
 
 def _button_held(ctx: Any, button: Button) -> bool:
-    """Read the host held-button view, preserving legacy event contexts."""
-    held = getattr(getattr(ctx, "input", None), "held_buttons", None)
+    """Read the host held-button API, preserving legacy event contexts."""
+    input_state = getattr(ctx, "input", None)
+    held_method = getattr(input_state, "held", None)
+    if callable(held_method):
+        return bool(held_method(button))
+    held = getattr(input_state, "held_buttons", None)
     if held is None:
         return True
     if isinstance(held, (tuple, list, set, frozenset)):

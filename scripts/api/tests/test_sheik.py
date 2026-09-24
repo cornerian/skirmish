@@ -20,12 +20,14 @@ class _Input:
     def __init__(self, *, pressed: bool = True, buttons=(Button.B,), held=None):
         self.pressed = pressed
         self.buttons = set(buttons)
-        if held is not None:
-            self.held_buttons = set(held)
+        self._held = None if held is None else set(held)
         self.stick = (0.0, 0.0)
 
     def just_pressed(self, button):
         return self.pressed and button in self.buttons
+
+    def held(self, button):
+        return self._held is None or button in self._held
 
 
 class _Fighter:
