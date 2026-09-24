@@ -339,6 +339,10 @@ fn luigi_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
     speed <= threshold
 }
 
+fn mario_fireball_terrain_despawns(speed: f32, threshold: f32) -> bool {
+    speed <= threshold
+}
+
 const LUIGI_FIREBALL_TERRAIN_EFFECT_ID: u16 = 1288;
 
 /// Fox laser stage collision arms the native one-frame expiry timer instead
@@ -543,7 +547,10 @@ fn step(
             );
             if incoming < 0.0 {
                 state.projectiles[index].position = contact.position;
-                if state.projectiles[index].speed <= gravity.terrain_stop_speed {
+                if mario_fireball_terrain_despawns(
+                    speed(state.projectiles[index].velocity),
+                    gravity.terrain_stop_speed,
+                ) {
                     return Ok(Outcome::Despawn);
                 }
                 state.events.push(Event::ProjectileEffect {
@@ -968,6 +975,18 @@ mod tests {
         assert!(luigi_fireball_terrain_despawns(0.5, 0.5));
         assert!(luigi_fireball_terrain_despawns(0.25, 0.5));
         assert!(!luigi_fireball_terrain_despawns(0.5001, 0.5));
+    }
+
+    #[test]
+    fn mario_fireball_terrain_policy_uses_post_gravity_velocity_magnitude() {
+        let spawn_speed = 2.0;
+        let post_gravity_velocity = [0.3, 0.4];
+        assert_eq!(speed(post_gravity_velocity), 0.5);
+        assert!(mario_fireball_terrain_despawns(
+            speed(post_gravity_velocity),
+            0.75
+        ));
+        assert!(!mario_fireball_terrain_despawns(spawn_speed, 0.75));
     }
 
     #[test]
