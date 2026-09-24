@@ -8,7 +8,9 @@ Article creation and collision driven velocity updates still require host
 surfaces that are not part of the portable fighter API.
 """
 
-from skirmish import Fighter
+from typing import ClassVar
+
+from skirmish import Fighter, Parameters
 from fighter.electric_family import (
     ELECTRIC_SPECIALS,
     ElectricAgility as Agility,
@@ -18,7 +20,27 @@ from fighter.electric_family import (
 )
 
 
+class PikachuParameters(Parameters):
+    """Stable identity metadata from ``ftPk_Init``.
+
+    The source initializer names the fighter and animation archives and
+    exposes four costume data files.  Keeping those values on the fighter
+    definition lets resource loaders select the native assets without making
+    the special authoring code depend on archive discovery.
+    """
+
+    data_file: str = "PlPk.dat"
+    animation_data_file: str = "PlPkAJ.dat"
+
+
 class Pikachu(Fighter):
+    parameters = PikachuParameters
+    costume_files: ClassVar[tuple[str, ...]] = (
+        "PlPkNr.dat",
+        "PlPkRe.dat",
+        "PlPkBu.dat",
+        "PlPkGr.dat",
+    )
     specials = ELECTRIC_SPECIALS
 
 
@@ -108,6 +130,7 @@ SOURCE_MOTION_STATES = (
 
 __all__ = [
     "Pikachu",
+    "PikachuParameters",
     "ThunderJolt",
     "QuickAttack",
     "QUICK_ATTACK_ANIMATION_ENDS",
