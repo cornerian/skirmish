@@ -41,12 +41,10 @@ fn configured_cli() -> Command {
                 digest.as_str(),
             ]);
         }
-        (None, None) => panic!(
-            concat!(
-                "SKIRMISH_PON_STDLIB and SKIRMISH_PON_STDLIB_SHA256 are required when ",
-                "SKIRMISH_CAPTAIN_MARTH_FD_DATA opts into the replay ratchet"
-            )
-        ),
+        (None, None) => panic!(concat!(
+            "SKIRMISH_PON_STDLIB and SKIRMISH_PON_STDLIB_SHA256 are required when ",
+            "SKIRMISH_CAPTAIN_MARTH_FD_DATA opts into the replay ratchet"
+        )),
         (Some(_), None) | (None, Some(_)) => {
             panic!("SKIRMISH_PON_STDLIB and SKIRMISH_PON_STDLIB_SHA256 must be set together")
         }
