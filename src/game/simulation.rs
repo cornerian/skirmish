@@ -1489,7 +1489,7 @@ fn drain_script_transitions(
                     pre_landing: None,
                     geometry: None,
                     entities: Some(entities),
-                    entity_owner_port: u8::try_from(player).ok(),
+                    entity_owner_port: entities.fighter_port(player),
                 },
                 from,
                 old_behavior
@@ -1522,7 +1522,7 @@ fn drain_script_transitions(
                 pre_landing: None,
                 geometry: None,
                 entities: Some(entities),
-                entity_owner_port: u8::try_from(player).ok(),
+                entity_owner_port: entities.fighter_port(player),
             },
         )?;
         // The native animation entry path samples the destination command row
@@ -1717,7 +1717,7 @@ fn dispatch_script_deadlines(
                     pre_landing: None,
                     geometry: None,
                     entities: Some(entities),
-                    entity_owner_port: u8::try_from(player).ok(),
+                    entity_owner_port: entities.fighter_port(player),
                 },
             )?;
             // A deadline callback may explicitly advance an owned move to a

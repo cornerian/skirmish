@@ -2321,7 +2321,7 @@ mod tests {
         let mut entities = EntityStore::default();
         entities
             .insert_with_payload(
-                EntityOwner::new(0, 1),
+                EntityOwner::new(2, 1),
                 EntityPayload {
                     position: [3.0, 4.0, 0.0],
                     velocity: [1.0, -2.0, 0.0],
@@ -2332,15 +2332,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            LifecycleHost::project_entity_path(&entities, 0, "context.entity_at_index[1].position"),
+            LifecycleHost::project_entity_path(&entities, 2, "context.entity_at_index[1].position"),
             Some(NativeValue::Vec2([3.0, 4.0]))
         );
         assert_eq!(
-            LifecycleHost::project_entity_path(&entities, 1, "context.entity_at_index[1].position"),
+            LifecycleHost::project_entity_path(&entities, 5, "context.entity_at_index[1].position"),
             None
         );
         assert_eq!(
-            LifecycleHost::project_entity_path(&entities, 0, "context.entity_at_index[255]"),
+            LifecycleHost::project_entity_path(&entities, 2, "context.entity_at_index[255]"),
             None
         );
     }

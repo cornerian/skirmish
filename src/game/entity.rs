@@ -217,6 +217,18 @@ impl EntityStore {
         })
     }
 
+    /// Resolve a fighter index to its replay port through the ordinal-0
+    /// leader identities. This keeps player array indices separate from PAD
+    /// ports when a replay uses non-default slots.
+    pub fn fighter_port(&self, fighter_index: usize) -> Option<u8> {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.owner)
+            .filter(|owner| owner.ordinal == 0)
+            .nth(fighter_index)
+            .map(|owner| owner.port)
+    }
+
     pub fn remove(&mut self, id: EntityId) -> bool {
         let Some(slot) = self.slots.get_mut(id.index()) else {
             return false;
@@ -368,5 +380,19 @@ mod tests {
             Err(EntityError::GenerationExhausted)
         );
         assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn non_default_fighter_ports_scope_leaders_and_secondaries() {
+        let mut store = EntityStore::for_fighters([2, 5]).unwrap();
+        assert_eq!(store.fighter_port(0), Some(2));
+        assert_eq!(store.fighter_port(1), Some(5));
+        let secondary = store.insert(EntityOwner::new(2, 1)).unwrap();
+        assert_eq!(
+            store.payload_for_owner(2, 1),
+            Some(EntityPayload::default())
+        );
+        assert_eq!(store.owner(secondary), Some(EntityOwner::new(2, 1)));
+        assert_eq!(store.payload_for_owner(5, 1), None);
     }
 }
