@@ -137,6 +137,11 @@ needs:
 4. Effect IDs 1272/1273/1276/1277 and transformation replacement through
    `ftCommon_8007EFC8`.
 
+The Din command callback only forwards a cue when the host explicitly reports
+that no Din Fire article is owned and supplies the source joint-89 position.
+Without both native-owned values, it leaves the command for the host rather
+than guessing a root position or spawning a duplicate article.
+
 These are native article/effect and fighter replacement seams; fabricating them
 inside the declarative fighter phase graph would lose owner and contact parity.
 

@@ -80,23 +80,33 @@ class Din(SideSpecial, DirectionalSpecial):
         """Forward the source command cue that creates Din Fire.
 
         ``ftZd_Special*S*_Anim`` consumes command variable 0 and creates the
-        article once per cue.  The native article host may provide an exact
-        joint position through ``din_fire_spawn_position``; the position
-        fallback keeps this callback useful for lightweight hosts that expose
-        only the fighter root.  Article motion, ownership, and contact
-        callbacks remain native responsibilities.
+        article once per cue.  The native article host must provide the exact
+        joint-89 position and owner-handle state; article motion, ownership,
+        and contact callbacks remain native responsibilities.
         """
         event = getattr(ctx, "event", None)
         if not getattr(event, "value", False):
+            return
+
+        # The source checks the native owner handle before spawning.  Require
+        # an explicit host answer so a missing owner query cannot duplicate an
+        # article, and require the host-computed joint-89 position rather than
+        # fabricating a root-position fallback.
+        active = getattr(fighter, "din_fire_active", None)
+        if active is None:
+            has_article = getattr(fighter, "has_active_article", None)
+            if callable(has_article):
+                active = has_article(ArticleId.ZELDA_DIN_FIRE)
+        if active is None or active:
             return
 
         spawn = getattr(fighter, "spawn_article", None)
         if not callable(spawn):
             return
         position_provider = getattr(fighter, "din_fire_spawn_position", None)
-        position = position_provider() if callable(position_provider) else None
-        if position is None:
-            position = getattr(fighter, "position", None)
+        if not callable(position_provider):
+            return
+        position = position_provider()
         if position is None:
             return
 

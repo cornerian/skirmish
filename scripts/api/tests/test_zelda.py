@@ -159,6 +159,8 @@ class ZeldaSpecialTests(unittest.TestCase):
     def test_din_command_cue_spawns_native_article_and_clears_slot(self):
         move = Zelda.specials.side
         fighter = _Fighter(move.ground_loop)
+        fighter.din_fire_active = False
+        fighter.din_fire_spawn_position = lambda: fighter.position
         ctx = _context()
         ctx.event = SimpleNamespace(value=1)
 
@@ -169,6 +171,20 @@ class ZeldaSpecialTests(unittest.TestCase):
             [(108, fighter.position, fighter.facing)],
         )
         self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+
+    def test_din_command_requires_native_owner_and_joint_gates(self):
+        move = Zelda.specials.side
+        ctx = _context()
+        ctx.event = SimpleNamespace(value=1)
+
+        no_owner_state = _Fighter(move.ground_loop)
+        move.spawn(no_owner_state, ctx)
+        self.assertEqual(no_owner_state.spawned, [])
+
+        no_joint = _Fighter(move.ground_loop)
+        no_joint.din_fire_active = False
+        move.spawn(no_joint, ctx)
+        self.assertEqual(no_joint.spawned, [])
 
     def test_din_command_callback_ignores_zero_cue(self):
         move = Zelda.specials.side
