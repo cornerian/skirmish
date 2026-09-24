@@ -131,10 +131,70 @@ fn bundled_module_root_recapture_profile() {
             .collect::<Vec<_>>(),
         checksum
     );
+
+    // Isolate the changed operation from callback dispatch itself. Both arms
+    // visit the same prepared `known` module and perform the same number of
+    // recaptures. The snapshot arm retains the old Vec-producing API as the
+    // A/B baseline; the visitor arm is the zero-temporary-vector path.
+    let module = pon_runtime::import::cached_module(pon_runtime::intern("known"))
+        .expect("prepared bundle must retain known module");
+    const RECAPTURES: usize = 20_000;
+    let mut snapshot_samples = Vec::with_capacity(SAMPLES);
+    let mut visitor_samples = Vec::with_capacity(SAMPLES);
+    let mut snapshot_checksum = 0usize;
+    let mut visitor_checksum = 0usize;
+    for _ in 0..SAMPLES {
+        let start = Instant::now();
+        for _ in 0..RECAPTURES {
+            let values = pon_runtime::import::module_object_attr_values(module)
+                .expect("known module attributes");
+            snapshot_checksum = snapshot_checksum.wrapping_add(black_box(values.len()));
+        }
+        snapshot_samples.push(start.elapsed());
+
+        let start = Instant::now();
+        for _ in 0..RECAPTURES {
+            let mut count = 0usize;
+            // SAFETY: this visitor only increments a local counter and does
+            // not re-enter the import or module mutation APIs.
+            assert!(
+                unsafe { pon_runtime::import::for_each_module_object_attr(module, |_| count += 1) }
+                    .is_some()
+            );
+            visitor_checksum = visitor_checksum.wrapping_add(black_box(count));
+        }
+        visitor_samples.push(start.elapsed());
+    }
+    assert_eq!(snapshot_checksum, visitor_checksum);
+    eprintln!(
+        "pon-root-recapture-ab pin=ab9067dbd2899c64c4d67a4bc27b8ad49472b126 recaptures={} samples={} snapshot_median_ns={} snapshot_p95_ns={} visitor_median_ns={} visitor_p95_ns={} snapshot_samples_ns={:?} visitor_samples_ns={:?} scoped_allocations=unavailable",
+        RECAPTURES,
+        SAMPLES,
+        median_nanos(&snapshot_samples),
+        percentile_nanos(&snapshot_samples, 95),
+        median_nanos(&visitor_samples),
+        percentile_nanos(&visitor_samples, 95),
+        snapshot_samples
+            .iter()
+            .map(|sample| sample.as_nanos())
+            .collect::<Vec<_>>(),
+        visitor_samples
+            .iter()
+            .map(|sample| sample.as_nanos())
+            .collect::<Vec<_>>(),
+    );
 }
 
 fn median_nanos(samples: &[std::time::Duration]) -> u128 {
     let mut values: Vec<_> = samples.iter().map(std::time::Duration::as_nanos).collect();
     values.sort_unstable();
     values[values.len() / 2]
+}
+
+fn percentile_nanos(samples: &[std::time::Duration], percentile: usize) -> u128 {
+    assert!((1..=100).contains(&percentile));
+    let mut values: Vec<_> = samples.iter().map(std::time::Duration::as_nanos).collect();
+    values.sort_unstable();
+    let index = (values.len() * percentile).div_ceil(100).saturating_sub(1);
+    values[index]
 }
