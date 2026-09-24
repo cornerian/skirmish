@@ -78,6 +78,20 @@ class RaptorBoost(CaptainSideSpecial):
         motion=CaptainSideSpecial.air_motion,
     )
 
+    @on.action_enter()
+    def action_enter(self, fighter, ctx):
+        """Reset all four command vars at the Raptor Boost entry point.
+
+        ``ftCa_SpecialS_Enter`` and ``setupAirStart`` call
+        ``resetCmdVarsGround`` and explicitly clear cmd_vars[0..3].  The
+        shared family callback consumes only the three slots used by its
+        authoring hooks, so Falcon's concrete entry must also clear slot 3.
+        """
+        super().action_enter(fighter, ctx)
+        command = getattr(getattr(fighter, "action_state", None), "command", ())
+        if len(command) == 4:
+            fighter.action_state.command = (command[0], command[1], command[2], 0)
+
 
 class FalconKick(CaptainDownSpecial):
     ground = action(Action.SPECIAL_LW, slippi_state=357, animation=311, attack="down.ground")

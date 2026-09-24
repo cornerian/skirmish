@@ -593,7 +593,8 @@ class CaptainFalconTests(unittest.TestCase):
                 move.enter(fighter, SimpleNamespace())
             else:
                 move.action_enter(fighter, SimpleNamespace())
-            self.assertEqual(fighter.action_state.command, (0, 0, 0, 4))
+            expected = (0, 0, 0, 0) if move is captain.specials.side else (0, 0, 0, 4)
+            self.assertEqual(fighter.action_state.command, expected)
 
     def test_raptor_boost_exports_source_action_metadata(self):
         captain = _load_captain()
