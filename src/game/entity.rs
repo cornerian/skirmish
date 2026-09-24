@@ -44,20 +44,30 @@ pub struct EntityOwner {
     pub ordinal: u16,
 }
 
+/// Generic secondary-entity payload. It contains no fighter-specific rules.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct EntityPayload {
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
+    /// Remaining simulation steps; `None` means explicit removal is required.
+    pub lifetime: Option<u32>,
+}
+
 impl EntityOwner {
     pub const fn new(port: u8, ordinal: u16) -> Self {
         Self { port, ordinal }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct EntitySlot {
     generation: u32,
     owner: Option<EntityOwner>,
+    payload: EntityPayload,
 }
 
 /// Fixed-capacity identity and ownership table for generic match entities.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EntityStore {
     slots: [EntitySlot; MAX_ENTITIES],
     len: u8,
@@ -115,6 +125,14 @@ impl EntityStore {
     }
 
     pub fn insert(&mut self, owner: EntityOwner) -> Result<EntityId, EntityError> {
+        self.insert_with_payload(owner, EntityPayload::default())
+    }
+
+    pub fn insert_with_payload(
+        &mut self,
+        owner: EntityOwner,
+        payload: EntityPayload,
+    ) -> Result<EntityId, EntityError> {
         if self.find_owner(owner).is_some() {
             return Err(EntityError::OwnerAlreadyExists);
         }
@@ -132,6 +150,7 @@ impl EntityStore {
             .ok_or(EntityError::GenerationExhausted)?;
         slot.generation = generation;
         slot.owner = Some(owner);
+        slot.payload = payload;
         self.len += 1;
         Ok(EntityId {
             index: index as u8,
@@ -145,6 +164,36 @@ impl EntityStore {
 
     pub fn owner(&self, id: EntityId) -> Option<EntityOwner> {
         self.slot(id).and_then(|slot| slot.owner)
+    }
+
+    pub fn payload(&self, id: EntityId) -> Option<EntityPayload> {
+        self.slot(id).map(|slot| slot.payload)
+    }
+
+    pub fn payload_mut(&mut self, id: EntityId) -> Option<&mut EntityPayload> {
+        let slot = self.slots.get_mut(id.index())?;
+        (slot.generation == id.generation && slot.owner.is_some()).then_some(&mut slot.payload)
+    }
+
+    /// Advance live entities in deterministic slot order without allocation.
+    pub fn advance(&mut self) {
+        for index in 0..MAX_ENTITIES {
+            let slot = &mut self.slots[index];
+            if slot.owner.is_none() {
+                continue;
+            }
+            for axis in 0..3 {
+                slot.payload.position[axis] += slot.payload.velocity[axis];
+            }
+            if let Some(lifetime) = &mut slot.payload.lifetime {
+                *lifetime = lifetime.saturating_sub(1);
+                if *lifetime == 0 {
+                    slot.owner = None;
+                    slot.payload = EntityPayload::default();
+                    self.len -= 1;
+                }
+            }
+        }
     }
 
     pub fn get_owned(&self, id: EntityId, owner: EntityOwner) -> Option<EntityId> {
@@ -168,6 +217,7 @@ impl EntityStore {
             return false;
         }
         slot.owner = None;
+        slot.payload = EntityPayload::default();
         self.len -= 1;
         true
     }
@@ -251,6 +301,37 @@ mod tests {
             store.insert(EntityOwner::new(0, 0)),
             Err(EntityError::OwnerAlreadyExists)
         );
+    }
+
+    #[test]
+    fn two_secondary_entities_advance_and_expire_deterministically() {
+        let mut store = EntityStore::default();
+        let first = store
+            .insert_with_payload(
+                EntityOwner::new(0, 1),
+                EntityPayload {
+                    position: [0.0, 1.0, 0.0],
+                    velocity: [1.0, -1.0, 0.0],
+                    lifetime: Some(2),
+                },
+            )
+            .unwrap();
+        let second = store
+            .insert_with_payload(
+                EntityOwner::new(1, 1),
+                EntityPayload {
+                    position: [4.0, 0.0, 0.0],
+                    velocity: [-1.0, 0.0, 0.0],
+                    lifetime: None,
+                },
+            )
+            .unwrap();
+        store.advance();
+        assert_eq!(store.payload(first).unwrap().position, [1.0, 0.0, 0.0]);
+        assert_eq!(store.payload(second).unwrap().position, [3.0, 0.0, 0.0]);
+        store.advance();
+        assert!(!store.contains(first));
+        assert_eq!(store.payload(second).unwrap().position, [2.0, 0.0, 0.0]);
     }
 
     #[test]
