@@ -28,12 +28,16 @@ class _Fighter:
     def __init__(self):
         self.changes = []
         self.spawned = []
+        self.velocity = (4.0, 3.0)
         self.action_state = type("State", (), {"command": (7, 6, 5, 4)})()
         self.flags = type("Flags", (), {"reflecting": True})()
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
         self.action = action
+
+    def set_velocity(self, horizontal, vertical):
+        self.velocity = (horizontal, vertical)
 
     def part_position(self, part):
         return (part, 1.0, 2.0)
@@ -128,6 +132,25 @@ class DrMarioSpecialTests(unittest.TestCase):
         blocked = HitContext(projectile=True, damage=5.0, max_damage=4.0, reflect=False)
         move.projectile_contact(fighter, blocked)
         self.assertFalse(blocked.reflect)
+
+    def test_cape_entry_applies_source_ground_and_air_velocity_rules(self):
+        move = DrMario.specials.side
+        attributes = type("Attributes", (), {"vel_x_decay": 2.0})()
+        context = type("Context", (), {
+            "resource": lambda self, path: type(
+                "Resource", (), {"attributes": attributes}
+            )(),
+        })()
+
+        ground = _Fighter()
+        ground.action = move.ground
+        move.enter(ground, context)
+        self.assertEqual(ground.velocity, (4.0, 0.0))
+
+        air = _Fighter()
+        air.action = move.air
+        move.enter(air, context)
+        self.assertEqual(air.velocity, (2.0, 3.0))
 
     def test_cape_command_one_controls_reflection_window(self):
         move = DrMario.specials.side

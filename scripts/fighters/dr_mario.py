@@ -5,6 +5,8 @@ down specials.  Their article and effect ownership stays in the host; this
 module describes the fighter-side source phases and surface lifecycle.
 """
 
+import math
+
 from skirmish import (
     Action,
     ArticleId,
@@ -21,6 +23,32 @@ from skirmish import (
     source_phase,
 )
 from fighter.helpers import resource_attributes
+
+
+def _set_entry_velocity(fighter: Fighter, ctx, action, ground: bool) -> None:
+    """Apply the source cape entry velocity adjustment when exposed."""
+    velocity = getattr(fighter, "velocity", None)
+    setter = getattr(fighter, "set_velocity", None)
+    if not isinstance(velocity, (tuple, list)) or len(velocity) < 2:
+        return
+    try:
+        horizontal, vertical = float(velocity[0]), float(velocity[1])
+    except (TypeError, ValueError):
+        return
+    if ground:
+        vertical = 0.0
+    else:
+        attributes = resource_attributes(ctx, action.resource)
+        divisor = getattr(attributes, "vel_x_decay", None)
+        if isinstance(divisor, bool) or not isinstance(divisor, (int, float)):
+            return
+        if divisor <= 0 or not math.isfinite(float(divisor)):
+            return
+        horizontal /= float(divisor)
+    if callable(setter):
+        setter(horizontal, vertical)
+    else:
+        fighter.velocity = (horizontal, vertical)
 
 
 class Megavitamin(B0ArticleSpecial):
@@ -69,7 +97,7 @@ class SuperSheet(SideSpecial, _SourcePair):
 
     @hook.action_enter(ground, air)
     def enter(self, fighter: Fighter, ctx) -> None:
-        """Reset Mario's cape command window on every Dr. entry."""
+        """Reset the cape window and apply Mario's source entry velocity."""
         state = getattr(fighter, "action_state", None)
         command = getattr(state, "command", ())
         if isinstance(command, (tuple, list)) and len(command) >= 4:
@@ -79,6 +107,7 @@ class SuperSheet(SideSpecial, _SourcePair):
         flags = getattr(fighter, "flags", None)
         if flags is not None and hasattr(flags, "reflecting"):
             flags.reflecting = False
+        _set_entry_velocity(fighter, ctx, self, fighter.action is self.ground)
 
     @hook.command_changed(1, actions=(ground, air))
     def reflect_command(self, fighter: Fighter, ctx) -> None:
