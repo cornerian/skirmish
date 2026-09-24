@@ -138,11 +138,14 @@ class Roll(NeutralSpecial):
         if fighter.action != self.ground_release:
             return False
         stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
-        rules = special_rules(ctx)
-        threshold = getattr(rules, "side_stick_threshold", None) if rules else None
-        if threshold is None:
+        threshold = self._attribute(
+            fighter, JigglypuffRolloutAttribute.TURN_STICK_THRESHOLD
+        )
+        if threshold is None or threshold < 0:
             return False
-        if stick[0] * fighter.facing > -threshold:
+        # ftPr_SpecialNRelease_IASA gates first on ABS(stick.x) > x68;
+        # equality does not enter the turnaround state.
+        if stick[0] * fighter.facing >= -threshold:
             return False
         fighter.change_action(self.ground_turn, preserve_state=True, keep_frame=True)
         fighter.facing = -fighter.facing

@@ -18,6 +18,7 @@ from fighter import (
     Action,
     Button,
     JigglypuffPoundAttribute,
+    JigglypuffRolloutAttribute,
     export_definition,
     f32,
 )
@@ -214,17 +215,35 @@ class JigglypuffTests(unittest.TestCase):
                 specials=SimpleNamespace(side_stick_threshold=0.5),
             ),
         )
-        fighter = _Fighter(Roll.ground_release, facing=1.0)
+        fighter = _PoundFighter(
+            Roll.ground_release,
+            facing=1.0,
+            attributes={JigglypuffRolloutAttribute.TURN_STICK_THRESHOLD: f32(0.5)},
+        )
         self.assertFalse(roll.reverse(fighter, ctx))
         self.assertEqual(fighter.action, Roll.ground_release)
 
         ctx.input.stick = (-0.5, 0.0)
+        self.assertFalse(roll.reverse(fighter, ctx))
+        self.assertEqual(fighter.action, Roll.ground_release)
+
+        ctx.input.stick = (-0.51, 0.0)
         self.assertTrue(roll.reverse(fighter, ctx))
         self.assertEqual(fighter.action, Roll.ground_turn)
         self.assertEqual(fighter.facing, -1.0)
         self.assertEqual(
             fighter.changes[-1][1], {"preserve_state": True, "keep_frame": True}
         )
+
+    def test_roll_turn_uses_native_attribute_instead_of_generic_rule_threshold(self):
+        roll = Roll()
+        ctx = SimpleNamespace(input=SimpleNamespace(stick=(-0.4, 0.0)))
+        fighter = _PoundFighter(
+            Roll.ground_release,
+            attributes={JigglypuffRolloutAttribute.TURN_STICK_THRESHOLD: f32(0.3)},
+        )
+        self.assertTrue(roll.reverse(fighter, ctx))
+        self.assertEqual(fighter.action, Roll.ground_turn)
 
     def test_pound_declares_source_states_traces_and_command_branches(self):
         exported = export_definition(Jigglypuff).as_dict()

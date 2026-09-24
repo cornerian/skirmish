@@ -22,7 +22,10 @@ The charge state advances `specialn.x2C` by `xA8` and clamps it to `xA4`.
 Releasing B enters release and seeds horizontal speed from `xC0 * (x2C-xA0)`.
 Ground release uses `xB4`, `xB8`, `xC0`, `xC4`, and `xC8` for deceleration,
 slope influence, and velocity limits. Air release uses `x58`, `x5C`, `x3C`,
-and `x40`. These are fighter attributes, not item/article values.
+and `x40`. These are fighter attributes, not item/article values. The grounded
+release turnaround gate compares the horizontal stick against
+`ftPurinAttributes::x68`; it is also a fighter attribute and must not use the
+generic special directional threshold.
 
 ### Hit capsule and scale
 
