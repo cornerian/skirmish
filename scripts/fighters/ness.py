@@ -91,7 +91,6 @@ class PKFlash(NeutralSpecial, _NessSpecial):
         ground_release: Transition(ground_end),
         air_release: Transition(air_end),
         ground_end: Transition(Action.WAIT),
-        air_end: Transition(Action.FALL),
     }
     on_ground = {
         air_start: Transition(ground_start, preserve_state=True, keep_frame=True),
@@ -105,6 +104,31 @@ class PKFlash(NeutralSpecial, _NessSpecial):
         ground_release: Transition(air_release, preserve_state=True, keep_frame=True),
         ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
     }
+
+    @hook.animation_end(air_end)
+    def aerial_end(self, fighter: Fighter, ctx) -> bool:
+        """Match ``ftNs_SpecialAirNEnd_Anim`` landing-lag handling.
+
+        The source reads ``ftNessAttributes::x1C_PKFLASH_LANDING_LAG`` when
+        the aerial release animation finishes. The typed host currently
+        exposes this value through the Ness resource aliases; absent data
+        falls back to ordinary fall without inventing a tuning constant.
+        """
+        attributes = resource_attributes(ctx, self.resource)
+        landing_lag = getattr(
+            attributes,
+            "pkflash_landing_lag",
+            getattr(attributes, "specialn_landing_lag", getattr(attributes, "x1C", None)),
+        )
+        if landing_lag is None or landing_lag == 0:
+            fighter.change_action(Action.FALL)
+            return True
+        enter = getattr(fighter, "enter_fall_special", None)
+        if not callable(enter):
+            fighter.change_action(Action.FALL)
+            return True
+        enter(mobility=1, landing_lag=landing_lag)
+        return True
 
 
 class PKFire(SideSpecial, _NessSpecial):

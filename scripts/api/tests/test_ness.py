@@ -148,7 +148,7 @@ class NessTests(unittest.TestCase):
 
     def test_source_lifecycle_preserves_surface_and_terminal_destinations(self):
         for move, ground, air in (
-            (PKFlash(), PKFlash.ground_end, PKFlash.air_end),
+            (PKFlash(), PKFlash.ground_end, None),
             (PKFire(), PKFire.ground, PKFire.air),
             (PKThunder(), PKThunder.ground_end, None),
             (PSIMagnet(), PSIMagnet.ground_end, PSIMagnet.air_end),
@@ -193,6 +193,24 @@ class NessTests(unittest.TestCase):
             fighter.landing_special,
             {"animation_end": 3.0, "landing_lag": 12.0},
         )
+
+    def test_pk_flash_aerial_end_uses_source_landing_lag(self):
+        move = PKFlash()
+        resource = SimpleNamespace(attributes=SimpleNamespace(x1C=9.0))
+        ctx = _context(resource="neutral", grounded=False)
+        ctx.resource = lambda path: resource if path == "neutral" else None
+        fighter = _LandingFighter(move.air_end)
+
+        self.assertTrue(move.aerial_end(fighter, ctx))
+        self.assertEqual(
+            fighter.fall_special,
+            {"mobility": 1, "landing_lag": 9.0},
+        )
+
+        resource.attributes.x1C = 0.0
+        fighter = _LandingFighter(move.air_end)
+        self.assertTrue(move.aerial_end(fighter, ctx))
+        self.assertEqual(fighter.action, Action.FALL)
 
     def test_psi_magnet_release_exits_absorb_and_turn_phases(self):
         move = PSIMagnet()
