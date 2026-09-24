@@ -99,6 +99,21 @@ pub(crate) enum ArticleBehavior {
         move_id: u16,
         contact: ProjectileContactPolicy,
     },
+    #[allow(dead_code)]
+    KoopaFlame {
+        speed: f32,
+        angle_min: f32,
+        angle_max: f32,
+        lifetime: f32,
+        hitbox_lifetime: f32,
+        min_speed: f32,
+        max_speed: f32,
+        scale: f32,
+        spawn_part: u16,
+        spawn_offset: [f32; 3],
+        hitboxes: Arc<[Hitbox]>,
+        move_id: u16,
+    },
 }
 
 /// Read-only resource data shared by all dispatches for one fighter.
@@ -2003,6 +2018,55 @@ fn link_article_resources(
                             persistence:
                                 crate::game::script::resources::ProjectilePersistence::Despawn,
                         },
+                    }
+                }
+                ArticleResource::KoopaFlame {
+                    speed,
+                    angle_min,
+                    angle_max,
+                    lifetime,
+                    hitbox_lifetime,
+                    min_speed,
+                    max_speed,
+                    scale,
+                    spawn_part,
+                    spawn_offset,
+                    hitboxes,
+                    move_id,
+                } => {
+                    let finite_positive = |value: f32| value.is_finite() && value > 0.0;
+                    if *id != ArticleId::BOWSER_FLAME
+                        || *spawn_part != 48
+                        || !finite_positive(*speed)
+                        || !angle_min.is_finite()
+                        || !angle_max.is_finite()
+                        || *angle_min > *angle_max
+                        || !finite_positive(*lifetime)
+                        || !finite_positive(*hitbox_lifetime)
+                        || !finite_positive(*min_speed)
+                        || !finite_positive(*max_speed)
+                        || *min_speed > *max_speed
+                        || !finite_positive(*scale)
+                        || spawn_offset.iter().any(|value| !value.is_finite())
+                    {
+                        return Err(Error::Invalid(format!(
+                            "{path} contains invalid Bowser flame source attributes"
+                        )));
+                    }
+                    validate_projectile_fields(&path, *lifetime, hitboxes, *move_id)?;
+                    ArticleBehavior::KoopaFlame {
+                        speed: *speed,
+                        angle_min: *angle_min,
+                        angle_max: *angle_max,
+                        lifetime: *lifetime,
+                        hitbox_lifetime: *hitbox_lifetime,
+                        min_speed: *min_speed,
+                        max_speed: *max_speed,
+                        scale: *scale,
+                        spawn_part: *spawn_part,
+                        spawn_offset: *spawn_offset,
+                        hitboxes: Arc::from(hitboxes.clone().into_boxed_slice()),
+                        move_id: *move_id,
                     }
                 }
             };

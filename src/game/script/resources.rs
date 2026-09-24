@@ -394,6 +394,23 @@ pub enum ArticleResource {
         move_id: u16,
         contact: LuigiFireballContactPolicy,
     },
+    /// Bowser Flame Breath's source article descriptor. Emission remains
+    /// native gated until the host exposes source B0/IASA timing and the
+    /// owner-scaled mouth transform.
+    KoopaFlame {
+        speed: f32,
+        angle_min: f32,
+        angle_max: f32,
+        lifetime: f32,
+        hitbox_lifetime: f32,
+        min_speed: f32,
+        max_speed: f32,
+        scale: f32,
+        spawn_part: u16,
+        spawn_offset: [f32; 3],
+        hitboxes: Vec<Hitbox>,
+        move_id: u16,
+    },
 }
 
 /// Article-owned contact behavior.  These are closed native policies rather

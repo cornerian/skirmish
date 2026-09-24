@@ -1114,6 +1114,14 @@ pub(crate) fn emit_projectiles(
                             Some(if facing >= 0.0 { 1.0 } else { -1.0 }),
                         )
                     }
+                    crate::game::script::lifecycle_resources::ArticleBehavior::KoopaFlame {
+                        ..
+                    } => {
+                        return Err(Error::Data(
+                            "Bowser flame emission requires native B0/IASA timing, RThumbNa part 48, and owner-scaled source transforms"
+                                .into(),
+                        ));
+                    }
                 };
                 let mut projectile = game::projectile::spawn(
                     state.allocate_article_handle()?,

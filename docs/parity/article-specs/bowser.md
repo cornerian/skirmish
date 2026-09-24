@@ -5,6 +5,14 @@ records the pinned decomp behavior that a native article host must expose; it
 does not claim that the current fighter-only Python script implements the
 article.
 
+The current typed catalog stores the source spawn contract only.  Runtime
+emission remains rejected until the host can schedule the repeated
+`SpecialN`/`SpecialAirN` IASA B0 callbacks, preserve the held-B flame count,
+select the source GFX variant, and apply the owner speed/size scales.  The
+source mouth transform is part 48 (`RThumbNa`) plus the authored `x24`/`x28`
+offsets multiplied by model scale; a fighter-only `L1ST_NB23` position is not
+equivalent.
+
 The authoritative files are:
 
 - `../../../../External/melee/src/melee/it/kinds/itkoopaflame.c`
