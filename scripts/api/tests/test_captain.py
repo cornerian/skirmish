@@ -517,16 +517,20 @@ class CaptainFalconTests(unittest.TestCase):
             move.before_hit(untouched, SimpleNamespace())
         self.assertEqual(untouched.action, move.ground_start)
 
-    def test_raptor_boost_reads_hit_context_resource_attributes(self):
+    def test_raptor_boost_reads_fighter_resource_without_touching_hit_resource(self):
         captain = _load_captain()
         move = captain.specials.side
         attrs = SimpleNamespace(specials_gr_vel_x=0.5)
-        hit = SimpleNamespace(resource=lambda path: SimpleNamespace(attributes=attrs))
+
+        class NativeHit:
+            def resource(self, path):
+                raise AssertionError("Raptor Boost must read attributes from fighter")
+
         fighter = self.Fighter(move.ground_start)
-        fighter.resource_value = None
+        fighter.resource_value = SimpleNamespace(attributes=attrs)
         fighter.velocity = [2.0, 3.0]
         fighter.ground_velocity = 4.0
-        move.before_hit(fighter, hit)
+        move.before_hit(fighter, NativeHit())
         self.assertEqual(fighter.action, move.ground)
         self.assertEqual(fighter.ground_velocity, 2.0)
 

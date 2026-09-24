@@ -20,7 +20,7 @@ Run the ignored release benchmark from `skirmish/` with the shared, stable
 environment:
 
 ```text
-xonsh --no-rc -c 'env CARGO_HOME=/tmp/skirmish-pon-cargo CARGO_TARGET_DIR=/tmp/skirmish-pon-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 SKIRMISH_PON_STDLIB_ARCHIVE=/mnt/archive/runs/skirmish-pon-stdlib-v3.14.0-20260923/pon-stdlib.tar.gz SKIRMISH_PON_STDLIB_SHA256=91aab4eb859690ebe1ecf8e3e21957378fea86b1ebac0a61e7559145f64c642d cargo test --locked --release --test pon_match_performance -- --ignored --nocapture'
+xonsh --no-rc -c 'env TMPDIR=/mnt/shared/tmp/skirmish-build-temp CARGO_HOME=/tmp/skirmish-pon-cargo CARGO_TARGET_DIR=/mnt/shared/tmp/skirmish-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 SKIRMISH_PON_STDLIB_ARCHIVE=/mnt/archive/runs/skirmish-pon-stdlib-v3.14.0-20260923/pon-stdlib.tar.gz SKIRMISH_PON_STDLIB_SHA256=91aab4eb859690ebe1ecf8e3e21957378fea86b1ebac0a61e7559145f64c642d cargo test --locked --release --test pon_match_performance -- --ignored --nocapture'
 ```
 
 The archive is the verified durable release input. Its manifest identity is

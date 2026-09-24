@@ -235,9 +235,12 @@ class CaptainSideSpecial(SideSpecial, _CaptainFamilySpecial):
             return
         if fighter.action != self.ground_start:
             return
-        attributes = resource_attributes(hit, self.resource)
-        if attributes is None:
-            attributes = resource_attributes(fighter, self.resource)
+        # The source reads Captain's special attributes from the fighter's
+        # owned Pl*.dat resource.  A native HitContext is only the contact
+        # event and does not expose a compatible resource lookup (and may
+        # deliberately reject access), so keep this callback on the fighter
+        # resource hot path.
+        attributes = resource_attributes(fighter, self.resource)
         multiplier = getattr(attributes, "specials_gr_vel_x", None)
         if multiplier is None or not validation.finite(multiplier):
             return
