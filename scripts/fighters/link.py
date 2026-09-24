@@ -149,6 +149,19 @@ class LinkUpSpecial(_FamilyUpSpecial):
     on_end = {ground: Transition(Action.WAIT)}
     on_air = {ground: Transition(air, preserve_state=True, keep_frame=True)}
 
+    @on.action_enter(air)
+    def enter_air_spin(self, fighter: Any, ctx: Any) -> None:
+        """Apply the source aerial-entry jump reset.
+
+        ``ftLk_SpecialAirHi_Enter`` resets ``x1968_jumpsUsed`` to the
+        fighter's maximum before the spin starts.  The launch velocity is
+        owned by the native attribute host, but the jump reset is a stable
+        fighter-side invariant and is exposed by the common authoring API.
+        """
+        reset = getattr(fighter, "max_jumps", None)
+        if callable(reset):
+            reset()
+
     @on.animation_end(air)
     def enter_fall_special(self, fighter: Any, ctx: Any) -> bool:
         enter = getattr(fighter, "enter_fall_special", None)

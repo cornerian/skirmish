@@ -36,6 +36,7 @@ class _Fighter:
         self.bomb_reuse = []
         self.fall_special = []
         self.arrow_releases = []
+        self.max_jumps_calls = 0
 
     def change_action(self, action, **kwargs):
         self.changes.append((action, kwargs))
@@ -49,6 +50,9 @@ class _Fighter:
 
     def enter_fall_special(self, **kwargs):
         self.fall_special.append(kwargs)
+
+    def max_jumps(self):
+        self.max_jumps_calls += 1
 
     def release_arrow(self, ctx):
         self.arrow_releases.append(ctx)
@@ -170,6 +174,13 @@ class LinkTests(unittest.TestCase):
         fighter.action = move.air
         self.assertTrue(move.enter_fall_special(fighter, SimpleNamespace()))
         self.assertEqual(fighter.fall_special, [{"mobility": 1}])
+
+    def test_spin_attack_air_entry_resets_used_jumps(self):
+        move = Link.specials.up
+        fighter = _Fighter()
+        fighter.action = move.air
+        move.enter_air_spin(fighter, SimpleNamespace())
+        self.assertEqual(fighter.max_jumps_calls, 1)
 
     def test_terminal_phases_return_to_native_wait_or_fall(self):
         for move in (Link.specials.neutral, Link.specials.side,
