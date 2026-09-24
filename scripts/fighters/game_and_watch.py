@@ -336,6 +336,9 @@ class OilPanic(DownSpecial, _SourcePairSpecial):
             return
         target = self.ground if fighter.action is self.ground_catch else self.air
         fighter.change_action(target)
+        # SpecialLwCatch_Anim uses Fighter_ChangeMotionState(..., 4, ...)
+        # when returning to the absorb loop, rather than restarting frame 0.
+        fighter.action_frame = 4
 
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:

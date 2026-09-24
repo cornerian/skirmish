@@ -71,6 +71,7 @@ class OilPanicTests(unittest.TestCase):
         move.catch_animation_end(fighter, _context(2))
 
         self.assertIs(fighter.action, move.ground)
+        self.assertEqual(fighter.action_frame, 4)
 
     def test_full_catch_exits_to_wait_or_fall_on_animation_end(self):
         move = OilPanic()
