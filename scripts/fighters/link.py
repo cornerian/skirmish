@@ -110,6 +110,24 @@ class LinkSideSpecial(_FamilySideSpecial):
         ground_empty: Transition(air_empty, preserve_state=True, keep_frame=True),
     }
 
+    @on.action_enter(ground_start, ground_empty, air_start, air_empty)
+    def reset_throw_window(self, fighter: Any, ctx: Any) -> None:
+        """Clear Link's native boomerang entry latches.
+
+        ``ftLk_SpecialS_Enter`` and ``ftLk_SpecialAirS_Enter`` clear
+        ``throw_flags`` and ``cmd_vars[0]`` before selecting the normal or
+        empty phase.  Preserve those fighter-owned resets even though the
+        article callback remains host-owned.
+        """
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", None)
+        if isinstance(command, (tuple, list)) and command:
+            values = list(command)
+            values[0] = 0
+            state.command = type(command)(values) if isinstance(command, tuple) else values
+
     @on.input_pressed(Button.B)
     def input_pressed(self, fighter: Any, ctx: Any) -> bool:
         if fighter.action in self._active_actions():

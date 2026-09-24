@@ -97,6 +97,17 @@ class LinkTests(unittest.TestCase):
         self.assertTrue(move.input_pressed(fighter, _context(ground=False, stick=(1.0, 0.0))))
         self.assertIs(fighter.action, move.air_start)
 
+    def test_side_entry_clears_native_throw_and_command_latches(self):
+        move = Link.specials.side
+        for phase in (move.ground_start, move.ground_empty,
+                      move.air_start, move.air_empty):
+            fighter = _Fighter()
+            fighter.throw_flags = 9
+            fighter.action_state.command = (7, 2, 3, 4)
+            move.reset_throw_window(fighter, SimpleNamespace())
+            self.assertEqual(fighter.throw_flags, 0)
+            self.assertEqual(fighter.action_state.command, (0, 2, 3, 4))
+
     def test_side_entry_stays_resource_gated(self):
         move = Link.specials.side
         fighter = _Fighter()
