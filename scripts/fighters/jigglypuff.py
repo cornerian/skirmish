@@ -35,6 +35,21 @@ def _phase_action(state: int):
     return source_phase(state)
 
 
+def _clear_command_zero(fighter: Fighter) -> None:
+    """Clear the first animation command slot on native special entry.
+
+    ``ftPurin_SpecialHi_SetVars`` and ``ftPr_SpecialLw_Enter`` both clear
+    ``cmd_vars[0]`` before their animation command stream runs.  The script
+    host represents that slot as the first value of ``action_state.command``;
+    keep authoring and the native entry callback aligned when that state is
+    exposed by a host.
+    """
+    action_state = getattr(fighter, "action_state", None)
+    command = getattr(action_state, "command", None)
+    if isinstance(command, (tuple, list)) and command:
+        action_state.command = (0, *command[1:])
+
+
 class Roll(NeutralSpecial):
     """Rollout's native charge, release, turn, and terminal phases.
 
@@ -215,9 +230,12 @@ class Rest(DownSpecial):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx) -> bool:
-        return start_complete_special(
+        started = start_complete_special(
             fighter, ctx, self._phase, active_actions=self._ACTIVE, direction=-1
         )
+        if started:
+            _clear_command_zero(fighter)
+        return started
 
     # Surface changes keep the matching source motion state and native frame.
     on_ground, on_air = frame_preserving_surface_pairs(
@@ -250,9 +268,12 @@ class Sing(UpSpecial):
 
     @hook.input_pressed(Button.B)
     def input_pressed(self, fighter: Fighter, ctx) -> bool:
-        return start_complete_special(
+        started = start_complete_special(
             fighter, ctx, self._phase, active_actions=self._ACTIVE, direction=1
         )
+        if started:
+            _clear_command_zero(fighter)
+        return started
 
     on_ground, on_air = frame_preserving_surface_pairs(
         ground_left, ground_right, air_left, air_right
