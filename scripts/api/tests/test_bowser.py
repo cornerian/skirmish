@@ -178,10 +178,12 @@ class BowserTests(unittest.TestCase):
     def test_klaw_wait_reenters_hold_only_while_b_is_held(self):
         side = Bowser.specials.side
         fighter = _Fighter(side.ground_wait)
+        fighter.action_state.klaw_b_held = True
         self.assertTrue(side.hold_capture(
             fighter, _context(held={Button.B})
         ))
         self.assertEqual(fighter.action, side.ground_hold)
+        self.assertFalse(fighter.action_state.klaw_b_held)
 
         fighter = _Fighter(side.air_wait)
         self.assertTrue(side.hold_capture(

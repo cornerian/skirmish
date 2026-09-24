@@ -224,6 +224,10 @@ class KoopaKlaw(SideSpecial, _KoopaSpecial):
         }.get(fighter.action)
         if target is None or not _button_held(ctx, Button.B):
             return fighter.action in self._ACTIVE
+        state = getattr(fighter, "action_state", None)
+        if state is not None:
+            # Native inlineA0 clears mv.kp.specials.b_held on re-entry.
+            state.klaw_b_held = False
         fighter.change_action(target)
         return True
 
