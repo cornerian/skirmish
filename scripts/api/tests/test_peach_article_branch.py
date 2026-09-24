@@ -76,6 +76,12 @@ class PeachArticleBranchTests(unittest.TestCase):
 
         self.assertEqual(fighter.throw_calls, [])
 
+    def test_down_entry_without_throw_host_keeps_native_branch_safe(self):
+        move = Peach.specials.down
+        fighter = SimpleNamespace(action=move.ground, peach_turnip_held=True)
+
+        move.throw_held_turnip(fighter, SimpleNamespace())
+
 
 if __name__ == "__main__":
     unittest.main()
