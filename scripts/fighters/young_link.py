@@ -52,7 +52,7 @@ class YoungLinkNeutralSpecial(_FamilyNeutralSpecial):
 
     @on.action_enter(ground_start, air_start)
     def reset_command_window(self, fighter: Any, ctx: Any) -> None:
-        """Clear the four command slots before a fresh arrow charge.
+        """Clear the four native command slots before a new arrow charge.
 
         ``ftLk_SpecialN_Enter`` and ``ftLk_SpecialAirN_Enter`` clear
         ``cmd_vars[0..3]`` before installing the shared arrow callbacks.  CLink
