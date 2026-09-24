@@ -79,6 +79,15 @@ class SuperSheet(SideSpecial, _SourcePair):
         if flags is not None and hasattr(flags, "reflecting"):
             flags.reflecting = False
 
+    @hook.command_changed(1, actions=(ground, air))
+    def reflect_command(self, fighter: Fighter, ctx) -> None:
+        """Mirror the source cape reflection command window."""
+        flags = getattr(fighter, "flags", None)
+        if flags is None or not hasattr(flags, "reflecting"):
+            return
+        event = getattr(ctx, "event", None)
+        flags.reflecting = bool(getattr(event, "value", 0))
+
     @hook.projectile_contact
     def projectile_contact(self, fighter: Fighter, hit: HitContext) -> None:
         """Mirror ftMr_SpecialS's active-cape reflection gate."""

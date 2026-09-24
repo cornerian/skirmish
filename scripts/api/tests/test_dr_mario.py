@@ -129,6 +129,19 @@ class DrMarioSpecialTests(unittest.TestCase):
         move.projectile_contact(fighter, blocked)
         self.assertFalse(blocked.reflect)
 
+    def test_cape_command_one_controls_reflection_window(self):
+        move = DrMario.specials.side
+        fighter = _Fighter()
+
+        class Event:
+            value = 1
+
+        move.reflect_command(fighter, type("Context", (), {"event": Event()})())
+        self.assertTrue(fighter.flags.reflecting)
+        Event.value = 0
+        move.reflect_command(fighter, type("Context", (), {"event": Event()})())
+        self.assertFalse(fighter.flags.reflecting)
+
     def test_up_entry_clears_command_zero_and_throw_flags(self):
         fighter = _Fighter()
         fighter.throw_flags = 7

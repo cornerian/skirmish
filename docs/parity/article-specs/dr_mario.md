@@ -60,6 +60,11 @@ the active reflection when it returns to 0. `itmariocape.c` resets the fighter
 when the cape is destroyed or leaves the side-special states, and forwards
 hitlag enter/exit to the attached item.
 
+The script mirrors command variable 1 as the reflection window. Air entry
+velocity decay, cape attachment, and cape destruction remain host
+responsibilities because the authoring context does not expose the source
+special attributes and article handles.
+
 Dr. Mario's special attributes are the `ftMario_DatAttrs` fields in
 `ftMario/types.h`: `specials.vel_x_decay`, `specials.vel`, `specials.grav`,
 `specials.terminal_vel`, `specials.cape_kind`, and `cape_reflection`. The
