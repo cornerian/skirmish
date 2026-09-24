@@ -33,7 +33,7 @@ or below destroys it.
 | 344/350 | Grounded/aerial charge; release in `ftLg_SpecialSHold_IASA` or `ftLg_SpecialAirSHold_IASA`; charge auto-launches after `xC_LUIGI_GREENMISSILE_MAX_CHARGE_FRAMES`. |
 | 347/353 | Normal launch; charge-scaled hit damage and transition to flight only after command slot 0 is raised by the launch animation. |
 | 348/354 | Misfire launch; selected by `HSD_Randi(x44_LUIGI_GREENMISSILE_MISFIRE_CHANCE)` and using the same command-gated flight transition. |
-| 345/351 | Flight; the ground S2 callback is empty, while `ftLg_SpecialAirS2_Anim` enters end and aerial landing or wall contact enters grounded end. The native flight setup always selects aerial S2 (351). |
+| 345/351 | Flight; grounded S2 has empty animation and collision callbacks, while `ftLg_SpecialAirS2_Anim` enters end and aerial landing or wall contact enters grounded end. The native flight setup always selects aerial S2 (351). |
 | 346/352 | Grounded/aerial end; grounded end exits to wait, aerial end exits to fall. |
 
 `ftLg_SpecialS_Anim` and `ftLg_SpecialAirS_Anim` poll command slot 0 every
@@ -68,12 +68,13 @@ the corresponding article and Luigi attribute data.
 
 The four move families retain their source timing at the script boundary:
 
-* Fireball 341/342 stays active until the B0 spawn callback raises command
-  slot 0; grounded and aerial exits then use wait and fall respectively.
+* Fireball 341/342 exits to wait or fall when animation ends. The source IASA
+  callbacks observe command slot 0 and may process regular input, but the
+  shared script host does not model that generic IASA polling path.
 * Green Missile 343–354 advances start to charge on animation completion,
   launches on B release or the native charge cap, and waits for command slot 0
   before entering aerial flight. Its unused ground S2 row has no terminal
-  animation callback.
+  animation or contact transition; leaving grounded end goes directly to fall.
 * Super Jump Punch 355/356 runs its source fall-special landing path at
   animation completion; the declared wait/fall targets are the host's
   no-landing-lag fallback.

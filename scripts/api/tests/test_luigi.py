@@ -147,6 +147,18 @@ class LuigiNeutralTests(unittest.TestCase):
         move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, move.ground_s2)
 
+        fighter = _Fighter()
+        fighter.action = move.ground_s2
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, move.ground_s2)
+
+    def test_green_missile_ground_end_falls_when_leaving_ground(self):
+        move = Luigi.specials.side
+        fighter = _Fighter()
+        fighter.action = move.ground_end
+        move._transition_ground_air(fighter, SimpleNamespace(grounded=False))
+        self.assertEqual(fighter.action, Action.FALL)
+
     def test_cyclone_tap_uses_armed_command_window(self):
         move = Luigi.specials.down
         fighter = _Fighter()
@@ -199,15 +211,11 @@ class LuigiNeutralTests(unittest.TestCase):
         self.assertFalse(move.input_pressed(fighter, _context(stick=(0.0, 0.5), directional=True)))
         self.assertEqual(fighter.action, Action.WAIT)
 
-    def test_fireball_waits_for_spawn_command_before_terminal_transition(self):
+    def test_fireball_animation_end_exits_without_spawn_command(self):
         move = Fireball()
         fighter = _Fighter()
         fighter.action = move.ground
         fighter.action_state.command = (0, 0, 0, 0)
-        move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
-        self.assertEqual(fighter.action, move.ground)
-
-        fighter.action_state.command = (1, 0, 0, 0)
         move._transition_animation_end(fighter, SimpleNamespace(grounded=True))
         self.assertEqual(fighter.action, Action.WAIT)
 
@@ -215,7 +223,7 @@ class LuigiNeutralTests(unittest.TestCase):
         fighter.action = move.air
         fighter.action_state.command = (0, 0, 0, 0)
         move._transition_animation_end(fighter, SimpleNamespace(grounded=False))
-        self.assertEqual(fighter.action, move.air)
+        self.assertEqual(fighter.action, Action.FALL)
 
 
 if __name__ == "__main__":

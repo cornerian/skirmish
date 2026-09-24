@@ -27,23 +27,6 @@ class Fireball(B0ArticleSpecial):
     article_id = ArticleId.LUIGI_FIRE
     ground, air = b0_source_phases(341, 342)
 
-    def _transition_animation_end(self, fighter, ctx) -> None:
-        """Honor Luigi's source IASA command gate before leaving Fireball.
-
-        ``ftLg_SpecialN_Anim`` only exits once ``cmd_vars[0]`` has been set
-        by the motion event that creates the article.  The shared B0 move
-        lifecycle has the same terminal transitions for every article move,
-        but it cannot know that Luigi's native callback keeps the action open
-        until that command arrives.  Preserve the command-gated behavior here
-        while retaining the shared ground/air transition implementation.
-        """
-        state = getattr(fighter, "action_state", None)
-        command = getattr(state, "command", ())
-        if not isinstance(command, (tuple, list)) or not command or not command[0]:
-            return
-        super()._transition_animation_end(fighter, ctx)
-
-
 class GreenMissile(SideSpecial, DirectionalSpecial):
     """Green Missile's source phases (343 through 354).
 
@@ -79,7 +62,6 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         # native table completeness but is not selected by this callback.
         ground: Transition(air_s2),
         ground_misfire: Transition(air_s2),
-        ground_s2: Transition(ground_end),
         ground_end: Transition(Action.WAIT),
         air_start: Transition(air_hold),
         air_hold: Transition(air),
@@ -103,8 +85,7 @@ class GreenMissile(SideSpecial, DirectionalSpecial):
         ground_hold: Transition(air_hold, preserve_state=True, keep_frame=True),
         ground: Transition(air, preserve_state=True, keep_frame=True),
         ground_misfire: Transition(air_misfire, preserve_state=True, keep_frame=True),
-        ground_s2: Transition(air_s2, preserve_state=True, keep_frame=True),
-        ground_end: Transition(air_end, preserve_state=True, keep_frame=True),
+        ground_end: Transition(Action.FALL),
     }
 
     def _command_ready(self, fighter, ctx) -> bool:
