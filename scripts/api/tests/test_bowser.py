@@ -164,6 +164,16 @@ class BowserTests(unittest.TestCase):
         self.assertEqual(fighter.action, down.air)
         self.assertEqual(fighter.changes, [])
 
+    def test_bowser_bomb_entry_clears_native_command_latches(self):
+        down = Bowser.specials.down
+        for action in (down.ground, down.air):
+            fighter = _Fighter(action)
+            fighter.action_state.command = (9, 8, 7, 6)
+            fighter.throw_flags_b0 = True
+            down.enter(fighter, SimpleNamespace())
+            self.assertEqual(fighter.action_state.command, (0, 0, 7, 6))
+            self.assertFalse(fighter.throw_flags_b0)
+
     def test_item_and_capture_effects_are_not_fabricated(self):
         for name, action in self.definition["actions"].items():
             if name.startswith("special."):

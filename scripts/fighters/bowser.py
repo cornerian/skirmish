@@ -294,6 +294,16 @@ class Bomb(DownSpecial, _KoopaSpecial):
     _ENTRY = (ground, air)
     _ACTIVE = (ground, air, landing)
 
+    @hook.action_enter(ground, air)
+    def enter(self, fighter: Any, ctx: Any) -> None:
+        """Clear native ground-pound command latches on every entry."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if isinstance(command, (tuple, list)) and len(command) >= 4:
+            state.command = (0, 0, command[2], command[3])
+        if hasattr(fighter, "throw_flags_b0"):
+            fighter.throw_flags_b0 = False
+
     on_end = {
         ground: Transition(air),
         landing: Transition(Action.FALL),
