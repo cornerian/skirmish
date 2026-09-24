@@ -147,16 +147,30 @@ class DrTornado(DownSpecial, _SourcePair):
         if isinstance(command, (tuple, list)) and len(command) >= 4:
             state.command = (0, 0, 0, command[3])
 
+    def _consume_air_tap(self, fighter: Fighter) -> bool:
+        """Apply the source aerial tap latch and consume its command cue."""
+        state = getattr(fighter, "action_state", None)
+        command = getattr(state, "command", ())
+        if not isinstance(command, (tuple, list)) or len(command) < 4:
+            return False
+        if not command[1]:
+            return False
+        state.command = (command[0], 0, command[2], command[3])
+        # ftMr_SpecialAirLw_Anim stores x2234_tornadoCharge here.  Keep the
+        # latch on action state so the next aerial entry/physics boundary can
+        # observe it after the command slot has been consumed.
+        state.tornado_charge = True
+        return True
+
     @hook.command_changed(1, actions=(air,))
     def tap_command(self, fighter: Fighter, ctx) -> None:
         """Consume the aerial tap cue used by ``ftMr_SpecialAirLw_Anim``."""
-        event = getattr(ctx, "event", None)
-        if not getattr(event, "value", 0):
-            return
-        state = getattr(fighter, "action_state", None)
-        command = getattr(state, "command", ())
-        if isinstance(command, (tuple, list)) and len(command) >= 4:
-            state.command = (command[0], 0, command[2], command[3])
+        self._consume_air_tap(fighter)
+
+    @hook.animation_end(air)
+    def finish_air(self, fighter: Fighter, ctx) -> bool:
+        """Process a tap cue still present on the source animation's last tick."""
+        return self._consume_air_tap(fighter)
 
 
 class DrMario(Fighter):

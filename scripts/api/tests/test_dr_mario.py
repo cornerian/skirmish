@@ -170,7 +170,7 @@ class DrMarioSpecialTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 6, 5, 4))
         self.assertEqual(fighter.throw_flags, 0)
 
-    def test_down_entry_clears_tornado_commands_and_aerial_tap_is_one_shot(self):
+    def test_down_entry_clears_tornado_commands_and_aerial_tap_latches_charge(self):
         fighter = _Fighter()
         move = DrMario.specials.down
         move.enter(fighter, object())
@@ -183,6 +183,17 @@ class DrMarioSpecialTests(unittest.TestCase):
         fighter.action_state.command = (0, 1, 5, 4)
         move.tap_command(fighter, ctx)
         self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
+
+    def test_down_animation_end_consumes_late_aerial_tap(self):
+        fighter = _Fighter()
+        move = DrMario.specials.down
+        fighter.action = move.air
+        fighter.action_state.command = (0, 1, 5, 4)
+
+        self.assertTrue(move.finish_air(fighter, object()))
+        self.assertEqual(fighter.action_state.command, (0, 0, 5, 4))
+        self.assertTrue(fighter.action_state.tornado_charge)
 
 
 if __name__ == "__main__":
