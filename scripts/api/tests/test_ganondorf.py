@@ -243,6 +243,15 @@ class GanondorfTests(unittest.TestCase):
         self.assertEqual(fighter.action_state.command, (0, 0, 0, 0))
         self.assertFalse(fighter.action_state.launch_armed)
 
+    def test_wizards_foot_entry_clears_source_throw_latch(self):
+        move = Ganondorf.specials.down
+        fighter = _Fighter(move.ground)
+        fighter.throw_flags = 7
+        fighter.action_state.command = (9, 8, 7, 6)
+        move.action_enter(fighter, _context())
+        self.assertEqual(fighter.throw_flags, 0)
+        self.assertEqual(fighter.action_state.command, (0, 0, 0, 6))
+
     def test_dark_dive_wall_rebound_finishes_into_fall(self):
         move = Ganondorf.specials.up
         fighter = _Fighter(move.throw_rebound)

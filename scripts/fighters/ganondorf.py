@@ -80,6 +80,19 @@ class WizardFoot(CaptainDownSpecial):
     air_end = source_phase(361, animation=316, attack="down.air_end")
     ground_end_air = source_phase(362, animation=315, attack="down.ground_end_air")
 
+    @on.action_enter()
+    def action_enter(self, fighter, ctx):
+        """Reset the shared throw latch on each Wizard's Foot entry.
+
+        ``ftCa_SpecialLw_Enter`` and ``ftCa_SpecialAirLw_Enter`` clear
+        ``throw_flags`` together with the three command variables.  The
+        family callback already consumes those command variables, so keep the
+        remaining fighter side reset local to Ganondorf's concrete move.
+        """
+        super().action_enter(fighter, ctx)
+        if hasattr(fighter, "throw_flags"):
+            fighter.throw_flags = 0
+
     def wall_rebound(self, fighter, ctx):
         """Require the source wall-collision command cue before state 363."""
         command = getattr(getattr(fighter, "action_state", None), "command", ())
