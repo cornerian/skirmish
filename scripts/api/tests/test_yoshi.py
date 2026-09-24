@@ -30,6 +30,7 @@ class _Fighter:
     def __init__(self, action=None):
         self.action = action
         self.action_frame = 0
+        self.facing = 1.0
         self.changes = []
 
     def change_action(self, action, **kwargs):
@@ -184,6 +185,13 @@ class YoshiSpecialTests(unittest.TestCase):
         fighter = _Fighter(move.ground_loop)
         self.assertTrue(move.input_pressed(fighter, _context(stick=(1.0, 0.0))))
         self.assertIs(fighter.action, move.ground_end)
+
+    def test_egg_roll_entry_faces_with_native_stick_direction(self):
+        move = Yoshi.specials.side
+        for stick, expected in (((1.0, 0.0), 1.0), ((-1.0, 0.0), -1.0)):
+            fighter = _Fighter(move.ground)
+            move.set_entry_facing(fighter, _context(stick=stick))
+            self.assertEqual(fighter.facing, expected)
 
     def test_neutral_preserves_each_source_phase_across_surface_changes(self):
         move = Yoshi.specials.neutral

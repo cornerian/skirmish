@@ -176,6 +176,14 @@ class EggRoll(SideSpecial, _YoshiSpecial):
         ground_turn: Transition(air_turn, preserve_state=True, keep_frame=True),
     }
 
+    @hook.action_enter(ground, air)
+    def set_entry_facing(self, fighter: Fighter, ctx) -> None:
+        """Match ``ftYs_Special{,Air}S_Enter``'s stick-facing assignment."""
+        if not hasattr(fighter, "facing"):
+            return
+        stick = getattr(getattr(ctx, "input", None), "stick", (0.0, 0.0))
+        fighter.facing = 1.0 if stick[0] > 0.0 else -1.0
+
     def _on_active_input(self, fighter: Fighter) -> None:
         # ftYs_SpecialAirSLoop_{0,1}_IASA and Loop_{2,3}_IASA use B as the
         # release edge.  The native helper preserves the current animation
