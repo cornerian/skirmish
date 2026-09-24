@@ -182,6 +182,11 @@ class JigglypuffTests(unittest.TestCase):
 
         landed = _Fighter(Roll.hit)
         self.assertTrue(roll.hit_landed(landed, SimpleNamespace(grounded=True)))
+        self.assertEqual(landed.action, Action.WAIT)
+
+        landed = _Fighter(Roll.hit)
+        landed.grounded = False
+        self.assertTrue(roll.hit_landed(landed, SimpleNamespace(grounded=False)))
         self.assertEqual(landed.action, Action.FALL)
 
     def test_roll_ground_release_reverses_only_at_opposite_stick_threshold(self):

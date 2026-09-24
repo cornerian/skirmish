@@ -201,7 +201,11 @@ class Roll(NeutralSpecial):
         """Match SpecialNHit_Coll's immediate floor-contact exit."""
         if fighter.action != self.hit:
             return False
-        fighter.change_action(Action.FALL)
+        # ftPr_SpecialNHit_Coll calls the grounded exit when the hit capsule
+        # meets the floor.  The native callback enters WAIT for the grounded
+        # case and only uses FALL for an aerial hit; keeping this split also
+        # prevents a grounded Rollout hit from remaining in an aerial action.
+        fighter.change_action(Action.WAIT if fighter.grounded else Action.FALL)
         return True
 
     on_ground = {
