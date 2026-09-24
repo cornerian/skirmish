@@ -560,6 +560,7 @@ where
                         player,
                         &mut state.events,
                         (&data.fighters[player], &data.rules, input),
+                        &state.entities,
                     )?;
                 }
                 staling::flush(
@@ -713,6 +714,8 @@ where
                 &data.rules,
                 input,
                 &geometry,
+                &state.entities,
+                state.entities.fighter_port(player),
             )?;
         }
     }
@@ -817,6 +820,7 @@ where
             player,
             &mut state.events,
             (&data.fighters[player], &data.rules, input),
+            &state.entities,
         )?;
         staling::flush(
             fighter,
@@ -1760,6 +1764,7 @@ fn resolve_captured_collisions(
             player,
             &mut state.events,
             (&data.fighters[player], &data.rules, inputs[player]),
+            &state.entities,
         )?;
     }
     Ok(())

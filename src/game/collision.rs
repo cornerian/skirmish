@@ -254,6 +254,7 @@ pub(crate) fn resolve(
     player: usize,
     events: &mut Vec<Event>,
     resources: (&FighterData, &Rules, super::Controller),
+    entities: &crate::game::entity::EntityStore,
 ) -> Result<(), Error> {
     let (stage, geometry, previous_geometry) = environment;
     let (data, rules, input) = resources;
@@ -553,13 +554,13 @@ pub(crate) fn resolve(
                 f.ground_line = Some(contact.line_id);
                 f.floor_normal = contact.normal;
             }
-            land(f, rules, data, input, events, player, geometry)?;
+            land(f, rules, data, input, events, player, geometry, entities)?;
             true
         } else if let Some(projection) = moved_floor {
             f.position[1] += projection.delta;
             f.ground_line = Some(projection.line_id);
             f.floor_normal = projection.normal;
-            land(f, rules, data, input, events, player, geometry)?;
+            land(f, rules, data, input, events, player, geometry, entities)?;
             true
         } else {
             false
@@ -816,6 +817,7 @@ fn land(
     events: &mut Vec<Event>,
     player: usize,
     geometry: &StageGeometry,
+    entities: &crate::game::entity::EntityStore,
 ) -> Result<(), Error> {
     // `ftCo_Damage_Coll` reads x8c_kb_vel before the generic floor callback
     // clears the launch vector. Keep the scalar only for this contact; it is
@@ -873,6 +875,8 @@ fn land(
                 rules,
                 on_platform(f, geometry),
                 &pre_landing,
+                entities,
+                entities.fighter_port(player),
             )?
             && !crate::fighter::escape_air::land(f, data, rules.escape_air.as_ref())?
             && !crate::fighter::aerial::land(f, data)?
@@ -1084,6 +1088,7 @@ mod tests {
             0,
             &mut events,
             (&data.fighters[0], &data.rules, Controller::default()),
+            &state.entities,
         )
         .unwrap();
 
@@ -1137,6 +1142,7 @@ mod tests {
             0,
             &mut state.events,
             (&data.fighters[0], &data.rules, Controller::default()),
+            &state.entities,
         )
         .unwrap();
 

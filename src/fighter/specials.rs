@@ -842,6 +842,8 @@ pub(crate) fn land(
     rules: &MatchRules,
     on_platform: bool,
     pre_landing: &Fighter,
+    entities: &game::entity::EntityStore,
+    owner_port: Option<u8>,
 ) -> Result<bool, Error> {
     if !policy_enabled(data) {
         return Ok(false);
@@ -867,8 +869,8 @@ pub(crate) fn land(
         NativeContext {
             pre_landing: Some(pre_landing),
             geometry: None,
-            entities: None,
-            entity_owner_port: None,
+            entities: Some(entities),
+            entity_owner_port: owner_port,
         },
     )?))
 }
@@ -908,6 +910,8 @@ pub(crate) fn platform_drop(
     rules: &MatchRules,
     input: Controller,
     geometry: &StageGeometry,
+    entities: &game::entity::EntityStore,
+    owner_port: Option<u8>,
 ) -> Result<bool, Error> {
     if !policy_enabled(data) {
         return Ok(false);
@@ -945,8 +949,8 @@ pub(crate) fn platform_drop(
         NativeContext {
             pre_landing: None,
             geometry: Some(geometry),
-            entities: None,
-            entity_owner_port: None,
+            entities: Some(entities),
+            entity_owner_port: owner_port,
         },
     )?))
 }
